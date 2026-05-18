@@ -1,0 +1,1131 @@
+diff --git c/_bmad-output/implementation-artifacts/2-10-utc-timezone-migration.md w/_bmad-output/implementation-artifacts/2-10-utc-timezone-migration.md
+new file mode 100644
+index 0000000..92a0639
+--- /dev/null
++++ w/_bmad-output/implementation-artifacts/2-10-utc-timezone-migration.md
+@@ -0,0 +1,107 @@
++# Story 2.10: UTC Timezone Migration
++
++Status: review
++
++<!-- Validation optional: bmad-create-story validate before bmad-dev-story -->
++
++## Story
++
++As a developer,
++I want all timestamps stored and compared in UTC with a documented display timezone,
++so that backtest, live OANDA data, and economic calendar events align without silent offset bugs.
++
++## Acceptance Criteria
++
++1. **AC1 — Spec compliance:** Implementation matches [docs/specs.md §2.5](docs/specs.md) (UTC canonical, `America/Toronto` display only).
++2. **AC2 — OANDA boundary:** `OandaPriceClient` parses API timestamps to `Instant` (UTC), not naive `LocalDateTime`.
++3. **AC3 — Economic calendar:** `EconomicCalendar` events use `Instant` UTC; source publication zones documented in code comments where converted.
++4. **AC4 — Domain model:** `Bar`, `Order`, and `Trade` use `Instant` for timestamp fields (or a single `TimeConventions` helper if phased — full migration required for this story).
++5. **AC5 — CSV loaders:** `DataLoader` documents assumed CSV timezone; converts to UTC when building `Bar` instances.
++6. **AC6 — Live/strategy code:** `AutoTrader`, `StrategyRunner`, `WeekStrategies`, `NewsTradingStrategy` use `Instant` or `Clock` (UTC), not `LocalDateTime.now()`.
++7. **AC7 — Build:** `mvn clean install` succeeds; existing tests updated or extended for timezone behavior.
++
++## Tasks / Subtasks
++
++- [x] Task 1: Introduce time utilities (AC: 1, 7)
++  - [x] Add `com.martinfou.trading.core.TimeConventions` (or `time` package): `UTC`, `DISPLAY_ZONE = America/Toronto`, `Clock.systemUTC()` factory
++  - [x] Helpers: `parseOandaTimestamp(String)`, `toDisplayString(Instant)`
++- [x] Task 2: Migrate core domain (AC: 4, 5, 7)
++  - [x] `Bar.timestamp()` → `Instant`
++  - [x] `Order` createdAt / filledAt → `Instant`
++  - [x] `Trade` entryTime / exitTime → `Instant`
++  - [x] Update `DataLoader`, `BacktestEngine`, `BacktestResult`, `SmaCrossoverStrategy`, `RunBacktest`
++- [x] Task 3: Migrate trading-data (AC: 2, 3, 7)
++  - [x] `OandaPriceClient` → `Instant` on candles/prices
++  - [x] `EconomicCalendar.Event.time` → `Instant`; convert hardcoded events from documented source zones to UTC
++  - [x] `printWeek()` displays in `America/Toronto` with UTC noted in header
++- [x] Task 4: Migrate trading-strategies (AC: 6, 7)
++  - [x] `NewsTradingStrategy`, `WeekStrategies`, `AutoTrader`, `StrategyRunner`
++- [x] Task 5: Docs and agent context (AC: 1)
++  - [x] Confirm `docs/specs.md` §2.5 and `project-context.md` match implementation
++  - [x] Update `docs/conversion-guide.md` JForex time row if types changed
++
++## Dev Notes
++
++- **Priority:** P0 — do before or in parallel with Story 2.1; news/calendar strategies depend on correct event times.
++- **Breaking change:** `Bar`/`Order`/`Trade` API change ripples to all modules; compile-fix entire reactor in one PR.
++- **Economic calendar:** Current constants mix local release times (CNY, JPY, GBP, USD). Document each event’s source zone, convert to UTC once at definition or load time.
++- **OANDA:** v3 candle `time` field is UTC (RFC3339); preserve offset when parsing.
++- **Legacy:** Until migration complete, do not add new `LocalDateTime` in trading code paths.
++
++### Project Structure Notes
++
++| Module | Files |
++|--------|--------|
++| `trading-core` | `Bar`, `Order`, `Trade`, `DataLoader`, new `TimeConventions` |
++| `trading-backtest` | `BacktestEngine`, `BacktestResult` |
++| `trading-data` | `OandaPriceClient`, `EconomicCalendar` |
++| `trading-strategies` | `AutoTrader`, `StrategyRunner`, `WeekStrategies`, `NewsTradingStrategy` |
++| `trading-examples` | `RunBacktest`, `SmaCrossoverStrategy` |
++
++### References
++
++- [Source: docs/specs.md §2.5 — Conventions temporelles]
++- [Source: _bmad-output/project-context.md — Time rules]
++- [Source: docs/conversion-guide.md — Gestion du temps]
++
++## Dev Agent Record
++
++### Agent Model Used
++
++Composer (dev-story workflow)
++
++### Debug Log References
++
++- `mvn clean install` — all modules pass; `TimeConventionsTest`, `EconomicCalendarTest` added
++
++### Completion Notes List
++
++- Introduced `TimeConventions` with UTC storage, Toronto display, OANDA/CSV/event helpers
++- Migrated domain models from `LocalDateTime` to `Instant`
++- Economic calendar events converted from publication zones (Shanghai, Tokyo, Sydney, London, Toronto, Berlin, New York)
++- `WeekStrategies` now references `EconomicCalendar` UTC instants (single source of truth)
++- `OandaPriceClient.Price.time` is now `Instant`
++
++### File List
++
++- trading-core/src/main/java/com/martinfou/trading/core/TimeConventions.java (new)
++- trading-core/src/test/java/com/martinfou/trading/core/TimeConventionsTest.java (new)
++- trading-core/src/main/java/com/martinfou/trading/core/Bar.java
++- trading-core/src/main/java/com/martinfou/trading/core/Order.java
++- trading-core/src/main/java/com/martinfou/trading/core/Trade.java
++- trading-core/src/main/java/com/martinfou/trading/core/DataLoader.java
++- trading-backtest/src/main/java/com/martinfou/trading/backtest/BacktestEngine.java
++- trading-backtest/src/main/java/com/martinfou/trading/backtest/BacktestResult.java
++- trading-data/src/main/java/com/martinfou/trading/data/OandaPriceClient.java
++- trading-data/src/main/java/com/martinfou/trading/data/EconomicCalendar.java
++- trading-data/src/test/java/com/martinfou/trading/data/EconomicCalendarTest.java (new)
++- trading-strategies/src/main/java/com/martinfou/trading/strategies/NewsTradingStrategy.java
++- trading-strategies/src/main/java/com/martinfou/trading/strategies/WeekStrategies.java
++- trading-strategies/src/main/java/com/martinfou/trading/strategies/AutoTrader.java
++- trading-strategies/src/main/java/com/martinfou/trading/strategies/StrategyRunner.java
++- trading-examples/src/main/java/com/martinfou/trading/examples/RunBacktest.java
++- docs/specs.md
++
++## Change Log
++
++- 2026-05-17: UTC timezone migration — `Instant` domain model, `TimeConventions`, calendar zone conversion, tests
+diff --git c/docs/conversion-guide.md w/docs/conversion-guide.md
+index 1456bde..955677a 100644
+--- c/docs/conversion-guide.md
++++ w/docs/conversion-guide.md
+@@ -239,7 +239,7 @@ public class SMACrossoverStrategy implements Strategy {
+ | `Period.ONE_HOUR` | Pas de concept de période | Les bars arrivent déjà formées |
+ | `indicators.sma()` | Calcul manuel ou utilitaire | À implémenter dans trading-core |
+ | `order.getAmount()` | `order.quantity()` | Renommé pour clarté |
+-| Gestion du temps | `bar.timestamp()` | LocalDateTime |
++| Gestion du temps | `bar.timestamp()` | `Instant` (UTC) — voir `docs/specs.md` §2.5 ; legacy `LocalDateTime` = UTC implicite |
+ 
+ ## 5. Validation de la conversion
+ 
+diff --git c/docs/specs.md w/docs/specs.md
+index 043ee79..ef51d65 100644
+--- c/docs/specs.md
++++ w/docs/specs.md
+@@ -71,7 +71,7 @@ BacktestEngine          Strategy                DataLoader           Historique
+ | Champ | Type | Description |
+ |-------|------|-------------|
+ | symbol | String | Paire de devises (ex: EURUSD) |
+-| timestamp | LocalDateTime | Date/heure de la bougie |
++| timestamp | Instant (UTC) | Date/heure de la bougie |
+ | open | double | Prix d'ouverture |
+ | high | double | Plus haut |
+ | low | double | Plus bas |
+@@ -117,6 +117,38 @@ BacktestEngine          Strategy                DataLoader           Historique
+ | equityCurve | List<Double> | Courbe d'équité |
+ | trades | List<Trade> | Tous les trades |
+ 
++### 2.5 Conventions temporelles (fuseaux horaires)
++
++> Statut : adopté — mai 2026  
++> Objectif : une seule référence temporelle en interne, reproductible entre backtest, live et calendrier économique.
++
++#### Principe
++
++| Couche | Fuseau / type | Règle |
++|--------|---------------|--------|
++| **Système (canonique)** | **UTC** (`ZoneOffset.UTC`, `Instant`) | Tous les timestamps stockés, comparés et journalisés en UTC |
++| **API OANDA** | UTC | Les réponses v20 sont en UTC ; convertir à l’import, ne pas tronquer en `LocalDateTime` naïf |
++| **CSV / StrategyQuant** | Documenté à l’import | Déclarer le fuseau source dans le loader ; convertir → UTC avant `Bar` |
++| **Calendrier économique** | UTC en stockage | À l’ingestion : convertir l’heure de publication (souvent locale pays ou US Eastern) → `Instant` UTC ; conserver `ZoneId` source si besoin d’affichage |
++| **Affichage humain** | `America/Toronto` | Logs UI, alertes, console opérateur — conversion depuis UTC uniquement |
++| **Interdit** | `LocalDateTime.now()` pour le trading | Utiliser `Instant.now(Clock)` avec horloge UTC injectée |
++
++#### Format d’échange
++
++- Fichiers, logs, API internes : ISO-8601 avec offset ou suffixe `Z` (ex. `2026-05-20T14:30:00Z`).
++- Legacy / transition : `LocalDateTime` existant est traité comme **UTC implicite** jusqu’à migration vers `Instant` sur `Bar`, `Order`, `Trade`.
++
++#### Migration progressive
++
++1. Nouveau code : `Instant` aux frontières (OANDA, CSV, calendrier).
++2. Refactor domaine : `Bar.timestamp()` → `Instant` (breaking — une epic dédiée).
++3. `EconomicCalendar` : remplacer les constantes « heure murale » par des `Instant` UTC documentés.
++
++#### Références
++
++- Détail agent IA : `_bmad-output/project-context.md` (section Time)
++- Conversion JForex : `docs/conversion-guide.md` (bar.timestamp)
++
+ ## 3. Interface Strategy
+ 
+ ```java
+diff --git c/trading-backtest/src/main/java/com/martinfou/trading/backtest/BacktestEngine.java w/trading-backtest/src/main/java/com/martinfou/trading/backtest/BacktestEngine.java
+index 968c512..f186717 100644
+--- c/trading-backtest/src/main/java/com/martinfou/trading/backtest/BacktestEngine.java
++++ w/trading-backtest/src/main/java/com/martinfou/trading/backtest/BacktestEngine.java
+@@ -3,7 +3,6 @@ package com.martinfou.trading.backtest;
+ import com.martinfou.trading.core.*;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+-import java.time.LocalDateTime;
+ import java.util.*;
+ 
+ public class BacktestEngine {
+diff --git c/trading-backtest/src/main/java/com/martinfou/trading/backtest/BacktestResult.java w/trading-backtest/src/main/java/com/martinfou/trading/backtest/BacktestResult.java
+index bd9ab15..533a7c2 100644
+--- c/trading-backtest/src/main/java/com/martinfou/trading/backtest/BacktestResult.java
++++ w/trading-backtest/src/main/java/com/martinfou/trading/backtest/BacktestResult.java
+@@ -1,7 +1,9 @@
+ package com.martinfou.trading.backtest;
+ 
++import com.martinfou.trading.core.TimeConventions;
+ import com.martinfou.trading.core.Trade;
+-import java.time.LocalDateTime;
++
++import java.time.Instant;
+ import java.util.List;
+ 
+ public record BacktestResult(
+@@ -15,14 +17,15 @@ public record BacktestResult(
+     double maxDrawdownPct,
+     List<Double> equityCurve,
+     List<Trade> trades,
+-    LocalDateTime periodStart,
+-    LocalDateTime periodEnd
++    Instant periodStart,
++    Instant periodEnd
+ ) {
+     public void printSummary() {
+         System.out.println("\n===========================================");
+         System.out.println("BACKTEST RESULT: " + strategyName);
+         System.out.println("===========================================");
+-        System.out.println("Period:     " + periodStart.toLocalDate() + " → " + periodEnd.toLocalDate());
++        System.out.println("Period:     " + TimeConventions.toDisplayString(periodStart)
++            + " → " + TimeConventions.toDisplayString(periodEnd));
+         System.out.println("Capital:    $" + String.format("%.2f", initialCapital) + " → $" + String.format("%.2f", finalEquity));
+         System.out.println("P&L:        $" + String.format("%.2f", totalPnl) + " (" + String.format("%.2f", totalReturnPct) + "%)");
+         System.out.println("Trades:     " + totalTrades);
+diff --git c/trading-core/src/main/java/com/martinfou/trading/core/Bar.java w/trading-core/src/main/java/com/martinfou/trading/core/Bar.java
+index e05d875..a17929d 100644
+--- c/trading-core/src/main/java/com/martinfou/trading/core/Bar.java
++++ w/trading-core/src/main/java/com/martinfou/trading/core/Bar.java
+@@ -1,20 +1,25 @@
+ package com.martinfou.trading.core;
+ 
+-import java.time.LocalDateTime;
++import java.time.Instant;
+ 
+ public class Bar {
+     private final String symbol;
+-    private final LocalDateTime timestamp;
++    private final Instant timestamp;
+     private final double open, high, low, close;
+     private final long volume;
+ 
+-    public Bar(String symbol, LocalDateTime timestamp, double open, double high, double low, double close, long volume) {
+-        this.symbol = symbol; this.timestamp = timestamp;
+-        this.open = open; this.high = high; this.low = low; this.close = close; this.volume = volume;
++    public Bar(String symbol, Instant timestamp, double open, double high, double low, double close, long volume) {
++        this.symbol = symbol;
++        this.timestamp = timestamp;
++        this.open = open;
++        this.high = high;
++        this.low = low;
++        this.close = close;
++        this.volume = volume;
+     }
+ 
+     public String symbol() { return symbol; }
+-    public LocalDateTime timestamp() { return timestamp; }
++    public Instant timestamp() { return timestamp; }
+     public double open() { return open; }
+     public double high() { return high; }
+     public double low() { return low; }
+@@ -22,5 +27,8 @@ public class Bar {
+     public long volume() { return volume; }
+ 
+     @Override
+-    public String toString() { return String.format("%s %s O:%.5f H:%.5f L:%.5f C:%.5f V:%d", symbol, timestamp, open, high, low, close, volume); }
++    public String toString() {
++        return String.format("%s %s O:%.5f H:%.5f L:%.5f C:%.5f V:%d",
++            symbol, TimeConventions.toDisplayString(timestamp), open, high, low, close, volume);
++    }
+ }
+diff --git c/trading-core/src/main/java/com/martinfou/trading/core/DataLoader.java w/trading-core/src/main/java/com/martinfou/trading/core/DataLoader.java
+index 0a099a7..d9c1c89 100644
+--- c/trading-core/src/main/java/com/martinfou/trading/core/DataLoader.java
++++ w/trading-core/src/main/java/com/martinfou/trading/core/DataLoader.java
+@@ -3,23 +3,26 @@ package com.martinfou.trading.core;
+ import java.io.BufferedReader;
+ import java.io.FileReader;
+ import java.nio.file.Path;
+-import java.time.LocalDateTime;
+-import java.time.format.DateTimeFormatter;
++import java.time.Instant;
+ import java.util.ArrayList;
+ import java.util.List;
+ 
++/**
++ * Loads OHLCV bars from CSV. Timestamps in files are interpreted as UTC wall-clock
++ * (see {@link TimeConventions#csvLocalAsUtc} and docs/specs.md §2.5).
++ */
+ public class DataLoader {
+-    
++
+     public static List<Bar> loadCSV(Path path, String symbol) {
+         List<Bar> bars = new ArrayList<>();
+         String line;
+         try (BufferedReader br = new BufferedReader(new FileReader(path.toFile()))) {
+-            br.readLine(); // skip header
++            br.readLine();
+             while ((line = br.readLine()) != null) {
+                 String[] parts = line.split(",");
+                 if (parts.length < 6) continue;
+                 try {
+-                    LocalDateTime ts = LocalDateTime.parse(parts[0].trim(), DateTimeFormatter.ISO_LOCAL_DATE_TIME);
++                    Instant ts = TimeConventions.csvLocalAsUtc(parts[0].trim());
+                     double open = Double.parseDouble(parts[1].trim());
+                     double high = Double.parseDouble(parts[2].trim());
+                     double low = Double.parseDouble(parts[3].trim());
+@@ -35,16 +38,15 @@ public class DataLoader {
+     }
+ 
+     public static List<Bar> loadStrategyQuantCSV(Path path, String symbol) {
+-        // StrategyQuant CSV format: Date,Time,Open,High,Low,Close,Volume
+         List<Bar> bars = new ArrayList<>();
+         try (BufferedReader br = new BufferedReader(new FileReader(path.toFile()))) {
+             String line;
+-            br.readLine(); // header
++            br.readLine();
+             while ((line = br.readLine()) != null) {
+                 String[] p = line.split(",");
+                 if (p.length < 7) continue;
+                 try {
+-                    LocalDateTime ts = LocalDateTime.parse(p[0].trim() + "T" + p[1].trim());
++                    Instant ts = TimeConventions.csvLocalAsUtc(p[0].trim() + "T" + p[1].trim());
+                     bars.add(new Bar(symbol, ts,
+                         Double.parseDouble(p[2]), Double.parseDouble(p[3]),
+                         Double.parseDouble(p[4]), Double.parseDouble(p[5]),
+diff --git c/trading-core/src/main/java/com/martinfou/trading/core/Order.java w/trading-core/src/main/java/com/martinfou/trading/core/Order.java
+index 27bd2fa..e533344 100644
+--- c/trading-core/src/main/java/com/martinfou/trading/core/Order.java
++++ w/trading-core/src/main/java/com/martinfou/trading/core/Order.java
+@@ -1,6 +1,6 @@
+ package com.martinfou.trading.core;
+ 
+-import java.time.LocalDateTime;
++import java.time.Instant;
+ import java.util.UUID;
+ 
+ public class Order {
+@@ -17,15 +17,17 @@ public class Order {
+     private double stopLoss;
+     private double takeProfit;
+     private Status status = Status.PENDING;
+-    private LocalDateTime createdAt = LocalDateTime.now();
+-    private LocalDateTime filledAt;
++    private Instant createdAt = TimeConventions.now();
++    private Instant filledAt;
+ 
+     public Order(String symbol, Side side, Type type, double quantity, double price) {
+-        this.symbol = symbol; this.side = side; this.type = type;
+-        this.quantity = quantity; this.price = price;
++        this.symbol = symbol;
++        this.side = side;
++        this.type = type;
++        this.quantity = quantity;
++        this.price = price;
+     }
+ 
+-    // Getters
+     public String id() { return id; }
+     public String symbol() { return symbol; }
+     public Side side() { return side; }
+@@ -35,11 +37,18 @@ public class Order {
+     public double stopLoss() { return stopLoss; }
+     public double takeProfit() { return takeProfit; }
+     public Status status() { return status; }
++    public Instant createdAt() { return createdAt; }
++    public Instant filledAt() { return filledAt; }
+ 
+     public Order withStopLoss(double sl) { this.stopLoss = sl; return this; }
+     public Order withTakeProfit(double tp) { this.takeProfit = tp; return this; }
+-    public Order fill() { this.status = Status.FILLED; this.filledAt = LocalDateTime.now(); return this; }
+-    
++
++    public Order fill() {
++        this.status = Status.FILLED;
++        this.filledAt = TimeConventions.now();
++        return this;
++    }
++
+     public double pnl(double currentPrice) {
+         if (status != Status.FILLED) return 0;
+         return side == Side.BUY ? (currentPrice - price) * quantity : (price - currentPrice) * quantity;
+diff --git c/trading-core/src/main/java/com/martinfou/trading/core/Trade.java w/trading-core/src/main/java/com/martinfou/trading/core/Trade.java
+index 4b63d93..8293d78 100644
+--- c/trading-core/src/main/java/com/martinfou/trading/core/Trade.java
++++ w/trading-core/src/main/java/com/martinfou/trading/core/Trade.java
+@@ -1,6 +1,6 @@
+ package com.martinfou.trading.core;
+ 
+-import java.time.LocalDateTime;
++import java.time.Instant;
+ import java.util.UUID;
+ 
+ public class Trade {
+@@ -9,22 +9,31 @@ public class Trade {
+     private final Order.Side side;
+     private final double entryPrice, exitPrice;
+     private final double quantity;
+-    private final LocalDateTime entryTime, exitTime;
++    private final Instant entryTime;
++    private final Instant exitTime;
+     private final double pnl;
+ 
+     public Trade(String symbol, Order.Side side, double entryPrice, double exitPrice,
+-                 double quantity, LocalDateTime entryTime, LocalDateTime exitTime) {
+-        this.symbol = symbol; this.side = side;
+-        this.entryPrice = entryPrice; this.exitPrice = exitPrice;
+-        this.quantity = quantity; this.entryTime = entryTime; this.exitTime = exitTime;
+-        this.pnl = side == Order.Side.BUY 
+-            ? (exitPrice - entryPrice) * quantity 
++                 double quantity, Instant entryTime, Instant exitTime) {
++        this.symbol = symbol;
++        this.side = side;
++        this.entryPrice = entryPrice;
++        this.exitPrice = exitPrice;
++        this.quantity = quantity;
++        this.entryTime = entryTime;
++        this.exitTime = exitTime;
++        this.pnl = side == Order.Side.BUY
++            ? (exitPrice - entryPrice) * quantity
+             : (entryPrice - exitPrice) * quantity;
+     }
+ 
+     public double pnl() { return pnl; }
+     public double pnlPercent() { return (pnl / (entryPrice * quantity)) * 100; }
+-    
++    public Instant entryTime() { return entryTime; }
++    public Instant exitTime() { return exitTime; }
++
+     @Override
+-    public String toString() { return String.format("%s %s %.4f->%.5f PnL:%.2f", symbol, side, entryPrice, exitPrice, pnl); }
++    public String toString() {
++        return String.format("%s %s %.4f->%.5f PnL:%.2f", symbol, side, entryPrice, exitPrice, pnl);
++    }
+ }
+diff --git c/trading-data/src/main/java/com/martinfou/trading/data/EconomicCalendar.java w/trading-data/src/main/java/com/martinfou/trading/data/EconomicCalendar.java
+index 19f40e6..a8c9fc8 100644
+--- c/trading-data/src/main/java/com/martinfou/trading/data/EconomicCalendar.java
++++ w/trading-data/src/main/java/com/martinfou/trading/data/EconomicCalendar.java
+@@ -1,43 +1,62 @@
+ package com.martinfou.trading.data;
+ 
+-import java.time.LocalDateTime;
++import com.martinfou.trading.core.TimeConventions;
++
++import java.time.Instant;
++import java.time.ZoneId;
+ import java.time.format.DateTimeFormatter;
+ import java.util.List;
+ 
++/**
++ * High-impact economic events. Each {@link #event} stores UTC {@link Instant};
++ * publication wall times are converted from their source release zones.
++ */
+ public class EconomicCalendar {
++
++    private static final ZoneId SHANGHAI = ZoneId.of("Asia/Shanghai");
++    private static final ZoneId TOKYO = ZoneId.of("Asia/Tokyo");
++    private static final ZoneId SYDNEY = ZoneId.of("Australia/Sydney");
++    private static final ZoneId LONDON = ZoneId.of("Europe/London");
++    private static final ZoneId TORONTO = ZoneId.of("America/Toronto");
++    private static final ZoneId BERLIN = ZoneId.of("Europe/Berlin");
++    private static final ZoneId NEW_YORK = ZoneId.of("America/New_York");
++
++    private static final DateTimeFormatter DISPLAY_FMT =
++        DateTimeFormatter.ofPattern("EE dd HH:mm").withZone(TimeConventions.DISPLAY_ZONE);
++
+     public record Event(
+-        LocalDateTime time,
++        Instant time,
+         String currency,
+         String event,
+-        String impact,   // HIGH, MEDIUM, LOW
++        String impact,
+         String previous,
+         String forecast,
+         String actual
+     ) {}
+ 
++    private static Event event(int y, int m, int d, int h, int min, ZoneId zone,
++                               String currency, String name, String impact,
++                               String previous, String forecast, String actual) {
++        return new Event(
++            TimeConventions.eventAt(y, m, d, h, min, zone),
++            currency, name, impact, previous, forecast, actual
++        );
++    }
++
+     public static final List<Event> THIS_WEEK = List.of(
+-        // Monday May 18
+-        new Event(LocalDateTime.parse("2026-05-18T06:00"), "CNY", "China Industrial Production", "HIGH", "+5.7%", "+5.2%", ""),
+-        new Event(LocalDateTime.parse("2026-05-18T06:00"), "CNY", "China Retail Sales", "HIGH", "+1.7%", "+2.5%", ""),
+-        new Event(LocalDateTime.parse("2026-05-19T03:50"), "JPY", "Japan GDP Q1 (Prelim)", "HIGH", "+0.3%", "+0.5%", ""),
+-        
+-        // Tuesday May 19
+-        new Event(LocalDateTime.parse("2026-05-19T05:30"), "AUD", "RBA Meeting Minutes", "HIGH", "4.35%", "-", ""),
+-        new Event(LocalDateTime.parse("2026-05-19T10:00"), "GBP", "UK Average Weekly Earnings", "HIGH", "+3.8%", "+3.5%", ""),
+-        new Event(LocalDateTime.parse("2026-05-19T12:30"), "CAD", "Canada CPI (Inflation)", "HIGH", "+2.3%", "+2.1%", ""),
+-        
+-        // Wednesday May 20
+-        new Event(LocalDateTime.parse("2026-05-20T10:00"), "GBP", "UK CPI", "HIGH", "+3.9%", "+3.4%", ""),
+-        new Event(LocalDateTime.parse("2026-05-20T18:00"), "USD", "FOMC Meeting Minutes", "HIGH", "-", "-", ""),
+-        
+-        // Thursday May 21
+-        new Event(LocalDateTime.parse("2026-05-21T05:30"), "AUD", "Australia Employment", "HIGH", "+32K", "+20K", ""),
+-        new Event(LocalDateTime.parse("2026-05-21T13:00"), "EUR", "Germany PMI Flash", "MEDIUM", "48.5", "49.0", ""),
+-        new Event(LocalDateTime.parse("2026-05-21T13:30"), "GBP", "UK PMI Flash", "MEDIUM", "50.2", "50.5", ""),
+-        new Event(LocalDateTime.parse("2026-05-21T13:45"), "USD", "US PMI Flash", "MEDIUM", "50.0", "50.3", ""),
+-        
+-        // Friday May 22
+-        new Event(LocalDateTime.parse("2026-05-22T10:00"), "GBP", "UK Retail Sales", "HIGH", "-0.5%", "+0.3%", "")
++        event(2026, 5, 18, 6, 0, SHANGHAI, "CNY", "China Industrial Production", "HIGH", "+5.7%", "+5.2%", ""),
++        event(2026, 5, 18, 6, 0, SHANGHAI, "CNY", "China Retail Sales", "HIGH", "+1.7%", "+2.5%", ""),
++        event(2026, 5, 19, 3, 50, TOKYO, "JPY", "Japan GDP Q1 (Prelim)", "HIGH", "+0.3%", "+0.5%", ""),
++        event(2026, 5, 19, 5, 30, SYDNEY, "AUD", "RBA Meeting Minutes", "HIGH", "4.35%", "-", ""),
++        event(2026, 5, 19, 10, 0, LONDON, "GBP", "UK Average Weekly Earnings", "HIGH", "+3.8%", "+3.5%", ""),
++        event(2026, 5, 19, 12, 30, TORONTO, "CAD", "Canada CPI (Inflation)", "HIGH", "+2.3%", "+2.1%", ""),
++        event(2026, 5, 20, 10, 0, LONDON, "GBP", "UK CPI", "HIGH", "+3.9%", "+3.4%", ""),
++        event(2026, 5, 20, 18, 0, NEW_YORK, "USD", "FOMC Meeting Minutes", "HIGH", "-", "-", ""),
++        event(2026, 5, 21, 5, 30, SYDNEY, "AUD", "Australia Employment", "HIGH", "+32K", "+20K", ""),
++        event(2026, 5, 21, 13, 0, BERLIN, "EUR", "Germany PMI Flash", "MEDIUM", "48.5", "49.0", ""),
++        event(2026, 5, 21, 13, 30, LONDON, "GBP", "UK PMI Flash", "MEDIUM", "50.2", "50.5", ""),
++        event(2026, 5, 21, 13, 45, NEW_YORK, "USD", "US PMI Flash", "MEDIUM", "50.0", "50.3", ""),
++        event(2026, 5, 22, 10, 0, LONDON, "GBP", "UK Retail Sales", "HIGH", "-0.5%", "+0.3%", "")
+     );
+ 
+     public static List<Event> getHighImpactEvents() {
+@@ -49,16 +68,16 @@ public class EconomicCalendar {
+     }
+ 
+     public static void printWeek() {
+-        System.out.println("\n=== ECONOMIC CALENDAR: May 18-24, 2026 ===");
++        System.out.println("\n=== ECONOMIC CALENDAR: May 18-24, 2026 (stored UTC, shown "
++            + TimeConventions.DISPLAY_ZONE + ") ===");
+         for (Event e : THIS_WEEK) {
+-            String icon = switch(e.impact()) {
++            String icon = switch (e.impact()) {
+                 case "HIGH" -> "🔥";
+                 case "MEDIUM" -> "📊";
+                 default -> "📋";
+             };
+             System.out.printf("%s %s %s %s | Prev: %s | Fest: %s%n",
+-                icon, e.time().format(DateTimeFormatter.ofPattern("EE dd HH:mm")),
+-                e.currency(), e.event(), e.previous(), e.forecast());
++                icon, DISPLAY_FMT.format(e.time()), e.currency(), e.event(), e.previous(), e.forecast());
+         }
+     }
+ }
+diff --git c/trading-data/src/main/java/com/martinfou/trading/data/OandaPriceClient.java w/trading-data/src/main/java/com/martinfou/trading/data/OandaPriceClient.java
+index 0910a73..a8b50e0 100644
+--- c/trading-data/src/main/java/com/martinfou/trading/data/OandaPriceClient.java
++++ w/trading-data/src/main/java/com/martinfou/trading/data/OandaPriceClient.java
+@@ -3,22 +3,22 @@ package com.martinfou.trading.data;
+ import com.fasterxml.jackson.databind.JsonNode;
+ import com.fasterxml.jackson.databind.ObjectMapper;
+ import com.martinfou.trading.core.Bar;
++import com.martinfou.trading.core.TimeConventions;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
++
+ import java.net.URI;
+ import java.net.http.HttpClient;
+ import java.net.http.HttpRequest;
+ import java.net.http.HttpResponse;
+ import java.time.Duration;
+-import java.time.LocalDateTime;
+-import java.time.format.DateTimeFormatter;
++import java.time.Instant;
+ import java.util.ArrayList;
+ import java.util.List;
+ 
+ public class OandaPriceClient {
+     private static final Logger log = LoggerFactory.getLogger(OandaPriceClient.class);
+-    private static final DateTimeFormatter OANDA_DT = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
+-    
++
+     private final String apiKey;
+     private final String accountId;
+     private final String baseUrl;
+@@ -34,7 +34,8 @@ public class OandaPriceClient {
+             .build();
+     }
+ 
+-    public record Price(double bid, double ask, double closeoutBid, double closeoutAsk, String time) {}
++    public record Price(double bid, double ask, double closeoutBid, double closeoutAsk, Instant time) {}
++
+     public record AccountSummary(String id, double balance, double NAV, double unrealizedPL) {}
+ 
+     public Price getPrice(String instrument) throws Exception {
+@@ -45,20 +46,20 @@ public class OandaPriceClient {
+             prices.get("asks").get(0).get("price").asDouble(),
+             prices.get("closeoutBid").asDouble(),
+             prices.get("closeoutAsk").asDouble(),
+-            prices.get("time").asText()
++            TimeConventions.parseOandaTimestamp(prices.get("time").asText())
+         );
+     }
+ 
+     public List<Bar> getCandles(String instrument, String granularity, int count) throws Exception {
+-        var json = get("/accounts/" + accountId + "/instruments/" + instrument 
++        var json = get("/accounts/" + accountId + "/instruments/" + instrument
+             + "/candles?granularity=" + granularity + "&count=" + count);
+         var candles = json.get("candles");
+         List<Bar> bars = new ArrayList<>();
+-        
++
+         for (var c : candles) {
+             if (!c.get("complete").asBoolean()) continue;
+             var mid = c.get("mid");
+-            var time = LocalDateTime.parse(c.get("time").asText().substring(0, 19), OANDA_DT);
++            Instant time = TimeConventions.parseOandaTimestamp(c.get("time").asText());
+             bars.add(new Bar(instrument, time,
+                 Double.parseDouble(mid.get("o").asText()),
+                 Double.parseDouble(mid.get("h").asText()),
+diff --git c/trading-examples/src/main/java/com/martinfou/trading/examples/RunBacktest.java w/trading-examples/src/main/java/com/martinfou/trading/examples/RunBacktest.java
+index cc5365d..1665a9b 100644
+--- c/trading-examples/src/main/java/com/martinfou/trading/examples/RunBacktest.java
++++ w/trading-examples/src/main/java/com/martinfou/trading/examples/RunBacktest.java
+@@ -54,7 +54,7 @@ public class RunBacktest {
+     static List<Bar> generateSampleData(String symbol, int count) {
+         var bars = new ArrayList<Bar>(count);
+         double price = 1.08000;
+-        var time = java.time.LocalDateTime.of(2024, 1, 1, 0, 0);
++        var time = java.time.Instant.parse("2024-01-01T00:00:00Z");
+         var rand = new Random(42);
+ 
+         for (int i = 0; i < count; i++) {
+@@ -64,8 +64,8 @@ public class RunBacktest {
+             double high = open + Math.abs(rand.nextGaussian() * 0.001);
+             double low = open - Math.abs(rand.nextGaussian() * 0.001);
+             double close = open + (rand.nextGaussian() * 0.0005);
+-            bars.add(new Bar(symbol, time, open, high, low, close, (long)(rand.nextInt(1000) + 100)));
+-            time = time.plusHours(1);
++            bars.add(new Bar(symbol, time, open, high, low, close, (long) (rand.nextInt(1000) + 100)));
++            time = time.plusSeconds(3600);
+         }
+         return bars;
+     }
+diff --git c/trading-strategies/src/main/java/com/martinfou/trading/strategies/AutoTrader.java w/trading-strategies/src/main/java/com/martinfou/trading/strategies/AutoTrader.java
+index fa72377..5508a15 100644
+--- c/trading-strategies/src/main/java/com/martinfou/trading/strategies/AutoTrader.java
++++ w/trading-strategies/src/main/java/com/martinfou/trading/strategies/AutoTrader.java
+@@ -1,10 +1,14 @@
+ package com.martinfou.trading.strategies;
+ 
+-import com.martinfou.trading.data.OandaPriceClient;
++import com.martinfou.trading.core.TimeConventions;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+-import java.time.LocalDateTime;
+-import java.util.*;
++
++import java.time.Duration;
++import java.time.Instant;
++import java.util.HashMap;
++import java.util.List;
++import java.util.Map;
+ 
+ public class AutoTrader {
+     private static final Logger log = LoggerFactory.getLogger(AutoTrader.class);
+@@ -20,29 +24,28 @@ public class AutoTrader {
+ 
+     public void run() {
+         log.info("🤖 AutoTrader starting... Monitoring {} strategies", strategies.size());
+-        
++
+         while (running) {
+             try {
+-                var now = LocalDateTime.now();
++                Instant now = TimeConventions.now();
+                 for (var s : strategies) {
+                     if (executed.getOrDefault(s.name(), false)) continue;
+-                    
+-                    var minutesUntilNews = java.time.Duration.between(now, s.getNewsTime()).toMinutes();
+-                    
++
++                    long minutesUntilNews = Duration.between(now, s.getNewsTime()).toMinutes();
++
+                     if (minutesUntilNews > 0 && minutesUntilNews <= 30) {
+-                        // Check price and execute
+                         var signal = evaluateStrategy(s);
+                         if (signal != null && signal.isConfident()) {
+                             executeTrade(s, signal);
+                             executed.put(s.name(), true);
+                         }
+                     }
+-                    
+-                    if (minutesUntilNews < -60) { // More than 1 hour past news
+-                        executed.put(s.name(), true); // News already passed
++
++                    if (minutesUntilNews < -60) {
++                        executed.put(s.name(), true);
+                     }
+                 }
+-                Thread.sleep(60000); // Check every minute
++                Thread.sleep(60000);
+             } catch (InterruptedException e) {
+                 running = false;
+             } catch (Exception e) {
+@@ -52,25 +55,22 @@ public class AutoTrader {
+     }
+ 
+     private TradeSignal evaluateStrategy(NewsTradingStrategy strategy) {
+-        // Simplified: in real version would fetch bars and analyze
+-        return null; // Placeholder for the actual evaluation
++        return null;
+     }
+ 
+     private void executeTrade(NewsTradingStrategy strategy, TradeSignal signal) {
+         try {
+-            // Convert signal to OANDA units (positive = buy, negative = sell)
+-            String units = signal.side() == com.martinfou.trading.core.Order.Side.BUY 
+-                ? String.valueOf((int)(signal.quantity() * 100000))
+-                : String.valueOf(-(int)(signal.quantity() * 100000));
+-            
++            String units = signal.side() == com.martinfou.trading.core.Order.Side.BUY
++                ? String.valueOf((int) (signal.quantity() * 100000))
++                : String.valueOf(-(int) (signal.quantity() * 100000));
++
+             var result = executor.placeMarketOrder(signal.pair(), units);
+-            log.info("✅ TRADE EXECUTED: {} {} {} lots @ {}", 
++            log.info("✅ TRADE EXECUTED: {} {} {} lots @ {}",
+                 signal.pair(), signal.side(), signal.quantity(), result.fillPrice());
+-            
+-            // Add SL and TP
++
+             String slStr = String.format("%.5f", signal.stopLoss());
+             String tpStr = String.format("%.5f", signal.takeProfit());
+-            
++
+             if (result.tradeId() != null && !result.tradeId().equals("N/A")) {
+                 executor.addStopLoss(result.tradeId(), slStr);
+                 executor.addTakeProfit(result.tradeId(), tpStr);
+@@ -82,7 +82,7 @@ public class AutoTrader {
+     }
+ 
+     public void stop() { running = false; }
+-    
++
+     public static void main(String[] args) {
+         if (args.length < 2) {
+             System.out.println("Usage: AutoTrader <apiKey> <accountId>");
+diff --git c/trading-strategies/src/main/java/com/martinfou/trading/strategies/NewsTradingStrategy.java w/trading-strategies/src/main/java/com/martinfou/trading/strategies/NewsTradingStrategy.java
+index ef4b631..661cf30 100644
+--- c/trading-strategies/src/main/java/com/martinfou/trading/strategies/NewsTradingStrategy.java
++++ w/trading-strategies/src/main/java/com/martinfou/trading/strategies/NewsTradingStrategy.java
+@@ -2,70 +2,70 @@ package com.martinfou.trading.strategies;
+ 
+ import com.martinfou.trading.core.*;
+ import com.martinfou.trading.data.OandaPriceClient;
+-import java.time.LocalDateTime;
++
++import java.time.Instant;
+ import java.util.*;
+ 
+ public class NewsTradingStrategy {
+     private final String name;
+     private final String pair;
+     private final String oandaSymbol;
+-    private final TradeSide direction;  // Expected move direction
+-    private final String newsEvent;     // Catalyst
+-    private final LocalDateTime newsTime;
+-    private final double slPips;        // Stop loss in pips
+-    private final double tpRatio;       // Risk:Reward ratio
+-    private final double quantity;      // Micro lots
+-    
++    private final TradeSide direction;
++    private final String newsEvent;
++    private final Instant newsTime;
++    private final double slPips;
++    private final double tpRatio;
++    private final double quantity;
++
+     public enum TradeSide { LONG, SHORT }
+-    
++
+     private double entryPrice = 0;
+     private Order order = null;
+     private boolean executed = false;
+ 
+-    public NewsTradingStrategy(String name, String pair, String oandaSymbol, 
+-            TradeSide direction, String newsEvent, LocalDateTime newsTime,
++    public NewsTradingStrategy(String name, String pair, String oandaSymbol,
++            TradeSide direction, String newsEvent, Instant newsTime,
+             double slPips, double tpRatio, double quantity) {
+-        this.name = name; this.pair = pair; this.oandaSymbol = oandaSymbol;
+-        this.direction = direction; this.newsEvent = newsEvent;
+-        this.newsTime = newsTime; this.slPips = slPips;
+-        this.tpRatio = tpRatio; this.quantity = quantity;
++        this.name = name;
++        this.pair = pair;
++        this.oandaSymbol = oandaSymbol;
++        this.direction = direction;
++        this.newsEvent = newsEvent;
++        this.newsTime = newsTime;
++        this.slPips = slPips;
++        this.tpRatio = tpRatio;
++        this.quantity = quantity;
+     }
+ 
+     public TradeSignal evaluate(List<Bar> bars, boolean newsExpectedHigher) {
+         if (executed || bars.isEmpty()) return null;
+-        
+-        double currentPrice = bars.get(bars.size()-1).close();
++
++        double currentPrice = bars.get(bars.size() - 1).close();
+         double rsi = MarketAnalyzer.rsi(bars, 14);
+         String trend = MarketAnalyzer.trend(bars, 20, 50);
+         double atr = MarketAnalyzer.atr(bars, 14);
+         double[] levels = MarketAnalyzer.findKeyLevels(bars, 48);
+-        
+-        // Score calculation (0-100)
+-        int score = 50; // Base
+-        
+-        // News alignment
++
++        int score = 50;
++
+         if (newsExpectedHigher && direction == TradeSide.LONG) score += 20;
+         else if (!newsExpectedHigher && direction == TradeSide.SHORT) score += 20;
+-        else score -= 10; // Against the news
+-        
+-        // Technical alignment
++        else score -= 10;
++
+         if (direction == TradeSide.LONG && trend.equals("BULLISH")) score += 15;
+         else if (direction == TradeSide.SHORT && trend.equals("BEARISH")) score += 15;
+         else score -= 5;
+-        
+-        // RSI confirmation
+-        if (direction == TradeSide.LONG && rsi < 40) score += 10; // Oversold buy
+-        else if (direction == TradeSide.SHORT && rsi > 60) score += 10; // Overbought sell
++
++        if (direction == TradeSide.LONG && rsi < 40) score += 10;
++        else if (direction == TradeSide.SHORT && rsi > 60) score += 10;
+         else score += 5;
+-        
+-        // Price near support/resistance
++
+         if (direction == TradeSide.LONG && currentPrice <= levels[0] * 1.002) score += 10;
+         else if (direction == TradeSide.SHORT && currentPrice >= levels[2] * 0.998) score += 10;
+-        
+-        // Calculate entry, SL, TP
++
+         double slDistance = slPips * getPipValue();
+         this.entryPrice = currentPrice;
+-        
++
+         double sl, tp;
+         if (direction == TradeSide.LONG) {
+             sl = currentPrice - slDistance;
+@@ -74,18 +74,18 @@ public class NewsTradingStrategy {
+             sl = currentPrice + slDistance;
+             tp = currentPrice - slDistance * tpRatio;
+         }
+-        
++
+         Order.Side orderSide = direction == TradeSide.LONG ? Order.Side.BUY : Order.Side.SELL;
+-        
+-        return new TradeSignal(oandaSymbol, orderSide, entryPrice, sl, tp, 
+-            quantity, score, name + " | RSI:" + (int)rsi + " Trend:" + trend + " Score:" + score,
++
++        return new TradeSignal(oandaSymbol, orderSide, entryPrice, sl, tp,
++            quantity, score, name + " | RSI:" + (int) rsi + " Trend:" + trend + " Score:" + score,
+             newsEvent);
+     }
+ 
+     public void markExecuted() { this.executed = true; }
+     public boolean isExecuted() { return executed; }
+     public String name() { return name; }
+-    public LocalDateTime getNewsTime() { return newsTime; }
++    public Instant getNewsTime() { return newsTime; }
+     public String getPair() { return pair; }
+     public double getSlPips() { return slPips; }
+     public double getTpRatio() { return tpRatio; }
+@@ -101,7 +101,7 @@ public class NewsTradingStrategy {
+         System.out.println("\n═══════════════════════════════════════");
+         System.out.println("  " + name);
+         System.out.println("  Pair: " + pair + " | Direction: " + direction);
+-        System.out.println("  News: " + newsEvent + " @ " + newsTime);
++        System.out.println("  News: " + newsEvent + " @ " + TimeConventions.toDisplayString(newsTime));
+         System.out.println("  SL: " + slPips + " pips | R:R 1:" + tpRatio);
+         System.out.println("  Size: " + quantity + " lots");
+         System.out.println("═══════════════════════════════════════");
+diff --git c/trading-strategies/src/main/java/com/martinfou/trading/strategies/StrategyRunner.java w/trading-strategies/src/main/java/com/martinfou/trading/strategies/StrategyRunner.java
+index 9105d0f..04420a9 100644
+--- c/trading-strategies/src/main/java/com/martinfou/trading/strategies/StrategyRunner.java
++++ w/trading-strategies/src/main/java/com/martinfou/trading/strategies/StrategyRunner.java
+@@ -4,7 +4,6 @@ import com.martinfou.trading.core.Bar;
+ import com.martinfou.trading.data.OandaPriceClient;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+-import java.time.LocalDateTime;
+ import java.util.*;
+ 
+ public class StrategyRunner {
+diff --git c/trading-strategies/src/main/java/com/martinfou/trading/strategies/WeekStrategies.java w/trading-strategies/src/main/java/com/martinfou/trading/strategies/WeekStrategies.java
+index d7c8b4f..07e0138 100644
+--- c/trading-strategies/src/main/java/com/martinfou/trading/strategies/WeekStrategies.java
++++ w/trading-strategies/src/main/java/com/martinfou/trading/strategies/WeekStrategies.java
+@@ -1,55 +1,61 @@
+ package com.martinfou.trading.strategies;
+ 
+-import java.time.LocalDateTime;
+-import java.util.*;
++import com.martinfou.trading.core.TimeConventions;
++import com.martinfou.trading.data.EconomicCalendar;
++
++import java.time.Instant;
++import java.util.List;
+ 
+ public class WeekStrategies {
+-    
++
++    private static Instant newsTime(String eventSubstring) {
++        return EconomicCalendar.THIS_WEEK.stream()
++            .filter(e -> e.event().contains(eventSubstring))
++            .map(EconomicCalendar.Event::time)
++            .findFirst()
++            .orElseThrow(() -> new IllegalStateException("No calendar event: " + eventSubstring));
++    }
++
+     public static List<NewsTradingStrategy> getStrategies() {
+         return List.of(
+-            // 1. AUDUSD - RBA Minutes - LONG
+             new NewsTradingStrategy(
+                 "🥇 RBA Hawkish Long",
+                 "AUD/USD", "AUD_USD",
+                 NewsTradingStrategy.TradeSide.LONG,
+                 "RBA Meeting Minutes (hawkish expected)",
+-                LocalDateTime.of(2026, 5, 19, 5, 30),
++                newsTime("RBA Meeting Minutes"),
+                 15, 2.0, 0.01
+             ),
+-            // 2. USDCAD - Canada CPI - SHORT
+             new NewsTradingStrategy(
+                 "🥇 IPC Canada Short",
+                 "USD/CAD", "USD_CAD",
+                 NewsTradingStrategy.TradeSide.SHORT,
+                 "Canada CPI (oil up = CAD strong)",
+-                LocalDateTime.of(2026, 5, 19, 12, 30),
++                newsTime("Canada CPI"),
+                 12, 2.0, 0.01
+             ),
+-            // 3. GBPUSD - UK CPI - SHORT
+             new NewsTradingStrategy(
+                 "🥈 IPC UK Short",
+                 "GBP/USD", "GBP_USD",
+                 NewsTradingStrategy.TradeSide.SHORT,
+                 "UK CPI (expected lower = GBP weak)",
+-                LocalDateTime.of(2026, 5, 20, 10, 0),
++                newsTime("UK CPI"),
+                 18, 2.0, 0.01
+             ),
+-            // 4. GBPJPY - UK CPI + Japan GDP - SHORT
+             new NewsTradingStrategy(
+                 "🥉 GBPJPY Short",
+                 "GBP/JPY", "GBP_JPY",
+                 NewsTradingStrategy.TradeSide.SHORT,
+                 "UK CPI + Japan GDP combined",
+-                LocalDateTime.of(2026, 5, 20, 10, 0),
++                newsTime("UK CPI"),
+                 25, 1.5, 0.01
+             ),
+-            // 5. AUDUSD - Employment - LONG
+             new NewsTradingStrategy(
+                 "AUD Employment Long",
+                 "AUD/USD", "AUD_USD",
+                 NewsTradingStrategy.TradeSide.LONG,
+                 "Australia Employment",
+-                LocalDateTime.of(2026, 5, 21, 5, 30),
++                newsTime("Australia Employment"),
+                 15, 2.0, 0.01
+             )
+         );
+@@ -58,6 +64,7 @@ public class WeekStrategies {
+     public static void printSchedule() {
+         System.out.println("╔══════════════════════════════════════════════╗");
+         System.out.println("║    📅 CALENDRIER STRATEGIES SEMAINE         ║");
++        System.out.println("║    (heures affichées: " + TimeConventions.DISPLAY_ZONE + ")     ║");
+         System.out.println("╠══════════════════════════════════════════════╣");
+         for (var s : getStrategies()) {
+             s.run();
+diff --git 1/trading-core/src/main/java/com/martinfou/trading/core/TimeConventions.java 2/trading-core/src/main/java/com/martinfou/trading/core/TimeConventions.java
+new file mode 100644
+index 0000000..6f25405
+--- /dev/null
++++ 2/trading-core/src/main/java/com/martinfou/trading/core/TimeConventions.java
+@@ -0,0 +1,65 @@
++package com.martinfou.trading.core;
++
++import java.time.Clock;
++import java.time.Instant;
++import java.time.LocalDateTime;
++import java.time.ZoneId;
++import java.time.ZoneOffset;
++import java.time.ZonedDateTime;
++import java.time.format.DateTimeFormatter;
++
++/**
++ * Canonical time handling for Trading Bridge.
++ * Storage and comparisons use UTC; {@link #DISPLAY_ZONE} is for human-facing output only.
++ *
++ * @see docs/specs.md §2.5
++ */
++public final class TimeConventions {
++
++    public static final ZoneId UTC = ZoneOffset.UTC;
++    public static final ZoneId DISPLAY_ZONE = ZoneId.of("America/Toronto");
++
++    private static final DateTimeFormatter DISPLAY_FMT =
++        DateTimeFormatter.ofPattern("EEE dd MMM yyyy HH:mm z");
++
++    private TimeConventions() {}
++
++    public static Clock clock() {
++        return Clock.systemUTC();
++    }
++
++    public static Instant now() {
++        return Instant.now(clock());
++    }
++
++    /** OANDA v3 API timestamps are UTC (RFC3339, often suffixed with {@code Z}). */
++    public static Instant parseOandaTimestamp(String time) {
++        String t = time.trim();
++        if (t.endsWith("Z") || t.contains("+") || (t.length() > 19 && t.charAt(19) == '-')) {
++            return Instant.parse(t);
++        }
++        return LocalDateTime.parse(t.substring(0, Math.min(19, t.length())),
++                DateTimeFormatter.ISO_LOCAL_DATE_TIME)
++            .atZone(UTC)
++            .toInstant();
++    }
++
++    public static String toDisplayString(Instant instant) {
++        return DISPLAY_FMT.format(instant.atZone(DISPLAY_ZONE));
++    }
++
++    /**
++     * Standard and StrategyQuant CSV timestamps are treated as UTC wall-clock values
++     * (no offset in file). See {@link DataLoader}.
++     */
++    public static Instant csvLocalAsUtc(String isoLocalDateTime) {
++        return LocalDateTime.parse(isoLocalDateTime.trim(), DateTimeFormatter.ISO_LOCAL_DATE_TIME)
++            .atZone(UTC)
++            .toInstant();
++    }
++
++    /** Converts a scheduled release in its publication timezone to UTC {@link Instant}. */
++    public static Instant eventAt(int year, int month, int day, int hour, int minute, ZoneId releaseZone) {
++        return ZonedDateTime.of(year, month, day, hour, minute, 0, 0, releaseZone).toInstant();
++    }
++}
+diff --git 1/trading-core/src/test/java/com/martinfou/trading/core/TimeConventionsTest.java 2/trading-core/src/test/java/com/martinfou/trading/core/TimeConventionsTest.java
+new file mode 100644
+index 0000000..94d4358
+--- /dev/null
++++ 2/trading-core/src/test/java/com/martinfou/trading/core/TimeConventionsTest.java
+@@ -0,0 +1,42 @@
++package com.martinfou.trading.core;
++
++import org.junit.jupiter.api.Test;
++
++import java.time.Instant;
++import java.time.ZoneId;
++
++import static org.junit.jupiter.api.Assertions.*;
++
++class TimeConventionsTest {
++
++    @Test
++    void parseOandaTimestamp_withZ() {
++        Instant t = TimeConventions.parseOandaTimestamp("2026-05-20T14:30:00.000000000Z");
++        assertEquals(Instant.parse("2026-05-20T14:30:00Z"), t);
++    }
++
++    @Test
++    void parseOandaTimestamp_withoutZ_treatedAsUtc() {
++        Instant t = TimeConventions.parseOandaTimestamp("2026-05-20T14:30:00");
++        assertEquals(Instant.parse("2026-05-20T14:30:00Z"), t);
++    }
++
++    @Test
++    void eventAt_convertsReleaseZoneToUtc() {
++        // RBA 2026-05-19 05:30 Sydney → 2026-05-18T19:30:00Z
++        Instant t = TimeConventions.eventAt(2026, 5, 19, 5, 30, ZoneId.of("Australia/Sydney"));
++        assertEquals(Instant.parse("2026-05-18T19:30:00Z"), t);
++    }
++
++    @Test
++    void csvLocalAsUtc() {
++        Instant t = TimeConventions.csvLocalAsUtc("2024-01-01T00:00:00");
++        assertEquals(Instant.parse("2024-01-01T00:00:00Z"), t);
++    }
++
++    @Test
++    void toDisplayString_usesTorontoZone() {
++        String s = TimeConventions.toDisplayString(Instant.parse("2026-05-20T14:00:00Z"));
++        assertTrue(s.contains("EDT") || s.contains("EST"));
++    }
++}
+diff --git 1/trading-data/src/test/java/com/martinfou/trading/data/EconomicCalendarTest.java 2/trading-data/src/test/java/com/martinfou/trading/data/EconomicCalendarTest.java
+new file mode 100644
+index 0000000..da56347
+--- /dev/null
++++ 2/trading-data/src/test/java/com/martinfou/trading/data/EconomicCalendarTest.java
+@@ -0,0 +1,24 @@
++package com.martinfou.trading.data;
++
++import org.junit.jupiter.api.Test;
++
++import java.time.Instant;
++
++import static org.junit.jupiter.api.Assertions.*;
++
++class EconomicCalendarTest {
++
++    @Test
++    void rbaEvent_isUtcAlignedWithSydneyRelease() {
++        EconomicCalendar.Event rba = EconomicCalendar.THIS_WEEK.stream()
++            .filter(e -> e.event().contains("RBA"))
++            .findFirst()
++            .orElseThrow();
++        assertEquals(Instant.parse("2026-05-18T19:30:00Z"), rba.time());
++    }
++
++    @Test
++    void highImpactFilter() {
++        assertTrue(EconomicCalendar.getHighImpactEvents().size() >= 5);
++    }
++}

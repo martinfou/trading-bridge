@@ -61,7 +61,7 @@ trading-examples      → trading-core, trading-backtest
 - **Package root:** `com.martinfou.trading.<module>` — e.g. `com.martinfou.trading.core`, `com.martinfou.trading.backtest`.
 - **Domain model style:** Plain classes with **accessor methods** (`symbol()`, `close()`), not JavaBeans (`getSymbol()`). Enums nested in domain types (`Order.Side`, `Order.Type`, `Order.Status`).
 - **Records:** Use for small DTOs in integration code (e.g. `OandaPriceClient.Price`); keep core domain (`Bar`, `Order`, `Trade`, `Position`) as classes unless refactoring explicitly requested.
-- **Time (canonical):** **UTC everywhere internally** — prefer `Instant` at API/CSV/calendar boundaries; serialize as ISO-8601 with `Z`. Display only: `America/Toronto`. See `docs/specs.md` §2.5. Legacy code still uses `LocalDateTime` — treat as UTC until migrated; never use `LocalDateTime.now()` for trading logic.
+- **Time (canonical):** **UTC everywhere internally** — `Instant` on `Bar`, `Order`, `Trade` and at API/CSV/calendar boundaries; serialize as ISO-8601 with `Z`. Display only: `America/Toronto` via `TimeConventions`. See `docs/specs.md` §2.5. Never use `LocalDateTime.now()` for trading logic.
 - **OANDA:** API timestamps are UTC; parse to `Instant`, not naive `LocalDateTime`.
 - **Internal module deps:** Always `${project.version}` on `com.martinfou.trading:*` artifacts in child POMs.
 - **No Lombok, no Spring** in current codebase — do not introduce without an explicit sprint/architecture decision.

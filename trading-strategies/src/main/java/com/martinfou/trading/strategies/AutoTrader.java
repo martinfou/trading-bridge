@@ -1,10 +1,14 @@
 package com.martinfou.trading.strategies;
 
-import com.martinfou.trading.data.OandaPriceClient;
+import com.martinfou.trading.core.TimeConventions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import java.time.LocalDateTime;
-import java.util.*;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class AutoTrader {
     private static final Logger log = LoggerFactory.getLogger(AutoTrader.class);
@@ -20,29 +24,28 @@ public class AutoTrader {
 
     public void run() {
         log.info("🤖 AutoTrader starting... Monitoring {} strategies", strategies.size());
-        
+
         while (running) {
             try {
-                var now = LocalDateTime.now();
+                Instant now = TimeConventions.now();
                 for (var s : strategies) {
                     if (executed.getOrDefault(s.name(), false)) continue;
-                    
-                    var minutesUntilNews = java.time.Duration.between(now, s.getNewsTime()).toMinutes();
-                    
+
+                    long minutesUntilNews = Duration.between(now, s.getNewsTime()).toMinutes();
+
                     if (minutesUntilNews > 0 && minutesUntilNews <= 30) {
-                        // Check price and execute
                         var signal = evaluateStrategy(s);
                         if (signal != null && signal.isConfident()) {
                             executeTrade(s, signal);
                             executed.put(s.name(), true);
                         }
                     }
-                    
-                    if (minutesUntilNews < -60) { // More than 1 hour past news
-                        executed.put(s.name(), true); // News already passed
+
+                    if (minutesUntilNews < -60) {
+                        executed.put(s.name(), true);
                     }
                 }
-                Thread.sleep(60000); // Check every minute
+                Thread.sleep(60000);
             } catch (InterruptedException e) {
                 running = false;
             } catch (Exception e) {
@@ -52,25 +55,22 @@ public class AutoTrader {
     }
 
     private TradeSignal evaluateStrategy(NewsTradingStrategy strategy) {
-        // Simplified: in real version would fetch bars and analyze
-        return null; // Placeholder for the actual evaluation
+        return null;
     }
 
     private void executeTrade(NewsTradingStrategy strategy, TradeSignal signal) {
         try {
-            // Convert signal to OANDA units (positive = buy, negative = sell)
-            String units = signal.side() == com.martinfou.trading.core.Order.Side.BUY 
-                ? String.valueOf((int)(signal.quantity() * 100000))
-                : String.valueOf(-(int)(signal.quantity() * 100000));
-            
+            String units = signal.side() == com.martinfou.trading.core.Order.Side.BUY
+                ? String.valueOf((int) (signal.quantity() * 100000))
+                : String.valueOf(-(int) (signal.quantity() * 100000));
+
             var result = executor.placeMarketOrder(signal.pair(), units);
-            log.info("✅ TRADE EXECUTED: {} {} {} lots @ {}", 
+            log.info("✅ TRADE EXECUTED: {} {} {} lots @ {}",
                 signal.pair(), signal.side(), signal.quantity(), result.fillPrice());
-            
-            // Add SL and TP
+
             String slStr = String.format("%.5f", signal.stopLoss());
             String tpStr = String.format("%.5f", signal.takeProfit());
-            
+
             if (result.tradeId() != null && !result.tradeId().equals("N/A")) {
                 executor.addStopLoss(result.tradeId(), slStr);
                 executor.addTakeProfit(result.tradeId(), tpStr);
@@ -82,7 +82,7 @@ public class AutoTrader {
     }
 
     public void stop() { running = false; }
-    
+
     public static void main(String[] args) {
         if (args.length < 2) {
             System.out.println("Usage: AutoTrader <apiKey> <accountId>");

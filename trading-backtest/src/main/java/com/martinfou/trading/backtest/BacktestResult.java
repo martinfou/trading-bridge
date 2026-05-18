@@ -1,7 +1,9 @@
 package com.martinfou.trading.backtest;
 
+import com.martinfou.trading.core.TimeConventions;
 import com.martinfou.trading.core.Trade;
-import java.time.LocalDateTime;
+
+import java.time.Instant;
 import java.util.List;
 
 public record BacktestResult(
@@ -15,14 +17,15 @@ public record BacktestResult(
     double maxDrawdownPct,
     List<Double> equityCurve,
     List<Trade> trades,
-    LocalDateTime periodStart,
-    LocalDateTime periodEnd
+    Instant periodStart,
+    Instant periodEnd
 ) {
     public void printSummary() {
         System.out.println("\n===========================================");
         System.out.println("BACKTEST RESULT: " + strategyName);
         System.out.println("===========================================");
-        System.out.println("Period:     " + periodStart.toLocalDate() + " → " + periodEnd.toLocalDate());
+        System.out.println("Period:     " + TimeConventions.toDisplayString(periodStart)
+            + " → " + TimeConventions.toDisplayString(periodEnd));
         System.out.println("Capital:    $" + String.format("%.2f", initialCapital) + " → $" + String.format("%.2f", finalEquity));
         System.out.println("P&L:        $" + String.format("%.2f", totalPnl) + " (" + String.format("%.2f", totalReturnPct) + "%)");
         System.out.println("Trades:     " + totalTrades);

@@ -54,7 +54,7 @@ public class RunBacktest {
     static List<Bar> generateSampleData(String symbol, int count) {
         var bars = new ArrayList<Bar>(count);
         double price = 1.08000;
-        var time = java.time.LocalDateTime.of(2024, 1, 1, 0, 0);
+        var time = java.time.Instant.parse("2024-01-01T00:00:00Z");
         var rand = new Random(42);
 
         for (int i = 0; i < count; i++) {
@@ -64,8 +64,8 @@ public class RunBacktest {
             double high = open + Math.abs(rand.nextGaussian() * 0.001);
             double low = open - Math.abs(rand.nextGaussian() * 0.001);
             double close = open + (rand.nextGaussian() * 0.0005);
-            bars.add(new Bar(symbol, time, open, high, low, close, (long)(rand.nextInt(1000) + 100)));
-            time = time.plusHours(1);
+            bars.add(new Bar(symbol, time, open, high, low, close, (long) (rand.nextInt(1000) + 100)));
+            time = time.plusSeconds(3600);
         }
         return bars;
     }
