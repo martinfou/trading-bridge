@@ -4,6 +4,7 @@ com/martinfou/trading/core/Trade.class
 com/martinfou/trading/core/DataLoader.class
 com/martinfou/trading/core/Order$Status.class
 com/martinfou/trading/core/Position.class
+com/martinfou/trading/core/TimeConventions.class
 com/martinfou/trading/core/Bar.class
 com/martinfou/trading/core/Strategy.class
 com/martinfou/trading/core/Order$Side.class

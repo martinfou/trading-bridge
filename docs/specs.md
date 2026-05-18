@@ -71,7 +71,7 @@ BacktestEngine          Strategy                DataLoader           Historique
 | Champ | Type | Description |
 |-------|------|-------------|
 | symbol | String | Paire de devises (ex: EURUSD) |
-| timestamp | LocalDateTime | Date/heure de la bougie |
+| timestamp | Instant (UTC) | Date/heure de la bougie |
 | open | double | Prix d'ouverture |
 | high | double | Plus haut |
 | low | double | Plus bas |
@@ -136,13 +136,15 @@ BacktestEngine          Strategy                DataLoader           Historique
 #### Format d’échange
 
 - Fichiers, logs, API internes : ISO-8601 avec offset ou suffixe `Z` (ex. `2026-05-20T14:30:00Z`).
-- Legacy / transition : `LocalDateTime` existant est traité comme **UTC implicite** jusqu’à migration vers `Instant` sur `Bar`, `Order`, `Trade`.
+- CSV projet : heure murale **UTC** (sans offset dans le fichier), via `TimeConventions.parseCsvTimestamp` / `csvLocalAsUtc`.
+- Parsing OANDA : `TimeConventions.parseOandaTimestamp` (RFC3339, offsets et fractions de seconde).
 
-#### Migration progressive
+#### État d'implémentation (mai 2026)
 
-1. Nouveau code : `Instant` aux frontières (OANDA, CSV, calendrier).
-2. Refactor domaine : `Bar.timestamp()` → `Instant` (breaking — une epic dédiée).
-3. `EconomicCalendar` : remplacer les constantes « heure murale » par des `Instant` UTC documentés.
+- Domaine : `Bar`, `Order`, `Trade` exposent `Instant` pour les timestamps.
+- `EconomicCalendar` : événements stockés en UTC ; zones de publication documentées (tableau Javadoc).
+- Affichage opérateur : `America/Toronto` uniquement (`TimeConventions.toDisplayString`).
+
 
 #### Références
 

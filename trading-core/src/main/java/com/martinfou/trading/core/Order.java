@@ -1,6 +1,6 @@
 package com.martinfou.trading.core;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 public class Order {
@@ -17,15 +17,17 @@ public class Order {
     private double stopLoss;
     private double takeProfit;
     private Status status = Status.PENDING;
-    private LocalDateTime createdAt = LocalDateTime.now();
-    private LocalDateTime filledAt;
+    private Instant createdAt = TimeConventions.now();
+    private Instant filledAt;
 
     public Order(String symbol, Side side, Type type, double quantity, double price) {
-        this.symbol = symbol; this.side = side; this.type = type;
-        this.quantity = quantity; this.price = price;
+        this.symbol = symbol;
+        this.side = side;
+        this.type = type;
+        this.quantity = quantity;
+        this.price = price;
     }
 
-    // Getters
     public String id() { return id; }
     public String symbol() { return symbol; }
     public Side side() { return side; }
@@ -35,11 +37,18 @@ public class Order {
     public double stopLoss() { return stopLoss; }
     public double takeProfit() { return takeProfit; }
     public Status status() { return status; }
+    public Instant createdAt() { return createdAt; }
+    public Instant filledAt() { return filledAt; }
 
     public Order withStopLoss(double sl) { this.stopLoss = sl; return this; }
     public Order withTakeProfit(double tp) { this.takeProfit = tp; return this; }
-    public Order fill() { this.status = Status.FILLED; this.filledAt = LocalDateTime.now(); return this; }
-    
+
+    public Order fill() {
+        this.status = Status.FILLED;
+        this.filledAt = TimeConventions.now();
+        return this;
+    }
+
     public double pnl(double currentPrice) {
         if (status != Status.FILLED) return 0;
         return side == Side.BUY ? (currentPrice - price) * quantity : (price - currentPrice) * quantity;
