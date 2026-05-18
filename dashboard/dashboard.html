@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📊 Trading Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0d1117;color:#e6edf3;padding:16px}
+.container{max-width:1200px;margin:0 auto}
+.header{text-align:center;margin-bottom:20px}
+.header h1{font-size:24px;color:#58a6ff}
+.header p{font-size:12px;color:#8b949e;margin-top:4px}
+.grid{display:grid;grid-gap:12px;margin:12px 0}
+
+/* Account card */
+.acct-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:16px}
+.acct-card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:12px;text-align:center}
+.acct-card .val{font-size:20px;font-weight:700;color:#e6edf3}
+.acct-card .lbl{font-size:10px;color:#8b949e;text-transform:uppercase;margin-top:2px}
+.acct-card .chg{font-size:11px;margin-top:2px}.green{color:#3fb950}.red{color:#f85149}
+
+/* Price cards */
+.price-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-bottom:16px}
+.price-card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:12px;cursor:pointer;transition:all .2s}
+.price-card:hover{border-color:#58a6ff;transform:translateY(-1px)}
+.price-card.active{border-color:#58a6ff;background:#1c2333}
+.price-card .pair{font-size:13px;font-weight:600;color:#58a6ff}
+.price-card .price{font-size:18px;font-weight:700;color:#e6edf3;margin:4px 0}
+.price-card .info{font-size:10px;color:#8b949e}
+.price-card .spread{font-size:10px;color:#d29922}
+
+/* Chart section */
+.chart-section{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:16px;margin-bottom:16px}
+.chart-section h2{font-size:14px;color:#58a6ff;margin-bottom:8px}
+#tvchart{height:500px;width:100%}
+
+/* Calendar table */
+table{width:100%;border-collapse:collapse;font-size:11px}
+th{text-align:left;padding:8px;font-weight:600;color:#8b949e;text-transform:uppercase;border-bottom:1px solid #30363d;background:#0d1117}
+td{padding:6px 8px;border-bottom:1px solid #21262d}
+.high{color:#f85149;font-weight:600}
+.medium{color:#d29922}
+.low{color:#8b949e}
+
+.calendar-section{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:16px;margin-bottom:16px}
+.calendar-section h2{font-size:14px;color:#58a6ff;margin-bottom:8px}
+
+.insight{background:#1c2333;border:1px solid #30363d;border-radius:8px;padding:12px;margin:6px 0;border-left:3px solid #58a6ff}
+.insight h4{font-size:12px;color:#58a6ff;margin-bottom:2px}
+.insight p{font-size:11px;color:#8b949e}
+
+.selector{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.selector button{background:#21262d;color:#e6edf3;border:1px solid #30363d;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500}
+.selector button:hover,.selector button.active{background:#1f6feb;border-color:#1f6feb}
+@media(max-width:600px){
+  .price-grid{grid-template-columns:repeat(3,1fr)}
+  .price-card .price{font-size:14px}
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>📊 Trading Dashboard</h1>
+    <p>Martin Fournier · OANDA Practice · Mai 2026</p>
+  </div>
+
+  <!-- Account -->
+  <div class="acct-grid" id="accountInfo">
+    <div class="acct-card"><div class="lbl">Balance</div><div class="val" id="balance">—</div></div>
+    <div class="acct-card"><div class="lbl">NAV</div><div class="val" id="nav">—</div></div>
+    <div class="acct-card"><div class="lbl">P&L Non-Réalisé</div><div class="val" id="pl">—</div></div>
+    <div class="acct-card"><div class="lbl">Trades ouverts</div><div class="val" id="trades">—</div></div>
+  </div>
+
+  <!-- Price cards -->
+  <div class="selector" id="pairSelector"></div>
+  <div class="price-grid" id="priceGrid"></div>
+
+  <!-- Chart -->
+  <div class="chart-section">
+    <h2>📈 <span id="chartTitle">EUR/USD</span> — H1</h2>
+    <div id="tvchart"></div>
+  </div>
+
+  <!-- Economic Calendar -->
+  <div class="calendar-section">
+    <h2>📅 Calendrier économique — Semaine 18-24 mai</h2>
+    <div style="overflow-x:auto">
+    <table><tr><th>Date</th><th>Devise</th><th>Événement</th><th>Impact</th><th>Préc.</th><th>Prév.</th></tr>
+    <tr><td>Mar 19<br>01h30</td><td>AUD</td><td>RBA Minutes</td><td class="high">HAUT</td><td>4.35%</td><td>—</td></tr>
+    <tr><td>Mar 19<br>06h00</td><td>GBP</td><td>Salaire UK</td><td class="high">HAUT</td><td>+3.8%</td><td>+3.5%</td></tr>
+    <tr><td>Mar 19<br>08h30</td><td>CAD</td><td>🔥 IPC Canada</td><td class="high">HAUT</td><td>+2.3%</td><td>+2.1%</td></tr>
+    <tr><td>Mer 20<br>06h00</td><td>GBP</td><td>IPC UK</td><td class="high">HAUT</td><td>+3.9%</td><td>+3.4%</td></tr>
+    <tr><td>Mer 20<br>14h00</td><td>USD</td><td>🔥 Fed Minutes</td><td class="high">TRÈS HAUT</td><td>—</td><td>—</td></tr>
+    <tr><td>Jeu 21<br>01h30</td><td>AUD</td><td>Emploi Australie</td><td class="high">HAUT</td><td>+32K</td><td>+20K</td></tr>
+    </table>
+    </div>
+  </div>
+
+  <!-- Analysis -->
+  <div class="chart-section">
+    <h2>💡 Analyse</h2>
+    <div id="analysis"></div>
+  </div>
+</div>
+
+<script>
+const SYMBOLS = {
+    'EUR_USD': 'EUR/USD', 'GBP_USD': 'GBP/USD',
+    'USD_CAD': 'USD/CAD', 'AUD_USD': 'AUD/USD',
+    'GBP_JPY': 'GBP/JPY', 'USD_CHF': 'USD/CHF'
+};
+
+let currentPair = 'EUR_USD';
+let chartSeries = null;
+let chart = null;
+
+// Create TradingView chart
+function initChart() {
+    chart = LightweightCharts.createChart(document.getElementById('tvchart'), {
+        layout: { background: { color: '#161b22' }, textColor: '#8b949e' },
+        grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
+        crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+        timeScale: { timeVisible: true, borderColor: '#30363d' },
+        rightPriceScale: { borderColor: '#30363d' },
+    });
+    chartSeries = chart.addCandlestickSeries({
+        upColor: '#3fb950', downColor: '#f85149',
+        borderUpColor: '#3fb950', borderDownColor: '#f85149',
+        wickUpColor: '#3fb950', wickDownColor: '#f85149',
+    });
+    chart.applyOptions({ handleScroll: true, handleScale: true });
+    window.addEventListener('resize', () => chart.resize(
+        document.getElementById('tvchart').clientWidth, 500));
+}
+
+function updateChart(candles) {
+    if (!chartSeries || !candles.length) return;
+    const data = candles.map(c => ({
+        time: c.time.substring(0, 10),
+        open: c.open, high: c.high, low: c.low, close: c.close,
+    }));
+    chartSeries.setData(data);
+    chart.timeScale().fitContent();
+}
+
+// Build price cards
+function renderPrices(prices) {
+    const grid = document.getElementById('priceGrid');
+    const selector = document.getElementById('pairSelector');
+    grid.innerHTML = ''; selector.innerHTML = '';
+    
+    for (const [key, label] of Object.entries(SYMBOLS)) {
+        const p = prices[key] || { bid: '—', ask: '—', spread: '—' };
+        const isActive = key === currentPair;
+        
+        // Selector button
+        const btn = document.createElement('button');
+        btn.textContent = label;
+        btn.className = isActive ? 'active' : '';
+        btn.onclick = () => switchPair(key);
+        selector.appendChild(btn);
+        
+        // Price card
+        const card = document.createElement('div');
+        card.className = 'price-card' + (isActive ? ' active' : '');
+        card.onclick = () => switchPair(key);
+        card.innerHTML = `
+            <div class="pair">${label}</div>
+            <div class="price">${p.bid}</div>
+            <div class="info">Bid: ${p.bid} Ask: ${p.ask}</div>
+            <div class="spread">Spread: ${p.spread}</div>
+        `;
+        grid.appendChild(card);
+    }
+}
+
+function switchPair(pair) {
+    currentPair = pair;
+    document.getElementById('chartTitle').textContent = SYMBOLS[pair] || pair;
+    updateChart(allData.candles[pair] || []);
+    renderPrices(allData.prices);
+}
+
+let allData = { prices: {}, account: {}, candles: {} };
+
+function updateAccount(acct) {
+    if (!acct || !acct.balance) return;
+    document.getElementById('balance').textContent = '$' + acct.balance.toLocaleString();
+    document.getElementById('nav').textContent = '$' + (acct.nav || 0).toLocaleString();
+    const pl = acct.pl || 0;
+    document.getElementById('pl').textContent = '$' + pl.toFixed(2);
+    document.getElementById('pl').className = pl >= 0 ? 'green' : 'red';
+    document.getElementById('trades').textContent = acct.trades || 0;
+}
+
+const analysis = {
+    'EUR_USD': '📉 Attendre Fed Minutes mercredi. Short si USD hawkish. Range: 1.1550-1.1650.',
+    'GBP_USD': '📉 Short mercredi apres IPC UK prevu en baisse. Entree: ~1.3300. SL: 1.3325.',
+    'USD_CAD': '🎯 Short mardi 08h20 avant IPC Canada. Petrole haut = CAD fort. Entree: 1.3750.',
+    'AUD_USD': '📈 Long mardi avant RBA hawkish. Entree: ~0.7120. SL: 0.7090.',
+    'GBP_JPY': '📉 Short si IPC UK rate. PIB Japon positif. Paire volatile. SL serre.',
+    'USD_CHF': '⏸️ Sideways. USD fort vs CHF refuge. Attendre breakout du range 0.7850-0.7900.',
+};
+
+function renderAnalysis() {
+    const div = document.getElementById('analysis');
+    div.innerHTML = '';
+    const pairs = [['EUR_USD','EUR/USD'],['GBP_USD','GBP/USD'],['USD_CAD','USD/CAD'],
+                   ['AUD_USD','AUD/USD'],['GBP_JPY','GBP/JPY'],['USD_CHF','USD/CHF']];
+    for (const [key, label] of pairs) {
+        const d = document.createElement('div');
+        d.className = 'insight';
+        d.innerHTML = '<h4>' + label + '</h4><p>' + (analysis[key] || '—') + '</p>';
+        div.appendChild(d);
+    }
+}
+
+async function fetchData() {
+    try {
+        const r = await fetch('/api/data');
+        allData = await r.json();
+        renderPrices(allData.prices);
+        updateAccount(allData.account);
+        updateChart(allData.candles[currentPair] || []);
+        renderAnalysis();
+    } catch(e) { console.error('Fetch error:', e); }
+}
+
+initChart();
+fetchData();
+setInterval(fetchData, 15000);
+
+document.getElementById('chartTitle').textContent = 'EUR/USD';
+</script>
+</body>
+</html>

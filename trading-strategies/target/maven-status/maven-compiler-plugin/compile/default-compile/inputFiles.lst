@@ -1,0 +1,7 @@
+/home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/AutoTrader.java
+/home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/MarketAnalyzer.java
+/home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/NewsTradingStrategy.java
+/home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/OandaExecutor.java
+/home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/StrategyRunner.java
+/home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/TradeSignal.java
+/home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/WeekStrategies.java
