@@ -117,6 +117,38 @@ BacktestEngine          Strategy                DataLoader           Historique
 | equityCurve | List<Double> | Courbe d'équité |
 | trades | List<Trade> | Tous les trades |
 
+### 2.5 Conventions temporelles (fuseaux horaires)
+
+> Statut : adopté — mai 2026  
+> Objectif : une seule référence temporelle en interne, reproductible entre backtest, live et calendrier économique.
+
+#### Principe
+
+| Couche | Fuseau / type | Règle |
+|--------|---------------|--------|
+| **Système (canonique)** | **UTC** (`ZoneOffset.UTC`, `Instant`) | Tous les timestamps stockés, comparés et journalisés en UTC |
+| **API OANDA** | UTC | Les réponses v20 sont en UTC ; convertir à l’import, ne pas tronquer en `LocalDateTime` naïf |
+| **CSV / StrategyQuant** | Documenté à l’import | Déclarer le fuseau source dans le loader ; convertir → UTC avant `Bar` |
+| **Calendrier économique** | UTC en stockage | À l’ingestion : convertir l’heure de publication (souvent locale pays ou US Eastern) → `Instant` UTC ; conserver `ZoneId` source si besoin d’affichage |
+| **Affichage humain** | `America/Toronto` | Logs UI, alertes, console opérateur — conversion depuis UTC uniquement |
+| **Interdit** | `LocalDateTime.now()` pour le trading | Utiliser `Instant.now(Clock)` avec horloge UTC injectée |
+
+#### Format d’échange
+
+- Fichiers, logs, API internes : ISO-8601 avec offset ou suffixe `Z` (ex. `2026-05-20T14:30:00Z`).
+- Legacy / transition : `LocalDateTime` existant est traité comme **UTC implicite** jusqu’à migration vers `Instant` sur `Bar`, `Order`, `Trade`.
+
+#### Migration progressive
+
+1. Nouveau code : `Instant` aux frontières (OANDA, CSV, calendrier).
+2. Refactor domaine : `Bar.timestamp()` → `Instant` (breaking — une epic dédiée).
+3. `EconomicCalendar` : remplacer les constantes « heure murale » par des `Instant` UTC documentés.
+
+#### Références
+
+- Détail agent IA : `_bmad-output/project-context.md` (section Time)
+- Conversion JForex : `docs/conversion-guide.md` (bar.timestamp)
+
 ## 3. Interface Strategy
 
 ```java
