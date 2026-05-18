@@ -61,7 +61,8 @@ trading-examples      → trading-core, trading-backtest
 - **Package root:** `com.martinfou.trading.<module>` — e.g. `com.martinfou.trading.core`, `com.martinfou.trading.backtest`.
 - **Domain model style:** Plain classes with **accessor methods** (`symbol()`, `close()`), not JavaBeans (`getSymbol()`). Enums nested in domain types (`Order.Side`, `Order.Type`, `Order.Status`).
 - **Records:** Use for small DTOs in integration code (e.g. `OandaPriceClient.Price`); keep core domain (`Bar`, `Order`, `Trade`, `Position`) as classes unless refactoring explicitly requested.
-- **Time:** `java.time.LocalDateTime` for bars and orders; OANDA API uses `DateTimeFormatter` pattern `yyyy-MM-dd'T'HH:mm:ss`.
+- **Time (canonical):** **UTC everywhere internally** — prefer `Instant` at API/CSV/calendar boundaries; serialize as ISO-8601 with `Z`. Display only: `America/Toronto`. See `docs/specs.md` §2.5. Legacy code still uses `LocalDateTime` — treat as UTC until migrated; never use `LocalDateTime.now()` for trading logic.
+- **OANDA:** API timestamps are UTC; parse to `Instant`, not naive `LocalDateTime`.
 - **Internal module deps:** Always `${project.version}` on `com.martinfou.trading:*` artifacts in child POMs.
 - **No Lombok, no Spring** in current codebase — do not introduce without an explicit sprint/architecture decision.
 - **Logging:** `org.slf4j` only; use `LoggerFactory.getLogger(Class)`. Bind `slf4j-simple` only in runnable modules that need console output.
@@ -147,4 +148,4 @@ trading-examples      → trading-core, trading-backtest
 - Update when stack or `Strategy`/engine contract changes.
 - Review after each sprint completion.
 
-**Last Updated:** 2026-05-17
+**Last Updated:** 2026-05-17 (timezone conventions §2.5)

@@ -1,0 +1,102 @@
+# generated: 2026-05-17
+# last_updated: 2026-05-17
+# project: trading-bridge
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+#
+# SOURCE: _bmad-output/planning-artifacts/epics.md (derived from docs/sprint-plan.md)
+# DETECTION: Epic 1 statuses set from existing codebase; Epic 2+ default backlog
+# Story 2-10 added 2026-05-17 (UTC migration, ready-for-dev)
+
+generated: "2026-05-17"
+last_updated: "2026-05-17"
+project: trading-bridge
+project_key: NOKEY
+tracking_system: file-system
+story_location: "_bmad-output/implementation-artifacts"
+
+development_status:
+  epic-1: done
+  1-1-maven-monorepo-structure: done
+  1-2-domain-models: done
+  1-3-strategy-interface: done
+  1-4-basic-backtest-engine: done
+  1-5-csv-data-loader: done
+  1-6-sma-crossover-example: done
+  1-7-foundation-documentation: done
+  epic-1-retrospective: optional
+
+  epic-2: in-progress
+  2-1-analyze-strategyquant-xml-format: backlog
+  2-2-sqxmlparser-implementation: backlog
+  2-3-strategyconfig-pojo: backlog
+  2-4-core-indicators-sma-ema-rsi: backlog
+  2-5-extended-indicators-macd-bollinger-atr: backlog
+  2-6-entry-conditions: backlog
+  2-7-exit-conditions: backlog
+  2-8-position-sizing: backlog
+  2-9-java-code-generator: backlog
+  2-10-utc-timezone-migration: ready-for-dev
+  epic-2-retrospective: optional
+
+  epic-3: backlog
+  3-1-complete-limit-and-stop-order-simulation: backlog
+  3-2-commission-and-slippage: backlog
+  3-3-trade-exit-lifecycle: backlog
+  3-4-multi-timeframe-support: backlog
+  3-5-risk-management-rules: backlog
+  3-6-html-backtest-report: backlog
+  3-7-trade-csv-export: backlog
+  3-8-advanced-performance-metrics: backlog
+  epic-3-retrospective: optional
+
+  epic-4: backlog
+  4-1-broker-interface: backlog
+  4-2-oanda-v20-rest-broker: backlog
+  4-3-interactive-brokers-api: backlog
+  4-4-real-time-market-data: backlog
+  4-5-live-market-order-execution: backlog
+  4-6-live-limit-and-stop-orders: backlog
+  4-7-position-synchronization: backlog
+  4-8-paper-trading-mode: backlog
+  epic-4-retrospective: optional
+
+  epic-5: backlog
+  5-1-sqlite-trade-persistence: backlog
+  5-2-structured-logging: backlog
+  5-3-telegram-monitoring-alerts: backlog
+  5-4-web-dashboard: backlog
+  5-5-unit-test-coverage: backlog
+  5-6-broker-reconnect-and-error-handling: backlog
+  5-7-user-documentation: backlog
+  epic-5-retrospective: optional

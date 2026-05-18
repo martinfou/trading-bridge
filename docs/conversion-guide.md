@@ -239,7 +239,7 @@ public class SMACrossoverStrategy implements Strategy {
 | `Period.ONE_HOUR` | Pas de concept de période | Les bars arrivent déjà formées |
 | `indicators.sma()` | Calcul manuel ou utilitaire | À implémenter dans trading-core |
 | `order.getAmount()` | `order.quantity()` | Renommé pour clarté |
-| Gestion du temps | `bar.timestamp()` | LocalDateTime |
+| Gestion du temps | `bar.timestamp()` | `Instant` (UTC) — voir `docs/specs.md` §2.5 ; legacy `LocalDateTime` = UTC implicite |
 
 ## 5. Validation de la conversion
 
