@@ -1,0 +1,7 @@
+/home/martinfou/projects/trading-bridge/trading-backtest/src/test/java/com/martinfou/trading/backtest/BacktestEngineEnhancedTest.java
+/home/martinfou/projects/trading-bridge/trading-backtest/src/test/java/com/martinfou/trading/backtest/CorrelationMatrixTest.java
+/home/martinfou/projects/trading-bridge/trading-backtest/src/test/java/com/martinfou/trading/backtest/MonteCarloSimulationTest.java
+/home/martinfou/projects/trading-bridge/trading-backtest/src/test/java/com/martinfou/trading/backtest/PerformanceMetricsTest.java
+/home/martinfou/projects/trading-bridge/trading-backtest/src/test/java/com/martinfou/trading/backtest/PortfolioBuilderTest.java
+/home/martinfou/projects/trading-bridge/trading-backtest/src/test/java/com/martinfou/trading/backtest/WalkForwardOptimizerTest.java
+/home/martinfou/projects/trading-bridge/trading-backtest/src/test/java/com/martinfou/trading/backtest/report/HtmlReportGeneratorTest.java

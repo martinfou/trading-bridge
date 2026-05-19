@@ -1,0 +1,8 @@
+com/martinfou/trading/backtest/BacktestEngineEnhancedTest.class
+com/martinfou/trading/backtest/PortfolioBuilderTest.class
+com/martinfou/trading/backtest/MonteCarloSimulationTest.class
+com/martinfou/trading/backtest/BacktestEngineEnhancedTest$SmaCrossover.class
+com/martinfou/trading/backtest/CorrelationMatrixTest.class
+com/martinfou/trading/backtest/report/HtmlReportGeneratorTest.class
+com/martinfou/trading/backtest/WalkForwardOptimizerTest.class
+com/martinfou/trading/backtest/PerformanceMetricsTest.class
