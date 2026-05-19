@@ -60,6 +60,42 @@ public class OandaExecutor {
         );
     }
 
+    public record StopOrderResult(String orderId, String status, String price) {}
+
+    public StopOrderResult placeStopOrder(String instrument, String units, String price) throws Exception {
+        String body = mapper.writeValueAsString(new java.util.HashMap<>() {{
+            put("order", new java.util.HashMap<>() {{
+                put("type", "STOP");
+                put("instrument", instrument);
+                put("units", units);
+                put("price", price);
+                put("timeInForce", "GTC");
+            }});
+        }});
+
+        var req = HttpRequest.newBuilder()
+            .uri(URI.create(baseUrl + "accounts/" + accountId + "/orders"))
+            .header("Authorization", "B" + "earer " + apiKey)
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(body))
+            .timeout(Duration.ofSeconds(10))
+            .build();
+
+        var resp = client.send(req, HttpResponse.BodyHandlers.ofString());
+        var json = mapper.readTree(resp.body());
+
+        if (resp.statusCode() != 201) {
+            String err = json.has("errorMessage") ? json.get("errorMessage").asText() : resp.body();
+            throw new RuntimeException("OANDA stop order failed: " + err);
+        }
+
+        return new StopOrderResult(
+            json.get("orderCreateTransaction").get("id").asText(),
+            "PENDING",
+            json.get("orderCreateTransaction").get("price").asText()
+        );
+    }
+
     public String addStopLoss(String tradeId, String price) throws Exception {
         String body = "{\"order\":{\"type\":\"STOP_LOSS\",\"tradeID\":\"" 
             + tradeId + "\",\"price\":\"" + price + "\"}}";
