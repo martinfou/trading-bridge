@@ -3,9 +3,6 @@ package com.martinfou.trading.strategies.sqimported;
 import com.martinfou.trading.core.*;
 import java.util.*;
 
-import java.util.ArrayList;
-import java.util.List;
-
 /**
  * Strategy 2.31.177 — Meilleur R/R (3.1)
  * Signal: Open croise au-dessus de LinReg(40)
@@ -199,12 +196,6 @@ public class Strategy_2_31_177_Converted implements Strategy {
         };
     }
 
-    private final String name = "2.31.177";
-
-    @Override
-    public String getName() { return name; }
-
-    @Override
     @Override
     public void onBar(Bar bar) {
         history.add(bar);
@@ -226,7 +217,7 @@ public class Strategy_2_31_177_Converted implements Strategy {
         
                 // LongEntrySignal de la version JForex:
                 // (Open[2+1] < LinReg(40, CLOSE, 2+1) && Open[2] > LinReg(40, CLOSE, 2+1))
-                // shift 2+1 = index-3, shift 2 = index-2
+                // shift 2+1 = (history.size() - 1)-3, shift 2 = (history.size() - 1)-2
                 double open3 = getBar(3).open();
                 double linReg3 = calcLinReg(history, 40, "close", 3);
                 double open2 = getBar(2).open();
@@ -236,7 +227,7 @@ public class Strategy_2_31_177_Converted implements Strategy {
         
                 boolean longEntry = (open3 < linReg3) && (open2 > linReg2);
         
-                if (longEntry && !(activeOrder != null) && !(false)) {
+                if (longEntry && activeOrder == null) {
                     // Entry: Bollinger(10, 2, 0, CLOSE, 3)[lower] + (1.0 * BBRange(20, 2, CLOSE, 2))
                     double sma = calcSMA(history, 10, "close", 3);
                     double bbrange = calcBBRange(history, 20, 2.0, "close", 2);

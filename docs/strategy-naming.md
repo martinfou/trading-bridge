@@ -172,3 +172,46 @@ Gère les transitions de statut (DEV → BACKTEST → PAPER → LIVE → RETIRED
 ---
 
 *"Une stratégie sans nom, c'est comme un trade sans plan — voué à l'échec."*
+
+
+## ⏱️ Walk-Forward Calibration
+
+Chaque strategie a une frequence de recalibration WFO (Walk-Forward Optimization).
+
+### Frequences disponibles
+
+| Frequence | Usage | Exemple |
+|-----------|-------|---------|
+| DAILY | Scalping, strategies tres actives | M1, M5 |
+| WEEKLY | Strategies court terme | M15, H1 |
+| MONTHLY | Strategies moyen terme (defaut) | H1, H4 |
+| QUARTERLY | Strategies long terme | D1 |
+| AFTER_20_TRADES | Base sur le nombre de trades | Quel que soit le TF |
+| AFTER_100_BARS | Base sur les barres ecoulees | Quel que soit le TF |
+
+### Metadata
+
+```json
+{
+  "wfFrequency": "MONTHLY",
+  "lastWalkForwardDate": "2026-05-19",
+  "wfISMonths": 12,
+  "wfOOSWeeks": 4,
+  "tradesSinceLastWF": 8,
+  "barsSinceLastWF": 320,
+  "wfDue": false
+}
+```
+
+### Dashboard — Vue Walk-Forward
+
+```
+TR-S-EU-L-042  ✅ LIVE  Sharpe:1.89  WF ok (14d)  🔋
+MR-M-MLT-B-013 ✅ LIVE  Sharpe:1.56  🔔 WF due! (45d) 
+BT-S-UC-S-007  📊 PAPER Sharpe:1.23  WF ok (3d)   🔋
+```
+
+Legende:
+- 🔋 WF ok — recalibration a jour
+- 🔔 WF due! — recalibration necessaire
+- ⚠️ WF overdue — recalibration en retard (>2x la frequence)

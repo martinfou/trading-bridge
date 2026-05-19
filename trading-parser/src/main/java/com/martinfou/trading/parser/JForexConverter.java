@@ -241,7 +241,11 @@ public class JForexConverter {
         body = body.replaceAll("\n\\s*\n\\s*\n", "\n\n");
         body = body.replaceAll("\n\\s*\n\\s*\n", "\n\n");
         // Remove duplicate import statements
-        body = body.replaceAll("(?m)^(import\\s+[^;]+;)\\n(?:\\1\\n)+", "$1\n");
+        // Remove redundant individual java.util imports when wildcard import exists
+        body = body.replaceAll("(?m)^import\\s+java\\.util\\.(ArrayList|List|Map|HashMap|Set|HashSet|Arrays|Collections);\\s*\\n", "");
+        // Remove trailing && true and similar
+        body = body.replaceAll("\\s*&&\\s*true\\b", "");
+        body = body.replaceAll("\\s*\\|\\|\\s*false\\b", "");
 
         return body;
     }
@@ -432,8 +436,24 @@ public class JForexConverter {
         // Convert indicator calls
         body = convertIndicatorCalls(body);
 
-        // Replace standalone bars variable references to history
-        body = body.replace("new ArrayList<>()", "new ArrayList<>()");
+        // Replace VortexIndicator.VortexResult vX = ... → split into vX_plus, vX_minus
+        body = body.replaceAll(
+            "VortexIndicator\\.VortexResult\\s+(\\w+)\\s*=\\s*calcVortexPlus\\((\\w+),\\s*(\\d+),\\s*(\\d+)\\)\\s*;",
+            "double $1_plus = calcVortexPlus($2, $3, $4); double $1_minus = calcVortexMinus($2, $3, $4);");
+        body = body.replaceAll("(\\w+)\\.vortexPlus\\(\\)", "$1_plus");
+        body = body.replaceAll("(\\w+)\\.vortexMinus\\(\\)", "$1_minus");
+
+        // Replace remaining bare 'bars' references with 'history' (safe in onBar body)
+        body = body.replaceAll("(?<![\\.\\w])bars\\.get\\(", "history.get(");
+        body = body.replaceAll("(?<![\\.\\w])bars\\.", "history.");
+        // Replace remaining bare 'index' variable with history.size()-1
+        body = body.replaceAll("\\bindex\\b(?!\\.)", "(history.size() - 1)");
+        // Replace getMedianPrice() - the pattern is: history.get(VAR).getMedianPrice() → (history.get(VAR).high()+history.get(VAR).low())/2.0
+        body = body.replaceAll("history\\.get\\((\\w+)\\)\\.getMedianPrice\\(\\)",
+                "(history.get($1).high() + history.get($1).low()) / 2.0");
+        // Replace getTypicalPrice() similarly
+        body = body.replaceAll("history\\.get\\((\\w+)\\)\\.getTypicalPrice\\(\\)",
+                "(history.get($1).high() + history.get($1).low() + history.get($1).close()) / 3.0");
 
         // Clean up empty lines
         body = body.replaceAll("\\n{3,}", "\n\n");

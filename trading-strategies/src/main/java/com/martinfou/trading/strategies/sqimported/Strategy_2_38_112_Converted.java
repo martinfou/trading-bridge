@@ -3,8 +3,6 @@ package com.martinfou.trading.strategies.sqimported;
 import com.martinfou.trading.core.*;
 import java.util.*;
 
-import java.util.List;
-
 /**
  * Strategy 2.38.112 — R/R 2.9, SL 110
  * Signal: Vortex(12) crossover (bar 3 vs bar 4)
@@ -197,12 +195,6 @@ public class Strategy_2_38_112_Converted implements Strategy {
         };
     }
 
-    private final String name = "2.38.112";
-
-    @Override
-    public String getName() { return name; }
-
-    @Override
     @Override
     public void onBar(Bar bar) {
         history.add(bar);
@@ -222,16 +214,16 @@ public class Strategy_2_38_112_Converted implements Strategy {
 
         // LongEntrySignal:
                 // Vortex(12,0,3) > Vortex(12,1,3) && Vortex(12,0,4) < Vortex(12,1,4)
-                VortexIndicator.VortexResult v3 = calcVortexPlus(history, 12, 3);
-                VortexIndicator.VortexResult v4 = calcVortexPlus(history, 12, 4);
+                double v3_plus = calcVortexPlus(history, 12, 3); double v3_minus = calcVortexMinus(history, 12, 3);
+                double v4_plus = calcVortexPlus(history, 12, 4); double v4_minus = calcVortexMinus(history, 12, 4);
         
-                if (Double.isNaN(v3.vortexPlus()) || Double.isNaN(v3.vortexMinus()) ||
-                    Double.isNaN(v4.vortexPlus()) || Double.isNaN(v4.vortexMinus())) return;
+                if (Double.isNaN(v3_plus) || Double.isNaN(v3_minus) ||
+                    Double.isNaN(v4_plus) || Double.isNaN(v4_minus)) return;
         
-                boolean longEntry = (v3.vortexPlus() > v3.vortexMinus()) && 
-                                   (v4.vortexPlus() < v4.vortexMinus());
+                boolean longEntry = (v3_plus > v3_minus) && 
+                                   (v4_plus < v4_minus);
         
-                if (longEntry && !(activeOrder != null) && !(false)) {
+                if (longEntry && activeOrder == null) {
                     // Entry: LWMA(40, LOW, 3) + 1.6 * BiggestRange(50, 3)
                     double lwma = calcLWMA(history, 40, "low", 3);
                     double biggestRange = calcBiggestRange(history, 50, 3);
