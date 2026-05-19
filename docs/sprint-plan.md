@@ -129,26 +129,26 @@ portfolio builder, rapports type StrategyQuant
 
 | Tâche | Priorité | Statut |
 |-------|:--------:|:------:|
-| **StrategyTemplate** — squelette de stratégie avec slots pour indicateurs | P0 | ⏳ |
-| **Indicator Gene Pool** — tous les indicateurs comme gènes mutables (SMA, EMA, RSI, MACD, BB, ATR, ADX, Stochastic, Ichimoku) | P0 | ⏳ |
-| **Genetic Engine** — population initiale, fitness, crossover, mutation, élitisme, parallélisme Virtual Threads | P0 | ⏳ |
-| **Chromosome encoding** — une stratégie = ADN (indicateurs + paramètres + conditions) | P0 | ⏳ |
-| **Crossover + Mutation operators** — reproduction, mutation aléatoire des gènes | P0 | ⏳ |
-| **Fitness function** — Sharpe, Profit Factor, Walk-Forward OOS, Robustness combiné | P1 | ⏳ |
-| **Strategy Code Generator** — Chromosome → Java compilable (StringTemplate) | P1 | ⏳ |
-| **Robustness Score** (0-100) — Walk-Forward OOS (40%) + Monte Carlo VaR (30%) + Sharpe stability (20%) + Parameter sensitivity (10%) | P1 | ⏳ |
-| **Ranking Dashboard** — top 20/50/100 stratégies avec métriques clés | P1 | ⏳ |
-| **Strategy Builder** — arbre de décision pour configurer la génération (type, timeframe, indicateurs) | P2 | ⏳ |
+| **StrategyTemplate** — squelette de stratégie avec slots pour indicateurs | P0 | ✅ |
+| **Indicator Gene Pool** — gènes mutables (SMA, EMA, RSI, ATR, ADX) | P0 | ✅ |
+| **Genetic Engine** — population, fitness, crossover, mutation, élitisme, Virtual Threads | P0 | ✅ |
+| **Chromosome encoding** — stratégie = ADN (indicateurs + paramètres + conditions) | P0 | ✅ |
+| **Crossover + Mutation operators** — reproduction, mutation aléatoire des gènes | P0 | ✅ |
+| **Fitness function** — Sharpe, Profit Factor, Walk-Forward OOS, Robustness combiné | P1 | ✅ |
+| **Strategy Code Generator** — Chromosome → Java compilable (`javac` testé) | P1 | ✅ |
+| **Robustness Score** (0-100) — Walk-Forward OOS (40%) + Monte Carlo VaR (30%) + Sharpe stability (20%) + Sensitivity (10%) | P1 | 🚧 |
+| **Ranking Dashboard** — top 20/50/100 stratégies avec métriques clés + Chart.js | P1 | 🚧 |
+| **Strategy Builder** — arbre de décision pour configurer la génération | P2 | ⏳ |
 | **Multi-market test** — tester automatiquement sur plusieurs paires | P2 | ⏳ |
 | **Parameter Sensitivity Analysis** — stabilité des paramètres | P2 | ⏳ |
 | **Export un clic** — générer → compiler → backtester | P2 | ⏳ |
 
 **Définition de fait :**
-- `mvn compile` passe avec le module `trading-genetics`
-- Genetic Engine génère des stratégies valides qui passent Walk-Forward OOS
-- Les stratégies générées sont compilables (`javac`)
-- Ranking dashboard montre top 20 avec Robustness Score
-- Le système peut battre (ou égaler) la qualité des stratégies générées par StrategyQuant
+- `mvn compile` passe avec le module `trading-genetics` ✅
+- Genetic Engine génère des stratégies valides qui passent Walk-Forward OOS ✅
+- Les stratégies générées sont compilables (`javac`) ✅
+- Ranking dashboard montre top 20 avec Robustness Score 🚧
+- Le système peut égaler la qualité des stratégies générées par StrategyQuant 🚧
 
 ---
 
