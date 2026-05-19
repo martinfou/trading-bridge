@@ -3,8 +3,6 @@ package com.martinfou.trading.strategies.sqimported;
 import com.martinfou.trading.core.*;
 import java.util.*;
 
-import java.util.List;
-
 /**
  * Strategy 2.31.175 — R/R 2.6, PT 370
  * Signal: Vortex(12) crossover (bar 2 vs bar 3)
@@ -197,12 +195,6 @@ public class Strategy_2_31_175_Converted implements Strategy {
         };
     }
 
-    private final String name = "2.31.175";
-
-    @Override
-    public String getName() { return name; }
-
-    @Override
     @Override
     public void onBar(Bar bar) {
         history.add(bar);
@@ -222,16 +214,16 @@ public class Strategy_2_31_175_Converted implements Strategy {
 
         // LongEntrySignal:
                 // Vortex(12,0,2) > Vortex(12,1,2) && Vortex(12,0,3) < Vortex(12,1,3)
-                VortexIndicator.VortexResult v2 = calcVortexPlus(history, 12, 2);
-                VortexIndicator.VortexResult v3 = calcVortexPlus(history, 12, 3);
+                double v2_plus = calcVortexPlus(history, 12, 2); double v2_minus = calcVortexMinus(history, 12, 2);
+                double v3_plus = calcVortexPlus(history, 12, 3); double v3_minus = calcVortexMinus(history, 12, 3);
         
-                if (Double.isNaN(v2.vortexPlus()) || Double.isNaN(v2.vortexMinus()) ||
-                    Double.isNaN(v3.vortexPlus()) || Double.isNaN(v3.vortexMinus())) return;
+                if (Double.isNaN(v2_plus) || Double.isNaN(v2_minus) ||
+                    Double.isNaN(v3_plus) || Double.isNaN(v3_minus)) return;
         
-                boolean longEntry = (v2.vortexPlus() > v2.vortexMinus()) && 
-                                   (v3.vortexPlus() < v3.vortexMinus());
+                boolean longEntry = (v2_plus > v2_minus) && 
+                                   (v3_plus < v3_minus);
         
-                if (longEntry && !(activeOrder != null) && !(false)) {
+                if (longEntry && activeOrder == null) {
                     // Entry: Close(1) + 2.2 * ATR(20, 3)
                     double close1 = getBar(1).close();
                     double atr = calcATR(history, 20, 3);

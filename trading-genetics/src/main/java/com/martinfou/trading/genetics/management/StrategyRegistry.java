@@ -21,6 +21,37 @@ public class StrategyRegistry {
         public final List<String> tags = new ArrayList<>();
         public volatile double cumulativePnl = 0;
         
+        // Multi-asset
+        public final List<String> deployedSymbols = new ArrayList<>();
+        public final Map<String, Double> perSymbolPnl = new HashMap<>();
+        public final Map<String, Double> perSymbolSharpe = new HashMap<>();
+        
+        // Walk-Forward calibration
+        public enum WFFrequency { DAILY, WEEKLY, MONTHLY, QUARTERLY, AFTER_20_TRADES, AFTER_100_BARS }
+        public WFFrequency wfFrequency = WFFrequency.MONTHLY;
+        public LocalDate lastWalkForwardDate = LocalDate.now();
+        public int walkForwardISMonths = 12;
+        public int walkForwardOOSWeeks = 4;
+        public int tradesSinceLastWF = 0;
+        public int barsSinceLastWF = 0;
+        
+        public boolean isWalkForwardDue() {
+            if (lastWalkForwardDate == null) return true;
+            return switch (wfFrequency) {
+                case DAILY -> LocalDate.now().isAfter(lastWalkForwardDate);
+                case WEEKLY -> LocalDate.now().minusWeeks(1).isAfter(lastWalkForwardDate);
+                case MONTHLY -> LocalDate.now().minusMonths(1).isAfter(lastWalkForwardDate);
+                case QUARTERLY -> LocalDate.now().minusMonths(3).isAfter(lastWalkForwardDate);
+                case AFTER_20_TRADES -> tradesSinceLastWF >= 20;
+                case AFTER_100_BARS -> barsSinceLastWF >= 100;
+            };
+        }
+        
+        public long daysSinceLastWF() {
+            return lastWalkForwardDate == null ? 999 : 
+                java.time.temporal.ChronoUnit.DAYS.between(lastWalkForwardDate, LocalDate.now());
+        }
+        
         public Entry(StrategyID id) { this.id = id; }
         
         public Entry withParam(String key, Object val) { params.put(key, val); return this; }
@@ -33,12 +64,12 @@ public class StrategyRegistry {
         
         public String familyColor() {
             return switch (id.family()) {
-                case TR -> "\uD83D\uDD35"; // Bleu
-                case MR -> "\uD83D\uDFE2"; // Vert
-                case BT -> "\uD83D\uDFE0"; // Orange
-                case MM -> "\uD83D\uDD34"; // Rouge
-                case NW -> "\uD83D\uDFE3"; // Violet
-                case CT -> "\u26AA";       // Blanc
+                case TR -> "\uD83D\uDD35";
+                case MR -> "\uD83D\uDFE2";
+                case BT -> "\uD83D\uDFE0";
+                case MM -> "\uD83D\uDD34";
+                case NW -> "\uD83D\uDFE3";
+                case CT -> "\u26AA";
             };
         }
         
@@ -55,16 +86,22 @@ public class StrategyRegistry {
         }
         
         @Override public String toString() {
-            return String.format("%s %-14s %s  Sharpe:%.2f  PF:%.2f  Win:%.1f%%  DD:%.1f%%  Rob:%.0f  PnL:$%.0f",
+            String wfStatus = isWalkForwardDue() ? "\uD83D\uDD14 WF due!" : ("WF ok (" + daysSinceLastWF() + "d)");
+            return String.format("%s %-14s %s  Sharpe:%.2f  PF:%.2f  Win:%.1f%%  DD:%.1f%%  Rob:%.0f  PnL:$%.0f  %s",
                 familyColor(), id.shortID(), statusIcon(), sharpe, profitFactor, winRate, 
-                maxDrawdown, robustness, cumulativePnl);
+                maxDrawdown, robustness, cumulativePnl, wfStatus);
         }
     }
     
     private final Map<String, Entry> entries = new LinkedHashMap<>();
     
     public Entry register(StrategyID id) {
-        var e = new Entry(id);
+        return register(id, List.of());
+    }
+    
+    public Entry register(StrategyID id, List<String> symbols) {
+        Entry e = new Entry(id);
+        e.deployedSymbols.addAll(symbols);
         entries.put(id.longID(), e);
         return e;
     }
@@ -97,9 +134,10 @@ public class StrategyRegistry {
     }
     
     public List<Entry> all() { return List.copyOf(entries.values()); }
-    
     public int count() { return entries.size(); }
-    public int countByStatus(Status status) { return (int) entries.values().stream().filter(e -> e.status == status).count(); }
+    public int countByStatus(Status status) {
+        return (int) entries.values().stream().filter(e -> e.status == status).count();
+    }
     
     public String summary() {
         var sb = new StringBuilder();

@@ -3,8 +3,6 @@ package com.martinfou.trading.strategies.sqimported;
 import com.martinfou.trading.core.*;
 import java.util.*;
 
-import java.util.List;
-
 /**
  * Strategy 2.36.190 — R/R 2.7, PT 395 (le plus haut)
  * Signal: Vortex(20) crossover (bar 2 vs bar 3)
@@ -197,12 +195,6 @@ public class Strategy_2_36_190_Converted implements Strategy {
         };
     }
 
-    private final String name = "2.36.190";
-
-    @Override
-    public String getName() { return name; }
-
-    @Override
     @Override
     public void onBar(Bar bar) {
         history.add(bar);
@@ -222,16 +214,16 @@ public class Strategy_2_36_190_Converted implements Strategy {
 
         // LongEntrySignal:
                 // Vortex(20,0,2) > Vortex(20,1,2) && Vortex(20,0,3) < Vortex(20,1,3)
-                VortexIndicator.VortexResult v2 = calcVortexPlus(history, 20, 2);
-                VortexIndicator.VortexResult v3 = calcVortexPlus(history, 20, 3);
+                double v2_plus = calcVortexPlus(history, 20, 2); double v2_minus = calcVortexMinus(history, 20, 2);
+                double v3_plus = calcVortexPlus(history, 20, 3); double v3_minus = calcVortexMinus(history, 20, 3);
         
-                if (Double.isNaN(v2.vortexPlus()) || Double.isNaN(v2.vortexMinus()) ||
-                    Double.isNaN(v3.vortexPlus()) || Double.isNaN(v3.vortexMinus())) return;
+                if (Double.isNaN(v2_plus) || Double.isNaN(v2_minus) ||
+                    Double.isNaN(v3_plus) || Double.isNaN(v3_minus)) return;
         
-                boolean longEntry = (v2.vortexPlus() > v2.vortexMinus()) && 
-                                   (v3.vortexPlus() < v3.vortexMinus());
+                boolean longEntry = (v2_plus > v2_minus) && 
+                                   (v3_plus < v3_minus);
         
-                if (longEntry && !(activeOrder != null) && !(false)) {
+                if (longEntry && activeOrder == null) {
                     // Entry: High(2) + 1.8 * BBRange(10, 0.9, CLOSE, 1)
                     double high2 = getBar(2).high();
                     double bbRange = calcBBRange(history, 10, 0.9, "close", 1);
