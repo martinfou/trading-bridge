@@ -22,15 +22,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .acct-card .lbl{font-size:10px;color:#8b949e;text-transform:uppercase;margin-top:2px}
 .acct-card .chg{font-size:11px;margin-top:2px}.green{color:#3fb950}.red{color:#f85149}
 
-/* Price cards */
-.price-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-bottom:16px}
-.price-card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:12px;cursor:pointer;transition:all .2s}
+/* Price cards — Sally UX redesign: compact, monospace, truncated */
+.price-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px;margin-bottom:16px}
+.price-card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px;cursor:pointer;transition:all .2s;min-width:0}
 .price-card:hover{border-color:#58a6ff;transform:translateY(-1px)}
 .price-card.active{border-color:#58a6ff;background:#1c2333}
-.price-card .pair{font-size:13px;font-weight:600;color:#58a6ff}
-.price-card .price{font-size:18px;font-weight:700;color:#e6edf3;margin:4px 0}
-.price-card .info{font-size:10px;color:#8b949e}
-.price-card .spread{font-size:10px;color:#d29922}
+.price-card .pair{font-size:12px;font-weight:600;color:#58a6ff;white-space:nowrap}
+.price-card .price{font-size:16px;font-weight:700;color:#e6edf3;margin:3px 0;font-family:'SF Mono','Fira Code','Courier New',monospace;letter-spacing:-0.5px;overflow:hidden;text-overflow:ellipsis}
+.price-card .meta{display:flex;gap:8px;font-size:10px;color:#8b949e}
+.price-card .meta .bid{color:#3fb950}
+.price-card .meta .ask{color:#f85149}
+.price-card .spread{font-size:9px;color:#d29922;margin-top:1px}
 
 /* Chart section */
 .chart-section{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:16px;margin-bottom:16px}
@@ -148,7 +150,20 @@ function updateChart(candles) {
     chart.timeScale().fitContent();
 }
 
-// Build price cards
+// Format price: 4 decimals for most, 3 for JPY pairs, show spread in compact form
+function formatPrice(val) {
+    if (val === '—' || val == null) return '—';
+    return parseFloat(val).toFixed(5); // keep full precision internally
+}
+function displayPrice(val, pair) {
+    if (val === '—' || val == null) return '—';
+    const n = parseFloat(val);
+    // JPY pairs (XXXJPY or JPYXXX) have 3 decimals; others 5
+    const isJPY = pair.includes('JPY');
+    return isJPY ? n.toFixed(3) : n.toFixed(4);
+}
+
+// Build price cards — Sally UX: compact, monospace, truncated
 function renderPrices(prices) {
     const grid = document.getElementById('priceGrid');
     const selector = document.getElementById('pairSelector');
@@ -165,15 +180,18 @@ function renderPrices(prices) {
         btn.onclick = () => switchPair(key);
         selector.appendChild(btn);
         
-        // Price card
+        // Price card — compact UX: ONE big price, meta in tiny line
         const card = document.createElement('div');
         card.className = 'price-card' + (isActive ? ' active' : '');
         card.onclick = () => switchPair(key);
+        const bidDisplay = displayPrice(p.bid, label);
+        const askDisplay = displayPrice(p.ask, label);
+        const spreadVal = p.spread !== '—' && p.spread != null ? parseFloat(p.spread).toFixed(1) : '—';
         card.innerHTML = `
             <div class="pair">${label}</div>
-            <div class="price">${p.bid}</div>
-            <div class="info">Bid: ${p.bid} Ask: ${p.ask}</div>
-            <div class="spread">Spread: ${p.spread}</div>
+            <div class="price">${bidDisplay}</div>
+            <div class="meta"><span class="bid">▲ ${bidDisplay}</span><span class="ask">▼ ${askDisplay}</span></div>
+            <div class="spread">Spread ${spreadVal}</div>
         `;
         grid.appendChild(card);
     }
