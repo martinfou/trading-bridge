@@ -31,6 +31,11 @@ public class Trade {
     public double pnlPercent() { return (pnl / (entryPrice * quantity)) * 100; }
     public Instant entryTime() { return entryTime; }
     public Instant exitTime() { return exitTime; }
+    public String symbol() { return symbol; }
+    public Order.Side side() { return side; }
+    public double entryPrice() { return entryPrice; }
+    public double exitPrice() { return exitPrice; }
+    public double quantity() { return quantity; }
 
     @Override
     public String toString() {
