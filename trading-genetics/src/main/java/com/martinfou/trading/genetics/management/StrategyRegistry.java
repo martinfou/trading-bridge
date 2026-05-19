@@ -23,6 +23,11 @@ public class StrategyRegistry {
         
         // Multi-asset
         public final List<String> deployedSymbols = new ArrayList<>();
+        
+        // Multi-timeframe
+        public String mainTimeframe = "H1";
+        public final List<String> timeframes = new ArrayList<>(List.of("H1"));
+        public final Map<String, String> timeframeUsage = new HashMap<>();
         public final Map<String, Double> perSymbolPnl = new HashMap<>();
         public final Map<String, Double> perSymbolSharpe = new HashMap<>();
         
