@@ -528,3 +528,77 @@ So that I can configure brokers and run strategies independently.
 **Given** docs for production use
 **When** a new user follows the guide
 **Then** they can configure credentials and run a strategy end-to-end
+
+
+---
+
+## Epic 6: Backtesting Analytics
+
+Advanced backtesting: Monte Carlo, Walk-Forward, correlation matrix, portfolio builder, HTML reports.
+
+### Story 6.1: Advanced Performance Metrics ✅
+Sharpe, Sortino, Profit Factor, Calmar ratios. Commission + slippage in BacktestEngine.
+
+### Story 6.2: Monte Carlo Simulation ✅
+1000+ runs, distribution P&L/DD/Sharpe, VaR 95%.
+
+### Story 6.3: Walk-Forward Optimization ✅
+Sliding IS/OOS windows, multi-objective, cross-validation.
+
+### Story 6.4: Correlation Matrix ✅
+Pearson P&L + drawdown correlation, heatmap export.
+
+### Story 6.5: Portfolio Builder ✅
+Mean-variance optimization, efficient frontier, min variance / max Sharpe.
+
+### Story 6.6: StrategyQuant-Style HTML Reports ✅
+Multi-tab report with Chart.js, equity curve, Monte Carlo overlay.
+
+---
+
+## Epic 7: StrategyQuant Replication (Genetic Engine)
+
+Generate and test strategies automatically like StrategyQuant.
+
+### Story 7.1: StrategyTemplate ✅
+Skeleton strategy with mutable indicator slots.
+
+### Story 7.2: Gene Pool ✅
+SMA, EMA, RSI, ATR, ADX as mutable genes.
+
+### Story 7.3: Genetic Engine ✅
+Population, fitness, crossover, mutation, elitism, Virtual Threads.
+
+### Story 7.4: Chromosome Encoding ✅
+Strategy = DNA (indicators + params + conditions).
+
+### Story 7.5: StrategyCodeGen ✅
+Chromosome → compilable Java code.
+
+### Story 7.6: Robustness Score ✅
+Composite 0-100 (WFOOS 40% + MC 30% + Sharpe stability 20% + Sensitivity 10%).
+
+### Story 7.7: Ranking Dashboard ✅
+HTML interactive ranking with Chart.js filters and sort.
+
+### Story 7.8: StrategyBuilder ✅
+4 strategy types (Trend/MeanRev/Breakout/Momentum), config tree.
+
+### Story 7.9: Parameter Sensitivity Analysis ✅
+Parameter variation ±10/20/50%, stability scoring.
+
+### Story 7.10: Multi-Market Test ✅
+Validate across 7 FX pairs (EUR, GBP, USD, JPY, AUD, NZD, CHF).
+
+### Story 7.11: Export One-Click ✅
+./scripts/export-strategy.sh → generate, compile, backtest.
+
+### Story 7.12: Batch Strategy Generator ✅
+./scripts/batch-gen.sh → generate 500+ strategies, rank, validate, export HTML.
+
+### Story 7.13: JForex Converter ✅
+./scripts/convert-jforex.sh → convert existing JForex strategies.
+
+### Story 7.14: Strategy Naming System ✅
+Standardized naming: [ORG]_[FAM]_[SCOPE]_[SYM]_[DIR]_[TF]_[ID]_v[X.Y.Z]
+StrategyID, StrategyRegistry, WF calibration frequency.
