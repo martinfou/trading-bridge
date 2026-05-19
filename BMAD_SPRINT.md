@@ -200,3 +200,34 @@ trading-backtest/
 - `CorrelationMatrixTest` — vérifie valeurs de corrélation connues
 - `PortfolioBuilderTest` — vérifie efficient frontier, min variance
 - `HtmlReportGeneratorTest` — vérifie que le HTML est généré sans erreur
+
+
+---
+
+## ✅ Sprint 7 — Complété (19 mai 2026)
+
+**13 stories, 141 tests, BUILD SUCCESS**
+
+### Livrables
+
+| Story | Statut | Fichiers |
+|-------|:------:|----------|
+| StrategyTemplate, GenePool, GeneticEngine | ✅ | 8 Java classes |
+| StrategyCodeGen (Chromosome → Java) | ✅ | StrategyCodeGen + test |
+| RobustnessScore + RankingDashboard | ✅ | HTML + Chart.js |
+| StrategyBuilder (4 types) | ✅ | StrategyBuilder + test |
+| Parameter Sensitivity Analysis | ✅ | 14 tests |
+| Multi-Market Test (7 paires) | ✅ | 15 tests |
+| Export One-Click | ✅ | export-strategy.sh |
+| Batch Generator (500+) | ✅ | batch-gen.sh, 10 tests |
+| JForex Converter (5 strategies) | ✅ | convert-jforex.sh, 13 tests |
+| Strategy Naming System | ✅ | StrategyID, Registry, WF calibration |
+
+### Métriques
+
+- **Tests total:** 141 (0 failure)
+- **Nouvelles classes:** ~25 Java files
+- **Scripts bash:** 5 (test-all, run-demo, export, batch-gen, convert-jforex)
+- **Commits:** 10+ sur master
+- **Modules:** trading-genetics ✅, trading-parser (JForex) ✅
+- **Dashboard:** Laravel app avec auto-refresh live
