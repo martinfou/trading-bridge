@@ -1,0 +1,43 @@
+[Unit]
+Description=Trading Bridge — Live Strategy Runner (OANDA Practice)
+Documentation=https://github.com/martinfou/trading-bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/env bash -c 'cd /home/martinfou/projects/trading-bridge && mvn compile -q -pl trading-core,trading-data,trading-strategies -am 2>&1 | grep -v "^$" || true'
+ExecStart=/usr/bin/env java \
+    -cp "/home/martinfou/projects/trading-bridge/trading-core/target/classes:/home/martinfou/projects/trading-bridge/trading-data/target/classes:/home/martinfou/projects/trading-bridge/trading-strategies/target/classes:/home/martinfou/projects/trading-bridge/trading-strategies/target/dependency/*" \
+    -Dorg.slf4j.simpleLogger.log.com.martinfou.trading=info \
+    -Dorg.slf4j.simpleLogger.showDateTime=true \
+    -Dorg.slf4j.simpleLogger.dateTimeFormat="yyyy-MM-dd HH:mm:ss" \
+    com.martinfou.trading.strategies.LiveStrategyRunner \
+    "${OANDA_API_KEY}" "${OANDA_ACCOUNT_ID}" "${STRATEGY_NAME}" "${GRANULARITY}" "${INTERVAL_SEC}"
+
+# Environment — source from user's .env
+EnvironmentFile=%h/projects/trading-dashboard/.env
+Environment=STRATEGY_NAME=2_31_177
+Environment=GRANULARITY=H1
+Environment=INTERVAL_SEC=60
+
+# Restart policy
+Restart=always
+RestartSec=30
+
+# Resource limits
+CPUQuota=80%
+MemoryMax=768M
+
+# Security — relaxed enough for mvn + Java runtime
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/home/martinfou/projects/trading-bridge /tmp
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
