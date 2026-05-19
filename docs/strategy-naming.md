@@ -38,15 +38,24 @@
 ## 🏆 Format Final
 
 ```
-[SQ|GEN]_[FAM]_[ACTIF]_[DIR]_[TF]_[ID]_v[MAJ].[MIN].[PATCH]
+[SQ|GEN]_[FAM]_[SCOPE]_[ACTIF]_[DIR]_[TF]_[ID]_v[MAJ].[MIN].[PATCH]
 ```
+
+**Scope:**
+- `S` = **Single asset** — stratégie spécifique à un actif (ex: Canada CPI → USDCAD seulement)
+- `M` = **Multi asset** — stratégie multi-actifs (ex: RSI MeanRev qui marche sur plusieurs paires)
+  - Quand SCOPE=M, ACTIF = `MLT` (Multi)
+  - Les actifs réels sont stockés dans les métadonnées (deployedSymbols)
+
+### Exemples
 
 ### Exemples
 
 ```
-SQ_TR_EU_L_H1_042_v2.1.0
-↑    ↑  ↑  ↑ ↑   ↑   ↑
-SQ   Tr EUR Long H1  #42 Version 2.1.0
+SQ_TR_S_EU_L_H1_042_v2.1.0   → Trend **spécifique** EUR/USD Long #42
+GEN_MR_M_MLT_B_H1_013_v1.0.0  → MeanRev **multi-actifs** Both #13
+↑    ↑  ↑  ↑   ↑  ↑   ↑   ↑
+SQ   TR S  EUR  L  H1  042 v2.1.0
 ```
 
 ```
@@ -57,10 +66,10 @@ GEN  MR USDCAD Short M5 #13 Version 1.0.0
 
 ### Court (pour dashboard)
 ```
-TR-EU-L-042  → Trend EURUSD Long #42
-MR-UC-S-013  → MeanRev USDCAD Short #13
-BT-GJ-B-007  → Breakout GBPJPY Both #7
-MM-UC-L-089  → Momentum USDCAD Long #89
+TR-S-EU-L-042     → Trend EURUSD Long #42 (specifique)
+MR-M-MLT-B-013    → MeanRev multi-actifs Both #13
+BT-S-UC-S-007     → Breakout USDCAD Short #7
+MM-M-MLT-L-089    → Momentum multi-actifs Long #89
 ```
 
 ### Couleurs par Famille

@@ -59,6 +59,10 @@ public class JForexConverter {
             Pattern.compile("private\\s+BacktestResult\\s+result\\s*;");
     private static final Pattern NAN_CHECK_PATTERN =
             Pattern.compile("Double\\.isNaN\\((\\w+)\\)");
+    private static final Pattern NAME_FIELD_PATTERN =
+            Pattern.compile("private\\s+final\\s+String\\s+name\\s*=\\s*\"[^\"]*\"\\s*;", Pattern.MULTILINE);
+    private static final Pattern GET_NAME_METHOD_PATTERN =
+            Pattern.compile("@Override\\s*\\n\\s*public\\s+String\\s+getName\\(\\)\\s*\\{\\s*return\\s+name;\\s*\\}", Pattern.MULTILINE);
 
     // Indicator call patterns
     private static final Pattern SMA_CALL =
@@ -230,9 +234,14 @@ public class JForexConverter {
         info.javadoc = javadoc;
         body = addBoilerplate(body, info);
 
-        // 10. Clean up double blank lines
+        // 10. Clean up
+        // Remove duplicate @Override annotations
+        body = body.replaceAll("(?m)^\\s*@Override\\s*$\\n(?=\\s*@Override)", "");
+        // Remove duplicate blank lines
         body = body.replaceAll("\n\\s*\n\\s*\n", "\n\n");
         body = body.replaceAll("\n\\s*\n\\s*\n", "\n\n");
+        // Remove duplicate import statements
+        body = body.replaceAll("(?m)^(import\\s+[^;]+;)\\n(?:\\1\\n)+", "$1\n");
 
         return body;
     }
@@ -279,6 +288,9 @@ public class JForexConverter {
         source = GET_BARS_PATTERN.matcher(source).replaceFirst("");
         source = SET_BARS_PATTERN.matcher(source).replaceFirst("");
         source = GET_RESULT_PATTERN.matcher(source).replaceFirst("");
+        source = GET_NAME_METHOD_PATTERN.matcher(source).replaceFirst("");
+        source = NAME_FIELD_PATTERN.matcher(source).replaceFirst("");
+        source = source.replaceAll("(?m)^\\s*@Override\\s*$\\n(?=\\s*@Override)", "");
         return source;
     }
 
@@ -376,7 +388,12 @@ public class JForexConverter {
             result.append(al).append("\n");
         }
 
-        return result.toString().replaceAll("\\n{3,}", "\n\n");
+        String out = result.toString();
+        // Remove duplicate @Override annotations
+        out = out.replaceAll("(?m)^\\s*@Override\\s*$\\n(?=\\s*@Override)", "");
+        // Clean up triple newlines
+        out = out.replaceAll("\n{3,}", "\n\n");
+        return out;
     }
 
     static String transformOnBarBody(String body) {
@@ -391,10 +408,20 @@ public class JForexConverter {
         body = convertPlaceBuyStop(body);
 
         // Replace engine.isInPosition() → (activeOrder != null)
+        // But handle negation: !engine.isInPosition() → activeOrder == null
+        body = body.replaceAll("!engine\\.isInPosition\\(\\)", "activeOrder == null");
         body = IS_IN_POSITION_PATTERN.matcher(body).replaceAll("(activeOrder != null)");
 
         // Replace engine.isPendingBuyStop() → (false) — we manage state via entryTriggered
+        // Handle negation too: !engine.isPendingBuyStop() → true
+        body = body.replaceAll("!engine\\.isPendingBuyStop\\(\\)", "true");
         body = IS_PENDING_BUYSTOP_PATTERN.matcher(body).replaceAll("(false)");
+        // Clean up any remaining "&& !false" or "&& !(false)" or "&& !(activeOrder != null)"
+        body = body.replaceAll("&&\\s*!\\(false\\)", "");
+        body = body.replaceAll("\\|\\|\\s*!\\(false\\)", "");
+        body = body.replaceAll("!\\(false\\)\\s*&&", "");
+        body = body.replaceAll("!\\(false\\)", "true");
+        body = body.replaceAll("\\(activeOrder != null\\)", "activeOrder != null").trim();
 
         // Convert AppliedPrice.XXX.getPrice(bars.get(index - N)) to bar access
         body = convertAppliedPriceGets(body);
