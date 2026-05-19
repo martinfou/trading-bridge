@@ -12,7 +12,7 @@ public record StrategyID(
     Family family,
     String symbol,
     Direction direction,
-    String timeframe,
+    String mainTimeframe,
     int number,
     Version version
 ) {
@@ -34,7 +34,7 @@ public record StrategyID(
     
     /** Format long complet */
     public String longID() {
-        return origin + "_" + family + "_" + symbol + "_" + direction + "_" + timeframe + "_" + 
+        return origin + "_" + family + "_" + symbol + "_" + direction + "_" + mainTimeframe + "_" + 
                String.format("%03d", number) + "_" + version;
     }
     

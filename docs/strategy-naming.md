@@ -215,3 +215,42 @@ Legende:
 - 🔋 WF ok — recalibration a jour
 - 🔔 WF due! — recalibration necessaire
 - ⚠️ WF overdue — recalibration en retard (>2x la frequence)
+
+
+## 📊 Multi-Timeframe Strategies
+
+Certaines strategies utilisent plusieurs timeframes, mais une seule est **principale**.
+
+### Regle
+Le `TF` dans le nom = le **timeframe principal** (celui de la bougie d'entree/sortie).
+Les timeframes secondaires (filtres, confirmation) sont dans les metadonnees.
+
+### Exemple
+```
+SQ_TR_S_EU_L_H1_042_v2.1.0
+               ↑↑
+         Main TF = H1 (entree)
+         Filter TF = H4 (trend filter, dans metadonnees)
+```
+
+### Metadata
+```json
+{
+  "mainTimeframe": "H1",
+  "timeframes": ["H1", "H4"],
+  "timeframeUsage": {
+    "H1": "entry signal (SMA crossover)",
+    "H4": "trend filter (200 EMA direction)"
+  }
+}
+```
+
+### Cas d'usage
+
+| Main TF | Filter TF(s) | Usage |
+|---------|-------------|-------|
+| M5 | M15 | Scalping avec filtre tendance |
+| M15 | H1 | Day trading court terme |
+| H1 | H4 | Swing trading intraday |
+| H1 | D1 | Swing avec tendance daily |
+| H4 | D1 | Position trading |
