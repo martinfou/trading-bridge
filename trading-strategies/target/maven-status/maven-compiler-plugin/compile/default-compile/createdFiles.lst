@@ -1,6 +1,8 @@
 com/martinfou/trading/strategies/sqimported/Strategy_2_15_195_Adapted.class
 com/martinfou/trading/strategies/TradeSignal.class
+com/martinfou/trading/strategies/generated/MyStrategy.class
 com/martinfou/trading/strategies/OandaExecutor$1$1.class
+com/martinfou/trading/strategies/generated/Test123.class
 com/martinfou/trading/strategies/AutoTrader.class
 com/martinfou/trading/strategies/OandaExecutor$1.class
 com/martinfou/trading/strategies/MarketAnalyzer.class
@@ -10,4 +12,5 @@ com/martinfou/trading/strategies/NewsTradingStrategy.class
 com/martinfou/trading/strategies/sqimported/Strategy_2_14_147_Adapted.class
 com/martinfou/trading/strategies/NewsTradingStrategy$TradeSide.class
 com/martinfou/trading/strategies/StrategyRunner.class
+com/martinfou/trading/strategies/generated/TestFast.class
 com/martinfou/trading/strategies/OandaExecutor.class

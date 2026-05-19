@@ -1,5 +1,7 @@
 #!/bin/bash
 # 🧬 export-strategy.sh — Export, compile, and backtest a genetic trading strategy
+
+export PATH="/home/martinfou/.local/share/mise/shims:/home/martinfou/.local/bin:/usr/bin:/bin:/usr/local/bin:$PATH"
 #
 # Usage:
 #   ./scripts/export-strategy.sh [options]

@@ -5,5 +5,8 @@
 /home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/StrategyRunner.java
 /home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/TradeSignal.java
 /home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/WeekStrategies.java
+/home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/generated/MyStrategy.java
+/home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/generated/Test123.java
+/home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/generated/TestFast.java
 /home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/sqimported/Strategy_2_14_147_Adapted.java
 /home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/sqimported/Strategy_2_15_195_Adapted.java
