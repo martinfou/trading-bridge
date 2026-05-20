@@ -45,6 +45,7 @@ MAX_DD=""
 MIN_WIN_RATE=""
 TARGET=""
 MAX_ATTEMPTS=""
+DATA=""
 
 # ── Help ────────────────────────────────────────────────────────────────────
 show_help() {
