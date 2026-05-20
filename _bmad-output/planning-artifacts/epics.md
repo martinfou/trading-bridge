@@ -646,14 +646,30 @@ Integrer API sentiment externe (AlphaVantage, RavenPack) pour ponderer les signa
 
 ## Epic 9: VPS Live Trading Platform
 
-Deployer la plateforme de trading live sur un VPS dedie, SANS OpenClaw.
+Architecture: OpenClaw sur machine LOCALE, Live Trading sur VPS.
+OpenClaw MONITORE les trades via HTTP/Telegram, n'est PAS sur le VPS.
+
+```
+Machine Locale (OpenClaw)                    VPS (Live Trading)
+─────────────────────────                    ─────────────────
+🤖 C-3PO (monitoring)                        🚀 LiveStrategyRunner
+📊 Dashboard :8082                            (Java, zero OpenClaw)
+🖥️ Laravel :8000                              |-- trade OANDA demo
+🔔 Discord alerts                             |-- git pull strategies
+📡 Telegram bot                               |-- health API :8083
+    ↓                                          |-- Telegram alerts
+    poll HTTP :8083 ← ← ← ← ← ← ← ← ← expose ┘
+    recoit Telegram alerts ← ← ← ← ← ← envoie ┘
+    Discord notifications
+```
 
 ### Story 9.1: Self-Contained Live Runner (P0)
-Le LiveStrategyRunner doit fonctionner SANS OpenClaw gateway:
-- Lire les credentials depuis .env (pas de auth-profiles.json)
-- Logging fichier uniquement (pas de SLF4J vers OpenClaw)
-- State persistence: sauvegarde et resume sans OpenClaw
-- Script start/stop/status autonome
+Le LiveStrategyRunner fonctionne SEUL sur le VPS, SANS OpenClaw:
+- Lire les credentials depuis .env
+- Logging fichier uniquement
+- State persistence (sauvegarde auto, resume apres crash)
+- Envoie les trades a Telegram (bot token dans .env)
+- Expose un endpoint HTTP /health sur le port 8083
 
 ### Story 9.2: VPS Deployment Script (P0)
 Script d'installation pour VPS vierge:
@@ -664,12 +680,13 @@ Script d'installation pour VPS vierge:
 - Installer le service systemd pour le live runner
 - Test de connexion OANDA
 
-### Story 9.3: Remote Monitoring (P1)
-Le VPS n'a pas OpenClaw → monitoring via:
-- Telegram bot qui envoie les trades en cours
-- Health endpoint HTTP (port 8083) pour verifier que ca tourne
-- Les logs sont envoyes a Joplin (ou pas — VPS isole)
-- Alerte si le process live runner crash
+### Story 9.3: Remote Monitoring via OpenClaw (P1)
+OpenClaw sur la machine locale MONITORE le VPS:
+- C-3PO (agent dev) appelle /health sur le VPS toutes les 5 min
+- Si le VPS repond pas → alerte Telegram + Discord #critical
+- Le VPS envoie ses trades via Telegram (bot token)
+- OpenClaw recoit les alertes de trade et les poste dans Discord #trades
+- C-3PO peut demander: "TradeMaster, quel est le statut du VPS?" → appelle /health
 
 ### Story 9.4: Automated Strategy Deployment (P1)
 Quand une strategie est validee (via batch-gen):
