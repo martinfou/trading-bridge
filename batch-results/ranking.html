@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StrategyQuant — Batch Ranking Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0f1923;color:#e0e6ed;padding:20px}
+.header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.header h1{color:#00d4aa;font-size:26px;display:flex;align-items:center;gap:10px}
+.header h1 .sq-badge{font-size:12px;background:#1a2d3d;color:#8899aa;padding:3px 10px;border-radius:4px;font-weight:400}
+.controls{display:flex;gap:8px;align-items:center}
+.card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px}
+.card{background:#1a2d3d;padding:12px 14px;border-radius:8px;border-left:3px solid #00d4aa}
+.card .lbl{color:#8899aa;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+.card .val{font-size:20px;font-weight:700;color:#e0e6ed;margin-top:4px}
+.card .val.g{color:#00d4aa}.card .val.r{color:#ff6b6b}.card .val.y{color:#ffc107}
+.dist{display:flex;height:5px;border-radius:3px;overflow:hidden;margin:6px 0 14px}
+.dist-g{background:#00d4aa}.dist-y{background:#ffc107}.dist-r{background:#ff6b6b}
+.filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+.filters .lb{color:#8899aa;font-size:12px;margin-right:4px}
+.btn{padding:5px 12px;border-radius:6px;border:1px solid #2a4055;background:#1a2d3d;color:#8899aa;cursor:pointer;font-size:11px;transition:all .15s}
+.btn:hover{background:#243b52;color:#c0d0e0}.btn.on{background:#00d4aa;color:#0f1923;font-weight:600}
+.tc{overflow-x:auto;border-radius:8px;border:1px solid #1a2d3d}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:#1a2d3d;color:#8899aa;padding:8px 10px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.3px;cursor:pointer;user-select:none;position:sticky;top:0;z-index:1}
+th:hover{color:#e0e6ed}
+td{padding:7px 10px;border-bottom:1px solid #1a2d3d;white-space:nowrap}
+tr:hover td{background:#1e3347}tr.h{display:none}
+.sn{font-weight:600;color:#e0e6ed}
+.st{display:inline-block;font-size:8px;padding:1px 5px;border-radius:8px;margin-left:5px;font-weight:500;vertical-align:middle}
+.st-T{background:#1a3a2a;color:#00d4aa}.st-M{background:#2a1a3a;color:#bb86fc}.st-B{background:#3a2a1a;color:#ffb74d}
+.ct{font-size:14px;margin-left:3px;vertical-align:middle}
+.vp{color:#00d4aa;font-weight:600}.vn{color:#ff6b6b;font-weight:600}.vm{color:#e0e6ed}
+.cg{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin:16px 0}
+.cc{background:#1a2d3d;padding:14px;border-radius:8px}
+.cc h3{color:#8899aa;font-size:12px;margin-bottom:10px;font-weight:500}
+.cc canvas{max-height:200px;width:100%}
+.t5{background:#1a2d3d;border-radius:8px;padding:14px;margin-bottom:14px;border:1px solid #00d4aa}
+.t5 h2{color:#00d4aa;font-size:15px;margin-bottom:10px}
+.t5g{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.t5c{background:#243b52;border-radius:6px;padding:10px}
+.t5c .rk{font-size:10px;color:#8899aa}
+.t5c .nm{font-weight:600;font-size:13px;color:#e0e6ed;margin:2px 0}
+.t5c .mt{font-size:11px;color:#8899aa}
+.t5c .mt sp{color:#00d4aa;font-weight:600}
+@media(max-width:768px){.cg{grid-template-columns:1fr}.t5g{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>&#x1F3C6; Batch Strategy Generator <span class="sq-badge">StrategyQuant-style</span></h1>
+  <div class="controls">
+    <label class="btn on" onclick="setTop(20)">Top 20</label>
+    <label class="btn" onclick="setTop(50)">Top 50</label>
+    <label class="btn" onclick="setTop(100)">Top 100</label>
+  </div>
+</div>
+<div class="card-grid">
+  <div class="card"><div class="lbl">Total</div><div class="val">20</div></div>
+  <div class="card" style="border-left-color:#00d4aa"><div class="lbl">&#x1F7E2; Promising</div><div class="val g">0</div></div>
+  <div class="card" style="border-left-color:#ffc107"><div class="lbl">&#x1F7E1; Medium</div><div class="val y">0</div></div>
+  <div class="card" style="border-left-color:#ff6b6b"><div class="lbl">&#x1F534; Weak</div><div class="val r">20</div></div>
+</div>
+<div class="dist"><div class="dist-g" style="width:0%"></div><div class="dist-y" style="width:0%"></div><div class="dist-r" style="width:100%"></div></div>
+<div class="t5"><h2>&#x1F947; Top 5 at a Glance</h2><div class="t5g" id="top5grid"><div class="t5c"><div class="rk">🥇 #1</div><div class="nm">Mean_reversion_7_RSI13 🔴</div><div class="mt">Sharpe: <sp>-105606.23</sp> | PF: <sp>2.34</sp><br>Return: <sp>0.00%%</sp> | DD: <sp>0.0%%</sp><br>Trades: <sp>3</sp></div></div><div class="t5c"><div class="rk">🥈 #2</div><div class="nm">Trend_following_3_SMA53 🔴</div><div class="mt">Sharpe: <sp>-10657.04</sp> | PF: <sp>0.81</sp><br>Return: <sp>-0.00%%</sp> | DD: <sp>0.0%%</sp><br>Trades: <sp>2</sp></div></div><div class="t5c"><div class="rk">🥉 #3</div><div class="nm">Trend_following_10_EMA29 🔴</div><div class="mt">Sharpe: <sp>-8940.92</sp> | PF: <sp>0.80</sp><br>Return: <sp>-0.00%%</sp> | DD: <sp>0.0%%</sp><br>Trades: <sp>2</sp></div></div><div class="t5c"><div class="rk">4th #4</div><div class="nm">Trend_following_8_SMA85 🔴</div><div class="mt">Sharpe: <sp>-8332.07</sp> | PF: <sp>0.88</sp><br>Return: <sp>-0.00%%</sp> | DD: <sp>0.0%%</sp><br>Trades: <sp>2</sp></div></div><div class="t5c"><div class="rk">5th #5</div><div class="nm">Trend_following_7_SMA45 🔴</div><div class="mt">Sharpe: <sp>-8422.40</sp> | PF: <sp>0.52</sp><br>Return: <sp>-0.00%%</sp> | DD: <sp>0.0%%</sp><br>Trades: <sp>2</sp></div></div></div></div>
+<div class="cg">
+  <div class="cc"><h3>&#x1F4CA; Sharpe Distribution (Top 20)</h3><canvas id="c1"></canvas></div>
+  <div class="cc"><h3>&#x1F4CA; Type Distribution</h3><canvas id="c2"></canvas></div>
+  <div class="cc"><h3>&#x1F4CA; Score vs Drawdown</h3><canvas id="c3"></canvas></div>
+</div>
+<div class="filters">
+  <span class="lb">&#x1F3AF; Filter:</span>
+  <div class="btn on" onclick="filt('all')">All</div>
+  <div class="btn" onclick="filt('Trend')">Trend</div>
+  <div class="btn" onclick="filt('MeanRev')">MeanRev</div>
+  <div class="btn" onclick="filt('Breakout')">Breakout</div>
+  <span class="lb" style="margin-left:12px">&#x2195; Sort:</span>
+  <div class="btn on" onclick="srt('score')">Score</div>
+  <div class="btn" onclick="srt('sharpe')">Sharpe</div>
+  <div class="btn" onclick="srt('pf')">PF</div>
+  <div class="btn" onclick="srt('dd')">MaxDD</div>
+</div>
+<div class="tc">
+<table id="tbl">
+<thead><tr><th>#</th><th>Strategy</th><th onclick="srt('sharpe')">Sharpe &#x2195;</th><th onclick="srt('pf')">PF &#x2195;</th><th onclick="srt('dd')">MaxDD &#x2195;</th><th onclick="srt('ret')">Return &#x2195;</th><th>Trades</th><th>WinRate</th><th>Robust.</th></tr></thead>
+<tbody><tr class="sql-row" data-score="10.0" data-type="Trend" data-sharpe="-71256.2487" data-pf="1.5304" data-dd="0.0000" data-ret="0.0000"><td><span class="rank-badge rank-1">🏆</span></td><td><span class="strat-name">Mean_reversion_7_RSI13</span><span class="strat-type type-Trend">Trend</span>🔴</td><td class="val-neg">-71256.25</td><td class="val-pos">1.53</td><td class="val-pos">0.0%</td><td class="val-pos">0.00%</td><td>7</td><td>42.9%</td><td>37.5</td></tr><tr class="sql-row" data-score="4.2" data-type="Breakout" data-sharpe="-12265.8531" data-pf="0.0000" data-dd="0.0009" data-ret="-0.0009"><td><span class="rank-badge rank-2">🏆</span></td><td><span class="strat-name">Trend_following_3_SMA53</span><span class="strat-type type-Breakout">Breakout</span>🔴</td><td class="val-neg">-12265.85</td><td class="val-neutral">0.00</td><td class="val-pos">0.0%</td><td class="val-neg">-0.00%</td><td>2</td><td>0.0%</td><td>20.6</td></tr><tr class="sql-row" data-score="4.2" data-type="Breakout" data-sharpe="-8940.9217" data-pf="0.8041" data-dd="0.0005" data-ret="-0.0004"><td><span class="rank-badge rank-3">🏆</span></td><td><span class="strat-name">Trend_following_10_EMA29</span><span class="strat-type type-Breakout">Breakout</span>🔴</td><td class="val-neg">-8940.92</td><td class="val-neutral">0.80</td><td class="val-pos">0.0%</td><td class="val-neg">-0.00%</td><td>2</td><td>50.0%</td><td>34.2</td></tr><tr class="sql-row" data-score="4.2" data-type="Breakout" data-sharpe="-8332.0694" data-pf="0.8846" data-dd="0.0006" data-ret="-0.0004"><td><span class="rank-badge rank-other">4</span></td><td><span class="strat-name">Trend_following_8_SMA85</span><span class="strat-type type-Breakout">Breakout</span>🔴</td><td class="val-neg">-8332.07</td><td class="val-neutral">0.88</td><td class="val-pos">0.0%</td><td class="val-neg">-0.00%</td><td>2</td><td>50.0%</td><td>34.4</td></tr><tr class="sql-row" data-score="4.2" data-type="Breakout" data-sharpe="-8422.3978" data-pf="0.5190" data-dd="0.0010" data-ret="-0.0010"><td><span class="rank-badge rank-other">5</span></td><td><span class="strat-name">Trend_following_7_SMA45</span><span class="strat-type type-Breakout">Breakout</span>🔴</td><td class="val-neg">-8422.40</td><td class="val-neutral">0.52</td><td class="val-pos">0.0%</td><td class="val-neg">-0.00%</td><td>2</td><td>50.0%</td><td>33.6</td></tr><tr class="sql-row" data-score="4.2" data-type="Breakout" data-sharpe="-7504.5717" data-pf="0.4800" data-dd="0.0016" data-ret="-0.0016"><td><span class="rank-badge rank-other">6</span></td><td><span class="strat-name">Trend_following_4_SMA19</span><span class="strat-type type-Breakout">Breakout</span>🔴</td><td class="val-neg">-7504.57</td><td class="val-neutral">0.48</td><td class="val-pos">0.0%</td><td class="val-neg">-0.00%</td><td>2</td><td>50.0%</td><td>33.6</td></tr><tr class="sql-row" data-score="4.1" data-type="Trend" data-sharpe="-39775.4615" data-pf="0.7812" data-dd="0.0001" data-ret="-0.0001"><td><span class="rank-badge rank-other">7</span></td><td><span class="strat-name">Mean_reversion_10_RSI8</span><span class="strat-type type-Trend">Trend</span>🔴</td><td class="val-neg">-39775.46</td><td class="val-neutral">0.78</td><td class="val-pos">0.0%</td><td class="val-neg">-0.00%</td><td>39</td><td>46.2%</td><td>35.6</td></tr><tr class="sql-row" data-score="3.9" data-type="Trend" data-sharpe="-9827.1496" data-pf="0.4137" data-dd="0.0005" data-ret="-0.0005"><td><span class="rank-badge rank-other">8</span></td><td><span class="strat-name">Trend_following_2_EMA24</span><span class="strat-type type-Trend">Trend</span>🔴</td><td class="val-neg">-9827.15</td><td class="val-neutral">0.41</td><td class="val-pos">0.0%</td><td class="val-neg">-0.00%</td><td>17</td><td>41.2%</td><td>33.7</td></tr><tr class="sql-row" data-score="3.8" data-type="Trend" data-sharpe="-37675.3655" data-pf="0.6220" data-dd="0.0001" data-ret="-0.0001"><td><span class="rank-badge rank-other">9</span></td><td><span class="strat-name">Mean_reversion_4_RSI16</span><span class="strat-type type-Trend">Trend</span>🔴</td><td class="val-neg">-37675.37</td><td class="val-neutral">0.62</td><td class="val-pos">0.0%</td><td class="val-neg">-0.00%</td><td>25</td><td>40.0%</td><td>33.8</td></tr><tr class="sql-row" data-score="3.7" data-type="Trend" data-sharpe="-23392.6702" data-pf="0.6076" data-dd="0.0001" data-ret="0.0001"><td><span class="rank-badge rank-other">10</span></td><td><span class="strat-name">Trend_following_9_EMA8</span><span class="strat-type type-Trend">Trend</span>🔴</td><td class="val-neg">-23392.67</td><td class="val-neutral">0.61</td><td class="val-pos">0.0%</td><td class="val-pos">0.00%</td><td>11</td><td>36.4%</td><td>32.9</td></tr><tr class="sql-row" data-score="3.6" data-type="MeanRev" data-sharpe="-4263.6343" data-pf="0.2146" data-dd="0.0028" data-ret="-0.0028"><td><span class="rank-badge rank-other">11</span></td><td><span class="strat-name">Mean_reversion_3_RSI10</span><span class="strat-type type-MeanRev">MeanRev</span>🔴</td><td class="val-neg">-4263.63</td><td class="val-neutral">0.21</td><td class="val-pos">0.0%</td><td class="val-neg">-0.00%</td><td>6</td><td>33.3%</td><td>30.2</td></tr><tr class="sql-row" data-score="3.5" data-type="Trend" data-sharpe="-32875.2599" data-pf="0.5001" data-dd="0.0001" data-ret="-0.0001"><td><span class="rank-badge rank-other">12</span></td><td><span class="strat-name">Mean_reversion_8_RSI11</span><span class="strat-type type-Trend">Trend</span>🔴</td><td class="val-neg">-32875.26</td><td class="val-neutral">0.50</td><td class="val-pos">0.0%</td><td class="val-neg">-0.00%</td><td>29</td><td>31.0%</td><td>31.4</td></tr><tr class="sql-row" data-score="3.4" data-type="Trend" data-sharpe="-34487.3660" data-pf="0.5811" data-dd="0.0001" data-ret="-0.0001"><td><span class="rank-badge rank-other">13</span></td><td><span class="strat-name">Mean_reversion_6_RSI11</span><span class="strat-type type-Trend">Trend</span>🔴</td><td class="val-neg">-34487.37</td><td class="val-neutral">0.58</td><td class="val-pos">0.0%</td><td class="val-neg">-0.00%</td><td>21</td><td>28.6%</td><td>31.0</td></tr><tr class="sql-row" data-score="3.0" data-type="Trend" data-sharpe="-66818.9196" data-pf="0.5881" data-dd="0.0000" data-ret="-0.0000"><td><span class="rank-badge rank-other">14</span></td><td><span class="strat-name">Mean_reversion_1_RSI8</span><span class="strat-type type-Trend">Trend</span>🔴</td><td class="val-neg">-66818.92</td><td class="val-neutral">0.59</td><td class="val-pos">0.0%</td><td class="val-neg">-0.00%</td><td>5</td><td>20.0%</td><td>27.5</td></tr><tr class="sql-row" data-score="2.2" data-type="Trend" data-sharpe="-111241.7557" data-pf="0.0000" data-dd="0.0000" data-ret="0.0000"><td><span class="rank-badge rank-other">15</span></td><td><span class="strat-name">Trend_following_5_EMA7</span><span class="strat-type type-Trend">Trend</span>🔴</td><td class="val-neg">-111241.76</td><td class="val-neutral">0.00</td><td class="val-pos">0.0%</td><td class="val-pos">0.00%</td><td>1</td><td>0.0%</td><td>20.3</td></tr><tr class="sql-row" data-score="2.2" data-type="Trend" data-sharpe="-114525.7320" data-pf="0.0000" data-dd="0.0000" data-ret="-0.0000"><td><span class="rank-badge rank-other">16</span></td><td><span class="strat-name">Trend_following_6_SMA48</span><span class="strat-type type-Trend">Trend</span>🔴</td><td class="val-neg">-114525.73</td><td class="val-neutral">0.00</td><td class="val-pos">0.0%</td><td class="val-neg">-0.00%</td><td>1</td><td>0.0%</td><td>20.3</td></tr><tr class="sql-row" data-score="2.2" data-type="Trend" data-sharpe="-115519.5265" data-pf="0.0000" data-dd="0.0000" data-ret="-0.0000"><td><span class="rank-badge rank-other">17</span></td><td><span class="strat-name">Mean_reversion_9_RSI14</span><span class="strat-type type-Trend">Trend</span>🔴</td><td class="val-neg">-115519.53</td><td class="val-neutral">0.00</td><td class="val-pos">0.0%</td><td class="val-neg">-0.00%</td><td>1</td><td>0.0%</td><td>20.3</td></tr><tr class="sql-row" data-score="2.2" data-type="Breakout" data-sharpe="-9580.7627" data-pf="0.0000" data-dd="0.0006" data-ret="-0.0006"><td><span class="rank-badge rank-other">18</span></td><td><span class="strat-name">Trend_following_1_EMA27</span><span class="strat-type type-Breakout">Breakout</span>🔴</td><td class="val-neg">-9580.76</td><td class="val-neutral">0.00</td><td class="val-pos">0.0%</td><td class="val-neg">-0.00%</td><td>2</td><td>0.0%</td><td>20.6</td></tr><tr class="sql-row" data-score="2.2" data-type="MeanRev" data-sharpe="-3996.9029" data-pf="0.0000" data-dd="0.0069" data-ret="-0.0070"><td><span class="rank-badge rank-other">19</span></td><td><span class="strat-name">Mean_reversion_2_RSI14</span><span class="strat-type type-MeanRev">MeanRev</span>🔴</td><td class="val-neg">-3996.90</td><td class="val-neutral">0.00</td><td class="val-pos">0.0%</td><td class="val-neg">-0.01%</td><td>2</td><td>0.0%</td><td>20.6</td></tr><tr class="sql-row" data-score="2.2" data-type="MeanRev" data-sharpe="-3998.7503" data-pf="0.0000" data-dd="0.0069" data-ret="-0.0070"><td><span class="rank-badge rank-other">20</span></td><td><span class="strat-name">Mean_reversion_5_RSI19</span><span class="strat-type type-MeanRev">MeanRev</span>🔴</td><td class="val-neg">-3998.75</td><td class="val-neutral">0.00</td><td class="val-pos">0.0%</td><td class="val-neg">-0.01%</td><td>2</td><td>0.0%</td><td>20.6</td></tr></tbody></table></div>
+<script>
+function filt(t){document.querySelectorAll('.filters .btn').forEach(b=>b.classList.remove('on'));event.target.classList.add('on');
+document.querySelectorAll('.sql-row').forEach(r=>{r.classList.toggle('h',t!='all'&&r.dataset.type!=t)})}
+function setTop(n){document.querySelectorAll('.controls .btn').forEach(b=>b.classList.remove('on'));event.target.classList.add('on');
+document.querySelectorAll('.sql-row').forEach((r,i)=>{r.classList.toggle('h',i>=n)})}
+var asc={};
+function srt(k){var t=document.querySelector('#tbl tbody'),r=Array.from(t.querySelectorAll('.sql-row:not(.h)'));
+asc[k]=!asc[k];r.sort((a,b)=>{var va=parseFloat(a.dataset[k])||0,vb=parseFloat(b.dataset[k])||0;return asc[k]?va-vb:vb-va});
+r.forEach(x=>t.appendChild(x))}
+var labs=["RSI_13","SMA_53","EMA_29","SMA_85","SMA_45","SMA_19","RSI_8","EMA_24","RSI_16","EMA_8","RSI_10","RSI_11","RSI_11","RSI_8","EMA_7","SMA_48","RSI_14","EMA_27","RSI_14","RSI_19"],sd=[-71256.24870121402,-12265.853133027622,-8940.921742659082,-8332.069429087525,-8422.397819077716,-7504.571686743848,-39775.46151772526,-9827.149634108846,-37675.36550646167,-23392.670168433222,-4263.634315636827,-32875.25985361712,-34487.36600469104,-66818.91959614542,-111241.75574480441,-114525.73203862984,-115519.52645033797,-9580.762693464092,-3996.902921045648,-3998.7503203479773],sc=[10.003818102552984,4.2499819523086515,4.2499758397356375,4.249972603662833,4.249954871099872,4.249928134983251,4.096150210038718,3.8970348527064353,3.8499958244963834,3.704542567616622,3.5832071762162414,3.4913737364537356,3.3928536929719275,3.0499981483739296,2.2499997908190963,2.249999302148831,2.24999904552479,2.249972935003706,2.249689205990889,2.24968920598747],dd=[1.1281219368354563E-5,8.773439165368292E-4,5.368947636109949E-4,6.088074926022594E-4,0.0010028644472809582,0.0015970003722001228,8.080255841196049E-5,5.326849550294125E-4,9.278896925388835E-5,6.415397406327011E-5,0.0028034914909207224,1.2386424649489137E-4,7.666411589889321E-5,4.1147246010950764E-5,4.648464528723735E-6,1.5507803749642335E-5,2.1210560225881637E-5,6.014443620881238E-4,0.006906533535805599,0.006906533611777455];
+new Chart(document.getElementById('c1'),{type:'bar',data:{labels:labs.slice(0,20),datasets:[{label:'Sharpe',data:sd.slice(0,20),backgroundColor:sd.slice(0,20).map(v=>v>=1?'#00d4aa':v>0?'#ffc107':'#ff6b6b'),borderRadius:3}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#8899aa',font:{size:9}}},y:{ticks:{color:'#8899aa'}}}}});
+new Chart(document.getElementById('c2'),{type:'doughnut',data:{labels:['Trend','MeanRev','Breakout'],datasets:[{data:[10,10,0],backgroundColor:['#00d4aa','#bb86fc','#ffb74d']}]},options:{responsive:true,plugins:{legend:{position:'bottom',labels:{color:'#8899aa',padding:12}}}}});
+new Chart(document.getElementById('c3'),{type:'scatter',data:{datasets:[{label:'Strategies',data:sc.map((s,i)=>({x:s,y:dd[i]})),backgroundColor:sc.map(s=>s>=70?'#00d4aa':s>=40?'#ffc107':'#ff6b6b'),pointRadius:4}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{title:{display:true,text:'Score',color:'#8899aa'},ticks:{color:'#8899aa'}},y:{title:{display:true,text:'MaxDD %',color:'#8899aa'},ticks:{color:'#8899aa'}}}}});
+</script>
+</body>
+</html>
