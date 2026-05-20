@@ -58,3 +58,6 @@ _bmad/**/*.bak
 # Logs & local runtime
 *.log
 logs/
+
+# Historical market data — downloaded, not committed
+data/historical/*
