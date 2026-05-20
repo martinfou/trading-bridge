@@ -1,0 +1,18 @@
+JForex Strategy Backtest Results — GBP/JPY H1 2026 (jan-mai)
+================================================================
+
+Stratégie                                Trades  Win%      P&L        Sharpe   PF         DD%
+────────────────────────────────────────────────────────────────────────────────────────
+Strategy_2_31_175_Converted  (Vortex)    1       100%   +$435,288     2.91   3,735      23.96%
+Strategy_2_31_177_Converted  (Vortex)    1       100%   +$88,714      1.95   2,919      36.18%
+Strategy_2_32_120_Converted  (Vortex)    1         0%   -$19,438     -0.08       0     176.88%
+Strategy_2_36_190_Converted  (Vortex)    1       100%   +$719,866     3.40   3,950      18.26%
+Strategy_2_38_112_Converted  (Vortex)    1         0%   -$16,321      0.08       0     148.69%
+Strategy_2_14_147_Adapted    (PurePA)    1         0%   -$17,293     -0.04       0     158.51%
+Strategy_2_15_195_Adapted    (LinReg)    1       100%  +$1,281,126    1.98  25,600       2.25%
+
+Résumé: 7 testées | 4 profitables ✅ | 3 perdantes ❌
+
+Note: 1 seul trade par stratégie en 5 mois — conditions très sélectives.
+Les P&L sont élevés car position sizing agressif (1000 units × pips JPY).
+À valider sur plusieurs années de données.

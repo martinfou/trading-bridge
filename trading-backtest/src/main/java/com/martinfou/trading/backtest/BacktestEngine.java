@@ -46,6 +46,11 @@ public class BacktestEngine {
     private double totalSlippage = 0.0;
     private double riskFreeRate = PerformanceMetrics.DEFAULT_RISK_FREE_RATE;
 
+    // Quote currency → USD conversion rates (for non-USD pairs)
+    // Key: symbol, Value: rate (e.g. "GBP/JPY" → 95.0)
+    // Default 1.0 for USD pairs (EUR/USD, GBP/USD, etc.)
+    private final Map<String, Double> quoteToUsdRates = new HashMap<>();
+
     // ---------------------------------------------------------------
     //  Constructors
     // ---------------------------------------------------------------
@@ -90,6 +95,22 @@ public class BacktestEngine {
     /** Percentage slippage of fill price per trade. */
     public BacktestEngine withSlippagePct(double slippagePct) {
         this.slippagePct = slippagePct;
+        return this;
+    }
+
+    /**
+     * Sets the quote-to-USD conversion rate for a symbol.
+     * <p>Required for non-USD quoted pairs such as JPY pairs.
+     * Example: for GBP/JPY, set rate = USD/JPY (e.g. 95.0).
+     * USD pairs (EUR/USD, GBP/USD) default to 1.0.
+     *
+     * @param symbol instrument symbol (e.g. "GBP/JPY", "EUR/USD")
+     * @param rate   quote currency → USD rate (e.g. 95.0 for JPY pairs)
+     * @return this engine (fluent)
+     */
+    public BacktestEngine withQuoteToUsdRate(String symbol, double rate) {
+        if (rate <= 0) throw new IllegalArgumentException("Rate must be positive: " + rate);
+        this.quoteToUsdRates.put(symbol, rate);
         return this;
     }
 
@@ -200,6 +221,18 @@ public class BacktestEngine {
                         order.quantity(), adjustedPrice);
                     if (order.stopLoss() != 0) pos.withStopLoss(order.stopLoss());
                     if (order.takeProfit() != 0) pos.withTakeProfit(order.takeProfit());
+                    // Apply quote-to-USD conversion rate if configured
+                    // Normalize symbol: try both slash and underscore formats
+                    Double rate = quoteToUsdRates.get(order.symbol());
+                    if (rate == null) {
+                        String normalSymbol = order.symbol().replace('_', '/');
+                        rate = quoteToUsdRates.get(normalSymbol);
+                        if (rate == null) {
+                            normalSymbol = order.symbol().replace('/', '_');
+                            rate = quoteToUsdRates.get(normalSymbol);
+                        }
+                    }
+                    if (rate != null) pos.withQuoteToUsdRate(rate);
                     openPositions.put(order.symbol(), pos);
                 }
 

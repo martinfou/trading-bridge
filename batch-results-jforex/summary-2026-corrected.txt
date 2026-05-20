@@ -1,0 +1,21 @@
+JForex Strategy Backtest — CORRIGÉ (÷95) — GBP/JPY H1 2026
+================================================================
+
+Stratégie                                Trades  Win%   P&L        Sharpe  DD%     Verdict
+──────────────────────────────────────────────────────────────────────────────────────
+Strategy_2_36_190_Converted  (Vortex)    1       100%   +$7,578    2.39    1.16%   ✅✅
+Strategy_2_15_195_Adapted    (LinReg)    1       100%   +$13,496   2.03    0.35%   ✅✅
+Strategy_2_31_175_Converted  (Vortex)    1       100%   +$4,582    0.55    0.79%   ✅
+Strategy_2_31_177_Converted  (Vortex)    1       100%   +$934     -6.04    1.10%   ✅
+Strategy_2_32_120_Converted  (Vortex)    1         0%   -$205    -24.15    2.28%   ❌
+Strategy_2_38_112_Converted  (Vortex)    1         0%   -$172    -25.88    2.03%   ❌
+Strategy_2_14_147_Adapted    (PurePA)    1         0%   -$182    -25.95    2.07%   ❌
+
+Résumé: 7 testées | 4 profitables ✅ | 3 perdantes ❌
+Micro lots (1000 units) | USD/JPY = 95.0 appliqué
+
+Modifications au moteur:
+- Position.currentPnl() ÷ quoteToUsdRate
+- BacktestEngine.withQuoteToUsdRate(symbol, rate)
+- Symbol normalization (slash vs underscore)
+- JForexBacktest accepte USD/JPY rate comme 5e argument

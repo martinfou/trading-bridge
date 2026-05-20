@@ -35,11 +35,12 @@ public final class JForexBacktest {
 
     public static void main(String[] args) {
         if (args.length < 3) {
-            System.err.println("Usage: JForexBacktest <class-name> <csv-path> <symbol> [capital]");
+            System.err.println("Usage: JForexBacktest <class> <csv> <symbol> [capital] [usd-rate]");
             System.err.println("  class-name: fully qualified strategy class");
             System.err.println("  csv-path:   path to Dukascopy CSV file");
-            System.err.println("  symbol:     instrument symbol (e.g. EUR/USD)");
+            System.err.println("  symbol:     instrument symbol (e.g. EUR/USD, GBP/JPY)");
             System.err.println("  capital:    initial capital (default: 10000)");
+            System.err.println("  usd-rate:   quote→USD rate for non-USD pairs (e.g. 95 for JPY)");
             System.exit(1);
         }
 
@@ -63,13 +64,25 @@ public final class JForexBacktest {
                 System.exit(1);
             }
 
+            // Detect quote-to-USD rate (required for JPY pairs: P&L is in JPY)
+            double quoteRate = 1.0;
+            if (symbol.endsWith("/JPY")) {
+                // JPY pairs: P&L calculated in JPY, need USD/JPY rate to convert
+                // Pass as 4th CLI argument, default to 95 for 2026
+                quoteRate = args.length > 4 ? Double.parseDouble(args[4]) : 95.0;
+                log.info("JPY pair: {} — quote→USD rate: {}", symbol, String.format("%.2f", quoteRate));
+            }
+
             // Instantiate strategy
             Class<?> clazz = Class.forName(className);
             Strategy strategy = (Strategy) clazz.getDeclaredConstructor().newInstance();
             log.info("Strategy: {}", strategy.name());
 
-            // Run backtest
+            // Run backtest (with quote-to-USD conversion if applicable)
             var engine = new BacktestEngine(strategy, bars, capital);
+            if (quoteRate > 0 && Math.abs(quoteRate - 1.0) > 0.001) {
+                engine.withQuoteToUsdRate(symbol, quoteRate);
+            }
             BacktestResult result = engine.run();
 
             // Print compact summary
