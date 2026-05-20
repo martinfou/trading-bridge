@@ -194,6 +194,11 @@ cmd_health() {
     fi
 }
 
+cmd_check() {
+    log "Checking for strategy promotions..."
+    "$SCRIPT_DIR/cron-promote.sh" 2>&1 | tee -a "$LOG_FILE"
+}
+
 cmd_build() {
     log "Building all modules..."
     cd "$PROJECT_DIR"
@@ -217,6 +222,9 @@ main() {
         health)
             cmd_health
             ;;
+        check)
+            cmd_check
+            ;;
         build)
             cmd_build
             ;;
@@ -225,13 +233,14 @@ main() {
             echo "  deploy promote <strategy-id> <env>   Promote strategy to environment"
             echo "  deploy status                         Show machine status"
             echo "  deploy health                         Test health endpoints"
+            echo "  deploy check                           Check strategy promotions (cron)"
             echo "  deploy build                          Build all Maven modules"
             echo ""
             echo "Config in: deploy/\$(hostname -s).env"
             echo "API:       \$LARAVEL_API_URL/deployments"
             ;;
         *)
-            error "Unknown command: $1. Use: promote, status, health, build"
+            error "Unknown command: $1. Use: promote, status, check, health, build"
             ;;
     esac
 }
