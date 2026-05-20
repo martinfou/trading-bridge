@@ -60,6 +60,7 @@ ${YELLOW}Options (Standard Mode):${NC}
   --bars N        Number of bars for backtest (default: 250)
   --capital N     Initial capital in USD (default: 100000)
   --output DIR    Output directory (default: ./batch-results/)
+  --data PATH      Use real market data from CSV file (default: simulated)
   --threads N     Parallel threads (default: CPU count)
 
 ${YELLOW}Options (Selection Criteria Mode):${NC}
@@ -101,6 +102,7 @@ while [[ $# -gt 0 ]]; do
         --bars)        BARS="$2"; shift 2 ;;
         --capital)     CAPITAL="$2"; shift 2 ;;
         --output)      OUTPUT="$2"; shift 2 ;;
+    --data)        DATA="$2"; shift 2 ;;
         --threads)     THREADS="--threads $2"; shift 2 ;;
         --min-sharpe)  MIN_SHARPE="--min-sharpe $2"; shift 2 ;;
         --min-pf)      MIN_PF="--min-pf $2"; shift 2 ;;
@@ -208,6 +210,7 @@ if [ -n "$MAX_DD" ]; then CMD_ARGS="$CMD_ARGS $MAX_DD"; fi
 if [ -n "$MIN_WIN_RATE" ]; then CMD_ARGS="$CMD_ARGS $MIN_WIN_RATE"; fi
 if [ -n "$TARGET" ]; then CMD_ARGS="$CMD_ARGS $TARGET"; fi
 if [ -n "$MAX_ATTEMPTS" ]; then CMD_ARGS="$CMD_ARGS $MAX_ATTEMPTS"; fi
+if [ -n "$DATA" ]; then CMD_ARGS="$CMD_ARGS --data $DATA"; fi
 
 set +e
 java \
