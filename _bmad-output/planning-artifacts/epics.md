@@ -640,3 +640,46 @@ Generer des strategies qui utilisent ces facteurs.
 
 ### Story 8.5: Sentiment Analysis API (P2 - future)
 Integrer API sentiment externe (AlphaVantage, RavenPack) pour ponderer les signaux.
+
+
+---
+
+## Epic 9: VPS Live Trading Platform
+
+Deployer la plateforme de trading live sur un VPS dedie, SANS OpenClaw.
+
+### Story 9.1: Self-Contained Live Runner (P0)
+Le LiveStrategyRunner doit fonctionner SANS OpenClaw gateway:
+- Lire les credentials depuis .env (pas de auth-profiles.json)
+- Logging fichier uniquement (pas de SLF4J vers OpenClaw)
+- State persistence: sauvegarde et resume sans OpenClaw
+- Script start/stop/status autonome
+
+### Story 9.2: VPS Deployment Script (P0)
+Script d'installation pour VPS vierge:
+- Installer Java 21 + Maven
+- Cloner trading-bridge depuis GitHub
+- Compiler le projet
+- Configurer .env avec creds OANDA
+- Installer le service systemd pour le live runner
+- Test de connexion OANDA
+
+### Story 9.3: Remote Monitoring (P1)
+Le VPS n'a pas OpenClaw → monitoring via:
+- Telegram bot qui envoie les trades en cours
+- Health endpoint HTTP (port 8083) pour verifier que ca tourne
+- Les logs sont envoyes a Joplin (ou pas — VPS isole)
+- Alerte si le process live runner crash
+
+### Story 9.4: Automated Strategy Deployment (P1)
+Quand une strategie est validee (via batch-gen):
+- Push sur GitHub (branche live/)
+- Le VPS tire automatiquement les MAJ (git pull)
+- Restart du live runner avec la nouvelle strategie
+- Rollback automatique si la nouvelle strategie echoue
+
+### Story 9.5: Strategy Selection for VPS (P2)
+Quelles strategies envoyer sur le VPS:
+- Meilleur Sharpe + Robustness du batch-gen
+- Maximum 5 strategies simultanees (risque)
+- Allocation de capital entre les strategies
