@@ -215,7 +215,29 @@ portfolio builder, rapports type StrategyQuant
 
 ---
 
-## Sprint 9 🛡️ — Risk Management System
+## Sprint 11 🌐 — Multi-Machine Architecture & Monitoring
+
+**Objectif :** 3 machines synchronisees (backtest, paper, live), monitoring central, zero-downtime.
+
+| Tache | Priorite | Statut |
+|-------|:--------:|:------:|
+| Health Check HTTP Server (port 9090, JSON, zero dep) | P0 | ⏳ |
+| Central Health Monitor (Laravel poll /health, 5 min) | P0 | ⏳ |
+| deploy.sh Multi-Machine (detection hostname, git auto-pull) | P1 | ⏳ |
+| Machine-Specific Config (deploy/backtest.env, paper.env, live.env) | P1 | ⏳ |
+| Cross-Machine Strategy Promotion (backtest→paper→live auto) | P2 | ⏳ |
+| Disaster Recovery (kill switch, restart procedure) | P2 | ⏳ |
+| Mission Control Dashboard (consolidated view) | P2 | ⏳ |
+
+**Definition de fait :**
+- 3 machines autonomes, chacune avec son role
+- Dashboard Laravel montre l'etat de toutes les machines
+- Promotion backtest→paper→live automatisee
+- Pas de point de defaillance unique
+
+---
+
+## Sprint 12 🛡️ — Risk Management System
 
 **Objectif :** Protection du capital en temps réel, circuit breakers, VaR, black swan
 
@@ -235,7 +257,7 @@ portfolio builder, rapports type StrategyQuant
 
 ---
 
-## Sprint 10 🖥️ — Trading Dashboard & Market Scanner
+## Sprint 13 🖥️ — Trading Dashboard & Market Scanner
 
 **Objectif :** Dashboard temps réel, scanner multi-marchés, alertes, companion mobile
 
@@ -254,7 +276,7 @@ portfolio builder, rapports type StrategyQuant
 
 ---
 
-## Sprint 11 🤖 — AI/ML Integration
+## Sprint 14 🤖 — AI/ML Integration
 
 **Objectif :** Market regime detection, pattern recognition, feature engineering, ML models
 
@@ -274,7 +296,7 @@ portfolio builder, rapports type StrategyQuant
 
 ---
 
-## Sprint 12 📰 — News & Sentiment Pipeline
+## Sprint 15 📰 — News & Sentiment Pipeline
 
 **Objectif :** Parsing de news, sentiment NLP, market impact scoring, calendrier économique
 
@@ -292,7 +314,7 @@ portfolio builder, rapports type StrategyQuant
 
 ---
 
-## Sprint 13 🌍 — Enterprise & International Quality
+## Sprint 16 🌍 — Enterprise & International Quality
 
 **Objectif :** Qualité production internationale — tests, doc, sécurité, performance
 
