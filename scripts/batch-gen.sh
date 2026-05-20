@@ -211,8 +211,6 @@ if [ -n "$MAX_ATTEMPTS" ]; then CMD_ARGS="$CMD_ARGS $MAX_ATTEMPTS"; fi
 
 set +e
 java \
-    -XX:+UseZGC \
-    -XX:+ZGenerational \
     -Xmx4g \
     -cp "$CLASSPATH" \
     com.martinfou.trading.genetics.BatchStrategyRunner \
