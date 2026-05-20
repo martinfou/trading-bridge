@@ -755,3 +755,31 @@ Quelles strategies envoyer sur le VPS:
 - Meilleur Sharpe + Robustness du batch-gen
 - Maximum 5 strategies simultanees (risque)
 - Allocation de capital entre les strategies
+
+
+---
+
+## Epic 10: Data Infrastructure
+
+Download, store and manage market data efficiently for backtesting.
+
+### Story 10.1: Minute Bars Download (P0)
+Telecharger des donnees M1 (minute) depuis Dukascopy pour toutes les paires:
+- Utiliser dukascopy-node avec -t m1
+- Periode: 6 derniers mois (60 000+ candles par paire)
+- Convertir en format binaire BarStore (.bars)
+- Storage: ~2.5 MB par paire (vs 143 KB pour H1)
+- Script: scripts/download-minute-data.sh
+
+### Story 10.2: Multi-Timeframe BarStore (P1)
+Gerer plusieurs timeframes dans BarStore:
+- Meme format binaire, dossier separe par timeframe
+- data/historical/bars/H1/ et data/historical/bars/M1/
+- Index global: data/historical/bars/index.json
+- Auto-detection du timeframe dans BatchStrategyRunner
+
+### Story 10.3: BarStore Integration in BatchStrategyRunner (P1)
+Remplacer le parsing CSV par le format binaire dans le batch generator:
+- loadBars() cherche d'abord .bars, fallback CSV
+- 50x plus rapide que CSV
+- Support des ranges de dates (--from --to au lieu de --bars)
