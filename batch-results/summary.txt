@@ -1,25 +1,18 @@
 BATCH STRATEGY GENERATOR — SUMMARY
 ========================================
 
-Total: 20 | Promising: 0 | Medium: 0 | Weak: 20
+Total: 5 | Promising: 0 | Medium: 0 | Weak: 5
 
 Top 10 Strategies:
 Rank Name                     Sharpe PF     DD%    Ret%     Trades Score 
-1    Mean_reversion_7_RSI13   -105606.23 2.34   0.0    0.00     3      🔴10.0
-2    Trend_following_3_SMA53  -10657.04 0.81   0.0    -0.00    2      🔴4.2
-3    Trend_following_10_EMA29 -8940.92 0.80   0.0    -0.00    2      🔴4.2
-4    Trend_following_8_SMA85  -8332.07 0.88   0.0    -0.00    2      🔴4.2
-5    Trend_following_7_SMA45  -8422.40 0.52   0.0    -0.00    2      🔴4.2
-6    Trend_following_4_SMA19  -7504.57 0.48   0.0    -0.00    2      🔴4.2
-7    Mean_reversion_10_RSI8   -39775.46 0.78   0.0    -0.00    39     🔴4.1
-8    Trend_following_2_EMA24  -9827.15 0.41   0.0    -0.00    17     🔴3.9
-9    Mean_reversion_4_RSI16   -37675.37 0.62   0.0    -0.00    25     🔴3.8
-10   Trend_following_9_EMA8   -23392.67 0.61   0.0    0.00     11     🔴3.7
-  ... 10 more strategies
+1    Trend_following_3_EMA23  -6410.95 0.30   0.0    -0.00    2      🔴4.2
+2    Trend_following_4_SMA58  -5626.43 0.23   0.0    -0.00    2      🔴4.2
+3    Trend_following_5_SMA14  -5618.75 0.21   0.0    -0.00    2      🔴4.2
+4    Trend_following_2_SMA32  -5071.65 0.21   0.0    -0.00    2      🔴4.2
+5    Trend_following_1_SMA25  -79956.88 0.31   0.0    -0.00    7      🔴4.0
 
 Type Distribution:
-  TREND_FOLLOWING      10
-  MEAN_REVERSION       10
+  TREND_FOLLOWING      5
 
-Validated: 2
+Validated: 1
 Files: ranking.html | ranking.json | summary.txt

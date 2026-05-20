@@ -158,7 +158,13 @@ public final class BatchStrategyRunner {
         // Phase 4: Validate top 10%
         int validateCount = Math.max(1, (int) (ranked.size() * VALIDATE_TOP_FRACTION));
         log.info("PHASE 4: Validating top {} strategies ({}%)", validateCount, (int) (VALIDATE_TOP_FRACTION * 100));
-        List<Bar> fullBars = generateBars(config.bars);
+        List<Bar> barsToUse = config.dataPath != null && !config.dataPath.isEmpty()
+            ? loadCSVData(config.dataPath)
+            : null;
+        if (barsToUse == null) {
+            barsToUse = generateBars(config.bars);
+        }
+        final List<Bar> fullBars = barsToUse;
         AtomicInteger validated = new AtomicInteger(0);
 
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -973,6 +979,45 @@ new Chart(document.getElementById('c3'),{type:'scatter',data:{datasets:[{label:'
     }
 
     // ===============================================================
+    //  Real data loading
+    // ===============================================================
+    
+    private static List<Bar> loadCSVData(String csvPath) {
+        var bars = new ArrayList<Bar>();
+        try {
+            var path = java.nio.file.Paths.get(csvPath);
+            if (!java.nio.file.Files.exists(path)) {
+                log.warn("CSV not found: {}. Using generated data.", csvPath);
+                return null;
+            }
+            try (var reader = java.nio.file.Files.newBufferedReader(path)) {
+                String header = reader.readLine(); // skip header
+                String line;
+                int i = 0;
+                long baseSecs = 1700000000L; // fallback timestamp
+                while ((line = reader.readLine()) != null && i < 10000) {
+                    var parts = line.split(",");
+                    if (parts.length >= 5) {
+                        double open = Double.parseDouble(parts[1]);
+                        double high = Double.parseDouble(parts[2]);
+                        double low = Double.parseDouble(parts[3]);
+                        double close = Double.parseDouble(parts[4]);
+                        long volume = parts.length >= 6 ? Long.parseLong(parts[5]) : 0;
+                        long ts = baseSecs + i * 3600L;
+                        bars.add(new Bar("FOREX", java.time.Instant.ofEpochSecond(ts), open, high, low, close, volume));
+                        i++;
+                    }
+                }
+            }
+            log.info("Loaded {} bars from {}", bars.size(), csvPath);
+        } catch (Exception e) {
+            log.warn("Failed to load CSV {}: {}. Using generated data.", csvPath, e.getMessage());
+            return null;
+        }
+        return bars;
+    }
+
+    // ===============================================================
     //  Types resolution
     // ===============================================================
 
@@ -1008,6 +1053,7 @@ new Chart(document.getElementById('c3'),{type:'scatter',data:{datasets:[{label:'
         double capital,
         Path outputDir,
         int threads,
+        String dataPath,
         SelectionCriteria selectionCriteria
     ) {}
 
@@ -1017,6 +1063,7 @@ new Chart(document.getElementById('c3'),{type:'scatter',data:{datasets:[{label:'
         int bars = 250;
         double capital = 100_000.0;
         Path outputDir = Path.of("./batch-results/");
+        String dataPath = null;
         int threads = Runtime.getRuntime().availableProcessors();
 
         double minSharpe = SelectionCriteria.DEFAULT_MIN_SHARPE;
@@ -1034,6 +1081,7 @@ new Chart(document.getElementById('c3'),{type:'scatter',data:{datasets:[{label:'
                 case "--capital" -> capital = parseDoubleArg(args, ++i, 100_000.0);
                 case "--output" -> outputDir = Path.of(args[++i]);
                 case "--threads" -> threads = parseIntArg(args, ++i, Runtime.getRuntime().availableProcessors());
+                case "--data" -> dataPath = args[++i];
                 case "--min-sharpe" -> minSharpe = parseDoubleArg(args, ++i, SelectionCriteria.DEFAULT_MIN_SHARPE);
                 case "--min-pf" -> minPf = parseDoubleArg(args, ++i, SelectionCriteria.DEFAULT_MIN_PF);
                 case "--max-dd" -> maxDd = parseDoubleArg(args, ++i, SelectionCriteria.DEFAULT_MAX_DD);
@@ -1045,7 +1093,7 @@ new Chart(document.getElementById('c3'),{type:'scatter',data:{datasets:[{label:'
         }
 
         var criteria = new SelectionCriteria(minSharpe, minPf, maxDd, minWinRate, targetCount, maxAttempts);
-        return new Config(count, types, bars, capital, outputDir, threads, criteria);
+        return new Config(count, types, bars, capital, outputDir, threads, dataPath, criteria);
     }
 
     private static int parseIntArg(String[] args, int i, int defaultValue) {
