@@ -698,7 +698,26 @@ Le Laravel dashboard appelle les endpoints du VPS:
 - Auto-refresh toutes les 60s (comme les prix)
 - Config: VPS_URL dans .env
 
-### Story 9.4: Remote Monitoring via OpenClaw (P1)
+### Story 9.4: Market Data Proxy (P0)
+Proxy universel qui centralise les donnees de marche entre backtest et live:
+- Live mode: 1 appel OANDA toutes les 15s → cache → toutes les strategies lisent le cache
+- Backtest mode: lit les fichiers CSV/barres → toutes les strategies utilisent la meme interface
+- Replay mode: accelere des donnees historiques pour forward testing
+- Meme interface: getPrice(), getHistory() pour backtest ET live
+
+```java
+// DataProxy.java — la strategie ne change JAMAIS entre backtest et live
+interface MarketData {
+    double getPrice(String symbol);
+    List<Bar> getHistory(String symbol, String timeframe, int count);
+}
+
+class LiveDataProxy implements MarketData { /* OANDA API + cache */ }
+class BacktestDataProxy implements MarketData { /* lectures fichiers */ }
+class ReplayDataProxy implements MarketData { /* accelere historique */ }
+```
+
+### Story 9.5: Remote Monitoring via OpenClaw (P1)
 OpenClaw sur la machine locale MONITORE le VPS:
 - C-3PO (agent dev) appelle /health sur le VPS toutes les 5 min
 - Si le VPS repond pas → alerte Telegram + Discord #critical
