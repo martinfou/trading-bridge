@@ -797,3 +797,58 @@ Remplacer le parsing CSV par le format binaire dans le batch generator:
 - loadBars() cherche d'abord .bars, fallback CSV
 - 50x plus rapide que CSV
 - Support des ranges de dates (--from --to au lieu de --bars)
+
+
+---
+
+## Epic 11: Multi-Machine Architecture & Monitoring
+
+Gerer 3 machines (backtest, paper, live) avec synchronisation zero-friction.
+
+### Story 11.1: Health Check HTTP Server (P0)
+Chaque machine expose un endpoint /health:
+- Port 9090, HTTP built-in (Java HttpServer, zero dep)
+- Uptime, CPU, memory, disk, git commit, strategie active
+- Timeout 5s, reponse JSON
+
+### Story 11.2: Central Health Monitor (P0)
+Le dashboard Laravel poll /health toutes les 5 min:
+- Table: machine_status (backtest, paper, live)
+- Alertes Telegram si DOWN > 2 checks consecutifs
+- Alertes Discord si drawdown > 15%
+- Vue unique: /api/health → toutes les machines
+
+### Story 11.3: deploy.sh Multi-Machine (P1)
+deploy.sh doit marcher sur chaque machine:
+- detecter hostname → choisir le bon .env
+- git pull automatique avant activate
+- POST /api/deployments depuis n'importe quelle machine
+- Ne JAMAIS ecrire de fichier d'etat dans git
+
+### Story 11.4: Machine-Specific Config (P1)
+Chaque machine a son propre dossier deploy/ (gitignore):
+- deploy/backtest.env, deploy/paper.env, deploy/live.env
+- Docker compose adapte au role (backtest = CPU, live = RAM)
+- Cles API JAMAIS dans git
+
+### Story 11.5: Cross-Machine Strategy Promotion (P2)
+Promouvoir une strategie de backtest → paper → live:
+- Backtest machine: deploy.sh promote ... paper
+  → Laravel recoit: "TREND_FOLLOWING → paper, active"
+- Paper VPS: cron check les strategies actives toutes les heures
+  → si nouvelle strategie paper → git pull + activate
+- Live VPS: pareil pour les strategies live
+
+### Story 11.6: Disaster Recovery (P2)
+Si une machine tombe:
+- Paper VPS down → pas de trading, dashboard alerte
+- Live VPS down → kill switch auto (OANDA API close all)
+- Dashboard down → les machines continuent (autonomes)
+- Restart: git pull + docker compose up -d
+
+### Story 11.7: Mission Control Dashboard (P2)
+Vue consolidate dans Laravel:
+- /strategies → statut de chaque machine, uptime, strategie active
+- /health → 3 cartes (vert/orange/rouge) avec metriques
+- /alerts → historique des alertes
+- /actions → promote, kill, restart, recalibrate
