@@ -180,8 +180,11 @@ portfolio builder, rapports type StrategyQuant
 
 | Tache | Priorite | Statut |
 |-------|:--------:|:------:|
+| Tache | Priorite | Statut |
+|-------|:--------:|:------:|
 | Self-Contained Live Runner (sans OpenClaw) | P0 | ⏳ |
-| VPS Deployment Script (Java + Maven + OANDA) | P0 | ⏳ |
+| **Java HTTP Status Server** (:8083/health, /strategies, /trades) | P0 | ⏳ |
+| **Laravel VPS Integration** (dashboard -> VPS) | P0 | ⏳ |
 | Remote Monitoring (Telegram + HTTP health) | P1 | ⏳ |
 | Automated Strategy Deployment (git pull) | P1 | ⏳ |
 | Strategy Selection for VPS (top 5) | P2 | ⏳ |
