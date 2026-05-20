@@ -11,6 +11,7 @@
     <name>Trading Examples</name>
     <dependencies>
         <dependency><groupId>com.martinfou.trading</groupId><artifactId>trading-core</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>com.martinfou.trading</groupId><artifactId>trading-data</artifactId><version>${project.version}</version></dependency>
         <dependency><groupId>com.martinfou.trading</groupId><artifactId>trading-backtest</artifactId><version>${project.version}</version></dependency>
         <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-simple</artifactId></dependency>
     </dependencies>
