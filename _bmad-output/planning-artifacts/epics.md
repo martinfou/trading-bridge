@@ -680,7 +680,25 @@ Script d'installation pour VPS vierge:
 - Installer le service systemd pour le live runner
 - Test de connexion OANDA
 
-### Story 9.3: Remote Monitoring via OpenClaw (P1)
+### Story 9.2: Java HTTP Status Server (P0)
+Le LiveStrategyRunner expose un serveur HTTP embarquee (port 8083):
+- GET /health → {"status":"ok","uptime":3600,"strategies":5}
+- GET /strategies → liste des strategies actives avec metriques
+- GET /strategies/{id} → details d'une strategie (P&L, trades, position)
+- GET /trades → historiques des trades recents
+- GET /trades/{id} → details d'un trade
+- Pas de framework lourd — Java HTTP Server (com.sun.net.httpserver)
+- Pas d'auth (VPS interne, pas expose au public)
+
+### Story 9.3: Laravel VPS Integration (P0)
+Le Laravel dashboard appelle les endpoints du VPS:
+- StrategyRegistryController: ajouter un provider VPS
+- Page Strategy Registry: montre les strategies LIVE du VPS
+- Si VPS down → badge 🔴 VPS offline dans le dashboard
+- Auto-refresh toutes les 60s (comme les prix)
+- Config: VPS_URL dans .env
+
+### Story 9.4: Remote Monitoring via OpenClaw (P1)
 OpenClaw sur la machine locale MONITORE le VPS:
 - C-3PO (agent dev) appelle /health sur le VPS toutes les 5 min
 - Si le VPS repond pas → alerte Telegram + Discord #critical
