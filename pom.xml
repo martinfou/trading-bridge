@@ -18,6 +18,7 @@
         <module>trading-strategies</module>
         <module>trading-examples</module>
         <module>trading-genetics</module>
+        <module>trading-monitor</module>
     </modules>
 
     <properties>
