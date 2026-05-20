@@ -54,6 +54,44 @@ public final class BatchStrategyRunner {
     private static final int MONTE_CARLO_RUNS = 500;
     private static final int SYNTHETIC_BAR_SECS = 86400;
 
+    // Generation batches for iterative mode
+    private static final int BATCH_SIZE = 50;
+
+    // ===============================================================
+    //  Selection Criteria
+    // ===============================================================
+
+    /**
+     * User-defined criteria that a strategy must meet to be considered "good".
+     * When targetCount > 0, the runner keeps generating until it finds enough
+     * strategies that pass these criteria (up to maxAttempts).
+     */
+    public record SelectionCriteria(
+        double minSharpe,
+        double minProfitFactor,
+        double maxDrawdown,
+        double minWinRate,
+        int targetCount,
+        int maxAttempts
+    ) {
+        public static final double DEFAULT_MIN_SHARPE = 1.0;
+        public static final double DEFAULT_MIN_PF = 1.5;
+        public static final double DEFAULT_MAX_DD = 25.0;
+        public static final double DEFAULT_MIN_WIN_RATE = 40.0;
+        public static final int DEFAULT_TARGET_COUNT = 0; // 0 = disabled (use fixed count)
+        public static final int DEFAULT_MAX_ATTEMPTS = 10_000;
+
+        public static SelectionCriteria disabled() {
+            return new SelectionCriteria(
+                DEFAULT_MIN_SHARPE, DEFAULT_MIN_PF, DEFAULT_MAX_DD,
+                DEFAULT_MIN_WIN_RATE, 0, DEFAULT_MAX_ATTEMPTS);
+        }
+
+        public boolean isEnabled() {
+            return targetCount > 0;
+        }
+    }
+
     // ===============================================================
     //  Entry point
     // ===============================================================
@@ -64,6 +102,13 @@ public final class BatchStrategyRunner {
         log.info("Batch Strategy Generator — StrategyQuant Style");
         log.info("Count: {} | Types: {} | Bars: {} | Capital: ${}",
             config.count, config.types, config.bars, config.capital);
+        if (config.selectionCriteria().isEnabled()) {
+            var sc = config.selectionCriteria();
+            log.info("Selection criteria: Sharpe≥{} PF≥{} DD≤{} WinRate≥{} Target={} MaxAttempts={}",
+                format2(sc.minSharpe()), format2(sc.minProfitFactor()),
+                format2(sc.maxDrawdown()), format2(sc.minWinRate()),
+                sc.targetCount(), sc.maxAttempts());
+        }
         log.info("Output: {} | Threads: {}", config.outputDir, config.threads);
 
         Instant startTime = Instant.now();
@@ -84,51 +129,18 @@ public final class BatchStrategyRunner {
         List<StrategyBuilder.StrategyType> types = resolveTypes(config.types);
         log.info("Strategy types: {}", types.stream().map(Enum::name).collect(Collectors.joining(",")));
 
-        // Phase 1: Generate chromosomes
-        log.info("PHASE 1: Generating {} strategies", config.count);
-        int perType = (int) Math.ceil((double) config.count / types.size());
-        List<StrategyBundle> allStrategies = new CopyOnWriteArrayList<>();
-        AtomicInteger totalGenerated = new AtomicInteger(0);
-
-        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-            List<CompletableFuture<Void>> futures = new ArrayList<>();
-            for (var type : types) {
-                futures.add(CompletableFuture.runAsync(() -> {
-                    List<StrategyBundle> generated = generateForType(type, perType, totalGenerated, config.count);
-                    allStrategies.addAll(generated);
-                }, executor));
-            }
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        // Decide mode: fixed-count generation vs. iterative selection
+        List<StrategyBundle> allStrategies;
+        if (config.selectionCriteria().isEnabled()) {
+            allStrategies = generateUntilCriteriaMet(config, types);
+        } else {
+            allStrategies = generateFixedCount(config, types);
         }
 
-        while (allStrategies.size() > config.count) {
-            allStrategies.remove(allStrategies.size() - 1);
-        }
-        log.info("Generated {} strategies total", allStrategies.size());
-
-        // Phase 2: Quick Screen
-        log.info("PHASE 2: Quick screening on {} bars", QUICK_SCREEN_BARS);
-        List<Bar> screenBars = generateBars(QUICK_SCREEN_BARS);
-        AtomicInteger screened = new AtomicInteger(0);
-
-        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-            List<CompletableFuture<Void>> futures = new ArrayList<>();
-            for (var bundle : allStrategies) {
-                futures.add(CompletableFuture.runAsync(() -> {
-                    try {
-                        bundle.quickResult = quickBacktest(bundle.chromosome, screenBars);
-                    } catch (Exception e) {
-                        log.warn("Quick screen failed: {}", e.getMessage());
-                        bundle.quickResult = null;
-                    }
-                    int done = screened.incrementAndGet();
-                    if (done % 50 == 0 || done == allStrategies.size()) {
-                        log.info("Screened {}/{} ({}%)", done, allStrategies.size(),
-                            done * 100 / allStrategies.size());
-                    }
-                }, executor));
-            }
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        if (allStrategies.isEmpty()) {
+            log.warn("No strategies generated — producing empty report");
+            exportResults(List.of(), config.outputDir);
+            return;
         }
 
         // Phase 3: Rank by composite score
@@ -174,8 +186,159 @@ public final class BatchStrategyRunner {
         long promising = ranked.stream().filter(b -> b.compositeScore >= 70).count();
         long medium = ranked.stream().filter(b -> b.compositeScore >= 40 && b.compositeScore < 70).count();
         long weak = ranked.stream().filter(b -> b.compositeScore < 40).count();
-        log.info("SUMMARY: {} total | Promising {} | Medium {} | Weak {} | Validated {} | Exported {}",
-            ranked.size(), promising, medium, weak, validateCount, Math.min(EXPORT_TOP_N, ranked.size()));
+        int goodCount = (int) ranked.stream().filter(b -> passesCriteria(b, config.selectionCriteria())).count();
+        log.info("SUMMARY: {} total | Good(met criteria) {} | Promising {} | Medium {} | Weak {} | Validated {} | Exported {}",
+            ranked.size(), goodCount, promising, medium, weak, validateCount, Math.min(EXPORT_TOP_N, ranked.size()));
+    }
+
+    /**
+     * Fixed-count generation: create exactly N strategies, screen all, then rank.
+     */
+    private static List<StrategyBundle> generateFixedCount(Config config, List<StrategyBuilder.StrategyType> types) throws Exception {
+        log.info("PHASE 1: Generating {} strategies (fixed count)", config.count);
+        int perType = (int) Math.ceil((double) config.count / types.size());
+        List<StrategyBundle> allStrategies = new CopyOnWriteArrayList<>();
+        AtomicInteger totalGenerated = new AtomicInteger(0);
+
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            List<CompletableFuture<Void>> futures = new ArrayList<>();
+            for (var type : types) {
+                futures.add(CompletableFuture.runAsync(() -> {
+                    List<StrategyBundle> generated = generateForType(type, perType, totalGenerated, config.count);
+                    allStrategies.addAll(generated);
+                }, executor));
+            }
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        }
+
+        while (allStrategies.size() > config.count) {
+            allStrategies.remove(allStrategies.size() - 1);
+        }
+        log.info("Generated {} strategies total", allStrategies.size());
+
+        // Phase 2: Quick Screen
+        log.info("PHASE 2: Quick screening on {} bars", QUICK_SCREEN_BARS);
+        List<Bar> screenBars = generateBars(QUICK_SCREEN_BARS);
+        screenAllParallel(allStrategies, screenBars);
+
+        return allStrategies;
+    }
+
+    /**
+     * Iterative generation: keep generating batches until we find targetCount
+     * strategies that meet all selection criteria, or we hit maxAttempts.
+     */
+    private static List<StrategyBundle> generateUntilCriteriaMet(Config config, List<StrategyBuilder.StrategyType> types) throws Exception {
+        var sc = config.selectionCriteria();
+        log.info("PHASE 1: Generating strategies until {} meet criteria (Sharpe≥{} PF≥{} DD≤{} WinRate≥{})",
+            sc.targetCount(), format2(sc.minSharpe()), format2(sc.minProfitFactor()),
+            format2(sc.maxDrawdown()), format2(sc.minWinRate()));
+        log.info("         Max attempts: {} | Batch size: {}", sc.maxAttempts(), BATCH_SIZE);
+
+        List<StrategyBundle> goodStrategies = new ArrayList<>();
+        List<Bar> screenBars = generateBars(QUICK_SCREEN_BARS);
+        AtomicInteger totalAttempts = new AtomicInteger(0);
+        int typeCount = types.size();
+        var rng = ThreadLocalRandom.current();
+
+        while (totalAttempts.get() < sc.maxAttempts() && goodStrategies.size() < sc.targetCount()) {
+            int batchPerType = Math.max(1, BATCH_SIZE / typeCount);
+            int remaining = sc.maxAttempts() - totalAttempts.get();
+            int batchActual = Math.min(BATCH_SIZE, remaining);
+            batchPerType = Math.max(1, batchActual / typeCount);
+
+            // Generate a batch
+            List<StrategyBundle> batch = new CopyOnWriteArrayList<>();
+            AtomicInteger batchGen = new AtomicInteger(0);
+            int finalBatchPerType = batchPerType;
+
+            try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+                List<CompletableFuture<Void>> futures = new ArrayList<>();
+                for (var type : types) {
+                    futures.add(CompletableFuture.runAsync(() -> {
+                        List<StrategyBundle> generated = generateForType(type, finalBatchPerType, batchGen, batchActual);
+                        batch.addAll(generated);
+                    }, executor));
+                }
+                CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+            }
+
+            int batchSize = batch.size();
+            totalAttempts.addAndGet(batchSize);
+
+            // Quick screen the batch in parallel
+            screenAllParallel(batch, screenBars);
+
+            // Evaluate which one pass criteria
+            for (var b : batch) {
+                if (b.quickResult != null && passesCriteria(b, sc)) {
+                    b.passedSelection = true;
+                    goodStrategies.add(b);
+                    log.info("Found {}/{} good strategies (Sharpe≥{} PF≥{} DD≤{}%) — continuing...",
+                        goodStrategies.size(), sc.targetCount(),
+                        format2(sc.minSharpe()), format2(sc.minProfitFactor()),
+                        format2(sc.maxDrawdown()));
+
+                    if (goodStrategies.size() >= sc.targetCount()) {
+                        break;
+                    }
+                }
+            }
+
+            int attempted = totalAttempts.get();
+            log.info("Batch done: attempted={}/{} found={}/{} good so far",
+                attempted, sc.maxAttempts(), goodStrategies.size(), sc.targetCount());
+        }
+
+        int attempted = totalAttempts.get();
+        if (goodStrategies.size() >= sc.targetCount()) {
+            log.info("Found {}/{} good strategies — stopping early!",
+                goodStrategies.size(), sc.targetCount());
+        } else {
+            log.warn("Only found {}/{} good strategies after {} attempts (max {}). " +
+                    "Consider relaxing criteria.",
+                goodStrategies.size(), sc.targetCount(), attempted, sc.maxAttempts());
+        }
+
+        log.info("Generated {} strategies total in {} attempts", goodStrategies.size(), attempted);
+        return goodStrategies;
+    }
+
+    /**
+     * Returns true if a strategy's quick-screen results meet all selection criteria.
+     */
+    private static boolean passesCriteria(StrategyBundle bundle, SelectionCriteria sc) {
+        if (bundle.quickResult == null) return false;
+        return bundle.quickResult.sharpeRatio() >= sc.minSharpe()
+            && bundle.quickResult.profitFactor() >= sc.minProfitFactor()
+            && bundle.quickResult.maxDrawdownPct() <= sc.maxDrawdown()
+            && bundle.quickResult.winRatePct() >= sc.minWinRate();
+    }
+
+    /**
+     * Quick-screens all strategies in parallel using Virtual Threads.
+     */
+    private static void screenAllParallel(List<StrategyBundle> strategies, List<Bar> bars) throws Exception {
+        AtomicInteger screened = new AtomicInteger(0);
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            List<CompletableFuture<Void>> futures = new ArrayList<>();
+            for (var bundle : strategies) {
+                futures.add(CompletableFuture.runAsync(() -> {
+                    try {
+                        bundle.quickResult = quickBacktest(bundle.chromosome, bars);
+                    } catch (Exception e) {
+                        log.warn("Quick screen failed: {}", e.getMessage());
+                        bundle.quickResult = null;
+                    }
+                    int done = screened.incrementAndGet();
+                    if (done % 50 == 0 || done == strategies.size()) {
+                        log.info("Screened {}/{} ({}%)", done, strategies.size(),
+                            done * 100 / strategies.size());
+                    }
+                }, executor));
+            }
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        }
     }
 
     // ===============================================================
@@ -838,7 +1001,15 @@ new Chart(document.getElementById('c3'),{type:'scatter',data:{datasets:[{label:'
     //  Config & Arg Parsing
     // ===============================================================
 
-    record Config(int count, String types, int bars, double capital, Path outputDir, int threads) {}
+    record Config(
+        int count,
+        String types,
+        int bars,
+        double capital,
+        Path outputDir,
+        int threads,
+        SelectionCriteria selectionCriteria
+    ) {}
 
     static Config parseArgs(String[] args) {
         int count = 500;
@@ -848,6 +1019,13 @@ new Chart(document.getElementById('c3'),{type:'scatter',data:{datasets:[{label:'
         Path outputDir = Path.of("./batch-results/");
         int threads = Runtime.getRuntime().availableProcessors();
 
+        double minSharpe = SelectionCriteria.DEFAULT_MIN_SHARPE;
+        double minPf = SelectionCriteria.DEFAULT_MIN_PF;
+        double maxDd = SelectionCriteria.DEFAULT_MAX_DD;
+        double minWinRate = SelectionCriteria.DEFAULT_MIN_WIN_RATE;
+        int targetCount = SelectionCriteria.DEFAULT_TARGET_COUNT;
+        int maxAttempts = SelectionCriteria.DEFAULT_MAX_ATTEMPTS;
+
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
                 case "--count" -> count = parseIntArg(args, ++i, 500);
@@ -856,10 +1034,18 @@ new Chart(document.getElementById('c3'),{type:'scatter',data:{datasets:[{label:'
                 case "--capital" -> capital = parseDoubleArg(args, ++i, 100_000.0);
                 case "--output" -> outputDir = Path.of(args[++i]);
                 case "--threads" -> threads = parseIntArg(args, ++i, Runtime.getRuntime().availableProcessors());
+                case "--min-sharpe" -> minSharpe = parseDoubleArg(args, ++i, SelectionCriteria.DEFAULT_MIN_SHARPE);
+                case "--min-pf" -> minPf = parseDoubleArg(args, ++i, SelectionCriteria.DEFAULT_MIN_PF);
+                case "--max-dd" -> maxDd = parseDoubleArg(args, ++i, SelectionCriteria.DEFAULT_MAX_DD);
+                case "--min-win-rate" -> minWinRate = parseDoubleArg(args, ++i, SelectionCriteria.DEFAULT_MIN_WIN_RATE);
+                case "--target" -> targetCount = parseIntArg(args, ++i, SelectionCriteria.DEFAULT_TARGET_COUNT);
+                case "--max-attempts" -> maxAttempts = parseIntArg(args, ++i, SelectionCriteria.DEFAULT_MAX_ATTEMPTS);
                 default -> log.warn("Unknown arg: {}", args[i]);
             }
         }
-        return new Config(count, types, bars, capital, outputDir, threads);
+
+        var criteria = new SelectionCriteria(minSharpe, minPf, maxDd, minWinRate, targetCount, maxAttempts);
+        return new Config(count, types, bars, capital, outputDir, threads, criteria);
     }
 
     private static int parseIntArg(String[] args, int i, int defaultValue) {
@@ -881,6 +1067,7 @@ new Chart(document.getElementById('c3'),{type:'scatter',data:{datasets:[{label:'
         final StrategyBuilder.StrategyType type;
         final Chromosome chromosome;
         int rank;
+        boolean passedSelection;
         BacktestResult quickResult;
         double quickSharpe, quickPf, quickWinRate, quickMaxDd, quickReturn;
         int quickTrades;
