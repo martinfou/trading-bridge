@@ -1,0 +1,43 @@
+# docker-compose.yml — VPS Live Trading Platform
+# Utilisation: docker compose up -d
+#
+# Services:
+#   trader     — LiveStrategyRunner (Java 21, OANDA)
+#   health     — Health check endpoint (:8083)
+
+services:
+  trader:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading-live
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8083:8083"  # health API (localhost only)
+    environment:
+      - OANDA_API_KEY=${OANDA_API_KEY}
+      - OANDA_ACCOUNT_ID=${OANDA_ACCOUNT_ID}
+      - OANDA_ENV=practice
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - STRATEGIES=TR-EU-L-042,MR-EU-B-120,BT-UC-S-190
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./data:/app/data        # Persistance des trades
+      - ./logs:/app/logs        # Logs
+      - ./strategies:/app/strategies  # Stratégies (git pull)
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+
+volumes:
+  data:
+  logs:
+  strategies:
