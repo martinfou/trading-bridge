@@ -19,7 +19,7 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-DEPLOY_LOG="deployments/deploy-log.json"
+DEPLOY_LOG="/dev/null"  # Source of truth: Laravel DB
 mkdir -p deployments
 
 # ─── Help ────────────────────────────────────────────────────────────────
@@ -51,32 +51,12 @@ HELP
 # ─── Logging (traceability) ──────────────────────────────────────────────
 
 init_log() {
-    if [ ! -f "$DEPLOY_LOG" ]; then
-        echo '{"deployments":[],"strategies":{}}' > "$DEPLOY_LOG"
-    fi
+    : # No local log - source of truth is Laravel DB
 }
 
 log_deployment() {
-    local strategy=$1 phase=$2 version=$3 status=$4 commit=$5 note=$6
-    local id="dep-$(date +%Y-%m-%d)-$(printf '%03d' $(($(jq '.deployments | length' "$DEPLOY_LOG" 2>/dev/null || echo 0) + 1)))"
-    local entry=$(cat <<EOF
-{
-    "id": "$id",
-    "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-    "strategy": "$strategy",
-    "phase": "$phase",
-    "version": "$version",
-    "git_commit": "$commit",
-    "status": "$status",
-    "note": "$note",
-    "checks": $CHECKS_JSON
-}
-EOF
-)
-    local tmp=$(mktemp)
-    jq --argjson entry "$entry" '.deployments += [$entry] | .strategies[$entry.strategy] = $entry' "$DEPLOY_LOG" > "$tmp"
-    mv "$tmp" "$DEPLOY_LOG"
-    echo "$id"
+    local dep_id="dep-$(date +%Y-%m-%d)-$(date +%H%M%S)-$RANDOM"
+    echo "$dep_id"
 }
 
 # ─── Validation Gates ────────────────────────────────────────────────────
@@ -164,10 +144,9 @@ git_tag_deployment() {
     local strategy=$1 phase=$2 dep_id=$3
     local tag="${strategy}/${phase}/${dep_id}"
     
-    # Create annotated git tag
+    # Git tag optional (just for code ref, not for state)
     git tag -a "$tag" -m "Deploy: ${strategy} → ${phase} (${dep_id})" 2>/dev/null || true
-    
-    echo -e "   ${GREEN}🏷️  Git tag: ${tag}${NC}"
+    # Source of truth is Laravel DB, not git tags
 }
 
 # ─── Promote ─────────────────────────────────────────────────────────────
@@ -204,10 +183,10 @@ promote() {
     # Git tag
     git_tag_deployment "$strategy" "$target_phase" "$dep_id"
     
-    # If live: update docker-compose config
+    # If live: store active strategy state in local cache (not git)
     if [ "$target_phase" = "live" ]; then
-        echo "$strategy" > deploy/active-strategy.txt
-        echo -e "   ${GREEN}📝 Active strategy updated: deploy/active-strategy.txt${NC}"
+        mkdir -p /tmp/trading-bridge
+        echo "$strategy" > /tmp/trading-bridge/active-strategy.txt
     fi
     
     echo ""
