@@ -1,3 +1,4 @@
+com/martinfou/trading/data/BarStore.class
 com/martinfou/trading/data/EconomicCalendar.class
 com/martinfou/trading/data/OandaPriceClient$Price.class
 com/martinfou/trading/data/EconomicCalendar$Event.class
