@@ -602,3 +602,41 @@ Validate across 7 FX pairs (EUR, GBP, USD, JPY, AUD, NZD, CHF).
 ### Story 7.14: Strategy Naming System ✅
 Standardized naming: [ORG]_[FAM]_[SCOPE]_[SYM]_[DIR]_[TF]_[ID]_v[X.Y.Z]
 StrategyID, StrategyRegistry, WF calibration frequency.
+
+
+---
+
+## Epic 8: Multi-Factor Strategy Enhancement
+
+Integrate news, seasonality, and sentiment analysis into strategy generation and backtesting.
+
+### Story 8.1: News Filter Gene (P0)
+Ajouter un gene newsFilter au Chromosome avec les modes :
+- SKIP_NEWS -> pas de trade 30 min avant/apres news majeure
+- NEWS_MOMENTUM -> trade dans la direction post-news
+- NEWS_REVERSAL -> fade the news
+- OFF -> pas de filtre news (comportement actuel)
+
+Backtest: Lire EconomicCalendar.java pour chaque barre, verifier s'il y a une news.
+
+### Story 8.2: Seasonality Filter Gene (P1)
+Ajouter un gene seasonFilter au Chromosome :
+- MONTH_EFFECT -> Janvier/Euro fort, Septembre/volatilite
+- DAY_OF_WEEK -> Lundi/gap, Vendredi/profit-taking
+- HOUR_SESSION -> Londres/NY overlap, Asian session
+- OFF -> pas de filtre saisonnalite
+
+Backtest: Base sur bar.timestamp, pas de donnees externes.
+
+### Story 8.3: StrategyTemplate News-Aware (P1)
+Modifier StrategyTemplate pour utiliser les filtres news/seasonalite:
+- Lire le calendrier economique depuis EconomicCalendar
+- Verifier si une news est imminente
+- Appliquer le filtre avant de generer un signal
+
+### Story 8.4: Batch Generator News Mode (P2)
+Ajouter l'option --factors news,seasonalite au batch-gen.sh.
+Generer des strategies qui utilisent ces facteurs.
+
+### Story 8.5: Sentiment Analysis API (P2 - future)
+Integrer API sentiment externe (AlphaVantage, RavenPack) pour ponderer les signaux.

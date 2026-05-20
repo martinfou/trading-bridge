@@ -152,7 +152,27 @@ portfolio builder, rapports type StrategyQuant
 
 ---
 
-## Sprint 8 📓 — Trade Journal & Psychologie
+
+
+## Sprint 8 🗞️ — Multi-Factor Strategy Enhancement
+
+**Objectif :** Integrer news, saisonnalite, sentiment dans la generation de strategies.
+
+| Tache | Priorite | Statut |
+|-------|:--------:|:------:|
+| News Filter Gene (SKIP/MOMENTUM/REVERSAL) | P0 | ⏳ |
+| Seasonality Filter Gene (mois/jour/session) | P1 | ⏳ |
+| StrategyTemplate News-Aware | P1 | ⏳ |
+| Batch Generator --factors option | P2 | ⏳ |
+| Sentiment Analysis API | P2 | ⏳ |
+
+**Definition de fait :**
+- Les Chromosomes incluent les genes newsFilter et seasonFilter
+- StrategyTemplate peut bloquer/ajuster les signaux selon les news
+- Batch-gen genere des strategies avec filtres multi-facteurs
+- Les backtests montrent si les filtres ameliorent les performances
+
+## Sprint 9 — Trade Journal & Psychologie
 
 **Objectif :** Système de journal de bord intelligent, tracking émotionnel, review post-session
 

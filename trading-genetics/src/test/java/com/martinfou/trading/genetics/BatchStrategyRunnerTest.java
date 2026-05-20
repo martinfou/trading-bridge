@@ -30,6 +30,7 @@ class BatchStrategyRunnerTest {
         assertEquals(100_000.0, config.capital(), 0.001);
         assertEquals("./batch-results", config.outputDir().toString());
         assertTrue(config.threads() >= 1);
+        assertFalse(config.selectionCriteria().isEnabled(), "Selection should be disabled by default");
     }
 
     @Test
@@ -45,6 +46,31 @@ class BatchStrategyRunnerTest {
         assertEquals(50_000.0, config.capital(), 0.001);
         assertEquals("./my-report", config.outputDir().toString());
         assertEquals(4, config.threads());
+        assertFalse(config.selectionCriteria().isEnabled());
+    }
+
+    @Test
+    void testParseArgsSelectionCriteria() {
+        var config = BatchStrategyRunner.parseArgs(new String[]{
+            "--min-sharpe", "1.5", "--min-pf", "2.0",
+            "--max-dd", "20", "--min-win-rate", "50",
+            "--target", "10", "--max-attempts", "5000"
+        });
+        var sc = config.selectionCriteria();
+        assertTrue(sc.isEnabled(), "Selection should be enabled when target > 0");
+        assertEquals(1.5, sc.minSharpe(), 0.001);
+        assertEquals(2.0, sc.minProfitFactor(), 0.001);
+        assertEquals(20.0, sc.maxDrawdown(), 0.001);
+        assertEquals(50.0, sc.minWinRate(), 0.001);
+        assertEquals(10, sc.targetCount());
+        assertEquals(5000, sc.maxAttempts());
+    }
+
+    @Test
+    void testSelectionCriteriaDisabledByDefault() {
+        var sc = BatchStrategyRunner.SelectionCriteria.disabled();
+        assertFalse(sc.isEnabled());
+        assertEquals(0, sc.targetCount());
     }
 
     // ---------------------------------------------------------------
@@ -55,7 +81,8 @@ class BatchStrategyRunnerTest {
     void testBatchRunProducesOutputFiles(@TempDir Path tempDir) throws Exception {
         // Run a tiny batch: 8 strategies, 40 bars, 1 type (fast test)
         var config = new BatchStrategyRunner.Config(
-            8, "trend", 40, 100_000.0, tempDir, 2
+            8, "trend", 40, 100_000.0, tempDir, 2,
+            BatchStrategyRunner.SelectionCriteria.disabled()
         );
 
         // Invoke the runner; it writes to tempDir
@@ -86,7 +113,8 @@ class BatchStrategyRunnerTest {
     void testBatchRunWithAllTypes(@TempDir Path tempDir) throws Exception {
         // Run a small batch with all types
         var config = new BatchStrategyRunner.Config(
-            16, "all", 40, 100_000.0, tempDir, 4
+            16, "all", 40, 100_000.0, tempDir, 4,
+            BatchStrategyRunner.SelectionCriteria.disabled()
         );
 
         BatchStrategyRunner.run(config);
@@ -106,7 +134,8 @@ class BatchStrategyRunnerTest {
     @Test
     void testGeneratedStrategiesHaveValidMetrics(@TempDir Path tempDir) throws Exception {
         var config = new BatchStrategyRunner.Config(
-            12, "trend,meanrev", 40, 100_000.0, tempDir, 4
+            12, "trend,meanrev", 40, 100_000.0, tempDir, 4,
+            BatchStrategyRunner.SelectionCriteria.disabled()
         );
 
         BatchStrategyRunner.run(config);
@@ -131,7 +160,8 @@ class BatchStrategyRunnerTest {
     @Test
     void testGeneratedJavaFilesAreCompilable(@TempDir Path tempDir) throws Exception {
         var config = new BatchStrategyRunner.Config(
-            6, "breakout", 30, 100_000.0, tempDir, 2
+            6, "breakout", 30, 100_000.0, tempDir, 2,
+            BatchStrategyRunner.SelectionCriteria.disabled()
         );
 
         BatchStrategyRunner.run(config);
@@ -160,7 +190,8 @@ class BatchStrategyRunnerTest {
     @Test
     void testBatchWithSingleStrategy(@TempDir Path tempDir) throws Exception {
         var config = new BatchStrategyRunner.Config(
-            1, "momentum", 30, 100_000.0, tempDir, 1
+            1, "momentum", 30, 100_000.0, tempDir, 1,
+            BatchStrategyRunner.SelectionCriteria.disabled()
         );
 
         BatchStrategyRunner.run(config);
@@ -177,7 +208,8 @@ class BatchStrategyRunnerTest {
     void testBatchWithZeroStrategiesDoesNotCrash(@TempDir Path tempDir) throws Exception {
         // This should produce empty but valid output
         var config = new BatchStrategyRunner.Config(
-            0, "trend", 30, 100_000.0, tempDir, 1
+            0, "trend", 30, 100_000.0, tempDir, 1,
+            BatchStrategyRunner.SelectionCriteria.disabled()
         );
 
         // Should not throw
@@ -196,6 +228,69 @@ class BatchStrategyRunnerTest {
     void testSanitizeClassName() {
         // Using reflection to test the private method
         assertEquals("Top1_MyStrategy", "Top1_MyStrategy");
+    }
+
+    // ---------------------------------------------------------------
+    //  Selection Criteria mode
+    // ---------------------------------------------------------------
+
+    @Test
+    void testSelectionCriteriaModeGeneratesOutput(@TempDir Path tempDir) throws Exception {
+        // Run with very relaxed criteria so it finds strategies quickly
+        var sc = new BatchStrategyRunner.SelectionCriteria(
+            0.0,    // minSharpe
+            0.0,    // minPF
+            100.0,  // maxDD (very relaxed)
+            0.0,    // minWinRate
+            3,      // target: find 3 strategies
+            100     // maxAttempts
+        );
+        var config = new BatchStrategyRunner.Config(
+            500, "trend", 40, 100_000.0, tempDir, 2, sc
+        );
+
+        BatchStrategyRunner.run(config);
+
+        // Verify output files
+        assertTrue(Files.exists(tempDir.resolve("ranking.html")), "ranking.html must exist");
+        assertTrue(Files.exists(tempDir.resolve("ranking.json")), "ranking.json must exist");
+        assertTrue(Files.exists(tempDir.resolve("summary.txt")), "summary.txt must exist");
+
+        // Should have at least targetCount strategies
+        String json = Files.readString(tempDir.resolve("ranking.json"));
+        assertTrue(json.contains("\"rank\":1"), "Should have at least rank 1");
+        assertTrue(json.contains("\"rank\":3") || json.contains("\"rank\":2"),
+            "Should have at least 2-3 ranked strategies");
+    }
+
+    @Test
+    void testSelectionCriteriaDisabledModeUsesFixedCount(@TempDir Path tempDir) throws Exception {
+        // When no criteria is set and --target is 0, should use fixed count mode
+        var sc = BatchStrategyRunner.SelectionCriteria.disabled();
+        var config = new BatchStrategyRunner.Config(
+            6, "trend", 30, 100_000.0, tempDir, 2, sc
+        );
+
+        BatchStrategyRunner.run(config);
+
+        // Should produce exactly 6 entries
+        String json = Files.readString(tempDir.resolve("ranking.json"));
+        assertTrue(json.contains("\"rank\":6"), "Should have rank 6 (exact count)");
+    }
+
+    @Test
+    void testSelectionCriteriaPassesCheck() {
+        // Strategies that meet criteria should be identifiable
+        var sc = new BatchStrategyRunner.SelectionCriteria(
+            0.5, 1.2, 30.0, 35.0, 5, 1000
+        );
+        assertEquals(0.5, sc.minSharpe(), 0.001);
+        assertEquals(1.2, sc.minProfitFactor(), 0.001);
+        assertEquals(30.0, sc.maxDrawdown(), 0.001);
+        assertEquals(35.0, sc.minWinRate(), 0.001);
+        assertEquals(5, sc.targetCount());
+        assertEquals(1000, sc.maxAttempts());
+        assertTrue(sc.isEnabled());
     }
 
     // ---------------------------------------------------------------
@@ -219,7 +314,8 @@ class BatchStrategyRunnerTest {
 
         // We test by running the quick backtest through the public API indirectly
         var config = new BatchStrategyRunner.Config(
-            3, "trend", 30, 100_000.0, Path.of("./build/test-batch-out/"), 1
+            3, "trend", 30, 100_000.0, Path.of("./build/test-batch-out/"), 1,
+            BatchStrategyRunner.SelectionCriteria.disabled()
         );
 
         // Just verify it doesn't crash — the quick backtest is run inside

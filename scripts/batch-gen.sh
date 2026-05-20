@@ -38,6 +38,14 @@ CAPITAL=100000
 OUTPUT="${PROJECT_DIR}/batch-results"
 THREADS=""
 
+# Selection criteria mode (generate until criteria are met)
+MIN_SHARPE=""
+MIN_PF=""
+MAX_DD=""
+MIN_WIN_RATE=""
+TARGET=""
+MAX_ATTEMPTS=""
+
 # ── Help ────────────────────────────────────────────────────────────────────
 show_help() {
     cat <<EOF
@@ -46,18 +54,31 @@ ${CYAN}Batch Strategy Generator${NC} — StrategyQuant-style
 ${YELLOW}Usage:${NC}
   ./scripts/batch-gen.sh [OPTIONS]
 
-${YELLOW}Options:${NC}
+${YELLOW}Options (Standard Mode):${NC}
   --count N       Number of strategies to generate (default: 500)
   --types S       Strategy types: all|trend,meanrev,breakout,momentum (default: all)
   --bars N        Number of bars for backtest (default: 250)
   --capital N     Initial capital in USD (default: 100000)
   --output DIR    Output directory (default: ./batch-results/)
   --threads N     Parallel threads (default: CPU count)
+
+${YELLOW}Options (Selection Criteria Mode):${NC}
+  Generate until X strategies pass ALL criteria, then rank & export.
+  --min-sharpe S   Minimum Sharpe ratio (default: 1.0)
+  --min-pf F       Minimum Profit Factor (default: 1.5)
+  --max-dd D       Maximum drawdown %% (default: 25.0)
+  --min-win-rate W Minimum win rate %% (default: 40.0)
+  --target N       Stop after finding N good strategies (default: 10)
+  --max-attempts N Max total attempts before giving up (default: 10000)
+
+${YELLOW}Other:${NC}
   --no-open       Do not open the HTML report in browser
   --help          Show this help
 
 ${YELLOW}Examples:${NC}
   ./scripts/batch-gen.sh                                  # 500 strategies, all types
+  ./scripts/batch-gen.sh --target 5 --min-sharpe 1.5      # find 5 good strategies with Sharpe≥1.5
+  ./scripts/batch-gen.sh --target 10 --min-pf 2.0 --max-dd 20  # 10 strategies with PF≥2, DD≤20%
   ./scripts/batch-gen.sh --count 1000 --types trend       # 1000 trend strategies
   ./scripts/batch-gen.sh --count 50 --bars 100 --output ./quick-test/  # quick test
 
@@ -75,15 +96,21 @@ OPEN_BROWSER=true
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --count)    COUNT="$2"; shift 2 ;;
-        --types)    TYPES="$2"; shift 2 ;;
-        --bars)     BARS="$2"; shift 2 ;;
-        --capital)  CAPITAL="$2"; shift 2 ;;
-        --output)   OUTPUT="$2"; shift 2 ;;
-        --threads)  THREADS="--threads $2"; shift 2 ;;
-        --no-open)  OPEN_BROWSER=false; shift ;;
-        --help|-h)  show_help ;;
-        *)          echo -e "${RED}Unknown option: $1${NC}"; show_help ;;
+        --count)       COUNT="$2"; shift 2 ;;
+        --types)       TYPES="$2"; shift 2 ;;
+        --bars)        BARS="$2"; shift 2 ;;
+        --capital)     CAPITAL="$2"; shift 2 ;;
+        --output)      OUTPUT="$2"; shift 2 ;;
+        --threads)     THREADS="--threads $2"; shift 2 ;;
+        --min-sharpe)  MIN_SHARPE="--min-sharpe $2"; shift 2 ;;
+        --min-pf)      MIN_PF="--min-pf $2"; shift 2 ;;
+        --max-dd)      MAX_DD="--max-dd $2"; shift 2 ;;
+        --min-win-rate) MIN_WIN_RATE="--min-win-rate $2"; shift 2 ;;
+        --target)      TARGET="--target $2"; shift 2 ;;
+        --max-attempts) MAX_ATTEMPTS="--max-attempts $2"; shift 2 ;;
+        --no-open)     OPEN_BROWSER=false; shift ;;
+        --help|-h)     show_help ;;
+        *)             echo -e "${RED}Unknown option: $1${NC}"; show_help ;;
     esac
 done
 
@@ -101,6 +128,10 @@ echo -e "${YELLOW}  Count:${NC}     $COUNT"
 echo -e "${YELLOW}  Types:${NC}     $TYPES"
 echo -e "${YELLOW}  Bars:${NC}      $BARS"
 echo -e "${YELLOW}  Capital:${NC}   \$${CAPITAL}"
+if [ -n "$TARGET" ]; then
+    echo -e "${YELLOW}  Target:${NC}     ${TARGET#--target } good strategies"
+    echo -e "${YELLOW}  Criteria:${NC}   Sharpe≥${MIN_SHARPE#--min-sharpe } PF≥${MIN_PF#--min-pf } DD≤${MAX_DD#--max-dd }%"
+fi
 echo -e "${YELLOW}  Output:${NC}    $OUTPUT_DIR"
 echo -e "${YELLOW}  Threads:${NC}   ${THREADS:-auto}"
 echo ""
@@ -171,6 +202,12 @@ CMD_ARGS="$CMD_ARGS --output $OUTPUT_DIR"
 if [ -n "$THREADS" ]; then
     CMD_ARGS="$CMD_ARGS $THREADS"
 fi
+if [ -n "$MIN_SHARPE" ]; then CMD_ARGS="$CMD_ARGS $MIN_SHARPE"; fi
+if [ -n "$MIN_PF" ]; then CMD_ARGS="$CMD_ARGS $MIN_PF"; fi
+if [ -n "$MAX_DD" ]; then CMD_ARGS="$CMD_ARGS $MAX_DD"; fi
+if [ -n "$MIN_WIN_RATE" ]; then CMD_ARGS="$CMD_ARGS $MIN_WIN_RATE"; fi
+if [ -n "$TARGET" ]; then CMD_ARGS="$CMD_ARGS $TARGET"; fi
+if [ -n "$MAX_ATTEMPTS" ]; then CMD_ARGS="$CMD_ARGS $MAX_ATTEMPTS"; fi
 
 set +e
 java \
