@@ -763,13 +763,27 @@ Quelles strategies envoyer sur le VPS:
 
 Download, store and manage market data efficiently for backtesting.
 
-### Story 10.1: Minute Bars Download (P0)
-Telecharger des donnees M1 (minute) depuis Dukascopy pour toutes les paires:
-- Utiliser dukascopy-node avec -t m1
-- Periode: 6 derniers mois (60 000+ candles par paire)
-- Convertir en format binaire BarStore (.bars)
-- Storage: ~2.5 MB par paire (vs 143 KB pour H1)
-- Script: scripts/download-minute-data.sh
+### Story 10.1: 20 Years Historical Data (P0)
+Telecharger 20 ans de donnees (2006-2026) pour toutes les paires:
+- H1: 175K candles/paire, ~54 MB total (priorite elevee)
+- M1: 10.5M candles/paire, ~3.2 GB total (priorite basse, long)
+- Source: Dukascopy (npm dukascopy-node)
+- Format binaire BarStore (.bars)
+- Script: scripts/download-historical.sh
+
+```bash
+# 20 ans H1: ~20 min/paire
+./scripts/download-historical.sh --timeframe H1 --years 20
+
+# 20 ans M1: ~2h/paire (optionnel)
+./scripts/download-historical.sh --timeframe M1 --years 20
+```
+
+Stockage estime:
+| Timeframe | Candles/paire | 7 paires | Temps download |
+|:---------:|:-------------:|:--------:|:--------------:|
+| H1        | 175 200       | 54 MB    | ~2 heures      |
+| M1        | 10 512 000    | 3.2 GB   | ~14 heures     |
 
 ### Story 10.2: Multi-Timeframe BarStore (P1)
 Gerer plusieurs timeframes dans BarStore:
