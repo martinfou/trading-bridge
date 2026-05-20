@@ -172,7 +172,28 @@ portfolio builder, rapports type StrategyQuant
 - Batch-gen genere des strategies avec filtres multi-facteurs
 - Les backtests montrent si les filtres ameliorent les performances
 
-## Sprint 9 — Trade Journal & Psychologie
+
+
+## Sprint 9 🖥️ — VPS Live Trading Platform
+
+**Objectif :** Deployer le live trading sur un VPS dedie sans OpenClaw.
+
+| Tache | Priorite | Statut |
+|-------|:--------:|:------:|
+| Self-Contained Live Runner (sans OpenClaw) | P0 | ⏳ |
+| VPS Deployment Script (Java + Maven + OANDA) | P0 | ⏳ |
+| Remote Monitoring (Telegram + HTTP health) | P1 | ⏳ |
+| Automated Strategy Deployment (git pull) | P1 | ⏳ |
+| Strategy Selection for VPS (top 5) | P2 | ⏳ |
+
+**Definition de fait :**
+- Le live runner tourne 24/7 sur le VPS
+- Les trades sont executes sur OANDA demo
+- Les strategies sont mises a jour via git pull
+- Monitoring via Telegram (alerte si crash)
+- Aucune dependance OpenClaw
+
+## Sprint 10 — Trade Journal & Psychologie
 
 **Objectif :** Système de journal de bord intelligent, tracking émotionnel, review post-session
 
