@@ -733,6 +733,24 @@ Quand une strategie est validee (via batch-gen):
 - Rollback automatique si la nouvelle strategie echoue
 
 ### Story 9.5: Strategy Selection for VPS (P2)
+
+### Story 9.6: API Key Configuration (P0)
+Configurer les cles API pour le deploiement VPS avec Docker:
+- .env.example avec toutes les variables requises
+- Java lit les env vars (System.getenv()) au lieu de fichiers
+- Validation au demarrage: toutes les cles presentes?
+- API Key unique pour le endpoint :8083 (header X-API-Key)
+- .env jamais commité (dans .gitignore)
+
+Variables: OANDA_API_KEY, OANDA_ACCOUNT_ID, OANDA_ENV,
+TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, VPS_API_KEY
+
+### Story 9.7: Multi-Service Docker Compose (P0)
+docker-compose.yml avec DEUX services (Java + Laravel):
+- trader: Java LiveStrategyRunner + HTTP server (:8083)
+- dashboard: Laravel app (:8000)
+- Reseau Docker interne: dashboard -> http://trader:8083
+- Restart: unless-stopped pour les deux
 Quelles strategies envoyer sur le VPS:
 - Meilleur Sharpe + Robustness du batch-gen
 - Maximum 5 strategies simultanees (risque)
