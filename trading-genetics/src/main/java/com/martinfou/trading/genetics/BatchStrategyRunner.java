@@ -222,9 +222,9 @@ public final class BatchStrategyRunner {
         }
         log.info("Generated {} strategies total", allStrategies.size());
 
-        // Phase 2: Quick Screen
+        // Phase 2: Quick Screen — use real data when available
         log.info("PHASE 2: Quick screening on {} bars", QUICK_SCREEN_BARS);
-        List<Bar> screenBars = generateBars(QUICK_SCREEN_BARS);
+        List<Bar> screenBars = loadScreenBars(config.dataPath, QUICK_SCREEN_BARS);
         screenAllParallel(allStrategies, screenBars);
 
         return allStrategies;
@@ -242,7 +242,7 @@ public final class BatchStrategyRunner {
         log.info("         Max attempts: {} | Batch size: {}", sc.maxAttempts(), BATCH_SIZE);
 
         List<StrategyBundle> goodStrategies = new ArrayList<>();
-        List<Bar> screenBars = generateBars(QUICK_SCREEN_BARS);
+        List<Bar> screenBars = loadScreenBars(config.dataPath, QUICK_SCREEN_BARS);
         AtomicInteger totalAttempts = new AtomicInteger(0);
         int typeCount = types.size();
         var rng = ThreadLocalRandom.current();
@@ -1015,6 +1015,26 @@ new Chart(document.getElementById('c3'),{type:'scatter',data:{datasets:[{label:'
             return null;
         }
         return bars;
+    }
+
+    /**
+     * Loads bars for the quick screening phase.
+     * Uses real CSV data when available, falls back to synthetic data.
+     * Truncates to maxBars to keep the quick screen fast.
+     */
+    private static List<Bar> loadScreenBars(String dataPath, int maxBars) {
+        if (dataPath != null && !dataPath.isEmpty()) {
+            List<Bar> realBars = loadCSVData(dataPath);
+            if (realBars != null && !realBars.isEmpty()) {
+                int takeCount = Math.min(realBars.size(), maxBars);
+                List<Bar> truncated = realBars.subList(0, takeCount);
+                log.info("Using real market data for quick screen: {} bars (loaded {}, truncated to {})",
+                    takeCount, realBars.size(), maxBars);
+                return truncated;
+            }
+        }
+        log.info("No real data available — generating {} synthetic bars for quick screen", maxBars);
+        return generateBars(maxBars);
     }
 
     // ===============================================================
