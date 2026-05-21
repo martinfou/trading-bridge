@@ -1,0 +1,27 @@
+BATCH STRATEGY GENERATOR — SUMMARY
+========================================
+
+Total: 500 | Promising: 0 | Medium: 0 | Weak: 500
+
+Top 10 Strategies:
+Rank Name                     Sharpe PF     DD%    Ret%     Trades Score 
+1    Momentum_112_RSI18       -200045.84 7.35   0.0    0.00     8      🔴11.5
+2    Trend_following_97_EMA10 -174765.27 4.52   0.0    0.00     8      🔴11.5
+3    Trend_following_111_E... -175634.20 4.52   0.0    0.00     8      🔴11.5
+4    Trend_following_121_E... -175248.30 4.52   0.0    0.00     8      🔴11.5
+5    Trend_following_12_EMA23 -193675.75 4.04   0.0    0.00     8      🔴11.5
+6    Trend_following_94_EMA24 -200514.24 3.76   0.0    0.00     8      🔴11.5
+7    Momentum_101_RSI15       -193399.16 6.66   0.0    0.00     10     🔴11.3
+8    Trend_following_3_EMA24  -196212.50 3.71   0.0    0.00     6      🔴11.2
+9    Trend_following_26_EMA29 -202592.59 2.97   0.0    0.00     8      🔴10.9
+10   Momentum_103_RSI11       -237345.59 10.82  0.0    0.00     10     🔴10.9
+  ... 490 more strategies
+
+Type Distribution:
+  TREND_FOLLOWING      125
+  MEAN_REVERSION       125
+  BREAKOUT             125
+  MOMENTUM             125
+
+Validated: 50
+Files: ranking.html | ranking.json | summary.txt

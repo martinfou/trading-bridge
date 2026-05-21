@@ -1,8 +1,10 @@
 /home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/AutoTrader.java
+/home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/IndicatorUtils.java
 /home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/LiveStrategyRunner.java
 /home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/MarketAnalyzer.java
 /home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/NewsTradingStrategy.java
 /home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/OandaExecutor.java
+/home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/SQConvertedStrategyBase.java
 /home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/StrategyRunner.java
 /home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/TradeSignal.java
 /home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/WeekStrategies.java
@@ -16,3 +18,4 @@
 /home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/sqimported/Strategy_2_32_120_Converted.java
 /home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/sqimported/Strategy_2_36_190_Converted.java
 /home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/sqimported/Strategy_2_38_112_Converted.java
+/home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/weekly/WeeklyStrategy.java
