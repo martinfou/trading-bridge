@@ -38,7 +38,7 @@ DATA_DIR="./data/historical/dukascopy"
 BARS_DIR="./data/historical/bars"
 START_YEAR=2006
 END_YEAR=2025
-PAIRS=("eurusd" "gbpusd" "usdcad" "usdjpy" "audusd" "nzdusd" "usdchf")
+PAIRS=("eurusd" "gbpusd" "usdcad" "usdjpy" "audusd" "nzdusd" "usdchf" "gbpjpy")
 TIMEFRAME="h1"
 
 # Rate limiting (seconds)

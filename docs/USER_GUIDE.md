@@ -310,7 +310,51 @@ mvn test -pl trading-backtest -Dtest=BacktestEngineTest
 
 ---
 
-## ⚙️ 7. Configuration
+## 🤖 7. Cron Jobs — Promotion Pipeline (3 niveaux)
+
+OpenClaw gère automatiquement les 3 niveaux de la pipeline via des cron jobs isolés :
+
+### 📊 Niveau 1 : Backtest (toutes les 6h à 03:00 / 09:00 / 15:00 / 21:00)
+
+```
+🔬 Stratégies générées → backtest via RunBacktest --proxy local
+   → si Sharpe > 1.0 & WinRate > 45% → promote to paper
+```
+
+Vérifie les stratégies nouvellement pushées, les backtest via le proxy local
+(DataProxy → LocalDataProxy → .bars files) et promeut les gagnantes vers paper.
+
+### 📋 Niveau 2 : Paper (toutes les 2h)
+
+```
+📜 Promotion backtest → paper → activation sur compte démo OANDA
+   → surveillance 24h minimum
+```
+
+Vérifie l'API Laravel pour les promotions en attente vers paper.
+Git pull, build Maven, active la stratégie, enregistre le statut.
+
+### 🚀 Niveau 3 : Live (toutes les 4h)
+
+```
+🔥 Promotion paper → live → activation sur compte réel OANDA
+   → requiert 24h de paper validé
+```
+
+Haute sécurité : vérifie que la stratégie a tourné ≥24h sur paper avant
+d'activer sur live. Envoie une alerte URGENTE à Martin.
+
+### Carte des crons
+
+| Niveau | Fréquence | Canal | Action |
+|---|---|---|---|
+| 🔬 Backtest | 6h (03/09/15/21) | Telegram | backtest, promote→paper |
+| 📋 Paper | 2h | Telegram | git pull, build, activate |
+| 🚀 Live | 4h | Telegram | verify 24h paper, activate, alert |
+
+---
+
+## ⚙️ 8. Configuration
 
 ### Variables d'environnement
 
