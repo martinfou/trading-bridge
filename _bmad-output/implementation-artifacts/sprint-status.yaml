@@ -1,5 +1,5 @@
-# generated: 2026-05-17
-# last_updated: 2026-05-17
+# generated: 2026-05-23
+# last_updated: 2026-05-23
 # project: trading-bridge
 # project_key: NOKEY
 # tracking_system: file-system
@@ -34,12 +34,12 @@
 # - Developer typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 #
-# SOURCE: _bmad-output/planning-artifacts/epics.md (derived from docs/sprint-plan.md)
-# DETECTION: Epic 1 statuses set from existing codebase; Epic 2+ default backlog
-# Story 2-10 added 2026-05-17 (UTC migration, ready-for-dev)
+# SOURCE: _bmad-output/planning-artifacts/epics.md
+# SPRINT 12: Platform Consolidation — see sprint-12-consolidation-plan.md
+# Epic 12 added 2026-05-23; snapshot commit ee871f5
 
-generated: "2026-05-17"
-last_updated: "2026-05-18"
+generated: "2026-05-23"
+last_updated: "2026-05-23"
 project: trading-bridge
 project_key: NOKEY
 tracking_system: file-system
@@ -100,3 +100,12 @@ development_status:
   5-6-broker-reconnect-and-error-handling: backlog
   5-7-user-documentation: backlog
   epic-5-retrospective: optional
+
+  epic-12: in-progress
+  12-1-golden-backtest-stabilization: ready-for-dev
+  12-2-unified-historical-data-loading: backlog
+  12-3-unified-backtest-cli-strategy-catalog: backlog
+  12-4-strategy-contract-home-policy: backlog
+  12-5-shared-indicators-trading-core: backlog
+  12-6-architecture-docs-agents-alignment: backlog
+  epic-12-retrospective: optional
