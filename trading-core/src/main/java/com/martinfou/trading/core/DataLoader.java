@@ -58,4 +58,49 @@ public class DataLoader {
         }
         return bars;
     }
+
+    /** Dukascopy CSV: {@code timestamp,open,high,low,close} with epoch-millis timestamps. */
+    public static List<Bar> loadDukascopyCSV(Path path, String symbol) {
+        List<Bar> bars = new ArrayList<>();
+        try (BufferedReader br = new BufferedReader(new FileReader(path.toFile()))) {
+            String header = br.readLine();
+            if (header == null) return bars;
+            String line;
+            while ((line = br.readLine()) != null) {
+                String[] p = line.split(",");
+                if (p.length < 5) continue;
+                try {
+                    Instant ts = Instant.ofEpochMilli(Long.parseLong(p[0].trim()));
+                    bars.add(new Bar(symbol, ts,
+                        Double.parseDouble(p[1]), Double.parseDouble(p[2]),
+                        Double.parseDouble(p[3]), Double.parseDouble(p[4]),
+                        p.length >= 6 ? Long.parseLong(p[5].trim()) : 0));
+                } catch (Exception ignored) {}
+            }
+        } catch (Exception e) {
+            System.err.println("Error loading Dukascopy CSV: " + e.getMessage());
+        }
+        return bars;
+    }
+
+    /** Auto-detect CSV format from header or filename. */
+    public static List<Bar> loadAutoCSV(Path path, String symbol) {
+        try (BufferedReader br = new BufferedReader(new FileReader(path.toFile()))) {
+            String header = br.readLine();
+            if (header == null) return List.of();
+            String h = header.toLowerCase();
+            if (h.startsWith("timestamp")) {
+                return loadDukascopyCSV(path, symbol);
+            }
+            if (h.contains("datetime")) {
+                return loadCSV(path, symbol);
+            }
+            if (h.startsWith("date,time") || h.split(",").length >= 7) {
+                return loadStrategyQuantCSV(path, symbol);
+            }
+        } catch (Exception e) {
+            System.err.println("Error detecting CSV format: " + e.getMessage());
+        }
+        return loadDukascopyCSV(path, symbol);
+    }
 }

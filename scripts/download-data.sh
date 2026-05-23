@@ -48,6 +48,10 @@ DELAY_BETWEEN_MONTHS=5
 
 mkdir -p "$DATA_DIR" "$BARS_DIR"
 
+upper() { echo "$1" | tr '[:lower:]' '[:upper:]'; }
+filesize() { stat -f%z "$1" 2>/dev/null || stat -c%s "$1" 2>/dev/null || echo 0; }
+format_size() { numfmt --to=iec "$1" 2>/dev/null || echo "${1}B"; }
+
 # ─── Parse Args ──────────────────────────────────────────────────────────
 
 ACTION="auto" ; PAIR=""; YEAR=""
@@ -150,7 +154,7 @@ convert_to_barstore() {
         return 0
     fi
 
-    local out_file="${BARS_DIR}/${sym}_${tf^^}_${year}.bars"
+    local out_file="${BARS_DIR}/${sym}_$(upper "$tf")_${year}.bars"
 
     python3 -c "
 import csv, struct, sys, os
@@ -178,7 +182,7 @@ download_year() {
     local to="${year}-12-31"
     [ "$year" = "$(date +%Y)" ] && to="$(date +%Y-%m-%d)"
 
-    echo -e "\n${CYAN}📥 ${tf^^} — ${year} (${from} → ${to})${NC}"
+    echo -e "\n${CYAN}📥 $(upper "$tf") — ${year} (${from} → ${to})${NC}"
     echo "───────────────────────────────────"
 
     local pairs_to_dl=("${PAIRS[@]}")
@@ -217,7 +221,7 @@ download_month() {
         to=$(date -d "$(printf '%04d-%02d-01' "$year" $((month + 1))) -1 day" +%Y-%m-%d 2>/dev/null || echo "$(printf '%04d-%02d-28' "$year" $month)")
     fi
 
-    echo -e "\n${CYAN}📥 ${tf^^} — ${year}-$(printf '%02d' $month) (${from} → ${to})${NC}"
+    echo -e "\n${CYAN}📥 $(upper "$tf") — ${year}-$(printf '%02d' $month) (${from} → ${to})${NC}"
 
     local pairs_to_dl=("${PAIRS[@]}")
     [ -n "$PAIR" ] && pairs_to_dl=("$PAIR")
@@ -237,7 +241,7 @@ download_month() {
 # ─── Status ──────────────────────────────────────────────────────────────
 
 if [ "$ACTION" = "list" ]; then
-    echo -e "${CYAN}📊 Data Status — ${TIMEFRAME^^}${NC}"
+    echo -e "${CYAN}📊 Data Status — $(upper "$TIMEFRAME")${NC}"
     echo "═══════════════════════════════════════"
     local_count=0
     for year in $(seq $START_YEAR $END_YEAR); do
@@ -354,8 +358,8 @@ csv_files=$(find "$DATA_DIR" -name "*.csv" | wc -l)
 bars_files=0
 bars_size=0
 for f in "$BARS_DIR"/*.bars; do
-    [ -f "$f" ] && bars_files=$((bars_files + 1)) && bars_size=$((bars_size + $(stat -c%s "$f")))
+    [ -f "$f" ] && bars_files=$((bars_files + 1)) && bars_size=$((bars_size + $(filesize "$f")))
 done
 echo "  CSV files:  $csv_files (raw Dukascopy)"
-echo -e "  BarStore:   ${bars_files} files, ${GREEN}$(numfmt --to=iec $bars_size 2>/dev/null)${NC}"
+echo -e "  BarStore:   ${bars_files} files, ${GREEN}$(format_size "$bars_size")${NC}"
 echo ""
