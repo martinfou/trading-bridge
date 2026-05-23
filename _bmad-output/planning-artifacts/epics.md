@@ -5,7 +5,7 @@
 
 ## Overview
 
-Epics map to the five project sprints: foundation, XML parser, advanced backtest, broker connectors, and production hardening.
+Epics map to the five project sprints: foundation, XML parser, advanced backtest, broker connectors, and production hardening. **Epic 12** (Platform Consolidation) is an active cross-cutting sprint to unify duplicated surfaces before scaling data and parser work.
 
 ## Epic List
 
@@ -14,6 +14,7 @@ Epics map to the five project sprints: foundation, XML parser, advanced backtest
 3. **Epic 3:** Advanced Backtest — Realistic simulation and reporting
 4. **Epic 4:** Broker Connectors — OANDA and Interactive Brokers live execution
 5. **Epic 5:** Production — Persistence, monitoring, tests, deployment
+6. **Epic 12:** Platform Consolidation — Unified data, CLI, strategy contract, docs (active sprint)
 
 ---
 
@@ -852,3 +853,96 @@ Vue consolidate dans Laravel:
 - /health → 3 cartes (vert/orange/rouge) avec metriques
 - /alerts → historique des alertes
 - /actions → promote, kill, restart, recalibrate
+
+---
+
+## Epic 12: Platform Consolidation
+
+Reduire la duplication entre chargeurs de donnees, points d'entree backtest, et emplacements de strategies. Etablir une base stable avant d'ajouter de nouvelles fonctionnalites.
+
+**Contexte:** Le depot a accumule plusieurs chemins paralleles (RunBacktest, RunSqBacktest, RunPropBacktest, BatchStrategyRunner; DataLoader, BarStore, HistoricalDataLoader; strategies dans sqimported/, prop/, generated/, batch-results/). Cet epic unifie ces surfaces sans changer le comportement metier des strategies existantes.
+
+**Priorite:** P0 — prerequis pour Epic 10 (donnees) et Epic 2 (parser) a grande echelle.
+
+### Story 12.1: Golden Backtest & Build Stabilization (P0)
+
+As a developer,
+I want a golden backtest integration test and a reliable `mvn clean install`,
+So that consolidation changes can be validated without regressions.
+
+**Acceptance Criteria:**
+
+**Given** EUR_USD H1 data for 2012 in `data/historical/`
+**When** I run the golden backtest test
+**Then** bar count, trade count, and PnL match recorded baselines within tolerance
+**And** `mvn clean install` succeeds on a fresh checkout
+**And** CI documents the `clean` requirement when stale `target/` classes cause failures
+
+### Story 12.2: Unified Historical Data Loading (P0)
+
+As a developer,
+I want one `HistoricalDataLoader` API used by all backtest entry points,
+So that CSV, Dukascopy, and `.bars` formats resolve consistently.
+
+**Acceptance Criteria:**
+
+**Given** data in `data/historical/dukascopy/`, `data/historical/bars/`, or legacy CSV paths
+**When** any runner loads bars for a symbol/timeframe/year
+**Then** `HistoricalDataLoader` is the single code path (Dukascopy CSV preferred, `.bars` fallback)
+**And** `BarStore.write()` and download script use the same timestamp unit (epoch millis)
+**And** `BatchStrategyRunner` no longer fabricates timestamps from row index
+
+### Story 12.3: Unified Backtest CLI & Strategy Catalog (P0)
+
+As a quant developer,
+I want one `RunBacktest` CLI with a registry of all strategy families,
+So that I do not need separate runners per strategy source.
+
+**Acceptance Criteria:**
+
+**Given** strategies in prop, sqimported, generated, and examples packages
+**When** I run `RunBacktest <strategyId> <symbol> <year>`
+**Then** `StrategyCatalog` resolves the strategy by ID across families
+**And** `RunSqBacktest` and `RunPropBacktest` are deprecated (thin wrappers or removed)
+**And** usage is documented in `AGENTS.md` and `docs/README.md`
+
+### Story 12.4: Strategy Contract & Home Policy (P1)
+
+As a strategy author,
+I want a documented strategy home and a correct `getPendingOrders()` contract,
+So that all strategies behave uniformly in backtest and live engines.
+
+**Acceptance Criteria:**
+
+**Given** the `Strategy` interface contract (getPendingOrders returns copy and clears)
+**When** sqimported strategies are audited
+**Then** each violation is fixed or wrapped with an adapter
+**And** a strategy home policy documents: compiled → `trading-strategies/`, genetics exports → `batch-results/` (not compiled), examples → `trading-examples/`
+**And** orphan docs under wrong package paths are removed or relocated
+
+### Story 12.5: Shared Indicators in trading-core (P1)
+
+As a strategy author,
+I want shared indicator utilities in `trading-core`,
+So that prop, sqimported, and generated strategies do not duplicate SMA/EMA/RSI/ATR logic.
+
+**Acceptance Criteria:**
+
+**Given** duplicated indicator code in `PropIndicators` and parser-generated strategies
+**When** `com.martinfou.trading.core.indicators` is introduced
+**Then** prop strategies migrate to shared helpers without PnL regression on golden backtest
+**And** new strategies use core indicators by default
+
+### Story 12.6: Architecture Docs & AGENTS.md Alignment (P1)
+
+As a new contributor,
+I want accurate architecture and agent docs,
+So that I can run backtests and find strategies without tribal knowledge.
+
+**Acceptance Criteria:**
+
+**Given** the consolidated data loader and unified CLI from stories 12.2–12.3
+**When** I read `docs/architecture.md` and `AGENTS.md`
+**Then** commands, paths, and module boundaries match the codebase
+**And** stale references to removed runners or wrong data paths are eliminated
+**And** a single "how to backtest" section covers all strategy families
