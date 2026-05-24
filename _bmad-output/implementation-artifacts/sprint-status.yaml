@@ -115,7 +115,7 @@ development_status:
 
   epic-13: backlog
   13-1-decouple-runcontext-catalog-factory: done
-  13-2-event-store-sqlite: backlog
+  13-2-event-store-sqlite: ready-for-dev
   13-3-control-plane-http: backlog
   13-4-websocket-run-events: backlog
   13-5-promote-gates-deployment-store: backlog
