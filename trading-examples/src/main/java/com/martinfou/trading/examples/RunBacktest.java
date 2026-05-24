@@ -3,7 +3,9 @@ package com.martinfou.trading.examples;
 import com.martinfou.trading.backtest.BacktestEngine;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.core.Bar;
-import java.nio.file.Paths;
+import com.martinfou.trading.data.HistoricalDataLoader;
+
+import java.nio.file.Path;
 import java.util.*;
 
 public class RunBacktest {
@@ -26,9 +28,18 @@ public class RunBacktest {
 
         String file = args[0];
         String symbol = args.length > 1 ? args[1] : "SYMBOL";
-        
+
         System.out.println("\nLoading data: " + file);
-        var bars = com.martinfou.trading.core.DataLoader.loadStrategyQuantCSV(Paths.get(file), symbol);
+        List<Bar> bars;
+        try {
+            var loaded = HistoricalDataLoader.loadFile(Path.of(file), symbol);
+            bars = loaded.bars();
+            symbol = loaded.symbol();
+            System.out.println("Source: " + loaded.source());
+        } catch (Exception e) {
+            System.err.println("Failed to load data: " + e.getMessage());
+            return;
+        }
         System.out.println("Loaded " + bars.size() + " bars");
 
         if (bars.isEmpty()) {

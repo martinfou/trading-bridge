@@ -12,8 +12,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Loads historical H1 bars from {@code data/historical/} — binary {@link BarStore}
- * or Dukascopy CSV.
+ * Single entry point for historical bar data under {@code data/historical/}.
+ * Dukascopy CSV is preferred when present; {@link BarStore} {@code .bars} is the fallback.
+ * Timestamps in {@code .bars} files are epoch millis (legacy second-based files are still readable).
  */
 public final class HistoricalDataLoader {
 
@@ -57,7 +58,13 @@ public final class HistoricalDataLoader {
         }
         String yearSpec = dataArgs[1];
         List<Bar> bars = loadYearSpec(symbol, yearSpec, DEFAULT_BARS_DIR);
-        return new LoadResult(bars, symbol, DEFAULT_BARS_DIR + "/" + symbol + "_H1_" + yearSpec + ".bars");
+        return new LoadResult(bars, symbol, describeYearSpecSource(symbol, yearSpec, DEFAULT_BARS_DIR));
+    }
+
+    /** Loads bars from a file path (.bars or CSV). */
+    public static LoadResult loadFile(Path path, String defaultSymbol) throws IOException {
+        String symbol = inferSymbol(path, defaultSymbol);
+        return new LoadResult(loadPath(path, symbol), symbol, path.toString());
     }
 
     public static List<Bar> loadPath(Path path, String symbol) throws IOException {
@@ -85,10 +92,6 @@ public final class HistoricalDataLoader {
     public static List<Bar> loadYearRange(String symbol, int startYear, int endYear, Path barsDir) throws IOException {
         var merged = new ArrayList<Bar>();
         for (int y = startYear; y <= endYear; y++) {
-            Path file = barsDir.resolve(symbol + "_H1_" + y + ".bars");
-            if (!Files.exists(file)) {
-                throw new IOException("Missing BarStore file: " + file);
-            }
             merged.addAll(loadYear(symbol, y, barsDir));
         }
         return merged;
@@ -160,6 +163,25 @@ public final class HistoricalDataLoader {
                 .findFirst()
                 .orElse(null);
         }
+    }
+
+    private static String describeYearSpecSource(String symbol, String spec, Path barsDir) throws IOException {
+        if (spec.contains("-") && spec.matches("\\d{4}-\\d{4}")) {
+            String[] parts = spec.split("-");
+            int start = Integer.parseInt(parts[0]);
+            int end = Integer.parseInt(parts[1]);
+            Path csv = findDukascopyCsv(symbol, start);
+            if (csv != null) {
+                return csv + " … " + end;
+            }
+            return barsDir.resolve(symbol + "_H1_" + spec + ".bars").toString();
+        }
+        int year = Integer.parseInt(spec);
+        Path csv = findDukascopyCsv(symbol, year);
+        if (csv != null) {
+            return csv.toString();
+        }
+        return barsDir.resolve(symbol + "_H1_" + year + ".bars").toString();
     }
 
     public record LoadResult(List<Bar> bars, String symbol, String source) {}

@@ -164,7 +164,7 @@ with open('${csv_file}') as f:
     rows = list(reader)
 with open('${out_file}', 'wb') as f:
     for r in rows:
-        ts = int(r['timestamp']) // 1000
+        ts = int(r['timestamp'])
         o = float(r['open']); h = float(r['high'])
         l = float(r['low']);  c = float(r['close'])
         v = int(float(r.get('volume', 0))) if r.get('volume', '').strip() else 0
