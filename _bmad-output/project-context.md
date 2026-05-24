@@ -1,5 +1,6 @@
 ---
-project_name: trading-bridge
+
+## project_name: trading-bridge
 user_name: Martinfou
 date: '2026-05-17'
 sections_completed:
@@ -13,11 +14,10 @@ sections_completed:
 status: complete
 rule_count: 42
 optimized_for_llm: true
----
 
 # Project Context for AI Agents
 
-_This file contains critical rules and patterns that AI agents must follow when implementing code in this project. Focus on unobvious details that agents might otherwise miss._
+*This file contains critical rules and patterns that AI agents must follow when implementing code in this project. Focus on unobvious details that agents might otherwise miss.*
 
 ---
 
@@ -29,16 +29,18 @@ _This file contains critical rules and patterns that AI agents must follow when 
 
 ## Technology Stack & Versions
 
-| Component | Version / choice |
-|-----------|----------------|
-| Java | 21 (`maven.compiler.source/target`) |
-| Build | Maven 4.x multi-module, `1.0.0-SNAPSHOT` |
-| JUnit | 5.11.0 (test scope, parent BOM) |
-| Jackson | 2.17.2 (`jackson-databind`, `jackson-dataformat-yaml` in parent) |
-| SLF4J | 2.0.16 (`slf4j-api`; `slf4j-simple` in `trading-strategies` only) |
-| Javaluator | 3.0.3 (parent BOM, not yet used in source) |
-| HTTP (live data) | `java.net.http.HttpClient` in `trading-data` |
+
+| Component            | Version / choice                                                             |
+| -------------------- | ---------------------------------------------------------------------------- |
+| Java                 | 21 (`maven.compiler.source/target`)                                          |
+| Build                | Maven 4.x multi-module, `1.0.0-SNAPSHOT`                                     |
+| JUnit                | 5.11.0 (test scope, parent BOM)                                              |
+| Jackson              | 2.17.2 (`jackson-databind`, `jackson-dataformat-yaml` in parent)             |
+| SLF4J                | 2.0.16 (`slf4j-api`; `slf4j-simple` in `trading-strategies` only)            |
+| Javaluator           | 3.0.3 (parent BOM, not yet used in source)                                   |
+| HTTP (live data)     | `java.net.http.HttpClient` in `trading-data`                                 |
 | Dashboard (adjacent) | Python `dashboard/oanda_server.py` + static HTML — not part of Maven reactor |
+
 
 **Module dependency graph (respect this):**
 
@@ -69,13 +71,13 @@ trading-examples      → trading-core, trading-backtest
 
 ### Framework / Domain Rules (Trading Bridge)
 
-- **`Strategy` contract** (`trading-core`): Implement `name()`, `onBar(Bar)`, `onTick(bid, ask, volume)`, `getPendingOrders()`, `reset()`.
+- `**Strategy` contract** (`trading-core`): Implement `name()`, `onBar(Bar)`, `onTick(bid, ask, volume)`, `getPendingOrders()`, `reset()`.
 - **Order submission pattern:** Strategies queue orders in a private list; `getPendingOrders()` must **return a copy and clear** the internal queue (see `SmaCrossoverStrategy`). The engine consumes orders once per bar.
-- **Backtest fill semantics:** `BacktestEngine` fills `MARKET` at **`bar.open()`** (not close). `LIMIT`/`STOP` use bar high/low rules — do not assume close-price fills.
+- **Backtest fill semantics:** `BacktestEngine` fills `MARKET` at `**bar.open()`** (not close). `LIMIT`/`STOP` use bar high/low rules — do not assume close-price fills.
 - **Backtest limitations (do not assume implemented):** No commission/slippage, no open-position tracking across bars (simplified trade list), `stopLoss`/`takeProfit` on `Order` are not enforced by engine yet — Sprint 3 scope per `docs/sprint-plan.md`.
 - **Data loading:** Use `DataLoader.loadCSV` (ISO `DateTime,Open,High,Low,Close,Volume`) or `loadStrategyQuantCSV` (`Date,Time,...` columns). Invalid rows are skipped silently.
 - **JForex → Java mapping:** Follow `docs/conversion-guide.md` — `IStrategy` → `Strategy`, `IOrder` → `Order`, engine → `BacktestEngine` / future `Broker`.
-- **Sprint 2 parser:** All XML parsing and code generation belongs in **`trading-parser`**, depending only on `trading-core`. Generated strategies implement `Strategy` in `trading-examples` or a dedicated package — not in `trading-core`.
+- **Sprint 2 parser:** All XML parsing and code generation belongs in `**trading-parser`**, depending only on `trading-core`. Generated strategies implement `Strategy` in `trading-examples` or a dedicated package — not in `trading-core`.
 - **Live / OANDA:** REST v3 via `OandaPriceClient` in `trading-data`; practice URL `api-fxpractice.oanda.com`. Credentials via env/config files — **never hardcode or commit keys**.
 
 ### Testing Rules
@@ -103,16 +105,18 @@ trading-examples      → trading-core, trading-backtest
 
 ### Critical Don't-Miss Rules
 
-| Don't | Do instead |
-|-------|------------|
-| Put broker/API code in `trading-core` | `trading-data` or `trading-broker` |
-| Implement parser in `trading-examples` | `trading-parser` module |
-| Use `getPendingOrders()` without clearing queue | Copy list, then `pending.clear()` |
-| Assume SL/TP on `Order` work in backtest | Engine ignores them until Sprint 3 |
-| Add Dukascopy/JForex JAR dependencies | Pure Java + `Strategy` interface |
-| Break module DAG (e.g. core → backtest) | Keep acyclic: core at bottom |
-| Edit `_bmad/config.toml` for prefs | Use `_bmad/custom/config.toml` (team) or `*.user.toml` (personal) |
-| Expand scope to Spring/SQLite dashboard | Sprint 5 unless user requests |
+
+| Don't                                           | Do instead                                                        |
+| ----------------------------------------------- | ----------------------------------------------------------------- |
+| Put broker/API code in `trading-core`           | `trading-data` or `trading-broker`                                |
+| Implement parser in `trading-examples`          | `trading-parser` module                                           |
+| Use `getPendingOrders()` without clearing queue | Copy list, then `pending.clear()`                                 |
+| Assume SL/TP on `Order` work in backtest        | Engine ignores them until Sprint 3                                |
+| Add Dukascopy/JForex JAR dependencies           | Pure Java + `Strategy` interface                                  |
+| Break module DAG (e.g. core → backtest)         | Keep acyclic: core at bottom                                      |
+| Edit `_bmad/config.toml` for prefs              | Use `_bmad/custom/config.toml` (team) or `*.user.toml` (personal) |
+| Expand scope to Spring/SQLite dashboard         | Sprint 5 unless user requests                                     |
+
 
 **Sprint 2 parser checklist (from specs):** `SqXmlParser`, `StrategyConfig` POJO, indicators (SMA first, then EMA/RSI/MACD/Bollinger/ATR), entry/exit rules, optional Java codegen — output must compile and backtest coherently with `BacktestEngine`.
 
@@ -120,16 +124,18 @@ trading-examples      → trading-core, trading-backtest
 
 ## Key Paths
 
-| Path | Purpose |
-|------|---------|
-| `trading-core/src/main/java/.../core/` | `Bar`, `Order`, `Strategy`, `DataLoader` |
-| `trading-backtest/.../backtest/` | `BacktestEngine`, `BacktestResult` |
-| `trading-parser/` | Sprint 2 — XML → Java (empty today) |
-| `trading-data/.../data/` | OANDA client, economic calendar |
-| `trading-strategies/` | Live strategy runners, signals |
-| `trading-examples/` | `RunBacktest`, `SmaCrossoverStrategy` |
-| `docs/` | Specs, sprint plan, JForex conversion guide |
-| `_bmad-output/` | BMAD-generated artifacts |
+
+| Path                                   | Purpose                                     |
+| -------------------------------------- | ------------------------------------------- |
+| `trading-core/src/main/java/.../core/` | `Bar`, `Order`, `Strategy`, `DataLoader`    |
+| `trading-backtest/.../backtest/`       | `BacktestEngine`, `BacktestResult`          |
+| `trading-parser/`                      | Sprint 2 — XML → Java (empty today)         |
+| `trading-data/.../data/`               | OANDA client, economic calendar             |
+| `trading-strategies/`                  | Live strategy runners, signals              |
+| `trading-examples/`                    | `RunBacktest`, `SmaCrossoverStrategy`       |
+| `docs/`                                | Specs, sprint plan, JForex conversion guide |
+| `_bmad-output/`                        | BMAD-generated artifacts                    |
+
 
 ---
 

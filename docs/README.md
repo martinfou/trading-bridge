@@ -105,18 +105,54 @@ trading-bridge/
 mvn clean install
 ```
 
-### Lancer backtest sample
+### Lister les stratégies disponibles
+```bash
+mvn exec:java -pl trading-examples \
+  -Dexec.mainClass="com.martinfou.trading.examples.RunBacktest" \
+  -Dexec.args="--list"
+```
+
+### Lancer backtest sample (SmaCrossover)
 ```bash
 mvn exec:java -pl trading-examples \
   -Dexec.mainClass="com.martinfou.trading.examples.RunBacktest" \
   -Dexec.args="--sample"
 ```
 
-### Lancer backtest avec données réelles
+### Lancer backtest avec données historiques
 ```bash
 mvn exec:java -pl trading-examples \
   -Dexec.mainClass="com.martinfou.trading.examples.RunBacktest" \
-  -Dexec.args="/chemin/vers/donnees.csv EURUSD"
+  -Dexec.args="LondonOpenRangeBreakout EUR_USD 2012"
+
+mvn exec:java -pl trading-examples \
+  -Dexec.mainClass="com.martinfou.trading.examples.RunBacktest" \
+  -Dexec.args="Strategy_2_14_147_Adapted GBP_JPY 2012"
+```
+
+### Lancer backtest avec un fichier
+```bash
+mvn exec:java -pl trading-examples \
+  -Dexec.mainClass="com.martinfou.trading.examples.RunBacktest" \
+  -Dexec.args="LondonOpenRangeBreakout data/historical/bars/EUR_USD_H1_2012.bars"
+```
+
+> **Alias dépréciés :** `RunPropBacktest` et `RunSqBacktest` délèguent à `RunBacktest`.
+> `RunPropBacktest --all` reste disponible pour exécuter toute la suite prop.
+
+### Paper mode (stub)
+
+Rejoue les barres historiques en mode `PAPER` — mêmes fills que le backtest, sans appel broker. Valide le pipeline avant le paper live (Epic 4).
+
+```bash
+mvn exec:java -pl trading-examples \
+  -Dexec.mainClass="com.martinfou.trading.examples.RunBacktest" \
+  -Dexec.args="LondonOpenRangeBreakout EUR_USD 2012 --paper"
+
+# JSONL avec mode PAPER dans les événements
+mvn exec:java -pl trading-examples \
+  -Dexec.mainClass="com.martinfou.trading.examples.RunBacktest" \
+  -Dexec.args="LondonOpenRangeBreakout EUR_USD 2012 --paper --json"
 ```
 
 ## 📝 Format des données

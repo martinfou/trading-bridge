@@ -63,15 +63,28 @@ mvn test
 # Single module
 mvn test -pl trading-data
 
-# Sample backtest
+# List all strategies (prop, sqimported, generated, examples)
+mvn exec:java -pl trading-examples \
+  -Dexec.mainClass="com.martinfou.trading.examples.RunBacktest" \
+  -Dexec.args="--list"
+
+# Sample backtest (SmaCrossover demo)
 mvn exec:java -pl trading-examples \
   -Dexec.mainClass="com.martinfou.trading.examples.RunBacktest" \
   -Dexec.args="--sample"
 
-# Backtest with CSV data
+# Backtest by strategy id + historical data
 mvn exec:java -pl trading-examples \
   -Dexec.mainClass="com.martinfou.trading.examples.RunBacktest" \
-  -Dexec.args="/path/to/data.csv EURUSD"
+  -Dexec.args="LondonOpenRangeBreakout EUR_USD 2012"
+
+# Backtest with file path
+mvn exec:java -pl trading-examples \
+  -Dexec.mainClass="com.martinfou.trading.examples.RunBacktest" \
+  -Dexec.args="LondonOpenRangeBreakout /path/to/data.csv"
+
+# Deprecated aliases (delegate to RunBacktest): RunPropBacktest, RunSqBacktest
+# RunPropBacktest --all / --all --sample remains for prop suite runs only
 ```
 
 Before marking work done: `mvn clean install` must pass for affected modules.

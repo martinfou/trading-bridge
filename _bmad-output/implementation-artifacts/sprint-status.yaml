@@ -39,7 +39,7 @@
 # Epic 12 added 2026-05-23; snapshot commit ee871f5
 
 generated: "2026-05-23"
-last_updated: "2026-05-23"
+last_updated: "2026-05-24"
 project: trading-bridge
 project_key: NOKEY
 tracking_system: file-system
@@ -104,8 +104,22 @@ development_status:
   epic-12: in-progress
   12-1-golden-backtest-stabilization: done
   12-2-unified-historical-data-loading: done
-  12-3-unified-backtest-cli-strategy-catalog: backlog
-  12-4-strategy-contract-home-policy: backlog
-  12-5-shared-indicators-trading-core: backlog
-  12-6-architecture-docs-agents-alignment: backlog
+  12-3-unified-backtest-cli-strategy-catalog: done
+  12-4-run-context-unified-runtime: done
+  12-5-run-event-stream-jsonl: done
+  12-6-paper-runner-stub: done
+  12-7-strategy-contract-home-policy: backlog
+  12-8-shared-indicators-trading-core: backlog
+  12-9-architecture-docs-agents-alignment: backlog
   epic-12-retrospective: optional
+
+  epic-13: backlog
+  13-1-decouple-runcontext-catalog-factory: done
+  13-2-event-store-sqlite: backlog
+  13-3-control-plane-http: backlog
+  13-4-websocket-run-events: backlog
+  13-5-promote-gates-deployment-store: backlog
+  13-6-tui-v1-jline3: backlog
+  13-7-laravel-dashboard-v1: backlog
+  13-8-heartbeat-stale-detection: backlog
+  epic-13-retrospective: optional
