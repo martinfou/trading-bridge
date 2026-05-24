@@ -1,6 +1,6 @@
 # Story 13.2: EventStore SQLite + Replay API
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -33,13 +33,13 @@ so that run events can be queried and replayed in order without coupling to HTTP
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 (AC1): Add `trading-runtime/pom.xml`; register module; parent `dependencyManagement` for sqlite-jdbc 3.49.1.0
-- [ ] Task 2 (AC2): `EventStore` interface + `EventStores` factory + validation
-- [ ] Task 3 (AC3): `InMemoryEventStore` + `InMemoryEventStoreTest`
-- [ ] Task 4 (AC4, AC5): `SqliteEventStore` — DDL on init, WAL optional, close/reopen
-- [ ] Task 5 (AC6): `EventStoreConfig` path resolution
-- [ ] Task 6 (AC4, AC5): `SqliteEventStoreTest` with temp DB file
-- [ ] Task 7 (AC1): `mvn clean install` from repo root
+- [x] Task 1 (AC1): Add `trading-runtime/pom.xml`; register module; parent `dependencyManagement` for sqlite-jdbc 3.49.1.0
+- [x] Task 2 (AC2): `EventStore` interface + `EventStores` factory + validation
+- [x] Task 3 (AC3): `InMemoryEventStore` + `InMemoryEventStoreTest`
+- [x] Task 4 (AC4, AC5): `SqliteEventStore` — DDL on init, WAL optional, close/reopen
+- [x] Task 5 (AC6): `EventStoreConfig` path resolution
+- [x] Task 6 (AC4, AC5): `SqliteEventStoreTest` with temp DB file
+- [x] Task 7 (AC1): `mvn clean install` from repo root
 
 ## Dev Notes
 
@@ -131,12 +131,26 @@ mvn test -pl trading-runtime
 
 ### Agent Model Used
 
-_(à remplir)_
+Composer
 
 ### Completion Notes
 
-_(à remplir)_
+- New `trading-runtime` module with `EventStore`, `InMemoryEventStore`, `SqliteEventStore`, `EventStoreConfig`, `EventStores`.
+- SQLite stores exact `RunEventJson.toJsonLine()` payloads; global `sequence` for cursor pagination (13.3).
+- Default DB path resolves to repo `data/runtime/events.db`; `*.db` gitignored.
+- 9 new tests; full reactor build green.
 
 ### File List
 
-_(à remplir)_
+- pom.xml (root — module + sqlite-jdbc dependencyManagement)
+- trading-runtime/pom.xml
+- trading-runtime/src/main/java/com/martinfou/trading/runtime/EventStore.java
+- trading-runtime/src/main/java/com/martinfou/trading/runtime/EventStoreConfig.java
+- trading-runtime/src/main/java/com/martinfou/trading/runtime/EventStores.java
+- trading-runtime/src/main/java/com/martinfou/trading/runtime/EventStoreValidation.java
+- trading-runtime/src/main/java/com/martinfou/trading/runtime/InMemoryEventStore.java
+- trading-runtime/src/main/java/com/martinfou/trading/runtime/SqliteEventStore.java
+- trading-runtime/src/test/java/com/martinfou/trading/runtime/InMemoryEventStoreTest.java
+- trading-runtime/src/test/java/com/martinfou/trading/runtime/SqliteEventStoreTest.java
+- data/runtime/.gitkeep
+- .gitignore (data/runtime/*.db)
