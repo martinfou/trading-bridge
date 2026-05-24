@@ -43,3 +43,14 @@ mvn clean install
 ```
 
 See also `AGENTS.md` → Troubleshooting.
+
+## Historical data formats
+
+All backtest runners should load via `HistoricalDataLoader` (`trading-data`):
+
+| Format | Location | Timestamps |
+|--------|----------|------------|
+| Dukascopy CSV | `data/historical/dukascopy/` | epoch millis in CSV |
+| BarStore `.bars` | `data/historical/bars/` | epoch millis (legacy second-based files still readable) |
+
+`scripts/download-data.sh` writes millis to `.bars`. Re-download or re-convert to migrate old second-based files.

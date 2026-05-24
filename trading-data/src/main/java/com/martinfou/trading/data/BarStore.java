@@ -19,6 +19,9 @@ import java.util.*;
  * 
  * Fichier: data/historical/bars/<SYMBOL>_<TF>.bars
  * Index:   data/historical/bars/index.json  (metadonnees)
+ *
+ * Timestamps are stored as epoch millis ({@link Bar#timestamp()}).
+ * Legacy files written in epoch seconds are still readable.
  * 
  * Performance:
  * - Chargement de 1M barres avec MappedByteBuffer: < 50ms
