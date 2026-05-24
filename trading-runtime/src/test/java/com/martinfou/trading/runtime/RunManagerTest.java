@@ -9,8 +9,8 @@ class RunManagerTest {
 
     @Test
     void startRun_persistsEventsToStore() throws Exception {
-        try (EventStore store = EventStores.inMemory();
-             RunManager manager = new RunManager(store)) {
+        try (RuntimeStores.Bundle stores = RuntimeStores.inMemoryWithBroadcast();
+             RunManager manager = new RunManager(stores.eventStore())) {
 
             String runId = manager.startRun(new RunManager.StartRunRequest(
                 "LondonOpenRangeBreakout",
@@ -21,7 +21,7 @@ class RunManagerTest {
 
             RunRecord record = waitForCompletion(manager, runId);
             assertEquals(RunRecord.Status.COMPLETED, record.status());
-            assertEquals(2, store.count(runId));
+            assertEquals(2, stores.eventStore().count(runId));
         }
     }
 

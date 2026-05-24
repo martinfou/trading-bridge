@@ -8,23 +8,29 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.WebSocket;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ControlPlaneServerTest {
 
-    private EventStore eventStore;
+    private RuntimeStores.Bundle stores;
     private RunManager runManager;
     private ControlPlaneServer server;
     private HttpClient http;
 
     @BeforeEach
     void setUp() {
-        eventStore = EventStores.inMemory();
-        runManager = new RunManager(eventStore);
-        server = new ControlPlaneServer(runManager, 0);
+        stores = RuntimeStores.inMemoryWithBroadcast();
+        runManager = new RunManager(stores.eventStore());
+        server = new ControlPlaneServer(runManager, stores.hub(), 0);
         http = HttpClient.newHttpClient();
     }
 
@@ -32,7 +38,7 @@ class ControlPlaneServerTest {
     void tearDown() {
         server.close();
         runManager.close();
-        eventStore.close();
+        stores.eventStore().close();
     }
 
     @Test
@@ -77,6 +83,48 @@ class ControlPlaneServerTest {
         assertTrue(events.body().contains("\"sequence\""));
         assertTrue(events.body().contains("RUN_STARTED"));
         assertTrue(events.body().contains("RUN_ENDED"));
+    }
+
+    @Test
+    void webSocket_replaysRunEvents() throws Exception {
+        String body = """
+            {
+              "strategyId": "LondonOpenRangeBreakout",
+              "symbol": "EUR_USD",
+              "mode": "BACKTEST",
+              "barsSource": { "type": "sample", "count": 500 }
+            }
+            """;
+        HttpResponse<String> created = post("/api/runs", body);
+        String runId = extractJsonField(created.body(), "runId");
+        waitForCompletion(runId, Duration.ofSeconds(10));
+
+        List<String> messages = new ArrayList<>();
+        CompletableFuture<Void> done = new CompletableFuture<>();
+        WebSocket ws = http.newWebSocketBuilder()
+            .buildAsync(URI.create("ws://localhost:" + server.port() + "/ws/runs/" + runId), new WebSocket.Listener() {
+                @Override
+                public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
+                    messages.add(data.toString());
+                    if (messages.size() >= 2) {
+                        webSocket.sendClose(WebSocket.NORMAL_CLOSURE, "ok");
+                    }
+                    return WebSocket.Listener.super.onText(webSocket, data, last);
+                }
+
+                @Override
+                public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
+                    done.complete(null);
+                    return WebSocket.Listener.super.onClose(webSocket, statusCode, reason);
+                }
+            }).join();
+
+        done.get(5, TimeUnit.SECONDS);
+        ws.abort();
+
+        assertEquals(2, messages.size());
+        assertTrue(messages.stream().anyMatch(m -> m.contains("RUN_STARTED")));
+        assertTrue(messages.stream().anyMatch(m -> m.contains("RUN_ENDED")));
     }
 
     @Test
