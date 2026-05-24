@@ -76,6 +76,10 @@ mvn exec:java -pl trading-examples \
 
 Before marking work done: `mvn clean install` must pass for affected modules.
 
+## Troubleshooting
+
+If tests fail with `Unresolved compilation problem`, `cannot find symbol`, or behaviour that does not match source after a partial rebuild, stale classes under `target/` are often the cause. Run `mvn clean install` from the repo root before debugging further. The golden backtest (`GoldenBacktestTest`) skips when `data/historical/` is absent locally — see `docs/testing.md`.
+
 ## Coding conventions
 
 - **Packages:** `com.martinfou.trading.<module>`
@@ -113,6 +117,6 @@ Do not put broker or API code in `trading-core`. Do not implement the parser in 
 
 ## Active sprint
 
-**Sprint 2 — StrategyQuant XML parser** (`trading-parser`): `SqXmlParser`, `StrategyConfig`, indicators, entry/exit rules, optional Java codegen. Output must compile and backtest with `BacktestEngine`.
+**Sprint 12 — Platform consolidation** (Epic 12): golden backtest, unified data loader, single backtest CLI, strategy contract fixes, shared indicators, docs alignment. See `_bmad-output/planning-artifacts/sprint-12-consolidation-plan.md`.
 
-See `docs/sprint-plan.md` for full roadmap (Sprints 3–5: advanced backtest, brokers, production).
+See `docs/sprint-plan.md` for the full roadmap.

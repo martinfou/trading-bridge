@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * Tests for {@link JForexConverter}.
@@ -138,6 +139,8 @@ class JForexConverterTest {
     @Test
     void testConvertRealStrategy_31_177() throws IOException {
         String jforexPath = "/home/martinfou/projects/oanda-strategies/mvn-project/src/main/java/com/oanda/strategies/Strategy2_31_177.java";
+        assumeTrue(Files.isRegularFile(Path.of(jforexPath)),
+            "Skipping: external JForex fixture not present at " + jforexPath);
         Path tmpDir = Files.createTempDirectory("jforex-test-");
         String outputPath = JForexConverter.convert(jforexPath, tmpDir.toString(), "Strategy_2_31_177_Converted");
 
@@ -157,6 +160,8 @@ class JForexConverterTest {
     @Test
     void testConvertAllStrategies(@TempDir Path tmpDir) throws IOException {
         String sourceDir = "/home/martinfou/projects/oanda-strategies/mvn-project/src/main/java/com/oanda/strategies";
+        assumeTrue(Files.isDirectory(Path.of(sourceDir)),
+            "Skipping: external JForex source dir not present at " + sourceDir);
         String outputDir = tmpDir.resolve("converted").toString();
 
         List<String> results = JForexConverter.convertAll(sourceDir, outputDir);

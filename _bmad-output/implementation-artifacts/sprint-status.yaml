@@ -102,7 +102,7 @@ development_status:
   epic-5-retrospective: optional
 
   epic-12: in-progress
-  12-1-golden-backtest-stabilization: ready-for-dev
+  12-1-golden-backtest-stabilization: done
   12-2-unified-historical-data-loading: backlog
   12-3-unified-backtest-cli-strategy-catalog: backlog
   12-4-strategy-contract-home-policy: backlog
