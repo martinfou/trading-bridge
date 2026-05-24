@@ -9,3 +9,12 @@
 - **BacktestEngine diff minimal** — Import cleanup seulement ; OK avec domaine `Instant`.
 - **Preuve AC7 build** — `mvn clean install` à confirmer en local par le développeur.
 - **Zone Germany PMI (Berlin vs London)** — Décision 4-C : vérifier l’heure officielle sur le calendrier source avant de changer `Europe/Berlin`.
+
+## Deferred from: code review of stories 12.3–12.6 (2026-05-23)
+
+- **Couplage `trading-backtest` → `trading-strategies`** — Résolu story 13.1 (`RunContexts` dans `trading-examples`).
+- **Paper stub sémantiquement identique au backtest** — By design story 12.6 ; label `Paper mode (stub)` CLI + doc ; live paper = Epic 4.
+- **SLF4J sur stdout avec `--json`** — Pollue JSONL ; mitiger via log level WARN en mode json ou control plane (Epic 13).
+- `**RunPropBacktest --all` + `--json`/`--paper**` — Non supporté ; suite prop reste mode humain uniquement.
+- **Tests CLI d'intégration RunBacktest** — Pas de test end-to-end exec:java ; couverture unitaire suffisante pour MVP.
+- **Validation stricte args positionnels (capital vs chemin)** — Heuristique actuelle ; amélioration TUI/control plane.

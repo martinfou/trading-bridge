@@ -1,9 +1,10 @@
-package com.martinfou.trading.backtest;
+package com.martinfou.trading.examples;
 
+import com.martinfou.trading.backtest.BacktestEngine;
+import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.core.Bar;
-import com.martinfou.trading.core.Strategy;
 import com.martinfou.trading.data.HistoricalDataLoader;
-import com.martinfou.trading.strategies.prop.PropStrategyCatalog;
+import com.martinfou.trading.strategies.StrategyCatalog;
 
 import org.junit.jupiter.api.Test;
 
@@ -14,6 +15,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -46,8 +48,7 @@ class GoldenBacktestTest {
             SYMBOL, YEAR, HistoricalDataLoader.DEFAULT_BARS_DIR);
         assertFalse(bars.isEmpty(), "Expected bars for " + SYMBOL + " " + YEAR);
 
-        Strategy strategy = PropStrategyCatalog.create("LondonOpenRangeBreakout", SYMBOL);
-        BacktestResult result = new BacktestEngine(strategy, bars, INITIAL_CAPITAL).run();
+        BacktestResult result = RunContexts.backtest("LondonOpenRangeBreakout", SYMBOL, bars, INITIAL_CAPITAL).run();
 
         assertEquals(BASELINE_BARS, bars.size(), "bar count");
         assertEquals(BASELINE_TRADES, result.totalTrades(), "trade count");

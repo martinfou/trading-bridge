@@ -145,7 +145,9 @@ public class BacktestEngine {
         }
 
         // Close any remaining open positions at last bar's close
-        closeRemainingPositions(bars.getLast());
+        if (!bars.isEmpty()) {
+            closeRemainingPositions(bars.getLast());
+        }
 
         // Final equity recompute (no floating P&L — all positions closed)
         recomputeEquity(bars.getLast());
@@ -360,7 +362,8 @@ public class BacktestEngine {
             avgTradePnl, sharpe, sortino, profitFactor, calmar,
             totalCommission, totalSlippage,
             List.copyOf(equityCurve), List.copyOf(trades),
-            bars.getFirst().timestamp(), bars.getLast().timestamp(),
+            bars.isEmpty() ? null : bars.getFirst().timestamp(),
+            bars.isEmpty() ? null : bars.getLast().timestamp(),
             ppy
         );
     }

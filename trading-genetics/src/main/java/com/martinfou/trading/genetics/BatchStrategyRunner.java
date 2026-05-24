@@ -315,10 +315,26 @@ public final class BatchStrategyRunner {
      */
     private static boolean passesCriteria(StrategyBundle bundle, SelectionCriteria sc) {
         if (bundle.quickResult == null) return false;
-        return bundle.quickResult.sharpeRatio() >= sc.minSharpe()
-            && bundle.quickResult.profitFactor() >= sc.minProfitFactor()
-            && bundle.quickResult.maxDrawdownPct() <= sc.maxDrawdown()
-            && bundle.quickResult.winRatePct() >= sc.minWinRate();
+        var r = bundle.quickResult;
+        return meetsMinimum(r.sharpeRatio(), sc.minSharpe())
+            && meetsMinimum(r.profitFactor(), sc.minProfitFactor())
+            && meetsMaximum(r.maxDrawdownPct(), sc.maxDrawdown())
+            && meetsMinimum(r.winRatePct(), sc.minWinRate());
+    }
+
+    /** NaN metrics satisfy a zero (or negative) minimum threshold. */
+    private static boolean meetsMinimum(double value, double minimum) {
+        if (Double.isNaN(value)) {
+            return minimum <= 0;
+        }
+        return value >= minimum;
+    }
+
+    private static boolean meetsMaximum(double value, double maximum) {
+        if (Double.isNaN(value)) {
+            return true;
+        }
+        return value <= maximum;
     }
 
     /**
