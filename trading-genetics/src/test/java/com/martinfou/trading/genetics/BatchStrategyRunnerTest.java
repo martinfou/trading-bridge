@@ -81,7 +81,7 @@ class BatchStrategyRunnerTest {
     void testBatchRunProducesOutputFiles(@TempDir Path tempDir) throws Exception {
         // Run a tiny batch: 8 strategies, 40 bars, 1 type (fast test)
         var config = new BatchStrategyRunner.Config(
-            8, "trend", 40, 100_000.0, tempDir, 2,
+            8, "trend", 40, 100_000.0,             tempDir, 2, null,
             BatchStrategyRunner.SelectionCriteria.disabled()
         );
 
@@ -113,7 +113,7 @@ class BatchStrategyRunnerTest {
     void testBatchRunWithAllTypes(@TempDir Path tempDir) throws Exception {
         // Run a small batch with all types
         var config = new BatchStrategyRunner.Config(
-            16, "all", 40, 100_000.0, tempDir, 4,
+            16, "all", 40, 100_000.0,             tempDir, 4, null,
             BatchStrategyRunner.SelectionCriteria.disabled()
         );
 
@@ -134,7 +134,7 @@ class BatchStrategyRunnerTest {
     @Test
     void testGeneratedStrategiesHaveValidMetrics(@TempDir Path tempDir) throws Exception {
         var config = new BatchStrategyRunner.Config(
-            12, "trend,meanrev", 40, 100_000.0, tempDir, 4,
+            12, "trend,meanrev", 40, 100_000.0,             tempDir, 4, null,
             BatchStrategyRunner.SelectionCriteria.disabled()
         );
 
@@ -160,7 +160,7 @@ class BatchStrategyRunnerTest {
     @Test
     void testGeneratedJavaFilesAreCompilable(@TempDir Path tempDir) throws Exception {
         var config = new BatchStrategyRunner.Config(
-            6, "breakout", 30, 100_000.0, tempDir, 2,
+            6, "breakout", 30, 100_000.0,             tempDir, 2, null,
             BatchStrategyRunner.SelectionCriteria.disabled()
         );
 
@@ -190,7 +190,7 @@ class BatchStrategyRunnerTest {
     @Test
     void testBatchWithSingleStrategy(@TempDir Path tempDir) throws Exception {
         var config = new BatchStrategyRunner.Config(
-            1, "momentum", 30, 100_000.0, tempDir, 1,
+            1, "momentum", 30, 100_000.0,             tempDir, 1, null,
             BatchStrategyRunner.SelectionCriteria.disabled()
         );
 
@@ -208,7 +208,7 @@ class BatchStrategyRunnerTest {
     void testBatchWithZeroStrategiesDoesNotCrash(@TempDir Path tempDir) throws Exception {
         // This should produce empty but valid output
         var config = new BatchStrategyRunner.Config(
-            0, "trend", 30, 100_000.0, tempDir, 1,
+            0, "trend", 30, 100_000.0,             tempDir, 1, null,
             BatchStrategyRunner.SelectionCriteria.disabled()
         );
 
@@ -246,7 +246,7 @@ class BatchStrategyRunnerTest {
             100     // maxAttempts
         );
         var config = new BatchStrategyRunner.Config(
-            500, "trend", 40, 100_000.0, tempDir, 2, sc
+            500, "trend", 40, 100_000.0, tempDir, 2, null, sc
         );
 
         BatchStrategyRunner.run(config);
@@ -268,7 +268,7 @@ class BatchStrategyRunnerTest {
         // When no criteria is set and --target is 0, should use fixed count mode
         var sc = BatchStrategyRunner.SelectionCriteria.disabled();
         var config = new BatchStrategyRunner.Config(
-            6, "trend", 30, 100_000.0, tempDir, 2, sc
+            6, "trend", 30, 100_000.0, tempDir, 2, null, sc
         );
 
         BatchStrategyRunner.run(config);
@@ -314,7 +314,7 @@ class BatchStrategyRunnerTest {
 
         // We test by running the quick backtest through the public API indirectly
         var config = new BatchStrategyRunner.Config(
-            3, "trend", 30, 100_000.0, Path.of("./build/test-batch-out/"), 1,
+            3, "trend", 30, 100_000.0, Path.of("./build/test-batch-out/"), 1, null,
             BatchStrategyRunner.SelectionCriteria.disabled()
         );
 
