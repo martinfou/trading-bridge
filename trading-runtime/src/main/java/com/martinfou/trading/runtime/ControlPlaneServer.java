@@ -3,28 +3,36 @@ package com.martinfou.trading.runtime;
 import com.martinfou.trading.strategies.StrategyCatalog;
 import io.javalin.Javalin;
 import io.javalin.http.HttpStatus;
+import io.javalin.websocket.WsCloseContext;
+import io.javalin.websocket.WsConnectContext;
 
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 /**
- * Javalin HTTP control plane — health, strategies, runs, and event replay.
+ * Javalin HTTP control plane — health, strategies, runs, event replay, and WebSocket stream.
  */
 public final class ControlPlaneServer implements AutoCloseable {
 
     public static final String VERSION = "1.0.0-SNAPSHOT";
 
     private final RunManager runManager;
+    private final RunEventHub eventHub;
     private final Javalin app;
 
-    public ControlPlaneServer(RunManager runManager, int port) {
+    public ControlPlaneServer(RunManager runManager, RunEventHub eventHub, int port) {
         if (runManager == null) {
             throw new IllegalArgumentException("runManager must not be null");
         }
+        if (eventHub == null) {
+            throw new IllegalArgumentException("eventHub must not be null");
+        }
         this.runManager = runManager;
-        this.app = createApp(runManager);
+        this.eventHub = eventHub;
+        this.app = createApp(runManager, eventHub);
         app.start(port);
     }
 
@@ -37,7 +45,7 @@ public final class ControlPlaneServer implements AutoCloseable {
         app.stop();
     }
 
-    private static Javalin createApp(RunManager runManager) {
+    private static Javalin createApp(RunManager runManager, RunEventHub eventHub) {
         return Javalin.create(config -> config.showJavalinBanner = false)
             .get("/api/health", ctx -> ctx.json(Map.of(
                 "status", "ok",
@@ -84,6 +92,10 @@ public final class ControlPlaneServer implements AutoCloseable {
                     "nextAfterSequence", nextAfter,
                     "items", items.stream().map(ControlPlaneServer::toEventItem).toList()));
             })
+            .ws("/ws/runs/{runId}", ws -> {
+                ws.onConnect(ctx -> onWebSocketConnect(runManager, eventHub, ctx));
+                ws.onClose(ctx -> onWebSocketClose(eventHub, ctx));
+            })
             .exception(NotFoundException.class, (e, ctx) -> {
                 ctx.status(HttpStatus.NOT_FOUND);
                 ctx.json(Map.of("error", e.getMessage()));
@@ -100,6 +112,40 @@ public final class ControlPlaneServer implements AutoCloseable {
                 ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
                 ctx.json(Map.of("error", e.getMessage() != null ? e.getMessage() : "Internal error"));
             });
+    }
+
+    private static void onWebSocketConnect(RunManager runManager, RunEventHub hub, WsConnectContext ctx) {
+        String runId = ctx.pathParam("runId");
+        if (runManager.getRun(runId).isEmpty()) {
+            ctx.closeSession(4404, "Run not found");
+            return;
+        }
+
+        for (StoredRunEvent stored : runManager.eventStore().queryWithSequence(runId, 0, 1000)) {
+            ctx.send(RunEventMessages.toJson(stored));
+        }
+
+        Consumer<String> listener = ctx::send;
+        AutoCloseable subscription = hub.subscribe(runId, listener);
+        ctx.attribute("subscription", subscription);
+        ctx.attribute("listener", listener);
+        ctx.attribute("runId", runId);
+    }
+
+    private static void onWebSocketClose(RunEventHub hub, WsCloseContext ctx) {
+        String runId = ctx.attribute("runId");
+        Consumer<String> listener = ctx.attribute("listener");
+        if (runId != null && listener != null) {
+            hub.unsubscribe(runId, listener);
+        }
+        AutoCloseable subscription = ctx.attribute("subscription");
+        if (subscription != null) {
+            try {
+                subscription.close();
+            } catch (Exception ignored) {
+                // best effort
+            }
+        }
     }
 
     private static Map<String, Object> toRunJson(RunManager runManager, RunRecord record) {
