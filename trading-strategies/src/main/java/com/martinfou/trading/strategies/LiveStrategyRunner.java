@@ -42,6 +42,8 @@ public class LiveStrategyRunner {
 
     private static final Logger log = LoggerFactory.getLogger(LiveStrategyRunner.class);
     private static final Path STATE_FILE = Paths.get("/tmp/live-strategy-state.json");
+    /** Monitoring file — written every save, overwritten so the monitor cron always has the latest snapshot. */
+    private static final Path MONITOR_FILE = Paths.get("/tmp/paper-trading-status.json");
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final AtomicBoolean RUNNING = new AtomicBoolean(true);
 
@@ -140,7 +142,7 @@ public class LiveStrategyRunner {
     public static void main(String[] args) throws Exception {
         if (args.length < 3) {
             System.out.println("Usage: LiveStrategyRunner <apiKey> <accountId> <strategyName> [granularity] [intervalSec]");
-            System.out.println("  strategyName: '2_31_177', '2_14_147', '2_15_195', '2_31_175', '2_32_120', '2_36_190', '2_38_112', or 'all'");
+            System.out.println("  strategyName: '2_31_177', '2_14_147', '2_15_195', '2_31_175', '2_32_120', '2_36_190', '2_38_112', 'nymid', or 'all'");
             System.out.println("  granularity:  H1 (default), H4, D");
             System.out.println("  intervalSec:  60 (default) — loop interval in seconds");
             listStrategies();
@@ -218,6 +220,18 @@ public class LiveStrategyRunner {
             map.put("2_36_190", Class.forName("com.martinfou.trading.strategies.sqimported.Strategy_2_36_190_Converted")
                 .asSubclass(Strategy.class));
             map.put("2_38_112", Class.forName("com.martinfou.trading.strategies.sqimported.Strategy_2_38_112_Converted")
+                .asSubclass(Strategy.class));
+            // Creative Lab strategies
+            map.put("nymid", Class.forName("com.martinfou.trading.strategies.creative.NYMidSessionMomentumStrategy")
+                .asSubclass(Strategy.class));
+            map.put("gobig", Class.forName("com.martinfou.trading.strategies.creative.GoBigStrategy")
+                .asSubclass(Strategy.class));
+            map.put("casino", Class.forName("com.martinfou.trading.strategies.creative.CasinoStrategy")
+                .asSubclass(Strategy.class));
+            // Creative Lab — reversion strategies (top performers)
+            map.put("vwpreversion", Class.forName("com.martinfou.trading.strategies.creative.VWPReversionStrategy")
+                .asSubclass(Strategy.class));
+            map.put("consecbar", Class.forName("com.martinfou.trading.strategies.creative.ConsecutiveBarExhaustionStrategy")
                 .asSubclass(Strategy.class));
         } catch (ClassNotFoundException e) {
             throw new RuntimeException("Strategy class not found", e);
@@ -419,9 +433,17 @@ public class LiveStrategyRunner {
                 ? Math.abs(order.quantity())
                 : -Math.abs(order.quantity());
             String unitsStr = String.valueOf((int) units);
-            String priceStr = String.format("%.5f", order.price());
+            // OANDA displayPrecision varies by instrument:
+            // GBP/JPY=3, USD/JPY=3, XAU/USD=1, EUR/USD=5, USD/CAD=5, GBP/USD=5
+            int precision = switch (oandaSymbol) {
+                case "GBP_JPY", "USD_JPY" -> 3;
+                case "XAU_USD", "XAG_USD" -> 1;
+                default -> 5; // EUR/USD, GBP/USD, USD/CAD, AUD/USD, NZD/USD, USD/CHF
+            };
+            String priceStr = String.format("%." + precision + "f", order.price());
 
-            var result = executor.placeStopOrder(oandaSymbol, unitsStr, priceStr);
+            var tag = strategyShortName + "_" + oandaSymbol.replace("_", "");
+            var result = executor.placeStopOrder(oandaSymbol, unitsStr, priceStr, tag);
             log.info("⏳ STOP ORDER PLACED: {} {} @ {} (OANDA ID: {})",
                 oandaSymbol, order.side(), priceStr, result.orderId());
 
@@ -444,7 +466,8 @@ public class LiveStrategyRunner {
                 : -Math.abs(order.quantity());
             String unitsStr = String.valueOf((int) units);
 
-            var result = executor.placeMarketOrder(oandaSymbol, unitsStr);
+            var tag = strategyShortName + "_" + oandaSymbol.replace("_", "");
+            var result = executor.placeMarketOrder(oandaSymbol, unitsStr, tag);
             totalEntries++;
 
             log.info("═══════ ENTRY {} {} {} @ {} ═══════",
@@ -455,12 +478,12 @@ public class LiveStrategyRunner {
             // Attach SL/TP
             double fillPrice = Double.parseDouble(result.fillPrice());
             String slStr = order.stopLoss() > 0
-                ? String.format("%.5f", order.stopLoss()) : null;
+                ? formatPrice(order.stopLoss(), oandaSymbol) : null;
             String tpStr = order.takeProfit() > 0
-                ? String.format("%.5f", order.takeProfit()) : null;
+                ? formatPrice(order.takeProfit(), oandaSymbol) : null;
 
             if (slStr != null && result.tradeId() != null && !result.tradeId().equals("N/A")) {
-                String slResult = executor.addStopLoss(result.tradeId(), slStr);
+                String slResult = executor.addStopLoss(result.tradeId(), slStr, tag);
                 if (slResult.equals("OK")) {
                     log.info("   SL set @ {}", slStr);
                 } else {
@@ -469,7 +492,7 @@ public class LiveStrategyRunner {
             }
 
             if (tpStr != null && result.tradeId() != null && !result.tradeId().equals("N/A")) {
-                String tpResult = executor.addTakeProfit(result.tradeId(), tpStr);
+                String tpResult = executor.addTakeProfit(result.tradeId(), tpStr, tag);
                 if (tpResult.equals("OK")) {
                     log.info("   TP set @ {}", tpStr);
                 } else {
@@ -488,7 +511,7 @@ public class LiveStrategyRunner {
 
         } catch (Exception e) {
             log.error("❌ TRADE EXECUTION FAILED: {} {} @ {} — {}",
-                oandaSymbol, order.side(), String.format("%.5f", execPrice), e.getMessage());
+                oandaSymbol, order.side(), formatPrice(execPrice, oandaSymbol), e.getMessage());
         }
     }
 
@@ -565,6 +588,16 @@ public class LiveStrategyRunner {
     // Instrument Resolution
     // ========================================================================
 
+    /** Format price with correct decimal precision for OANDA instrument. */
+    static String formatPrice(double price, String oandaSymbol) {
+        int precision = switch (oandaSymbol) {
+            case "GBP_JPY", "USD_JPY" -> 3;
+            case "XAU_USD", "XAG_USD" -> 1;
+            default -> 5;
+        };
+        return String.format("%." + precision + "f", price);
+    }
+
     private static String toOandaSymbol(Strategy s) {
         String name = s.name().toUpperCase();
         if (name.contains("GBPJPY") || name.contains("GBP_JPY")) return "GBP_JPY";
@@ -573,8 +606,11 @@ public class LiveStrategyRunner {
         if (name.contains("USDCAD") || name.contains("USD_CAD")) return "USD_CAD";
         if (name.contains("USDJPY") || name.contains("USD_JPY")) return "USD_JPY";
         if (name.contains("AUDUSD") || name.contains("AUD_USD")) return "AUD_USD";
+        if (name.contains("NZDUSD") || name.contains("NZD_USD")) return "NZD_USD";
+        if (name.contains("USDCHF") || name.contains("USD_CHF")) return "USD_CHF";
+        if (name.contains("XAUUSD") || name.contains("XAU_USD") || name.contains("GOLD")) return "XAU_USD";
         if (name.contains("EURJPY") || name.contains("EUR_JPY")) return "EUR_JPY";
-        // All sqimported strategies use SYMBOL = "GBP_JPY"
+        // Default to GBP/JPY
         return "GBP_JPY";
     }
 
@@ -628,6 +664,10 @@ public class LiveStrategyRunner {
             }
 
             MAPPER.writerWithDefaultPrettyPrinter().writeValue(STATE_FILE.toFile(), root);
+            // Also write monitor file with status flag for the monitoring cron
+            root.put("running", RUNNING.get());
+            root.put("strategyDisplayName", strategy.name());
+            MAPPER.writerWithDefaultPrettyPrinter().writeValue(MONITOR_FILE.toFile(), root);
             lastStateSave = TimeConventions.now();
         } catch (Exception e) {
             log.warn("Failed to save state: {}", e.getMessage());

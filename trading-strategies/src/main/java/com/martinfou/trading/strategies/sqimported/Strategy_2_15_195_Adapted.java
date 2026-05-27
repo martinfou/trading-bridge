@@ -59,16 +59,15 @@ public class Strategy_2_15_195_Adapted implements Strategy {
             if (barsSinceEntry >= exitAfterBars) {
                 pendingOrders.remove(activeOrder);
                 activeOrder = null;
+                entryTriggered = false;
                 trailingActivated = false;
                 return;
             }
 
-            // Expiration
-            if (barsSinceEntry >= signalExpirationBars) {
-                // Expiration handled by exitAfterBars being shorter... 
-                // Actually expirationBars < exitAfterBars means signal expires at 14
-                // but that's for the PENDING order, not the filled one.
-                // For simplicity: clean up after exitAfterBars.
+            // If order is still PENDING, allow re-evaluation of entry signals
+            if (activeOrder.status() == Order.Status.PENDING) {
+                checkEntry(bar);
+                return;
             }
 
             // Trailing stop (3.8 × ATR after 40 pip profit)
@@ -101,7 +100,14 @@ public class Strategy_2_15_195_Adapted implements Strategy {
 
         if (entryTriggered) return;
 
+        checkEntry(bar);
+    }
+
+    /** Evaluate entry conditions and place order if signal fires. */
+    private void checkEntry(Bar bar) {
+
         // LinReg crossover signal
+        if (history.size() < Math.max(period1, atrPeriod) + linRegPeriod + 10) return;
         double linReg3 = calcLinReg(history, linRegPeriod, 3); // shift 3
         double open3 = getBar(history, 3).open();
         double open2 = getBar(history, 2).open();
@@ -117,6 +123,11 @@ public class Strategy_2_15_195_Adapted implements Strategy {
 
         double sl = entryPrice - (stopLossPips * PIP_JPY);
         double tp = entryPrice + (takeProfitPips * PIP_JPY);
+
+        // Cancel any existing pending order before placing a new one
+        if (activeOrder != null && activeOrder.status() == Order.Status.PENDING) {
+            pendingOrders.remove(activeOrder);
+        }
 
         Order order = new Order(SYMBOL, Order.Side.BUY, Order.Type.STOP, QUANTITY, entryPrice)
                 .withStopLoss(sl)
@@ -136,6 +147,13 @@ public class Strategy_2_15_195_Adapted implements Strategy {
     @Override
     public List<Order> getPendingOrders() {
         pendingOrders.removeIf(o -> o.status() != Order.Status.PENDING);
+        // If the filled order was removed (position closed), allow re-entry
+        if (activeOrder != null && !pendingOrders.contains(activeOrder)) {
+            activeOrder = null;
+            entryTriggered = false;
+            barsSinceEntry = 0;
+            trailingActivated = false;
+        }
         return pendingOrders;
     }
 

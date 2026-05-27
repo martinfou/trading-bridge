@@ -59,6 +59,18 @@ _bmad/**/*.bak
 *.log
 logs/
 
+# BMAD generated reports
+_bmad-output/
+batch-results/
+backtest-*-report.md
+genetic-results/
+creative-lab/
+download/
+
+# Database
+*.db
+*.sqlite
+
 # Historical market data — downloaded, not committed
 data/historical/*
 deploy/active-strategy.txt
