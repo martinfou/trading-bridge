@@ -25,13 +25,24 @@ public class OandaExecutor {
 
     public record OrderResult(String orderId, String tradeId, String fillPrice, String status) {}
 
-    public OrderResult placeMarketOrder(String instrument, String units) throws Exception {
+    /** Ajoute des clientExtensions pour identifier la stratégie dans OANDA. */
+    private java.util.Map<String, Object> clientExtensions(String tag) {
+        return new java.util.HashMap<>() {{
+            put("clientExtensions", new java.util.HashMap<>() {{
+                put("tag", tag);
+                put("comment", "Stratégie: " + tag);
+            }});
+        }};
+    }
+
+    public OrderResult placeMarketOrder(String instrument, String units, String tag) throws Exception {
         String body = mapper.writeValueAsString(new java.util.HashMap<>() {{
             put("order", new java.util.HashMap<>() {{
                 put("type", "MARKET");
                 put("instrument", instrument);
                 put("units", units);
                 put("timeInForce", "FOK");
+                putAll(clientExtensions(tag));
             }});
         }});
 
@@ -62,7 +73,7 @@ public class OandaExecutor {
 
     public record StopOrderResult(String orderId, String status, String price) {}
 
-    public StopOrderResult placeStopOrder(String instrument, String units, String price) throws Exception {
+    public StopOrderResult placeStopOrder(String instrument, String units, String price, String tag) throws Exception {
         String body = mapper.writeValueAsString(new java.util.HashMap<>() {{
             put("order", new java.util.HashMap<>() {{
                 put("type", "STOP");
@@ -70,6 +81,7 @@ public class OandaExecutor {
                 put("units", units);
                 put("price", price);
                 put("timeInForce", "GTC");
+                putAll(clientExtensions(tag));
             }});
         }});
 
@@ -96,9 +108,9 @@ public class OandaExecutor {
         );
     }
 
-    public String addStopLoss(String tradeId, String price) throws Exception {
+    public String addStopLoss(String tradeId, String price, String tag) throws Exception {
         String body = "{\"order\":{\"type\":\"STOP_LOSS\",\"tradeID\":\"" 
-            + tradeId + "\",\"price\":\"" + price + "\"}}";
+            + tradeId + "\",\"price\":\"" + price + "\",\"clientExtensions\":{\"tag\":\"" + tag + "\"}}}";
         var req = HttpRequest.newBuilder()
             .uri(URI.create(baseUrl + "accounts/" + accountId + "/orders"))
             .header("Authorization", "B" + "earer " + apiKey)
@@ -110,9 +122,9 @@ public class OandaExecutor {
         return resp.statusCode() == 201 ? "OK" : "FAILED: " + resp.body();
     }
 
-    public String addTakeProfit(String tradeId, String price) throws Exception {
+    public String addTakeProfit(String tradeId, String price, String tag) throws Exception {
         String body = "{\"order\":{\"type\":\"TAKE_PROFIT\",\"tradeID\":\"" 
-            + tradeId + "\",\"price\":\"" + price + "\"}}";
+            + tradeId + "\",\"price\":\"" + price + "\",\"clientExtensions\":{\"tag\":\"" + tag + "\"}}}";
         var req = HttpRequest.newBuilder()
             .uri(URI.create(baseUrl + "accounts/" + accountId + "/orders"))
             .header("Authorization", "B" + "earer " + apiKey)
@@ -131,7 +143,7 @@ public class OandaExecutor {
             return;
         }
         var exec = new OandaExecutor(args[0], args[1], true);
-        var result = exec.placeMarketOrder(args[2], args[3]);
+        var result = exec.placeMarketOrder(args[2], args[3], "TEST");
         System.out.println("Trade executed: " + result);
     }
 }

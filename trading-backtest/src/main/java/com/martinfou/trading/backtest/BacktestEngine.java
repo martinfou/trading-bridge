@@ -125,8 +125,8 @@ public class BacktestEngine {
             // Process pending orders from the strategy
             processOrders(bar);
 
-            // Update equity with floating P&L from open positions
-            updateFloatingEquity(bar);
+            // Recompute equity: cash + floating P&L from open positions
+            recomputeEquity(bar);
 
             // Track equity curve
             equityCurve.add(equity);
@@ -135,6 +135,9 @@ public class BacktestEngine {
 
         // Close any remaining open positions at last bar's close
         closeRemainingPositions(bars.getLast());
+
+        // Final equity recompute (no floating P&L — all positions closed)
+        recomputeEquity(bars.getLast());
 
         return buildResult();
     }
@@ -183,8 +186,6 @@ public class BacktestEngine {
 
                 order.fill();
 
-                // Deduct costs from equity immediately
-                equity -= commission;
                 totalCommission += commission;
 
                 // Open or add to position
@@ -263,7 +264,6 @@ public class BacktestEngine {
 
     private void closePosition(Position pos, double exitPrice, Instant timestamp) {
         double pnl = pos.currentPnl(exitPrice);
-        equity += pnl;
         totalTrades++;
 
         if (pnl > 0) winningTrades++;
@@ -282,10 +282,17 @@ public class BacktestEngine {
         }
     }
 
-    private void updateFloatingEquity(Bar bar) {
+    /**
+     * Recomputes equity correctly: cash (initial + closed P&L - costs) + current floating P&L.
+     * Prevents the double-counting bug from incrementally adding floating P&L each bar.
+     */
+    private void recomputeEquity(Bar bar) {
+        double realizedPnl = trades.stream().mapToDouble(Trade::pnl).sum();
+        double floatingPnl = 0;
         for (Position pos : openPositions.values()) {
-            equity += pos.currentPnl(bar.close());
+            floatingPnl += pos.currentPnl(bar.close());
         }
+        equity = initialCapital - totalCommission - totalSlippage + realizedPnl + floatingPnl;
     }
 
     // ---------------------------------------------------------------
@@ -309,7 +316,7 @@ public class BacktestEngine {
     // ---------------------------------------------------------------
 
     private BacktestResult buildResult() {
-        double totalPnl = equity - initialCapital;
+        double totalPnl = trades.stream().mapToDouble(Trade::pnl).sum() - totalCommission - totalSlippage;
         double totalReturnPct = initialCapital > 0 ? (totalPnl / initialCapital) * 100 : 0;
         double maxDd = calcMaxDrawdown();
         double winRate = totalTrades > 0 ? (double) winningTrades / totalTrades * 100 : 0;

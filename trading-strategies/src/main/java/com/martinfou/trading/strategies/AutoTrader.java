@@ -64,7 +64,7 @@ public class AutoTrader {
                 ? String.valueOf((int) (signal.quantity() * 100000))
                 : String.valueOf(-(int) (signal.quantity() * 100000));
 
-            var result = executor.placeMarketOrder(signal.pair(), units);
+            var result = executor.placeMarketOrder(signal.pair(), units, "AUTO");
             log.info("✅ TRADE EXECUTED: {} {} {} lots @ {}",
                 signal.pair(), signal.side(), signal.quantity(), result.fillPrice());
 
@@ -72,8 +72,8 @@ public class AutoTrader {
             String tpStr = String.format("%.5f", signal.takeProfit());
 
             if (result.tradeId() != null && !result.tradeId().equals("N/A")) {
-                executor.addStopLoss(result.tradeId(), slStr);
-                executor.addTakeProfit(result.tradeId(), tpStr);
+                executor.addStopLoss(result.tradeId(), slStr, "AUTO");
+                executor.addTakeProfit(result.tradeId(), tpStr, "AUTO");
                 log.info("   SL: {} TP: {}", slStr, tpStr);
             }
         } catch (Exception e) {
