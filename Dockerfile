@@ -1,4 +1,4 @@
-FROM eclipse-temurin:21-jdk AS build
+FROM maven:3-eclipse-temurin-21 AS build
 WORKDIR /app
 COPY pom.xml .
 COPY trading-core/pom.xml trading-core/
@@ -12,16 +12,27 @@ COPY trading-examples/pom.xml trading-examples/
 RUN mvn dependency:go-offline -q
 
 COPY . .
-RUN mvn package -DskipTests -q
+RUN mvn install -Dmaven.test.skip=true -q && \
+    mvn dependency:copy-dependencies -DoutputDirectory=/app/libs -q
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app
-COPY --from=build /app/trading-strategies/target/*.jar app.jar
-COPY --from=build /app/trading-strategies/target/dependency-jars/ /app/libs/
+
+# Copy all module classes (classpath)
+COPY --from=build /app/trading-core/target/classes /app/classes/trading-core
+COPY --from=build /app/trading-data/target/classes /app/classes/trading-data
+COPY --from=build /app/trading-strategies/target/classes /app/classes/trading-strategies
+COPY --from=build /app/trading-broker/target/classes /app/classes/trading-broker
+COPY --from=build /app/trading-parser/target/classes /app/classes/trading-parser
+
+# Copy all dependency JARs
+COPY --from=build /app/libs/ /app/libs/
+
 COPY scripts/run-live.sh /app/run-live.sh
 
 EXPOSE 8083
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD curl -f http://localhost:8083/health || exit 1
 
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENV CLASSPATH="/app/classes/trading-core:/app/classes/trading-data:/app/classes/trading-strategies:/app/classes/trading-broker:/app/classes/trading-parser:/app/libs/*"
+ENTRYPOINT ["java", "-cp", "/app/classes/trading-core:/app/classes/trading-data:/app/classes/trading-strategies:/app/classes/trading-broker:/app/classes/trading-parser:/app/libs/*", "com.martinfou.trading.strategies.LiveStrategyRunner"]

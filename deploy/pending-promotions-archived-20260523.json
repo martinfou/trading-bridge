@@ -1,0 +1,12 @@
+{
+  "strategy_id": "GapFader",
+  "environment": "paper",
+  "machine": "openclaw",
+  "git_commit": "a2baa13"
+}
+{
+  "strategy_id": "GapFader",
+  "environment": "backtest",
+  "machine": "openclaw",
+  "git_commit": "a2baa13"
+}
