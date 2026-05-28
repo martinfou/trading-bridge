@@ -1,0 +1,147 @@
+{
+  "_comment": "Live Trading Configuration — risk is derived from backtest metrics",
+  "_riskFormula": "riskPct = min(defaultRiskPct, max(0.1, maxDrawdown / 20, halfKelly))",
+  "_halfKelly": "f* = (winRate × avgWinLoss - lossRate) / avgWinLoss / 2",
+
+  "defaultRiskPct": 1.5,
+  "refreshIntervalSec": 60,
+  "stateDir": "/tmp",
+
+  "strategies": {
+    "vwpreversion": {
+      "instrument": "USD_CHF",
+      "granularity": "H1",
+      "positionSizeUnits": 1000,
+      "backtestMetrics": {
+        "sharpe": 4.47,
+        "maxDrawdown": 12.0,
+        "winRate": 62.0,
+        "avgWinLoss": 1.8,
+        "totalReturn": 85.0,
+        "trades": 450,
+        "source": "20y H1 multi-asset backtest"
+      },
+      "computedRiskPct": 0.6
+    },
+    "consecbar": {
+      "instrument": "GBP_JPY",
+      "granularity": "H1",
+      "positionSizeUnits": 1000,
+      "backtestMetrics": {
+        "sharpe": 2.5,
+        "maxDrawdown": 15.0,
+        "winRate": 55.0,
+        "avgWinLoss": 1.6,
+        "totalReturn": 40.0,
+        "trades": 300,
+        "source": "preliminary — needs full backtest"
+      },
+      "computedRiskPct": 0.75
+    },
+    "2_31_175": {
+      "instrument": "GBP_JPY",
+      "granularity": "H1",
+      "positionSizeUnits": 1000,
+      "backtestMetrics": {
+        "sharpe": 0.0,
+        "maxDrawdown": 115.24,
+        "winRate": 31.2,
+        "avgWinLoss": 3.98,
+        "totalReturn": 868.67,
+        "trades": 735,
+        "source": "20y H1 backtest report"
+      },
+      "computedRiskPct": 0.5
+    },
+    "2_36_190": {
+      "instrument": "GBP_JPY",
+      "granularity": "H1",
+      "positionSizeUnits": 1000,
+      "backtestMetrics": {
+        "sharpe": -0.27,
+        "maxDrawdown": 81.4,
+        "winRate": 30.7,
+        "avgWinLoss": 4.1,
+        "totalReturn": 854.03,
+        "trades": 652,
+        "source": "20y H1 backtest report"
+      },
+      "computedRiskPct": 0.4
+    },
+    "2_38_112": {
+      "instrument": "GBP_JPY",
+      "granularity": "H1",
+      "positionSizeUnits": 1000,
+      "backtestMetrics": {
+        "sharpe": -0.5,
+        "maxDrawdown": 50.39,
+        "winRate": 30.3,
+        "avgWinLoss": 4.42,
+        "totalReturn": 631.26,
+        "trades": 739,
+        "source": "20y H1 backtest report"
+      },
+      "computedRiskPct": 0.5
+    },
+    "2_14_147": {
+      "instrument": "GBP_JPY",
+      "granularity": "H1",
+      "positionSizeUnits": 1000,
+      "backtestMetrics": {
+        "sharpe": -0.57,
+        "maxDrawdown": 50.1,
+        "winRate": 33.9,
+        "avgWinLoss": 3.86,
+        "totalReturn": 914.78,
+        "trades": 622,
+        "source": "20y H1 backtest report"
+      },
+      "computedRiskPct": 0.5
+    },
+    "2_15_195": {
+      "instrument": "GBP_JPY",
+      "granularity": "H1",
+      "positionSizeUnits": 1000,
+      "backtestMetrics": {
+        "sharpe": -0.33,
+        "maxDrawdown": 68.27,
+        "winRate": 64.3,
+        "avgWinLoss": 3.61,
+        "totalReturn": 17446.86,
+        "trades": 1277,
+        "source": "20y H1 backtest report"
+      },
+      "computedRiskPct": 1.0
+    },
+    "2_32_120": {
+      "instrument": "GBP_JPY",
+      "granularity": "H1",
+      "positionSizeUnits": 1000,
+      "backtestMetrics": {
+        "sharpe": -0.62,
+        "maxDrawdown": 58.87,
+        "winRate": 28.3,
+        "avgWinLoss": 4.8,
+        "totalReturn": 550.46,
+        "trades": 551,
+        "source": "20y H1 backtest report"
+      },
+      "computedRiskPct": 0.5
+    },
+    "2_31_177": {
+      "instrument": "GBP_JPY",
+      "granularity": "H1",
+      "positionSizeUnits": 1000,
+      "backtestMetrics": {
+        "sharpe": -0.37,
+        "maxDrawdown": 71.23,
+        "winRate": 30.1,
+        "avgWinLoss": 4.19,
+        "totalReturn": 1414.58,
+        "trades": 1345,
+        "source": "20y H1 backtest report"
+      },
+      "computedRiskPct": 0.5
+    }
+  }
+}
