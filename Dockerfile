@@ -28,11 +28,15 @@ COPY --from=build /app/trading-parser/target/classes /app/classes/trading-parser
 # Copy all dependency JARs
 COPY --from=build /app/libs/ /app/libs/
 
-COPY scripts/run-live.sh /app/run-live.sh
+COPY scripts/docker-entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+# Strategy config (backtest-derived risk params)
+COPY config/ /app/config/
 
 EXPOSE 8083
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD curl -f http://localhost:8083/health || exit 1
 
 ENV CLASSPATH="/app/classes/trading-core:/app/classes/trading-data:/app/classes/trading-strategies:/app/classes/trading-broker:/app/classes/trading-parser:/app/libs/*"
-ENTRYPOINT ["java", "-cp", "/app/classes/trading-core:/app/classes/trading-data:/app/classes/trading-strategies:/app/classes/trading-broker:/app/classes/trading-parser:/app/libs/*", "com.martinfou.trading.strategies.LiveStrategyRunner"]
+ENTRYPOINT ["/app/entrypoint.sh"]

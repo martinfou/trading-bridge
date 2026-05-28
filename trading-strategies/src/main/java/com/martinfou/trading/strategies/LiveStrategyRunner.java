@@ -19,33 +19,51 @@ import java.nio.file.Paths;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 
 /**
- * LiveStrategyRunner — Execute strategies on OANDA practice/demo.
+ * LiveStrategyRunner — Execute one or more strategies concurrently on OANDA practice/demo.
  *
  * Usage:
- *   LiveStrategyRunner <apiKey> <accountId> <strategyName> [granularity] [intervalSec]
+ *   LiveStrategyRunner <apiKey> <accountId> all [granularity] [intervalSec]
+ *   LiveStrategyRunner <apiKey> <accountId> vwprevision consecbar [granularity] [intervalSec]
+ *   LiveStrategyRunner <apiKey> <accountId> 2_31_177 [granularity] [intervalSec]
  *
  * Examples:
- *   LiveStrategyRunner KEY ACCT 2_31_177
- *   LiveStrategyRunner KEY ACCT 2_31_177 H1 60
- *   LiveStrategyRunner KEY ACCT all          → run ALL sqimported strategies
+ *   LiveStrategyRunner KEY ACCT all                         → ALL strategies concurrently
+ *   LiveStrategyRunner KEY ACCT vwprevision consecbar       → just those two
+ *   LiveStrategyRunner KEY ACCT vwprevision H1 60           → single strategy
  *
  * Features:
- *   - State persistence to /tmp/live-strategy-state.json (auto-save every minute)
- *   - Graceful shutdown (SIGTERM/SIGINT saves state)
- *   - Crash recovery: resumes open positions from saved state
+ *   - Concurrent strategies: each runs in its own thread
+ *   - Per-strategy state persistence: /tmp/live-{name}-state.json
+ *   - Aggregated monitor file: /tmp/paper-trading-status.json (for monitoring cron)
+ *   - Graceful shutdown (SIGTERM/SIGINT saves all state)
+ *   - Crash recovery per strategy
  *   - SLF4J logging with trade entry/exit P&L
  */
-public class LiveStrategyRunner {
+public class LiveStrategyRunner implements Runnable {
 
     private static final Logger log = LoggerFactory.getLogger(LiveStrategyRunner.class);
-    private static final Path STATE_FILE = Paths.get("/tmp/live-strategy-state.json");
-    /** Monitoring file — written every save, overwritten so the monitor cron always has the latest snapshot. */
-    private static final Path MONITOR_FILE = Paths.get("/tmp/paper-trading-status.json");
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final AtomicBoolean RUNNING = new AtomicBoolean(true);
+
+    /** Aggregated monitor file for the paper-trading cron — written by the orchestrator. */
+    private static final Path AGGREGATED_MONITOR = Paths.get("/tmp/paper-trading-status.json");
+
+    /** Config file path (mounted in Docker at /app/config/ or local) */
+    private static final Path CONFIG_PATH = Paths.get("/app/config/live-config.json");
+    private static JsonNode LIVE_CONFIG = null;
+    private static double DEFAULT_RISK_PCT = 1.5;
+    /** Conservative fallback for strategies not in config — no backtest data available. */
+    private static final double UNKNOWN_STRATEGY_RISK_PCT = 0.5;
+    private static final Map<String, Double> STRATEGY_RISK_PCT = new ConcurrentHashMap<>();
+
+    // ---- Per-instance paths ----
+    private final Path stateFile;
+    private final Path monitorFile;
 
     // ---- Components ----
     private final OandaPriceClient priceClient;
@@ -67,6 +85,10 @@ public class LiveStrategyRunner {
     private double totalPnl = 0.0;
     private Instant lastStateSave = Instant.MIN;
     private Instant lastBarTime = null;
+
+    // ---- Shared orchestrator state ----
+    /** All running runners (for aggregated monitor). Populated by main(). */
+    private static final Map<String, LiveStrategyRunner> ACTIVE_RUNNERS = new ConcurrentHashMap<>();
 
     // ---- Persisted state ----
     private static final class ActiveTrade {
@@ -133,33 +155,107 @@ public class LiveStrategyRunner {
         this.intervalSec = intervalSec;
         this.priceClient = new OandaPriceClient(apiKey, accountId, true);
         this.executor = new OandaExecutor(apiKey, accountId, true);
+        // Per-strategy state files
+        this.stateFile = Paths.get("/tmp/live-strategy-state-" + strategyShortName + ".json");
+        this.monitorFile = Paths.get("/tmp/paper-status-" + strategyShortName + ".json");
     }
 
     // ========================================================================
-    // Main
+    // Main — entry point
     // ========================================================================
 
     public static void main(String[] args) throws Exception {
         if (args.length < 3) {
-            System.out.println("Usage: LiveStrategyRunner <apiKey> <accountId> <strategyName> [granularity] [intervalSec]");
-            System.out.println("  strategyName: '2_31_177', '2_14_147', '2_15_195', '2_31_175', '2_32_120', '2_36_190', '2_38_112', 'nymid', or 'all'");
+            System.out.println("Usage: LiveStrategyRunner <apiKey> <accountId> <strategyName...> [granularity] [intervalSec]");
+            System.out.println("  strategyName: 'all', space-separated list, or single name");
             System.out.println("  granularity:  H1 (default), H4, D");
             System.out.println("  intervalSec:  60 (default) — loop interval in seconds");
+            System.out.println();
+            System.out.println("Examples:");
+            System.out.println("  LiveStrategyRunner KEY ACCT all");
+            System.out.println("  LiveStrategyRunner KEY ACCT vwprevision consecbar");
+            System.out.println("  LiveStrategyRunner KEY ACCT 2_31_177 H1 120");
             listStrategies();
             return;
         }
 
         String apiKey = args[0];
         String accountId = args[1];
-        String strategyName = args[2];
-        String granularity = args.length > 3 ? args[3] : "H1";
-        int intervalSec = args.length > 4 ? Integer.parseInt(args[4]) : 60;
+        String granularity = "H1";
+        int intervalSec = 60;
 
-        // Resolve strategy
-        List<Strategy> strategies = resolveStrategies(strategyName);
-        if (strategies.isEmpty()) {
-            System.err.println("ERROR: No strategy found for '" + strategyName + "'");
+        // Parse strategy names + optional granularity/interval
+        // args[2..] = strategy names (or 'all') with optional trailing granularity/interval
+        int argIdx = 2;
+        List<String> strategyNames = new ArrayList<>();
+        while (argIdx < args.length) {
+            String a = args[argIdx];
+            if (a.equalsIgnoreCase("M1") || a.equalsIgnoreCase("M5") || a.equalsIgnoreCase("M15")
+                || a.equalsIgnoreCase("M30") || a.equalsIgnoreCase("H1") || a.equalsIgnoreCase("H4")
+                || a.equalsIgnoreCase("D") || a.equalsIgnoreCase("W")) {
+                granularity = a.toUpperCase();
+                // Next arg might be interval
+                if (argIdx + 1 < args.length) {
+                    try {
+                        intervalSec = Integer.parseInt(args[argIdx + 1]);
+                        argIdx++;
+                    } catch (NumberFormatException e) {
+                        // not an interval, leave default
+                    }
+                }
+                argIdx++;
+                break;
+            }
+            if (a.equals("all")) {
+                strategyNames.add("all");
+                argIdx++;
+                // If 'all' is given, no more strategy names follow
+                // But check for granularity/interval
+                if (argIdx < args.length && (args[argIdx].equalsIgnoreCase("H1") || args[argIdx].equalsIgnoreCase("H4") || args[argIdx].equalsIgnoreCase("D"))) {
+                    granularity = args[argIdx].toUpperCase();
+                    argIdx++;
+                    if (argIdx < args.length) {
+                        try { intervalSec = Integer.parseInt(args[argIdx]); argIdx++; } catch (NumberFormatException e) {}
+                    }
+                }
+                break;
+            }
+            strategyNames.add(a);
+            argIdx++;
+        }
+
+        if (strategyNames.isEmpty()) {
+            System.err.println("ERROR: No strategy names provided.");
             listStrategies();
+            System.exit(1);
+        }
+
+        // Resolve strategies (deduplicate if "all" resolves the same as individual names)
+        Map<String, Class<? extends Strategy>> allStrategies = getStrategyMap();
+        List<Map.Entry<String, Strategy>> resolved = new ArrayList<>();
+        Set<String> usedNames = new HashSet<>();
+
+        for (String name : strategyNames) {
+            if (name.equals("all")) {
+                for (var entry : allStrategies.entrySet()) {
+                    if (usedNames.add(entry.getKey())) {
+                        resolved.add(Map.entry(entry.getKey(), entry.getValue().getDeclaredConstructor().newInstance()));
+                    }
+                }
+            } else {
+                Class<? extends Strategy> clazz = allStrategies.get(name);
+                if (clazz == null) {
+                    System.err.println("WARNING: Unknown strategy '" + name + "' — skipping.");
+                    continue;
+                }
+                if (usedNames.add(name)) {
+                    resolved.add(Map.entry(name, clazz.getDeclaredConstructor().newInstance()));
+                }
+            }
+        }
+
+        if (resolved.isEmpty()) {
+            System.err.println("ERROR: No valid strategies to run.");
             System.exit(1);
         }
 
@@ -168,28 +264,215 @@ public class LiveStrategyRunner {
         log.info("╠════════════════════════════════════════════════════╣");
         log.info("║ Account: {}      ", accountId);
         log.info("║ API:     api-fxpractice.oanda.com                  ");
-        log.info("║ Strategy: {} strategies                        ", strategies.size());
+        log.info("║ Strategies: {} (concurrent)                  ", resolved.size());
+        for (var entry : resolved) {
+            log.info("║   - {} → {}", entry.getKey(), entry.getValue().name());
+        }
         log.info("║ Granularity: {}  Interval: {}s                  ", granularity, intervalSec);
         log.info("╚════════════════════════════════════════════════════╝");
 
         // Register shutdown hook
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             RUNNING.set(false);
-            log.info("🛑 Shutdown signal received — saving state...");
+            log.info("🛑 Shutdown signal received — saving all state...");
         }));
 
-        // Run each strategy in sequence (currently single-threaded)
-        for (Strategy s : strategies) {
-            if (!RUNNING.get()) break;
-            String shortName = strategyName.equals("all")
-                ? s.name().replaceAll("^.*[._](\\d+[._]\\d+[._]\\d+).*", "$1")
-                : strategyName;
-            var runner = new LiveStrategyRunner(apiKey, accountId, s, shortName, granularity, intervalSec);
-            runner.run();
+        // Load risk config
+        loadConfig();
+
+        // Launch each strategy in its own thread
+        List<Thread> threads = new ArrayList<>();
+        for (var entry : resolved) {
+            var runner = new LiveStrategyRunner(apiKey, accountId, entry.getValue(),
+                entry.getKey(), granularity, intervalSec);
+            ACTIVE_RUNNERS.put(entry.getKey(), runner);
+            Thread t = new Thread(runner, "strat-" + entry.getKey());
+            t.setDaemon(false);
+            threads.add(t);
+            t.start();
+            log.info("🧵 Launched thread for '{}' ({})", entry.getKey(), entry.getValue().name());
         }
 
-        log.info("✅ LiveStrategyRunner finished.");
+        // Start aggregated monitor writer (writes combined status every 30s)
+        Thread monitorThread = new Thread(() -> {
+            while (RUNNING.get()) {
+                try {
+                    writeAggregatedMonitor();
+                    Thread.sleep(30000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                } catch (Exception e) {
+                    log.warn("Monitor write error: {}", e.getMessage());
+                }
+            }
+        }, "monitor-writer");
+        monitorThread.setDaemon(true);
+        monitorThread.start();
+
+        // Wait for all strategy threads to finish (they won't unless shutdown)
+        for (Thread t : threads) {
+            t.join();
+        }
+
+        log.info("✅ All strategy threads terminated.");
+        writeAggregatedMonitor();
         System.exit(0);
+    }
+
+    // ========================================================================
+    // Risk Config — loaded from live-config.json
+    // ========================================================================
+
+    private static void loadConfig() {
+        if (!Files.exists(CONFIG_PATH)) {
+            log.warn("⚠ Config file not found: {}. Using default risk {}% per trade.",
+                CONFIG_PATH, DEFAULT_RISK_PCT);
+            return;
+        }
+        try {
+            String content = Files.readString(CONFIG_PATH);
+            LIVE_CONFIG = MAPPER.readTree(content);
+
+            if (LIVE_CONFIG.has("defaultRiskPct")) {
+                DEFAULT_RISK_PCT = LIVE_CONFIG.get("defaultRiskPct").asDouble();
+                log.info("📋 Default risk: {}%", DEFAULT_RISK_PCT);
+            }
+
+            if (LIVE_CONFIG.has("strategies")) {
+                JsonNode strategies = LIVE_CONFIG.get("strategies");
+                strategies.fieldNames().forEachRemaining(name -> {
+                    JsonNode s = strategies.get(name);
+                    double riskPct = DEFAULT_RISK_PCT;
+                    if (s.has("computedRiskPct")) {
+                        riskPct = s.get("computedRiskPct").asDouble();
+                    } else if (s.has("backtestMetrics")) {
+                        riskPct = deriveRiskFromMetrics(s.get("backtestMetrics"));
+                    }
+                    STRATEGY_RISK_PCT.put(name, riskPct);
+                    String src = s.has("backtestMetrics")
+                        ? s.get("backtestMetrics").get("source").asText("unknown")
+                        : "default";
+                    log.info("📋 {} → risk {}% (source: {})", name, riskPct, src);
+                });
+            }
+        } catch (Exception e) {
+            log.warn("⚠ Failed to load config: {}. Using defaults.", e.getMessage());
+        }
+    }
+
+    /** Derive suggested risk % from backtest metrics using conservative formula. */
+    private static double deriveRiskFromMetrics(JsonNode m) {
+        double maxDD = m.has("maxDrawdown") ? m.get("maxDrawdown").asDouble() : 20.0;
+        double winRate = m.has("winRate") ? m.get("winRate").asDouble() : 50.0;
+        double avgWinLoss = m.has("avgWinLoss") ? m.get("avgWinLoss").asDouble() : 1.5;
+        double sharpe = m.has("sharpe") ? m.get("sharpe").asDouble() : 0.0;
+
+        // Max Drawdown method: never risk more than 1/20th of historical maxDD
+        double fromMaxDD = maxDD > 0 ? Math.min(DEFAULT_RISK_PCT, maxDD / 20.0) : DEFAULT_RISK_PCT;
+
+        // Half-Kelly: f* = (winRate × avgWinLoss - lossRate) / avgWinLoss / 2
+        double lossRate = 100.0 - winRate;
+        double halfKelly = 0.3; // conservative floor
+        if (avgWinLoss > 0 && winRate > 0) {
+            double kelly = (winRate / 100.0 * avgWinLoss - lossRate / 100.0) / avgWinLoss;
+            halfKelly = Math.max(0.1, Math.min(DEFAULT_RISK_PCT, kelly / 2.0));
+        }
+
+        // Take the more conservative of the two, cap at default
+        double suggested = Math.min(DEFAULT_RISK_PCT, Math.min(fromMaxDD, halfKelly));
+
+        // Sanity check: avoid absurdly small values
+        return Math.max(0.1, suggested);
+    }
+
+    /** Get the risk % configured for a strategy name, or conservative default if unknown. */
+    private static double riskForStrategy(String name) {
+        Double pct = STRATEGY_RISK_PCT.get(name);
+        if (pct == null) {
+            log.warn("⚠ Strategy '{}' not found in config — using conservative {}% default. "
+                + "Add it to config/live-config.json with backtest metrics to get a proper risk %.",
+                name, UNKNOWN_STRATEGY_RISK_PCT);
+            return UNKNOWN_STRATEGY_RISK_PCT;
+        }
+        return pct;
+    }
+
+    /**
+     * Calculate the maximum position size (in units) that respects the risk % rule.
+     * @param balance  Current account balance (NAV)
+     * @param riskPct  % of balance to risk per trade (e.g. 1.5)
+     * @param entryPrice  Order entry price
+     * @param stopLoss    Stop loss price (0 if none)
+     * @param requestedUnits  Units the strategy wants to trade
+     * @return Capped position size
+     */
+    private double cappedPositionSize(double balance, double riskPct, double entryPrice,
+                                       double stopLoss, double requestedUnits) {
+        if (stopLoss <= 0 || entryPrice <= 0) {
+            log.warn("No stop loss set for this trade — cannot calculate risk. Using requested units: {}",
+                (int)requestedUnits);
+            return requestedUnits;
+        }
+        double slDistance = Math.abs(entryPrice - stopLoss);
+        if (slDistance <= 0.0) return requestedUnits;
+
+        // Max loss in dollar terms
+        double maxLoss = balance * (riskPct / 100.0);
+        // Max units = maxLoss / SL_distance (in price units)
+        double maxUnits = maxLoss / slDistance;
+
+        if (requestedUnits > maxUnits) {
+            log.info("📐 Risk cap: {} units requested, {} max (${} × {}% / {} pips) — capping to {}",
+                (int)requestedUnits, (int)maxUnits,
+                String.format("%.0f", balance), riskPct,
+                String.format("%.5f", slDistance),
+                (int)maxUnits);
+            return Math.floor(maxUnits);
+        }
+        return requestedUnits;
+    }
+
+    /** Get current account balance from OANDA API. Caches for 60s to avoid rate limits. */
+    private double getCurrentBalance() {
+        try {
+            var acct = priceClient.getAccountSummary();
+            return acct.NAV() > 0 ? acct.NAV() : acct.balance();
+        } catch (Exception e) {
+            log.warn("⚠ Could not fetch balance for risk calc: {}. Using {}.", e.getMessage(),
+                String.format("%.0f", lastKnownBalance));
+            return lastKnownBalance;
+        }
+    }
+    private double lastKnownBalance = 10000;
+
+    private static void writeAggregatedMonitor() {
+        try {
+            ObjectNode root = MAPPER.createObjectNode();
+            root.put("running", RUNNING.get());
+            root.put("accountId", ACTIVE_RUNNERS.isEmpty() ? "" : ACTIVE_RUNNERS.values().iterator().next().accountId);
+            root.put("timestamp", TimeConventions.now().toString());
+            root.put("strategyCount", ACTIVE_RUNNERS.size());
+
+            ArrayNode strategiesArray = root.putArray("strategies");
+            for (var entry : ACTIVE_RUNNERS.entrySet()) {
+                LiveStrategyRunner r = entry.getValue();
+                ObjectNode sn = strategiesArray.addObject();
+                sn.put("name", entry.getKey());
+                sn.put("displayName", r.strategy.name());
+                sn.put("instrument", r.toOandaSymbol());
+                sn.put("granularity", r.granularity);
+                sn.put("totalEntries", r.totalEntries);
+                sn.put("totalExits", r.totalExits);
+                sn.put("totalPnl", r.totalPnl);
+                sn.put("activeTrades", r.activeTrades.size());
+                sn.put("pendingStops", r.pendingStops.size());
+            }
+
+            MAPPER.writerWithDefaultPrettyPrinter().writeValue(AGGREGATED_MONITOR.toFile(), root);
+        } catch (Exception e) {
+            log.warn("Failed to write aggregated monitor: {}", e.getMessage());
+        }
     }
 
     // ========================================================================
@@ -197,11 +480,11 @@ public class LiveStrategyRunner {
     // ========================================================================
 
     private static void listStrategies() {
-        System.out.println("\nAvailable sqimported strategies:");
+        System.out.println("\nAvailable strategies:");
         for (var entry : getStrategyMap().entrySet()) {
             System.out.println("  " + entry.getKey() + " → " + entry.getValue().getSimpleName());
         }
-        System.out.println("  all → run all strategies sequentially\n");
+        System.out.println("  all → launch every strategy concurrently\n");
     }
 
     private static Map<String, Class<? extends Strategy>> getStrategyMap() {
@@ -228,7 +511,6 @@ public class LiveStrategyRunner {
                 .asSubclass(Strategy.class));
             map.put("casino", Class.forName("com.martinfou.trading.strategies.creative.CasinoStrategy")
                 .asSubclass(Strategy.class));
-            // Creative Lab — reversion strategies (top performers)
             map.put("vwpreversion", Class.forName("com.martinfou.trading.strategies.creative.VWPReversionStrategy")
                 .asSubclass(Strategy.class));
             map.put("consecbar", Class.forName("com.martinfou.trading.strategies.creative.ConsecutiveBarExhaustionStrategy")
@@ -239,41 +521,27 @@ public class LiveStrategyRunner {
         return map;
     }
 
-    @SuppressWarnings("unchecked")
-    private static List<Strategy> resolveStrategies(String name) throws Exception {
-        List<Strategy> result = new ArrayList<>();
-        if (name.equals("all")) {
-            for (var clazz : getStrategyMap().values()) {
-                result.add(clazz.getDeclaredConstructor().newInstance());
-            }
-        } else {
-            Map<String, Class<? extends Strategy>> map = getStrategyMap();
-            Class<? extends Strategy> clazz = map.get(name);
-            if (clazz == null) {
-                // Try direct class name as fallback
-                try {
-                    clazz = (Class<? extends Strategy>) Class.forName(name);
-                } catch (ClassNotFoundException e) {
-                    return result;
-                }
-            }
-            result.add(clazz.getDeclaredConstructor().newInstance());
+    // ========================================================================
+    // Runnable interface — each strategy runs in its own thread
+    // ========================================================================
+
+    @Override
+    public void run() {
+        try {
+            runLoop();
+        } catch (Exception e) {
+            log.error("❌ Fatal error in strategy thread '{}': {}", strategyShortName, e.getMessage(), e);
         }
-        return result;
     }
 
-    // ========================================================================
-    // Main Loop
-    // ========================================================================
-
-    private void run() throws Exception {
-        log.info("━━━ Starting strategy: {} ━━━", strategy.name());
+    private void runLoop() throws Exception {
+        log.info("━━━ Starting strategy: {} (instrument: {}) ━━━", strategy.name(), toOandaSymbol());
 
         // Resume from saved state if available
         resumeState();
 
         // Get initial candles to warm up the strategy
-        String oandaSymbol = toOandaSymbol(strategy);
+        String oandaSymbol = toOandaSymbol();
         log.info("Fetching initial {} candles for {} ...", granularity, oandaSymbol);
         List<Bar> initialBars = priceClient.getCandles(oandaSymbol, granularity, 200);
         if (initialBars.isEmpty()) {
@@ -294,6 +562,7 @@ public class LiveStrategyRunner {
         // Verify account
         try {
             var acct = priceClient.getAccountSummary();
+            lastKnownBalance = acct.NAV() > 0 ? acct.NAV() : acct.balance();
             log.info("💰 Account Balance: ${} | NAV: ${} | Unrealized P&L: ${}",
                 String.format("%.2f", acct.balance()),
                 String.format("%.2f", acct.NAV()),
@@ -319,7 +588,7 @@ public class LiveStrategyRunner {
                 Thread.currentThread().interrupt();
                 RUNNING.set(false);
             } catch (Exception e) {
-                log.error("Loop error: {}", e.getMessage(), e);
+                log.error("Loop error in '{}': {}", strategyShortName, e.getMessage(), e);
                 Thread.sleep(5000);
             }
         }
@@ -429,16 +698,21 @@ public class LiveStrategyRunner {
 
     private void placeOandaStopOrder(Order order, String oandaSymbol) {
         try {
+            // Risk-cap the position size for stop orders too
+            double requestedUnits = Math.abs(order.quantity());
+            double riskPct = riskForStrategy(strategyShortName);
+            double balance = getCurrentBalance();
+            double cappedUnits = cappedPositionSize(balance, riskPct,
+                order.price(), order.stopLoss(), requestedUnits);
+
             double units = order.side() == Order.Side.BUY
-                ? Math.abs(order.quantity())
-                : -Math.abs(order.quantity());
+                ? cappedUnits
+                : -cappedUnits;
             String unitsStr = String.valueOf((int) units);
-            // OANDA displayPrecision varies by instrument:
-            // GBP/JPY=3, USD/JPY=3, XAU/USD=1, EUR/USD=5, USD/CAD=5, GBP/USD=5
             int precision = switch (oandaSymbol) {
                 case "GBP_JPY", "USD_JPY" -> 3;
                 case "XAU_USD", "XAG_USD" -> 1;
-                default -> 5; // EUR/USD, GBP/USD, USD/CAD, AUD/USD, NZD/USD, USD/CHF
+                default -> 5;
             };
             String priceStr = String.format("%." + precision + "f", order.price());
 
@@ -460,10 +734,16 @@ public class LiveStrategyRunner {
 
     private void executeTrade(Order order, String oandaSymbol, double execPrice) {
         try {
-            // Units: positive = BUY, negative = SELL (in base units)
+            // Risk-cap the position size
+            double requestedUnits = Math.abs(order.quantity());
+            double riskPct = riskForStrategy(strategyShortName);
+            double balance = getCurrentBalance();
+            double cappedUnits = cappedPositionSize(balance, riskPct, execPrice,
+                order.stopLoss(), requestedUnits);
+
             double units = order.side() == Order.Side.BUY
-                ? Math.abs(order.quantity())
-                : -Math.abs(order.quantity());
+                ? cappedUnits
+                : -cappedUnits;
             String unitsStr = String.valueOf((int) units);
 
             var tag = strategyShortName + "_" + oandaSymbol.replace("_", "");
@@ -537,7 +817,6 @@ public class LiveStrategyRunner {
 
             if (trade.side.equals("BUY")) {
                 pnl = (currentBid - trade.entryPrice) * trade.quantity;
-                // Check TP/SL
                 if (trade.takeProfit > 0 && currentBid >= trade.takeProfit) {
                     exitPrice = trade.takeProfit;
                     exited = true;
@@ -588,7 +867,6 @@ public class LiveStrategyRunner {
     // Instrument Resolution
     // ========================================================================
 
-    /** Format price with correct decimal precision for OANDA instrument. */
     static String formatPrice(double price, String oandaSymbol) {
         int precision = switch (oandaSymbol) {
             case "GBP_JPY", "USD_JPY" -> 3;
@@ -598,7 +876,11 @@ public class LiveStrategyRunner {
         return String.format("%." + precision + "f", price);
     }
 
-    private static String toOandaSymbol(Strategy s) {
+    private String toOandaSymbol() {
+        return toOandaSymbol(strategy);
+    }
+
+    static String toOandaSymbol(Strategy s) {
         String name = s.name().toUpperCase();
         if (name.contains("GBPJPY") || name.contains("GBP_JPY")) return "GBP_JPY";
         if (name.contains("EURUSD") || name.contains("EUR_USD")) return "EUR_USD";
@@ -610,7 +892,13 @@ public class LiveStrategyRunner {
         if (name.contains("USDCHF") || name.contains("USD_CHF")) return "USD_CHF";
         if (name.contains("XAUUSD") || name.contains("XAU_USD") || name.contains("GOLD")) return "XAU_USD";
         if (name.contains("EURJPY") || name.contains("EUR_JPY")) return "EUR_JPY";
-        // Default to GBP/JPY
+        // Creative lab strategies — match by short name
+        if (name.contains("VWPREVERSION")) return "USD_CHF";
+        if (name.contains("CONSECBAR")) return "GBP_JPY";
+        if (name.contains("NYMID")) return "EUR_USD";
+        if (name.contains("GOBIG")) return "GBP_USD";
+        if (name.contains("CASINO")) return "USD_JPY";
+        // Default — safe pair
         return "GBP_JPY";
     }
 
@@ -628,6 +916,8 @@ public class LiveStrategyRunner {
         try {
             ObjectNode root = MAPPER.createObjectNode();
             root.put("strategy", strategyShortName);
+            root.put("displayName", strategy.name());
+            root.put("instrument", toOandaSymbol());
             root.put("granularity", granularity);
             root.put("intervalSec", intervalSec);
             root.put("totalEntries", totalEntries);
@@ -663,28 +953,25 @@ public class LiveStrategyRunner {
                 pn.put("takeProfit", p.takeProfit);
             }
 
-            MAPPER.writerWithDefaultPrettyPrinter().writeValue(STATE_FILE.toFile(), root);
-            // Also write monitor file with status flag for the monitoring cron
+            MAPPER.writerWithDefaultPrettyPrinter().writeValue(stateFile.toFile(), root);
             root.put("running", RUNNING.get());
-            root.put("strategyDisplayName", strategy.name());
-            MAPPER.writerWithDefaultPrettyPrinter().writeValue(MONITOR_FILE.toFile(), root);
+            MAPPER.writerWithDefaultPrettyPrinter().writeValue(monitorFile.toFile(), root);
             lastStateSave = TimeConventions.now();
         } catch (Exception e) {
-            log.warn("Failed to save state: {}", e.getMessage());
+            log.warn("Failed to save state for '{}': {}", strategyShortName, e.getMessage());
         }
     }
 
     private void resumeState() {
-        if (!Files.exists(STATE_FILE)) {
+        if (!Files.exists(stateFile)) {
             log.info("No saved state file found — starting fresh.");
             return;
         }
 
         try {
-            String content = Files.readString(STATE_FILE);
+            String content = Files.readString(stateFile);
             JsonNode root = MAPPER.readTree(content);
 
-            // Verify this is the same strategy
             String savedStrategy = root.has("strategy") ? root.get("strategy").asText() : "";
             if (!savedStrategy.equals(strategyShortName)) {
                 log.info("Saved strategy '{}' != current '{}' — ignoring saved state.",
@@ -692,13 +979,11 @@ public class LiveStrategyRunner {
                 return;
             }
 
-            // Restore counters
             if (root.has("totalEntries")) totalEntries = root.get("totalEntries").asInt();
             if (root.has("totalExits")) totalExits = root.get("totalExits").asInt();
             if (root.has("totalPnl")) totalPnl = root.get("totalPnl").asDouble();
             if (root.has("lastBarTime")) lastBarTime = Instant.parse(root.get("lastBarTime").asText());
 
-            // Restore active trades
             if (root.has("activeTrades")) {
                 for (JsonNode tn : root.get("activeTrades")) {
                     ActiveTrade t = new ActiveTrade();
@@ -714,7 +999,6 @@ public class LiveStrategyRunner {
                 }
             }
 
-            // Restore pending stops
             if (root.has("pendingStops")) {
                 for (JsonNode pn : root.get("pendingStops")) {
                     PendingStop p = new PendingStop();

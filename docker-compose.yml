@@ -2,8 +2,12 @@
 # Utilisation: docker compose up -d
 #
 # Services:
-#   trader     — LiveStrategyRunner (Java 21, OANDA)
-#   health     — Health check endpoint (:8083)
+#   trader     — LiveStrategyRunner (Java 21, OANDA Practice)
+#
+# Configuration:
+#   - OANDA credentials are loaded from trading-dashboard/.env
+#   - Default strategy: VWPReversion on USD/CHF (highest Sharpe: 4.47)
+#   - Change strategy via: STRATEGY=vwp STRATEGY_PAIR=USD_CHF docker compose up -d
 
 services:
   trader:
@@ -14,18 +18,24 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8083:8083"  # health API (localhost only)
+    env_file:
+      - /home/martinfou/projects/trading-dashboard/.env
     environment:
-      - OANDA_API_KEY=${OANDA_API_KEY}
-      - OANDA_ACCOUNT_ID=${OANDA_ACCOUNT_ID}
       - OANDA_ENV=practice
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
-      - STRATEGIES=TR-EU-L-042,MR-EU-B-120,BT-UC-S-190
       - LOG_LEVEL=INFO
+      # Strategy selection (override via env):
+      # vwp → VWPReversionStrategy, consecbar → ConsecutiveBarExhaustionStrategy
+      # nymid → NYMidSessionMomentumStrategy, gobig → GoBigStrategy
+      # casino → CasinoStrategy, all → all strategies sequentially
+      # Or any sqimported: 2_31_177, 2_14_147, 2_15_195, etc.
+      - STRATEGY=${STRATEGY:-vwp}
+      - STRATEGY_PAIR=${STRATEGY_PAIR:-USD_CHF}
+      - GRANULARITY=${GRANULARITY:-H1}
+      - INTERVAL_SEC=${INTERVAL_SEC:-60}
+    command: ["$${OANDA_API_KEY}", "$${OANDA_ACCOUNT_ID}", "$${STRATEGY}", "$${GRANULARITY}", "$${INTERVAL_SEC}"]
     volumes:
-      - ./data:/app/data        # Persistance des trades
+      - ./data:/app/data        # Trade persistence
       - ./logs:/app/logs        # Logs
-      - ./strategies:/app/strategies  # Stratégies (git pull)
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8083/health"]
       interval: 30s
@@ -40,4 +50,3 @@ services:
 volumes:
   data:
   logs:
-  strategies:
