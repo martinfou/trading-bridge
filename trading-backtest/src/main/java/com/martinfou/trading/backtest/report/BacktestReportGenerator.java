@@ -1,6 +1,7 @@
 package com.martinfou.trading.backtest.report;
 
 import com.martinfou.trading.backtest.BacktestResult;
+import com.martinfou.trading.backtest.MonteCarloSimulation;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.core.Trade;
 
@@ -55,9 +56,16 @@ public class BacktestReportGenerator {
     private final String asset;
     private final String label;
     private final Path outDir;
+    private MonteCarloSimulation.Result monteCarlo;
 
     public BacktestReportGenerator(BacktestResult r, String asset, String label, Path outDir) {
         this.result = r; this.asset = asset; this.label = label; this.outDir = outDir;
+    }
+
+    /** Optionally attaches Monte Carlo simulation results for risk analysis. */
+    public BacktestReportGenerator withMonteCarlo(MonteCarloSimulation.Result mc) {
+        this.monteCarlo = mc;
+        return this;
     }
 
     // ───────────────────────────────────────────────────────────
@@ -168,6 +176,34 @@ public class BacktestReportGenerator {
             img.setSpacingAfter(16);
             doc.add(img);
             Files.deleteIfExists(chartPng);
+        }
+
+        // ── Monte Carlo Section ──
+        if (monteCarlo != null) {
+            doc.add(new Paragraph("Monte Carlo Simulation (" + monteCarlo.totalRuns() + " runs)", subF));
+            doc.add(new Paragraph(" "));
+            PdfPTable mcStrip = new PdfPTable(6);
+            mcStrip.setWidthPercentage(100); mcStrip.setSpacingAfter(14);
+            Color mcBlue = new Color(142, 68, 173);
+            String[][] mcKpis = {
+                {"Median P&L",          "$" + fmt2(monteCarlo.medianPnl())},
+                {"VaR 95%",             "$" + fmt2(monteCarlo.var95())},
+                {"Loss Prob.",           fmt1(monteCarlo.probabilityOfLoss()) + "%"},
+                {"Median DD",           fmt2(monteCarlo.medianDrawdown()) + "%"},
+                {"DD 95th Pctile",      fmt2(monteCarlo.drawdown95()) + "%"},
+                {"Median Sharpe",       fmt2(monteCarlo.medianSharpe())},
+            };
+            for (String[] kv : mcKpis) {
+                PdfPCell c = new PdfPCell();
+                c.setBackgroundColor(mcBlue); c.setHorizontalAlignment(Element.ALIGN_CENTER);
+                c.setPadding(4);
+                boolean negative = kv[0].contains("Loss") || kv[0].contains("VaR") || kv[0].contains("DD");
+                Color mcValColor = negative ? new Color(255, 150, 150) : white;
+                c.addElement(new Paragraph(kv[0], FontFactory.getFont(FontFactory.HELVETICA_BOLD, 7, white)));
+                c.addElement(new Paragraph(kv[1], FontFactory.getFont(FontFactory.HELVETICA_BOLD, 13, mcValColor)));
+                mcStrip.addCell(c);
+            }
+            doc.add(mcStrip);
         }
 
         // ── Monthly Returns ──
