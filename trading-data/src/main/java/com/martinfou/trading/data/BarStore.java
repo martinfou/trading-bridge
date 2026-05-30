@@ -19,6 +19,9 @@ import java.util.*;
  * 
  * Fichier: data/historical/bars/<SYMBOL>_<TF>.bars
  * Index:   data/historical/bars/index.json  (metadonnees)
+ *
+ * Timestamps are stored as epoch millis ({@link Bar#timestamp()}).
+ * Legacy files written in epoch seconds are still readable.
  * 
  * Performance:
  * - Chargement de 1M barres avec MappedByteBuffer: < 50ms
@@ -109,11 +112,16 @@ public class BarStore {
     /** Nombre de barres dans le fichier */
     public int count() { return barCount; }
 
+    /** Reads epoch from buffer — supports both seconds (legacy convert script) and millis. */
+    private static Instant readTimestamp(long raw) {
+        return raw > 1_000_000_000_000L ? Instant.ofEpochMilli(raw) : Instant.ofEpochSecond(raw);
+    }
+
     /** Lit UNE barre a l'index i (acces O(1)) */
     public Bar get(int i) {
         if (i < 0 || i >= barCount) throw new IndexOutOfBoundsException("Bar " + i + "/" + barCount);
         int pos = i * BAR_SIZE;
-        var ts = Instant.ofEpochMilli(buffer.getLong(pos));
+        var ts = readTimestamp(buffer.getLong(pos));
         return new Bar(symbol, ts,
             buffer.getDouble(pos + 8),
             buffer.getDouble(pos + 16),
@@ -146,25 +154,28 @@ public class BarStore {
         return result;
     }
 
+    private long barEpochMs(int index) {
+        long raw = buffer.getLong(index * BAR_SIZE);
+        return raw > 1_000_000_000_000L ? raw : raw * 1000L;
+    }
+
     private int findFirstAfter(Instant t) {
-        long ms = t.toEpochMilli();
+        long target = t.toEpochMilli();
         int lo = 0, hi = barCount - 1;
         while (lo <= hi) {
             int mid = (lo + hi) >>> 1;
-            long midTs = buffer.getLong(mid * BAR_SIZE);
-            if (midTs < ms) lo = mid + 1;
+            if (barEpochMs(mid) < target) lo = mid + 1;
             else hi = mid - 1;
         }
         return lo;
     }
 
     private int findLastBefore(Instant t) {
-        long ms = t.toEpochMilli();
+        long target = t.toEpochMilli();
         int lo = 0, hi = barCount - 1;
         while (lo <= hi) {
             int mid = (lo + hi) >>> 1;
-            long midTs = buffer.getLong(mid * BAR_SIZE);
-            if (midTs <= ms) lo = mid + 1;
+            if (barEpochMs(mid) <= target) lo = mid + 1;
             else hi = mid - 1;
         }
         return hi;

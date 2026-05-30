@@ -159,7 +159,7 @@ public final class BatchStrategyRunner {
         int validateCount = Math.max(1, (int) (ranked.size() * VALIDATE_TOP_FRACTION));
         log.info("PHASE 4: Validating top {} strategies ({}%)", validateCount, (int) (VALIDATE_TOP_FRACTION * 100));
         List<Bar> barsToUse = config.dataPath != null && !config.dataPath.isEmpty()
-            ? loadCSVData(config.dataPath)
+            ? loadHistoricalData(config.dataPath)
             : null;
         if (barsToUse == null) {
             barsToUse = generateBars(config.bars);
@@ -982,39 +982,25 @@ new Chart(document.getElementById('c3'),{type:'scatter',data:{datasets:[{label:'
     //  Real data loading
     // ===============================================================
     
-    private static List<Bar> loadCSVData(String csvPath) {
-        var bars = new ArrayList<Bar>();
+    private static List<Bar> loadHistoricalData(String dataPath) {
         try {
-            var path = java.nio.file.Paths.get(csvPath);
+            var path = java.nio.file.Path.of(dataPath);
             if (!java.nio.file.Files.exists(path)) {
-                log.warn("CSV not found: {}. Using generated data.", csvPath);
+                log.warn("Data path not found: {}. Using generated data.", dataPath);
                 return null;
             }
-            try (var reader = java.nio.file.Files.newBufferedReader(path)) {
-                String header = reader.readLine(); // skip header
-                String line;
-                int i = 0;
-                long baseSecs = 1700000000L; // fallback timestamp
-                while ((line = reader.readLine()) != null && i < 10000) {
-                    var parts = line.split(",");
-                    if (parts.length >= 5) {
-                        double open = Double.parseDouble(parts[1]);
-                        double high = Double.parseDouble(parts[2]);
-                        double low = Double.parseDouble(parts[3]);
-                        double close = Double.parseDouble(parts[4]);
-                        long volume = parts.length >= 6 ? Long.parseLong(parts[5]) : 0;
-                        long ts = baseSecs + i * 3600L;
-                        bars.add(new Bar("FOREX", java.time.Instant.ofEpochSecond(ts), open, high, low, close, volume));
-                        i++;
-                    }
-                }
+            String symbol = com.martinfou.trading.data.HistoricalDataLoader.inferSymbol(path, "EUR_USD");
+            var loaded = com.martinfou.trading.data.HistoricalDataLoader.loadFile(path, symbol);
+            if (loaded.bars().isEmpty()) {
+                log.warn("No bars loaded from {}. Using generated data.", dataPath);
+                return null;
             }
-            log.info("Loaded {} bars from {}", bars.size(), csvPath);
+            log.info("Loaded {} bars from {} ({})", loaded.bars().size(), dataPath, loaded.source());
+            return loaded.bars();
         } catch (Exception e) {
-            log.warn("Failed to load CSV {}: {}. Using generated data.", csvPath, e.getMessage());
+            log.warn("Failed to load {}: {}. Using generated data.", dataPath, e.getMessage());
             return null;
         }
-        return bars;
     }
 
     // ===============================================================
