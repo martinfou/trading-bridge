@@ -2,6 +2,7 @@ package com.martinfou.trading.backtest.batch;
 
 import com.martinfou.trading.backtest.BacktestEngine;
 import com.martinfou.trading.backtest.BacktestResult;
+import com.martinfou.trading.backtest.MonteCarloSimulation;
 import com.martinfou.trading.backtest.report.BacktestReportGenerator;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Strategy;
@@ -181,7 +182,11 @@ public class RunWeeklyStrategyBacktest {
 
             String label = r.strategyName + "_" + r.asset.replace("/", "");
             try {
-                Path pdf = new BacktestReportGenerator(r.bt, r.asset, label, creativeLab).generate();
+                MonteCarloSimulation mcSim = new MonteCarloSimulation(r.bt, 1000);
+                var mcResult = mcSim.run();
+                Path pdf = new BacktestReportGenerator(r.bt, r.asset, label, creativeLab)
+                    .withMonteCarlo(mcResult)
+                    .generate();
                 generatedPdfs.add(pdf.toString());
                 System.out.println("  ✓ " + pdf.getFileName());
                 pdfCount++;

@@ -37,7 +37,7 @@ public class JPYSpecMomentumStrategy implements Strategy {
     private static final int SESSION_START = 7;
     private static final int SESSION_END = 21;
 
-    public JPYSpecMomentumStrategy() { this("⚡ JPY Momentum", "USD/JPY"); }
+    public JPYSpecMomentumStrategy() { this("⚡ JPY Spec Momentum", "USD/JPY"); }
     public JPYSpecMomentumStrategy(String name) { this(name, "USD/JPY"); }
     public JPYSpecMomentumStrategy(String name, String symbol) { this.name = name; this.symbol = symbol; }
 

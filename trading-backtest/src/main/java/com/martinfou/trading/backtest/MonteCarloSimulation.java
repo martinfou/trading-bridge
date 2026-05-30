@@ -36,6 +36,8 @@ public class MonteCarloSimulation {
     private final List<Trade> trades;
     private final double initialCapital;
     private final int runs;
+    private final double periodsPerYear;
+    private final int blockSize;
     private final Random random;
     private final int maxThreads;
 
@@ -44,7 +46,7 @@ public class MonteCarloSimulation {
      * @param runs           number of Monte Carlo simulation runs (e.g. 1000)
      */
     public MonteCarloSimulation(BacktestResult baselineResult, int runs) {
-        this(baselineResult, runs, new Random(), Runtime.getRuntime().availableProcessors());
+        this(baselineResult, runs, 3, new Random(), Runtime.getRuntime().availableProcessors());
     }
 
     /**
@@ -52,16 +54,28 @@ public class MonteCarloSimulation {
      *
      * @param baselineResult the original backtest result
      * @param runs           number of simulation runs
+     * @param blockSize      number of consecutive trades to keep together (1 = individual shuffle, 3+ = block bootstrap)
      * @param random         random source for shuffling
      * @param maxThreads     maximum concurrent threads (1 for deterministic)
      */
-    public MonteCarloSimulation(BacktestResult baselineResult, int runs,
+    public MonteCarloSimulation(BacktestResult baselineResult, int runs, int blockSize,
                                 Random random, int maxThreads) {
         this.trades = List.copyOf(baselineResult.trades());
         this.initialCapital = baselineResult.initialCapital();
+        this.periodsPerYear = baselineResult.periodsPerYear();
         this.runs = runs;
+        this.blockSize = Math.max(1, blockSize);
         this.random = random;
         this.maxThreads = Math.max(1, maxThreads);
+    }
+
+    /**
+     * @param baselineResult the original backtest result
+     * @param runs           number of Monte Carlo simulation runs
+     * @param blockSize      consecutive trades to keep together (3 = default recommendation)
+     */
+    public MonteCarloSimulation(BacktestResult baselineResult, int runs, int blockSize) {
+        this(baselineResult, runs, blockSize, new Random(), Runtime.getRuntime().availableProcessors());
     }
 
     // ---------------------------------------------------------------
@@ -127,15 +141,19 @@ public class MonteCarloSimulation {
     }
 
     /**
-     * A single Monte Carlo run: shuffle trades, reconstruct equity curve,
-     * compute P&amp;L, drawdown, and Sharpe ratio.
+     * A single Monte Carlo run: shuffle trades (individual or block bootstrap),
+     * reconstruct equity curve, compute P&amp;L, drawdown, and Sharpe ratio.
      */
     private RunOutcome singleRun(ThreadLocalRandom rng, double[] working) {
-        // Copy trade P&Ls into a mutable array and Fisher-Yates shuffle
+        // Copy trade P&Ls into a mutable array and shuffle
         for (int i = 0; i < trades.size(); i++) {
             working[i] = trades.get(i).pnl();
         }
-        shuffle(working, rng);
+        if (blockSize <= 1) {
+            shuffle(working, rng);
+        } else {
+            blockShuffle(working, rng);
+        }
 
         // Reconstruct equity curve: start with initial capital, add shuffled trades
         double equity = initialCapital;
@@ -163,7 +181,7 @@ public class MonteCarloSimulation {
             }
         }
 
-        double sharpe = PerformanceMetrics.sharpeRatio(returns);
+        double sharpe = PerformanceMetrics.sharpeRatio(returns, PerformanceMetrics.DEFAULT_RISK_FREE_RATE, periodsPerYear);
 
         return new RunOutcome(totalPnl, maxDd, sharpe);
     }
@@ -178,6 +196,65 @@ public class MonteCarloSimulation {
             array[i] = array[j];
             array[j] = tmp;
         }
+    }
+
+    /**
+     * Block bootstrap shuffle: divides the array into blocks of {@link #blockSize}
+     * consecutive trades, shuffles the blocks, then writes them back in block order.
+     * Preserves intra-block sequential order.
+     */
+    private void blockShuffle(double[] array, ThreadLocalRandom rng) {
+        int n = array.length;
+        if (n < blockSize + 1) {
+            // Not enough trades for meaningful blocks — fall back to individual shuffle
+            shuffle(array, rng);
+            return;
+        }
+
+        // Build block boundaries
+        int numBlocks = (n + blockSize - 1) / blockSize; // ceil division
+        int[] blockStarts = new int[numBlocks];
+        for (int b = 0; b < numBlocks; b++) {
+            blockStarts[b] = b * blockSize;
+        }
+
+        // Fisher-Yates shuffle on blocks
+        for (int i = numBlocks - 1; i > 0; i--) {
+            int j = rng.nextInt(i + 1);
+            // Swap block i and block j
+            swapBlocks(array, blockStarts, i, j, n);
+        }
+
+        // Swap the block start indices too to reflect the new ordering
+        for (int i = numBlocks - 1; i > 0; i--) {
+            int j = rng.nextInt(i + 1);
+            int tmpIdx = blockStarts[i];
+            blockStarts[i] = blockStarts[j];
+            blockStarts[j] = tmpIdx;
+        }
+    }
+
+    /**
+     * Swaps the data between two blocks in-place.
+     */
+    private static void swapBlocks(double[] array, int[] blockStarts, int bi, int bj, int n) {
+        int si = blockStarts[bi];
+        int sj = blockStarts[bj];
+        int ei = Math.min(si + Math.min(blockSize(bi, blockStarts, n), blockSize(bj, blockStarts, n)), n);
+        int len = Math.min(ei - si, Math.min(blockSize(bi, blockStarts, n), blockSize(bj, blockStarts, n)));
+        for (int k = 0; k < len; k++) {
+            double tmp = array[si + k];
+            array[si + k] = array[sj + k];
+            array[sj + k] = tmp;
+        }
+    }
+
+    /**
+     * Returns the size of block {@code b} based on start indices and total array length.
+     */
+    private static int blockSize(int b, int[] blockStarts, int n) {
+        if (b >= blockStarts.length - 1) return n - blockStarts[b];
+        return blockStarts[b + 1] - blockStarts[b];
     }
 
     // ---------------------------------------------------------------

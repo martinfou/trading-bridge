@@ -42,6 +42,7 @@ public class BacktestEngine {
     private double commissionPct = 0.0;          // % of notional (e.g. 0.0007 for 0.7 pip)
     private double slippageFixed = 0.0;          // USD per trade
     private double slippagePct = 0.0;            // % of fill price (e.g. 0.0001)
+    private double stopSlippagePct = 0.0;         // % added to SL fill price (e.g. 0.0001 = ~1 pip)
     private double totalCommission = 0.0;
     private double totalSlippage = 0.0;
     private double riskFreeRate = PerformanceMetrics.DEFAULT_RISK_FREE_RATE;
@@ -96,6 +97,17 @@ public class BacktestEngine {
     /** Annual risk-free rate for Sharpe/Sortino calculation (decimal, e.g. 0.025). */
     public BacktestEngine withRiskFreeRate(double riskFreeRate) {
         this.riskFreeRate = riskFreeRate;
+        return this;
+    }
+
+    /** Returns the detected periods per year from bar timestamps. */
+    public double getPeriodsPerYear() {
+        return PerformanceMetrics.detectPeriodsPerYear(bars);
+    }
+
+    /** Percentage slippage applied to stop-loss fills (e.g. 0.0001 for ~1 pip). */
+    public BacktestEngine withStopSlippagePct(double stopSlippagePct) {
+        this.stopSlippagePct = stopSlippagePct;
         return this;
     }
 
@@ -246,6 +258,14 @@ public class BacktestEngine {
             Position pos = entry.getValue();
             double exitPrice = pos.stopLoss() > 0 && hitStopLoss(pos, bar)
                 ? pos.stopLoss() : pos.takeProfit();
+            // Apply stop slippage (only on SL fills, not TP — TPs are limit orders)
+            if (pos.stopLoss() > 0 && hitStopLoss(pos, bar) && stopSlippagePct > 0) {
+                double slipAmount = exitPrice * stopSlippagePct;
+                exitPrice = pos.side() == Order.Side.BUY
+                    ? exitPrice - slipAmount   // LONG: SL sell, slippage pushes exit lower
+                    : exitPrice + slipAmount;  // SHORT: SL buy back, slippage pushes exit higher
+                totalSlippage += Math.abs(slipAmount * pos.quantity());
+            }
             closePosition(pos, exitPrice, bar.timestamp());
         }
     }
@@ -325,9 +345,10 @@ public class BacktestEngine {
         // Compute advanced metrics from equity curve returns and trade P&Ls
         List<Double> periodReturns = computePeriodReturns();
         List<Double> tradePnlList = trades.stream().map(Trade::pnl).toList();
+        double ppy = getPeriodsPerYear();
 
-        double sharpe = PerformanceMetrics.sharpeRatio(periodReturns, riskFreeRate);
-        double sortino = PerformanceMetrics.sortinoRatio(periodReturns, riskFreeRate);
+        double sharpe = PerformanceMetrics.sharpeRatio(periodReturns, riskFreeRate, ppy);
+        double sortino = PerformanceMetrics.sortinoRatio(periodReturns, riskFreeRate, ppy);
         double profitFactor = PerformanceMetrics.profitFactor(tradePnlList);
         double calmar = PerformanceMetrics.calmarRatio(equityCurve);
 
@@ -337,7 +358,8 @@ public class BacktestEngine {
             avgTradePnl, sharpe, sortino, profitFactor, calmar,
             totalCommission, totalSlippage,
             List.copyOf(equityCurve), List.copyOf(trades),
-            bars.getFirst().timestamp(), bars.getLast().timestamp()
+            bars.getFirst().timestamp(), bars.getLast().timestamp(),
+            ppy
         );
     }
 

@@ -36,6 +36,7 @@ import java.util.List;
  * @param trades            list of completed trades
  * @param periodStart       start of backtest period
  * @param periodEnd         end of backtest period
+ * @param periodsPerYear    detected trading periods per year (for Sharpe/Sortino annualisation)
  */
 public record BacktestResult(
     String strategyName,
@@ -58,7 +59,8 @@ public record BacktestResult(
     List<Double> equityCurve,
     List<Trade> trades,
     Instant periodStart,
-    Instant periodEnd
+    Instant periodEnd,
+    double periodsPerYear
 ) {
 
     /** Prints a comprehensive summary to stdout. */
@@ -146,6 +148,7 @@ public record BacktestResult(
         private List<Trade> trades = List.of();
         private Instant periodStart;
         private Instant periodEnd;
+        private double periodsPerYear = 252.0;
 
         public Builder strategyName(String v) { this.strategyName = v; return this; }
         public Builder initialCapital(double v) { this.initialCapital = v; return this; }
@@ -168,13 +171,15 @@ public record BacktestResult(
         public Builder trades(List<Trade> v) { this.trades = v; return this; }
         public Builder periodStart(Instant v) { this.periodStart = v; return this; }
         public Builder periodEnd(Instant v) { this.periodEnd = v; return this; }
+        public Builder periodsPerYear(double v) { this.periodsPerYear = v; return this; }
 
         public BacktestResult build() {
             return new BacktestResult(
                 strategyName, initialCapital, finalEquity, totalPnl, totalReturnPct,
                 totalTrades, winningTrades, losingTrades, winRatePct, maxDrawdownPct,
                 avgTradePnl, sharpeRatio, sortinoRatio, profitFactor, calmarRatio,
-                totalCommission, totalSlippage, equityCurve, trades, periodStart, periodEnd
+                totalCommission, totalSlippage, equityCurve, trades, periodStart, periodEnd,
+                periodsPerYear
             );
         }
     }

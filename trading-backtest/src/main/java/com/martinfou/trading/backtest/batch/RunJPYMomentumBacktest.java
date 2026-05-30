@@ -2,6 +2,7 @@ package com.martinfou.trading.backtest.batch;
 
 import com.martinfou.trading.backtest.BacktestEngine;
 import com.martinfou.trading.backtest.BacktestResult;
+import com.martinfou.trading.backtest.MonteCarloSimulation;
 import com.martinfou.trading.backtest.report.BacktestReportGenerator;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Strategy;
@@ -121,7 +122,12 @@ public class RunJPYMomentumBacktest {
 
             String label = "JPYSpecMomentum_" + r.asset.replace("/", "");
             try {
-                Path pdf = new BacktestReportGenerator(r.bt, r.asset, label, creativeLab).generate();
+                // Run Monte Carlo for risk analysis
+                MonteCarloSimulation mcSim = new MonteCarloSimulation(r.bt, 1000);
+                var mcResult = mcSim.run();
+                Path pdf = new BacktestReportGenerator(r.bt, r.asset, label, creativeLab)
+                    .withMonteCarlo(mcResult)
+                    .generate();
                 pdfs.add(pdf);
                 System.out.println("  ✓ " + pdf.getFileName());
             } catch (Exception e) {
