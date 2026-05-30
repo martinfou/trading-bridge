@@ -1,7 +1,0 @@
-/app/trading-core/src/main/java/com/martinfou/trading/core/Bar.java
-/app/trading-core/src/main/java/com/martinfou/trading/core/DataLoader.java
-/app/trading-core/src/main/java/com/martinfou/trading/core/Order.java
-/app/trading-core/src/main/java/com/martinfou/trading/core/Position.java
-/app/trading-core/src/main/java/com/martinfou/trading/core/Strategy.java
-/app/trading-core/src/main/java/com/martinfou/trading/core/TimeConventions.java
-/app/trading-core/src/main/java/com/martinfou/trading/core/Trade.java
