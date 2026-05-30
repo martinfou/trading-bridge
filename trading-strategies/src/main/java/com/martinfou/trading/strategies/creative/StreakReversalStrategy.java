@@ -36,7 +36,7 @@ public class StreakReversalStrategy implements Strategy {
     private Order.Side tradeDirection = Order.Side.BUY;
     private double entryPrice = 0;
     private int barsHeld = 0;
-    private double positionSize = 10000;
+    private double positionSize = 1000;
     private int minStreakLength = 3;
 
     public StreakReversalStrategy() {

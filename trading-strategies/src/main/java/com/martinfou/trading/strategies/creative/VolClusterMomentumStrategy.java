@@ -37,7 +37,7 @@ public class VolClusterMomentumStrategy implements Strategy {
     private double entryPrice = 0;
     private int tradeBarsHeld = 0;
     private int maxTradeBars = 4;
-    private double positionSize = 10000;
+    private double positionSize = 1000;
 
     public VolClusterMomentumStrategy() {
         this.name = "VolClusterMomentum_GBPJPY";

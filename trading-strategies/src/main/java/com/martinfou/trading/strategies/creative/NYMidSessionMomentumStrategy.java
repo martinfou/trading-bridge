@@ -18,7 +18,7 @@ public class NYMidSessionMomentumStrategy implements Strategy {
     private double entryPrice = 0;
     private int barsHeld = 0;
     private int maxBars = 2;
-    private double positionSize = 10000;
+    private double positionSize = 1000;
 
     public NYMidSessionMomentumStrategy() {
         this.name = "NYMidSessionMomentum_GBPJPY";

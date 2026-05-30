@@ -34,9 +34,5 @@ RUN chmod +x /app/entrypoint.sh
 # Strategy config (backtest-derived risk params)
 COPY config/ /app/config/
 
-EXPOSE 8083
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-  CMD curl -f http://localhost:8083/health || exit 1
-
 ENV CLASSPATH="/app/classes/trading-core:/app/classes/trading-data:/app/classes/trading-strategies:/app/classes/trading-broker:/app/classes/trading-parser:/app/libs/*"
 ENTRYPOINT ["/app/entrypoint.sh"]

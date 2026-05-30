@@ -15,7 +15,7 @@ public class FridayBearStrategy implements Strategy {
     private final List<Bar> history = new ArrayList<>();
     private boolean hasPosition = false;
     private double entryPrice = 0;
-    private final double positionSize = 10000; // units of base currency
+    private final double positionSize = 1000; // units of base currency
 
     public FridayBearStrategy() {
         this.name = "FridayBear_GBPJPY";

@@ -1,2 +1,2 @@
-/home/martinfou/projects/trading-bridge/trading-core/src/test/java/com/martinfou/trading/core/DataLoaderTest.java
-/home/martinfou/projects/trading-bridge/trading-core/src/test/java/com/martinfou/trading/core/TimeConventionsTest.java
+/app/trading-core/src/test/java/com/martinfou/trading/core/DataLoaderTest.java
+/app/trading-core/src/test/java/com/martinfou/trading/core/TimeConventionsTest.java

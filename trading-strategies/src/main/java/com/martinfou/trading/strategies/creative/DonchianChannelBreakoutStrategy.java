@@ -38,7 +38,7 @@ public class DonchianChannelBreakoutStrategy implements Strategy {
     private double highestSinceEntry = 0;
     private double lowestSinceEntry = Double.MAX_VALUE;
 
-    private double positionSize = 10000;
+    private double positionSize = 1000;
     private int channelPeriod = 20;
 
     public DonchianChannelBreakoutStrategy() {

@@ -6,7 +6,7 @@
 #
 # Configuration:
 #   - OANDA credentials are loaded from trading-dashboard/.env
-#   - Default strategy: VWPReversion on USD/CHF (highest Sharpe: 4.47)
+#   - Default strategy: VWPReversion + ConsecBar on USD/CHF (highest Sharpe: 4.47)
 #   - Change strategy via: STRATEGY=vwp STRATEGY_PAIR=USD_CHF docker compose up -d
 
 services:
@@ -16,8 +16,6 @@ services:
       dockerfile: Dockerfile
     container_name: trading-live
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:8083:8083"  # health API (localhost only)
     env_file:
       - /home/martinfou/projects/trading-dashboard/.env
     environment:
@@ -28,7 +26,7 @@ services:
       # nymid → NYMidSessionMomentumStrategy, gobig → GoBigStrategy
       # casino → CasinoStrategy, all → all strategies sequentially
       # Or any sqimported: 2_31_177, 2_14_147, 2_15_195, etc.
-      - STRATEGY=${STRATEGY:-vwp}
+      - STRATEGY=${STRATEGY:-vwpreversion consecbar}
       - STRATEGY_PAIR=${STRATEGY_PAIR:-USD_CHF}
       - GRANULARITY=${GRANULARITY:-H1}
       - INTERVAL_SEC=${INTERVAL_SEC:-60}
@@ -36,11 +34,6 @@ services:
     volumes:
       - ./data:/app/data        # Trade persistence
       - ./logs:/app/logs        # Logs
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8083/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
     deploy:
       resources:
         limits:

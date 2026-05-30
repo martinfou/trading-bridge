@@ -39,7 +39,7 @@ public class ThursdayRangeExpansionStrategy implements Strategy {
     private double entryPrice = 0;
     private int tradeBarsHeld = 0;
     private int maxTradeBars = 5;
-    private double positionSize = 10000;
+    private double positionSize = 1000;
 
     public ThursdayRangeExpansionStrategy() {
         this.name = "ThuRangeExpansion_GBPJPY";

@@ -38,7 +38,7 @@ public class RenkoFilteredMomentumStrategy implements Strategy {
     private boolean inTrade = false;
     private Order.Side tradeDirection = Order.Side.BUY;
     private double entryPrice = 0;
-    private double positionSize = 10000;
+    private double positionSize = 1000;
 
     public RenkoFilteredMomentumStrategy() {
         this("RenkoFilteredMomentum", "GBP/JPY");

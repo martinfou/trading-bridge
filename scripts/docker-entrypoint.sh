@@ -5,7 +5,7 @@ set -e
 
 API_KEY="${OANDA_API_KEY:-}"
 ACCOUNT_ID="${OANDA_ACCOUNT_ID:-}"
-STRATEGY="${STRATEGY:-vwp}"
+STRATEGY="${STRATEGY:-vwpreversion}"
 GRANULARITY="${GRANULARITY:-H1}"
 INTERVAL_SEC="${INTERVAL_SEC:-60}"
 
@@ -17,4 +17,4 @@ fi
 
 exec java -cp "/app/classes/trading-core:/app/classes/trading-data:/app/classes/trading-strategies:/app/classes/trading-broker:/app/classes/trading-parser:/app/libs/*" \
     com.martinfou.trading.strategies.LiveStrategyRunner \
-    "$API_KEY" "$ACCOUNT_ID" "$STRATEGY" "$GRANULARITY" "$INTERVAL_SEC"
+    "$API_KEY" "$ACCOUNT_ID" $STRATEGY "$GRANULARITY" "$INTERVAL_SEC"

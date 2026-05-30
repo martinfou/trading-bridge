@@ -24,9 +24,11 @@
 /home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/creative/HeikinAshiTrendStrategy.java
 /home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/creative/IchimokuCloudStrategy.java
 /home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/creative/InsideBarBreakoutStrategy.java
+/home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/creative/JPYSpecMomentumStrategy.java
 /home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/creative/KeltnerChannelReversalStrategy.java
 /home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/creative/LondonOpenVolStrategy.java
 /home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/creative/MACDHistogramDivergenceStrategy.java
+/home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/creative/MayExhaustionFadeStrategy.java
 /home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/creative/MonthlyRotationStrategy.java
 /home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/creative/NYMidSessionMomentumStrategy.java
 /home/martinfou/projects/trading-bridge/trading-strategies/src/main/java/com/martinfou/trading/strategies/creative/OpeningRangeBreakoutStrategy.java

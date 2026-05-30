@@ -37,7 +37,7 @@ public class GapFaderStrategy implements Strategy {
     private boolean inTrade = false;
     private Order.Side tradeDirection = Order.Side.BUY;
     private double entryBarClose = 0;
-    private double positionSize = 10000;
+    private double positionSize = 1000;
     private double minGapPips;
 
     public GapFaderStrategy() {

@@ -39,7 +39,7 @@ public class ATRChannelTrailStrategy implements Strategy {
     private double highestHigh = 0;
     private double lowestLow = Double.MAX_VALUE;
     private double trailingStop = 0;
-    private double positionSize = 10000;
+    private double positionSize = 1000;
 
     public ATRChannelTrailStrategy() {
         this("ATRChannelTrail", "GBP/JPY");

@@ -42,7 +42,7 @@ public class SessionCloseReversalStrategy implements Strategy {
     private double entryBarClose = 0;
     private int tradeBarsHeld = 0;
     private int maxTradeBars = 3;
-    private double positionSize = 10000;
+    private double positionSize = 1000;
 
     // State for pattern tracking
     private boolean lateNYSessionWeakness = false;
