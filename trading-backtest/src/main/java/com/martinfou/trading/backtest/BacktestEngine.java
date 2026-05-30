@@ -124,7 +124,6 @@ public class BacktestEngine {
         log.info("Starting backtest: {} | Bars: {} | Capital: ${}",
             strategy.name(), bars.size(), String.format("%,.2f", initialCapital));
         strategy.reset();
-        equityCurve.add(equity);
 
         // Parse all bars
         for (Bar bar : bars) {
@@ -140,7 +139,7 @@ public class BacktestEngine {
             // Recompute equity: cash + floating P&L from open positions
             recomputeEquity(bar);
 
-            // Track equity curve
+            // Track equity curve (once per bar, after processing)
             equityCurve.add(equity);
             if (equity > peakEquity) peakEquity = equity;
         }
@@ -204,11 +203,14 @@ public class BacktestEngine {
                 Position existing = openPositions.get(order.symbol());
                 if (existing != null && existing.side() == order.side()) {
                     existing.addQuantity(order.quantity(), adjustedPrice);
+                } else if (existing != null) {
+                    // Opposite-side MARKET/STOP/LIMIT order while position exists:
+                    // This is a close/exit order (from strategy.closePosition()).
+                    // Close the existing position but do NOT open a new opposite one.
+                    // The strategy will generate a fresh entry on a future bar via onBar().
+                    closePosition(existing, adjustedPrice, bar.timestamp());
                 } else {
-                    // Close existing opposite position if exists
-                    if (existing != null) {
-                        closePosition(existing, adjustedPrice, bar.timestamp());
-                    }
+                    // No existing position — this is a new entry order
                     Position pos = new Position(order.symbol(), order.side(),
                         order.quantity(), adjustedPrice);
                     if (order.stopLoss() != 0) pos.withStopLoss(order.stopLoss());
