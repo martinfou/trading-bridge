@@ -34,7 +34,7 @@ public class PivotPointReversalStrategy implements Strategy {
     private double entryPrice = 0;
     private double targetPrice = 0;
     private int barsHeld = 0;
-    private double positionSize = 10000;
+    private double positionSize = 1000;
 
     // Pivot levels for current day
     private int currentDay = -1;

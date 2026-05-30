@@ -19,7 +19,7 @@ public class SessionTransitionStrategy implements Strategy {
     private int barsRemaining = 0;
     private double entryPrice = 0;
     private double atr = 0;
-    private double positionSize = 10000;
+    private double positionSize = 1000;
 
     public SessionTransitionStrategy() {
         this.name = "SessionTransition_GBPJPY";

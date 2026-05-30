@@ -55,7 +55,7 @@ public class MonthlyRotationStrategy implements Strategy {
     private double entryPrice = 0;
     private int tradeBarsHeld = 0;
     private int maxTradeBars = 6;
-    private double positionSize = 10000;
+    private double positionSize = 1000;
     private int currentMonthBias = 0;
 
     public MonthlyRotationStrategy() {

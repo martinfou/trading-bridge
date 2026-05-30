@@ -13,7 +13,7 @@ public class SessionBreakoutMomentumStrategy implements Strategy {
     private Order.Side tradeDirection = Order.Side.BUY;
     private double entryPrice = 0;
     private int barsHeld = 0;
-    private double positionSize = 10000;
+    private double positionSize = 1000;
     private static final ZoneOffset TZ = ZoneOffset.ofHours(2);
     private int sessionDay = -1;
     private boolean collectingRange = false;

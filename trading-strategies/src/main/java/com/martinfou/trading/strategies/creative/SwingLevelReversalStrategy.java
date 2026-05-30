@@ -38,7 +38,7 @@ public class SwingLevelReversalStrategy implements Strategy {
     private double entryPrice = 0;
     private double swingLevel = 0;
     private int barsHeld = 0;
-    private double positionSize = 10000;
+    private double positionSize = 1000;
 
     // Swing levels (keep last 3 for margin, but only last 2 actively checked)
     private final List<Double> swingHighs = new ArrayList<>();

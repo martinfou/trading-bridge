@@ -36,7 +36,7 @@ public class VolContractionBreakoutStrategy implements Strategy {
     private double coilLow = 0;
     private int barsSinceCoil = 0;
     private int maxBarsAfterCoil = 5;
-    private double positionSize = 10000;
+    private double positionSize = 1000;
     private double entryPrice = 0;
     private Order.Side tradeDirection = Order.Side.BUY;
 

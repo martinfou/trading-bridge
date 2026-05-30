@@ -410,9 +410,11 @@ public class LiveStrategyRunner implements Runnable {
     private double cappedPositionSize(double balance, double riskPct, double entryPrice,
                                        double stopLoss, double requestedUnits) {
         if (stopLoss <= 0 || entryPrice <= 0) {
-            log.warn("No stop loss set for this trade — cannot calculate risk. Using requested units: {}",
-                (int)requestedUnits);
-            return requestedUnits;
+            // Safety cap: without a stop loss, limit to 2 micro lots max (2000 units)
+            double hardCap = Math.min(requestedUnits, 2000);
+            log.warn("⚠ No stop loss set — safety cap: {} units → {} units",
+                (int)requestedUnits, (int)hardCap);
+            return hardCap;
         }
         double slDistance = Math.abs(entryPrice - stopLoss);
         if (slDistance <= 0.0) return requestedUnits;
@@ -747,6 +749,50 @@ public class LiveStrategyRunner implements Runnable {
             String unitsStr = String.valueOf((int) units);
 
             var tag = strategyShortName + "_" + oandaSymbol.replace("_", "");
+
+            // Detect if this order closes an existing active trade BEFORE margin check
+            boolean isClose = false;
+            for (ActiveTrade at : activeTrades) {
+                if (at.symbol.equals(oandaSymbol)) {
+                    boolean isOpposite = (order.side() == Order.Side.BUY && at.side.equals("SELL"))
+                        || (order.side() == Order.Side.SELL && at.side.equals("BUY"));
+                    if (isOpposite) {
+                        isClose = true;
+                        break;
+                    }
+                }
+            }
+
+            if (isClose) {
+                // This is a close / exit order — calculate P&L before executing
+                var price = priceClient.getPrice(oandaSymbol);
+                double currentBid = price.bid();
+                double currentAsk = price.ask();
+                double estimatePnl = 0;
+                for (ActiveTrade at : activeTrades) {
+                    if (at.symbol.equals(oandaSymbol)) {
+                        if (at.side.equals("BUY")) {
+                            estimatePnl += (currentBid - at.entryPrice) * at.quantity;
+                        } else {
+                            estimatePnl += (at.entryPrice - currentAsk) * at.quantity;
+                        }
+                    }
+                }
+                var result = executor.placeMarketOrder(oandaSymbol, unitsStr, tag);
+                // Remove the closed trade(s) from active list
+                activeTrades.removeIf(at -> at.symbol.equals(oandaSymbol));
+                totalExits++;
+                totalPnl += estimatePnl;
+                log.info("═══════ EXIT {} {} {} @ {} PnL: {}{} ═══════",
+                    oandaSymbol, order.side(),
+                    String.format("%.2f", units / 100000.0) + " lots",
+                    result.fillPrice(),
+                    estimatePnl >= 0 ? "+" : "",
+                    String.format("%.2f", estimatePnl));
+                return;
+            }
+
+            // ─── New entry — place market order ───
             var result = executor.placeMarketOrder(oandaSymbol, unitsStr, tag);
             totalEntries++;
 
@@ -925,6 +971,23 @@ public class LiveStrategyRunner implements Runnable {
             root.put("totalPnl", totalPnl);
             root.put("savedAt", TimeConventions.now().toString());
             if (lastBarTime != null) root.put("lastBarTime", lastBarTime.toString());
+            root.put("inTrade", !activeTrades.isEmpty());
+
+            // Save strategy internal state (crash recovery) via reflection
+            try {
+                var m = strategy.getClass().getMethod("getTradesToday");
+                root.put("strat_tradesToday", (int) m.invoke(strategy));
+                m = strategy.getClass().getMethod("getCooldownBars");
+                root.put("strat_cooldownBars", (int) m.invoke(strategy));
+                m = strategy.getClass().getMethod("isInTrade");
+                root.put("strat_inTrade", (boolean) m.invoke(strategy));
+                m = strategy.getClass().getMethod("getTradeDirection");
+                root.put("strat_tradeDirection", ((Enum<?>) m.invoke(strategy)).name());
+                m = strategy.getClass().getMethod("getLastTradeDay");
+                root.put("strat_lastTradeDay", (int) m.invoke(strategy));
+            } catch (NoSuchMethodException e) {
+                // strategy doesn't support state export — fine
+            }
 
             // Active trades
             ArrayNode tradesArray = root.putArray("activeTrades");
@@ -1010,6 +1073,23 @@ public class LiveStrategyRunner implements Runnable {
                     p.stopLoss = pn.has("stopLoss") ? pn.get("stopLoss").asDouble() : 0;
                     p.takeProfit = pn.has("takeProfit") ? pn.get("takeProfit").asDouble() : 0;
                     pendingStops.add(p);
+                }
+            }
+
+            // Restore strategy internal state (crash recovery)
+            if (root.has("strat_tradesToday")) {
+                try {
+                    var m = strategy.getClass().getMethod("restoreState",
+                        int.class, int.class, boolean.class, Order.Side.class, int.class);
+                    int td = root.get("strat_tradesToday").asInt();
+                    int ltd = root.get("strat_lastTradeDay").asInt(-1);
+                    boolean it = root.get("strat_inTrade").asBoolean();
+                    Order.Side dir = Order.Side.valueOf(root.get("strat_tradeDirection").asText("BUY"));
+                    int cd = root.get("strat_cooldownBars").asInt(0);
+                    m.invoke(strategy, td, ltd, it, dir, cd);
+                    log.info("♻ Strategy state restored: tradesToday={}, inTrade={}, cooldown={}", td, it, cd);
+                } catch (NoSuchMethodException e) {
+                    log.debug("Strategy doesn't support state restore — skipping");
                 }
             }
 

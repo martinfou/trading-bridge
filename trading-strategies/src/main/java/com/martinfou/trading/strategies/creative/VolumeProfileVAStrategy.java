@@ -36,7 +36,7 @@ public class VolumeProfileVAStrategy implements Strategy {
     private boolean atOppositeValueArea = false;
     private Order.Side tradeDirection = Order.Side.BUY;
     private double entryPrice = 0;
-    private double positionSize = 10000;
+    private double positionSize = 1000;
 
     // Value Area tracking
     private double poc = 0;          // Point of Control
