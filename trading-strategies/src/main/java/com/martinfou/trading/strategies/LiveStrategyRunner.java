@@ -517,6 +517,13 @@ public class LiveStrategyRunner implements Runnable {
                 .asSubclass(Strategy.class));
             map.put("consecbar", Class.forName("com.martinfou.trading.strategies.creative.ConsecutiveBarExhaustionStrategy")
                 .asSubclass(Strategy.class));
+            // Lab — new strategies (R&D pipeline)
+            map.put("hmmregime", Class.forName("com.martinfou.trading.strategies.creative.HmmRegimeMomentumStrategy")
+                .asSubclass(Strategy.class));
+            map.put("vwappremium", Class.forName("com.martinfou.trading.strategies.creative.VwapPremiumReversionStrategy")
+                .asSubclass(Strategy.class));
+            map.put("turnofmonth", Class.forName("com.martinfou.trading.strategies.creative.TurnOfMonthFlowStrategy")
+                .asSubclass(Strategy.class));
         } catch (ClassNotFoundException e) {
             throw new RuntimeException("Strategy class not found", e);
         }
