@@ -1,7 +1,7 @@
 package com.martinfou.trading.strategies.sqimported;
 
 import com.martinfou.trading.core.*;
-import com.martinfou.trading.strategies.MarketAnalyzer;
+import com.martinfou.trading.strategies.StrategyOrderQueues;
 import java.util.*;
 
 /**
@@ -103,7 +103,7 @@ public class Strategy_2_14_147_Adapted implements Strategy {
     public List<Order> getPendingOrders() {
         // Clean up filled orders
         pendingOrders.removeIf(o -> o.status() != Order.Status.PENDING);
-        return pendingOrders;
+        return StrategyOrderQueues.drainPending(pendingOrders);
     }
 
     @Override

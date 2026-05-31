@@ -1,6 +1,7 @@
 package com.martinfou.trading.strategies.prop;
 
 import com.martinfou.trading.core.Bar;
+import com.martinfou.trading.core.indicators.Indicators;
 
 /**
  * Weekly open gap fade — fade small weekend gaps toward fill.
@@ -27,7 +28,7 @@ public final class WeeklyOpenGapFadeStrategy extends AbstractPropStrategy {
         if (Double.isNaN(gapPips)) return;
 
         double atr = atr(14);
-        double pip = PropIndicators.pipSize(symbol);
+        double pip = Indicators.pipSize(symbol);
         double maxGap = atr / pip * 0.3;
         if (Math.abs(gapPips) < 5 || Math.abs(gapPips) > maxGap) return;
 

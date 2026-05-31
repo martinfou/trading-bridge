@@ -1,7 +1,7 @@
 package com.martinfou.trading.strategies.sqimported;
 
 import com.martinfou.trading.core.*;
-import com.martinfou.trading.strategies.MarketAnalyzer;
+import com.martinfou.trading.strategies.StrategyOrderQueues;
 import java.util.*;
 
 /**
@@ -154,7 +154,7 @@ public class Strategy_2_15_195_Adapted implements Strategy {
             barsSinceEntry = 0;
             trailingActivated = false;
         }
-        return pendingOrders;
+        return StrategyOrderQueues.drainPending(pendingOrders);
     }
 
     @Override

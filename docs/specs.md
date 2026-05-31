@@ -160,7 +160,7 @@ public interface Strategy {
     void onTick(double bid,        // Appelé à chaque tick (live)
                 double ask,
                 long volume);
-    List<Order> getPendingOrders(); // Ordres à exécuter
+    List<Order> getPendingOrders(); // Ordres à exécuter (copie + vidage de la file — voir docs/strategy-home.md)
     void reset();                   // Reset pour backtest
 }
 ```

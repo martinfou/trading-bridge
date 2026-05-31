@@ -1,10 +1,9 @@
 package com.martinfou.trading.examples;
 
-import com.martinfou.trading.backtest.BacktestEngine;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.core.Bar;
+import com.martinfou.trading.core.GoldenBacktestBaseline;
 import com.martinfou.trading.data.HistoricalDataLoader;
-import com.martinfou.trading.strategies.StrategyCatalog;
 
 import org.junit.jupiter.api.Test;
 
@@ -13,6 +12,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
+import static com.martinfou.trading.core.GoldenBacktestBaseline.CI_SUBSET;
+import static com.martinfou.trading.core.GoldenBacktestBaseline.EUR_USD_2012;
+import static com.martinfou.trading.core.GoldenBacktestBaseline.INITIAL_CAPITAL;
+import static com.martinfou.trading.core.GoldenBacktestBaseline.MAX_DRAWDOWN_TOLERANCE_PCT;
+import static com.martinfou.trading.core.GoldenBacktestBaseline.RETURN_TOLERANCE_PCT;
+import static com.martinfou.trading.core.GoldenBacktestBaseline.SYMBOL;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -25,48 +30,11 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  *   <li>CI subset ({@code data/ci/EUR_USD_H1_subset.csv}) — always runs in CI</li>
  *   <li>Full year 2012 — optional local validation when {@code data/historical/} present</li>
  * </ul>
- * Baselines documented in {@code docs/testing.md}.
+ * Baselines: {@link GoldenBacktestBaseline} · documented in {@code docs/testing.md}.
  */
 class GoldenBacktestTest {
 
-    /** Baseline re-verified 2026-05-30 via RunBacktest (see docs/testing.md). */
-    static final String BASELINE_COMMIT = "ec6dc72";
-
-    static final String SYMBOL = "EUR_USD";
-    static final int YEAR = 2012;
-    static final double INITIAL_CAPITAL = 100_000.0;
-
-    /** Committed CI mini-dataset (January 2012 H1). */
     static final Path CI_SUBSET_PATH = Path.of("data/ci/EUR_USD_H1_subset.csv");
-
-    static final int CI_BASELINE_BARS = 744;
-    static final int CI_BASELINE_TRADES = 3;
-    static final double CI_BASELINE_RETURN_PCT = 1.8153285714287921;
-    static final double CI_BASELINE_TOTAL_PNL = 1_815.3285714287921;
-    static final double CI_BASELINE_MAX_DRAWDOWN_PCT = 0.03;
-
-    static final int BASELINE_BARS = 8760;
-    static final int BASELINE_TRADES = 63;
-    /** Full-precision values from RunBacktest JSON (display: 16.44%, $16,439.51). */
-    static final double BASELINE_RETURN_PCT = 16.439514464285008;
-    static final double BASELINE_TOTAL_PNL = 16_439.514464285;
-    static final double BASELINE_MAX_DRAWDOWN_PCT = 0.12;
-    static final double RETURN_TOLERANCE_PCT = 0.01; // ±1% of baseline return
-
-    static {
-        double expectedPnlFromReturn = BASELINE_RETURN_PCT / 100.0 * INITIAL_CAPITAL;
-        if (Math.abs(expectedPnlFromReturn - BASELINE_TOTAL_PNL) > 0.01) {
-            throw new ExceptionInInitializerError(
-                "Golden baseline inconsistent: return % implies PnL " + expectedPnlFromReturn
-                    + " but BASELINE_TOTAL_PNL is " + BASELINE_TOTAL_PNL);
-        }
-        double ciExpectedPnl = CI_BASELINE_RETURN_PCT / 100.0 * INITIAL_CAPITAL;
-        if (Math.abs(ciExpectedPnl - CI_BASELINE_TOTAL_PNL) > 0.01) {
-            throw new ExceptionInInitializerError(
-                "CI golden baseline inconsistent: return % implies PnL " + ciExpectedPnl
-                    + " but CI_BASELINE_TOTAL_PNL is " + CI_BASELINE_TOTAL_PNL);
-        }
-    }
 
     @Test
     void londonOpenRangeBreakout_ciSubset_matchesMiniGoldenBaseline() throws IOException {
@@ -76,21 +44,10 @@ class GoldenBacktestTest {
         List<Bar> bars = HistoricalDataLoader.loadPath(CI_SUBSET_PATH, SYMBOL);
         assertFalse(bars.isEmpty(), "Expected bars in CI subset");
 
-        BacktestResult result = RunContexts.backtest("LondonOpenRangeBreakout", SYMBOL, bars, INITIAL_CAPITAL).run();
+        BacktestResult result = RunContexts.backtest(
+            GoldenBacktestBaseline.STRATEGY_ID, SYMBOL, bars, INITIAL_CAPITAL).run();
 
-        assertEquals(CI_BASELINE_BARS, bars.size(), "bar count");
-        assertEquals(CI_BASELINE_TRADES, result.totalTrades(), "trade count");
-
-        double minReturn = CI_BASELINE_RETURN_PCT * (1.0 - RETURN_TOLERANCE_PCT);
-        double maxReturn = CI_BASELINE_RETURN_PCT * (1.0 + RETURN_TOLERANCE_PCT);
-        assertTrue(result.totalReturnPct() >= minReturn && result.totalReturnPct() <= maxReturn,
-            () -> String.format("return %.4f%% outside [%.4f%%, %.4f%%]",
-                result.totalReturnPct(), minReturn, maxReturn));
-
-        double pnlTolerance = CI_BASELINE_TOTAL_PNL * RETURN_TOLERANCE_PCT;
-        assertEquals(CI_BASELINE_TOTAL_PNL, result.totalPnl(), pnlTolerance, "total PnL");
-
-        assertEquals(CI_BASELINE_MAX_DRAWDOWN_PCT, result.maxDrawdownPct(), 0.01, "max drawdown %");
+        assertProfile(result, bars.size(), CI_SUBSET);
     }
 
     @Test
@@ -98,31 +55,38 @@ class GoldenBacktestTest {
         assumeHistoricalDataPresent();
 
         List<Bar> bars = HistoricalDataLoader.loadYear(
-            SYMBOL, YEAR, HistoricalDataLoader.DEFAULT_BARS_DIR);
-        assertFalse(bars.isEmpty(), "Expected bars for " + SYMBOL + " " + YEAR);
+            SYMBOL, GoldenBacktestBaseline.FULL_YEAR, HistoricalDataLoader.DEFAULT_BARS_DIR);
+        assertFalse(bars.isEmpty(), "Expected bars for " + SYMBOL + " " + GoldenBacktestBaseline.FULL_YEAR);
 
-        BacktestResult result = RunContexts.backtest("LondonOpenRangeBreakout", SYMBOL, bars, INITIAL_CAPITAL).run();
+        BacktestResult result = RunContexts.backtest(
+            GoldenBacktestBaseline.STRATEGY_ID, SYMBOL, bars, INITIAL_CAPITAL).run();
 
-        assertEquals(BASELINE_BARS, bars.size(), "bar count");
-        assertEquals(BASELINE_TRADES, result.totalTrades(), "trade count");
+        assertProfile(result, bars.size(), EUR_USD_2012);
+    }
 
-        double minReturn = BASELINE_RETURN_PCT * (1.0 - RETURN_TOLERANCE_PCT);
-        double maxReturn = BASELINE_RETURN_PCT * (1.0 + RETURN_TOLERANCE_PCT);
+    private static void assertProfile(BacktestResult result, int barCount, GoldenBacktestBaseline.Profile golden) {
+        assertEquals(golden.bars(), barCount, "bar count");
+        assertEquals(golden.trades(), result.totalTrades(), "trade count");
+
+        double minReturn = golden.returnPct() * (1.0 - RETURN_TOLERANCE_PCT);
+        double maxReturn = golden.returnPct() * (1.0 + RETURN_TOLERANCE_PCT);
         assertTrue(result.totalReturnPct() >= minReturn && result.totalReturnPct() <= maxReturn,
             () -> String.format("return %.4f%% outside [%.4f%%, %.4f%%]",
                 result.totalReturnPct(), minReturn, maxReturn));
 
-        double pnlTolerance = BASELINE_TOTAL_PNL * RETURN_TOLERANCE_PCT;
-        assertEquals(BASELINE_TOTAL_PNL, result.totalPnl(), pnlTolerance, "total PnL");
+        double pnlTolerance = golden.totalPnl() * RETURN_TOLERANCE_PCT;
+        assertEquals(golden.totalPnl(), result.totalPnl(), pnlTolerance, "total PnL");
 
-        assertEquals(BASELINE_MAX_DRAWDOWN_PCT, result.maxDrawdownPct(), 0.01, "max drawdown %");
+        assertEquals(golden.maxDrawdownPct(), result.maxDrawdownPct(), MAX_DRAWDOWN_TOLERANCE_PCT,
+            "max drawdown %");
     }
 
     private static void assumeHistoricalDataPresent() {
-        Path barsFile = HistoricalDataLoader.DEFAULT_BARS_DIR.resolve(SYMBOL + "_H1_" + YEAR + ".bars");
+        Path barsFile = HistoricalDataLoader.DEFAULT_BARS_DIR.resolve(
+            SYMBOL + "_H1_" + GoldenBacktestBaseline.FULL_YEAR + ".bars");
         Path csvDir = HistoricalDataLoader.DEFAULT_CSV_DIR;
         boolean hasBars = Files.isRegularFile(barsFile);
-        boolean hasCsv = Files.isDirectory(csvDir) && csvDirHasYear(csvDir, YEAR);
+        boolean hasCsv = Files.isDirectory(csvDir) && csvDirHasYear(csvDir, GoldenBacktestBaseline.FULL_YEAR);
         assumeTrue(hasBars || hasCsv,
             "Skipping golden backtest: no EUR_USD H1 2012 data under data/historical/. "
                 + "Run: ./scripts/download-data.sh --pair EUR_USD --tf h1 --years 2012");

@@ -1,34 +1,32 @@
 package com.martinfou.trading.strategies;
 
 import com.martinfou.trading.core.Bar;
+import com.martinfou.trading.core.indicators.Indicators;
+
 import java.util.List;
 
-public class MarketAnalyzer {
-    
-    // RSI calculation
+/** Strategy-layer market analysis built on {@link Indicators}. */
+public final class MarketAnalyzer {
+
+    private MarketAnalyzer() {}
+
     public static double rsi(List<Bar> bars, int period) {
         if (bars.size() < period + 1) return 50;
-        double gain = 0, loss = 0;
-        for (int i = bars.size() - period; i < bars.size(); i++) {
-            double diff = bars.get(i).close() - bars.get(i-1).close();
-            if (diff > 0) gain += diff; else loss -= diff;
-        }
-        double avgGain = gain / period, avgLoss = loss / period;
-        if (avgLoss == 0) return 100;
-        return 100 - (100 / (1 + avgGain / avgLoss));
+        double value = Indicators.rsi(bars, period);
+        return Double.isNaN(value) ? 50 : value;
     }
 
-    // SMA
     public static double sma(List<Bar> bars, int period) {
-        int size = bars.size();
-        double sum = 0;
-        for (int i = size - period; i < size; i++) sum += bars.get(i).close();
-        return sum / period;
+        if (bars.size() < period) {
+            return bars.isEmpty() ? 0 : bars.getLast().close();
+        }
+        return Indicators.smaLatest(bars, period);
     }
 
-    // ATR for stop loss distance
+    /** Simplified range ATR (high − low) for legacy news-trading heuristics. */
     public static double atr(List<Bar> bars, int period) {
         int size = bars.size();
+        if (size < period) return 0;
         double sum = 0;
         for (int i = size - period; i < size; i++) {
             Bar b = bars.get(i);
@@ -37,7 +35,6 @@ public class MarketAnalyzer {
         return sum / period;
     }
 
-    // Support/Resistance levels
     public static double[] findKeyLevels(List<Bar> bars, int lookback) {
         int size = bars.size();
         double high = Double.MIN_VALUE, low = Double.MAX_VALUE;
@@ -50,7 +47,6 @@ public class MarketAnalyzer {
         return new double[]{low, mid, high};
     }
 
-    // Trend direction
     public static String trend(List<Bar> bars, int fast, int slow) {
         if (bars.size() < slow) return "NEUTRAL";
         double fastSma = sma(bars, fast);

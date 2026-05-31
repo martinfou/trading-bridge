@@ -1,6 +1,7 @@
 package com.martinfou.trading.strategies.prop;
 
 import com.martinfou.trading.core.Bar;
+import com.martinfou.trading.core.indicators.Indicators;
 import com.martinfou.trading.core.TimeConventions;
 
 import java.time.DayOfWeek;
@@ -70,7 +71,7 @@ public final class PropSessions {
     public static double weekendGapPips(List<Bar> bars, String symbol) {
         if (bars.size() < 2 || !isMonday(bars.getLast())) return Double.NaN;
         Bar cur = bars.getLast();
-        double pip = PropIndicators.pipSize(symbol);
+        double pip = Indicators.pipSize(symbol);
         for (int i = bars.size() - 2; i >= 0; i--) {
             Bar b = bars.get(i);
             if (PropSessions.utc(b).getDayOfWeek() == DayOfWeek.FRIDAY) {

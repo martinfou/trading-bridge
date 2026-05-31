@@ -1,6 +1,7 @@
 package com.martinfou.trading.strategies.prop;
 
 import com.martinfou.trading.core.Bar;
+import com.martinfou.trading.core.indicators.Indicators;
 
 /**
  * Previous Day High/Low liquidity sweep reversal.
@@ -22,7 +23,7 @@ public final class PdhlSweepReversalStrategy extends AbstractPropStrategy {
         double pdl = pd[1];
         if (Double.isNaN(pdh)) return;
 
-        double pip = PropIndicators.pipSize(symbol);
+        double pip = Indicators.pipSize(symbol);
         double atr = atr(14);
         double sweep = pip * 3;
 

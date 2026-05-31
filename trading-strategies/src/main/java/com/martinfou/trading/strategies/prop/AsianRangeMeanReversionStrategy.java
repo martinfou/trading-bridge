@@ -1,6 +1,7 @@
 package com.martinfou.trading.strategies.prop;
 
 import com.martinfou.trading.core.Bar;
+import com.martinfou.trading.core.indicators.Indicators;
 
 /**
  * Asian Range Mean Reversion — fade Asian session extremes at London open.
@@ -37,17 +38,17 @@ public final class AsianRangeMeanReversionStrategy extends AbstractPropStrategy 
         if (PropSessions.isFriday(bar) && h == 7) return;
 
         Bar prev = history.get(history.size() - 2);
-        double rsi = PropIndicators.rsi(history, 14);
+        double rsi = Indicators.rsi(history, 14);
         double atr = atr(14);
         double mid = (asianHigh + asianLow) / 2.0;
 
-        if (bar.high() >= asianHigh - PropIndicators.pipSize(symbol) && rsi > 70
-            && PropIndicators.isBearishEngulfing(prev, bar)) {
+        if (bar.high() >= asianHigh - Indicators.pipSize(symbol) && rsi > 70
+            && Indicators.isBearishEngulfing(prev, bar)) {
             double entry = bar.close();
             double sl = asianHigh + atr;
             enterShort(bar, sl, mid);
-        } else if (bar.low() <= asianLow + PropIndicators.pipSize(symbol) && rsi < 30
-            && PropIndicators.isBullishEngulfing(prev, bar)) {
+        } else if (bar.low() <= asianLow + Indicators.pipSize(symbol) && rsi < 30
+            && Indicators.isBullishEngulfing(prev, bar)) {
             double entry = bar.close();
             double sl = asianLow - atr;
             enterLong(bar, sl, mid);

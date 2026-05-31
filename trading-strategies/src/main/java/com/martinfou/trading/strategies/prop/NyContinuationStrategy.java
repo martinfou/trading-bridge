@@ -1,6 +1,7 @@
 package com.martinfou.trading.strategies.prop;
 
 import com.martinfou.trading.core.Bar;
+import com.martinfou.trading.core.indicators.Indicators;
 
 /**
  * NY Continuation after London directional move.
@@ -44,16 +45,16 @@ public final class NyContinuationStrategy extends AbstractPropStrategy {
         if (londonMove < atrDay * 0.5) return;
 
         londonTrendUp = londonHigh - londonOpen > londonOpen - londonLow;
-        double ema20 = PropIndicators.emaLatest(history, 20);
+        double ema20 = Indicators.emaLatest(history, 20);
 
         if (londonTrendUp && bar.low() <= ema20 && bar.close() > ema20 && bar.close() > bar.open()) {
             double entry = bar.close();
             double sl = Math.min(bar.low(), londonLow) - atrDay * 0.4;
-            enterLong(bar, sl, rrTp(entry, sl, PropIndicators.OrderSide.LONG));
+            enterLong(bar, sl, rrTp(entry, sl, Indicators.TradeSide.LONG));
         } else if (!londonTrendUp && bar.high() >= ema20 && bar.close() < ema20 && bar.close() < bar.open()) {
             double entry = bar.close();
             double sl = Math.max(bar.high(), londonHigh) + atrDay * 0.4;
-            enterShort(bar, sl, rrTp(entry, sl, PropIndicators.OrderSide.SHORT));
+            enterShort(bar, sl, rrTp(entry, sl, Indicators.TradeSide.SHORT));
         }
     }
 }
