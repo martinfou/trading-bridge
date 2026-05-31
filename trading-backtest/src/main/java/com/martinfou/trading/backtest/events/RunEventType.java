@@ -13,5 +13,6 @@ public enum RunEventType {
     ERROR,
     OPERATOR_ACTION,
     RECONCILIATION_ALERT,
-    HEARTBEAT
+    HEARTBEAT,
+    SQ_EXPORT_RECEIVED
 }

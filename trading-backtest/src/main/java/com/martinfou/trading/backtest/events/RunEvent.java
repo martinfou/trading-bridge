@@ -137,4 +137,28 @@ public record RunEvent(
             mode.name(),
             Map.copyOf(payload));
     }
+
+    /** SQ hot-folder file processed by the bridge (story 21-7). */
+    public static RunEvent sqExportReceived(
+        String fileName,
+        String disposition,
+        String manifestId,
+        Instant timestamp
+    ) {
+        var payload = new java.util.LinkedHashMap<String, Object>();
+        payload.put("fileName", fileName);
+        payload.put("disposition", disposition);
+        if (manifestId != null && !manifestId.isBlank()) {
+            payload.put("manifestId", manifestId);
+        }
+        return new RunEvent(
+            SCHEMA_VERSION,
+            RunEventType.SQ_EXPORT_RECEIVED,
+            timestamp,
+            "sq-bridge",
+            "sq-inbox",
+            "",
+            "BRIDGE",
+            Map.copyOf(payload));
+    }
 }

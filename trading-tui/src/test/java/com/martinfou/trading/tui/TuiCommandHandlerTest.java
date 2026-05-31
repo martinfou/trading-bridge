@@ -20,6 +20,7 @@ class TuiCommandHandlerTest {
         List<String> lines = TuiCommandHandler.help();
         assertTrue(lines.stream().anyMatch(l -> l.contains("/backtest")));
         assertTrue(lines.stream().anyMatch(l -> l.contains("/promote")));
+        assertTrue(lines.stream().anyMatch(l -> l.contains("/sq")));
     }
 
     @Test
