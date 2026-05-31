@@ -12,9 +12,9 @@ import java.util.*;
 
 /**
  * Runs the 3 newly designed strategies across all available forex pairs.
- * Strategies: HmmRegimeMomentum, VwapPremiumReversion, TurnOfMonthFlow
+ * Strategies: DualEmaMomentum, SessionBreakoutMomentum, WeekdaySession
  * Pairs: EUR/USD, GBP/USD, USD/JPY, AUD/USD, USD/CAD, NZD/USD, USD/CHF, GBP/JPY
- * Data: H1 2006-2025 (20 years)
+ * Data: H1 2006-2026 (20 years)
  * Costs: 0.5 pips commission (majors), 1 pip (crosses), 1 pip slippage
  */
 public class RunThreeStrategies {
@@ -39,12 +39,12 @@ public class RunThreeStrategies {
         // Strategy factories: (id, factory, defaultSymbol)
         record StratDef(String id, String desc, java.util.function.Function<String, Strategy> factory) {}
         StratDef[] strats = {
-            new StratDef("HmmRegimeMomentum", "HMM Regime Momentum (Structure/Technical)",
-                sym -> new HmmRegimeMomentumStrategy("HMM_Momentum_" + symbolToPair(sym), sym)),
-            new StratDef("VwapPremiumReversion", "VWAP Premium Reversion (News/Sentiment)",
-                sym -> new VwapPremiumReversionStrategy("VWAP_Reversion_" + symbolToPair(sym), sym)),
-            new StratDef("TurnOfMonthFlow", "Turn-of-Month Flow (Seasonality/Calendar)",
-                sym -> new TurnOfMonthFlowStrategy("ToM_Flow_" + symbolToPair(sym), sym)),
+            new StratDef("DualEmaMomentum", "Dual-EMA Momentum w/ Volatility Filter (Structure/Technical)",
+                sym -> new DualEmaMomentumStrategy("DualEMA_" + symbolToPair(sym), sym)),
+            new StratDef("SessionBreakoutMomentum", "Session Breakout Momentum (News/Sentiment)",
+                sym -> new SessionBreakoutMomentumStrategy("SessBreak_" + symbolToPair(sym), sym)),
+            new StratDef("WeekdaySession", "Weekday Session Pattern (Seasonality/Calendar)",
+                sym -> new WeekdaySessionStrategy("Weekday_" + symbolToPair(sym), sym)),
         };
 
         List<ResultRow> allResults = new ArrayList<>();
@@ -60,8 +60,8 @@ public class RunThreeStrategies {
                 // Load data
                 List<Bar> bars;
                 try {
-                    String oandaSymbol = convertToOandaSymbol(pair);
-                    var loaded = HistoricalDataLoader.loadFromArgs(oandaSymbol, yearRange);
+                    // loadFromArgs expects: defaultSymbol, symbol, yearRange
+                    var loaded = HistoricalDataLoader.loadFromArgs(pair, pair, yearRange);
                     bars = loaded.bars();
                 } catch (Exception e) {
                     System.err.println("  ⚠ " + pair + ": data load failed — " + e.getMessage());
@@ -128,10 +128,6 @@ public class RunThreeStrategies {
         return RunContext.forStrategy(
             null, null, strategy, symbol, RunMode.BACKTEST, bars, capital, null, costs
         ).run();
-    }
-
-    private static String convertToOandaSymbol(String pair) {
-        return pair.replace("_", "").toLowerCase();
     }
 
     private static String symbolToPair(String symbol) {
