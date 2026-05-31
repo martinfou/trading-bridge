@@ -1,5 +1,5 @@
 # generated: 2026-05-23
-# last_updated: 2026-05-23
+# last_updated: 2026-05-30
 # project: trading-bridge
 # project_key: NOKEY
 # tracking_system: file-system
@@ -57,16 +57,16 @@ development_status:
   epic-1-retrospective: optional
 
   epic-2: in-progress
-  2-1-analyze-strategyquant-xml-format: backlog
-  2-2-sqxmlparser-implementation: backlog
-  2-3-strategyconfig-pojo: backlog
-  2-4-core-indicators-sma-ema-rsi: backlog
-  2-5-extended-indicators-macd-bollinger-atr: backlog
+  2-1-analyze-strategyquant-xml-format: done
+  2-2-sqxmlparser-implementation: done
+  2-3-strategyconfig-pojo: done
+  2-4-core-indicators-sma-ema-rsi: done
+  2-5-extended-indicators-macd-bollinger-atr: done
   2-6-entry-conditions: backlog
   2-7-exit-conditions: backlog
   2-8-position-sizing: backlog
   2-9-java-code-generator: backlog
-  2-10-utc-timezone-migration: review
+  2-10-utc-timezone-migration: done
   epic-2-retrospective: optional
 
   epic-3: backlog

@@ -25,7 +25,7 @@ optimized_for_llm: true
 
 **Trading Bridge** converts StrategyQuant / JForex strategies to pure Java, with backtesting, a platform runtime (control plane), and broker connectors (OANDA, IBKR). Maven monorepo, Java 21.
 
-**Active epics (2026-05):** Epic 12 (platform consolidation) and Epic 13 (runtime) are **done**. Epic 2 (SQ XML parser) in progress — story 2-10 UTC migration in review. Human docs: `docs/` · Agent architecture: `docs/architecture.md`.
+**Active epics (2026-05):** Epic 12 / 13 **done**. Epic 2 parser: **2-1**–**2-5** + **2-10** done ; **2-6** entry conditions next. See `docs/sq-xml-format.md`.
 
 ---
 

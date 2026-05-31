@@ -169,7 +169,9 @@ public interface Strategy {
 
 ### 4.1 Structure du XML StrategyQuant
 
-Le format XML de StrategyQuant contient :
+> **Format réel (Epic 2) :** voir [`docs/sq-xml-format.md`](sq-xml-format.md) — le schéma ci-dessous est un **résumé conceptuel** pour la conversion Java, pas le XML exporté par StrategyQuant X (`StrategyFile` + building blocks).
+
+Le format conceptuel cible pour le générateur Java :
 
 ```xml
 <StrategyQuant>
