@@ -40,6 +40,22 @@ public final class ControlPlaneClient {
         return new ControlPlaneClient(url);
     }
 
+    public JsonNode sqBridgeStatus() throws IOException, InterruptedException {
+        return getJson("/api/sq-bridge/status");
+    }
+
+    public JsonNode processSqInbox() throws IOException, InterruptedException {
+        String json = MAPPER.writeValueAsString(Map.of());
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(baseUrl + "/api/sq-bridge/process-inbox"))
+            .timeout(Duration.ofSeconds(60))
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(json))
+            .build();
+        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+        return parseProcessInboxResponse(response);
+    }
+
     public JsonNode health() throws IOException, InterruptedException {
         return getJson("/api/health");
     }
@@ -119,6 +135,19 @@ public final class ControlPlaneClient {
             .build();
         HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
         return parseResponse(response);
+    }
+
+    private static JsonNode parseProcessInboxResponse(HttpResponse<String> response) throws IOException {
+        JsonNode node = MAPPER.readTree(response.body());
+        int code = response.statusCode();
+        if (code == 202 || code == 409) {
+            return node;
+        }
+        if (code >= 400) {
+            String error = node.has("error") ? node.get("error").asText() : response.body();
+            throw new ControlPlaneException(code, error);
+        }
+        return node;
     }
 
     private static JsonNode parseResponse(HttpResponse<String> response) throws IOException {

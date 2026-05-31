@@ -44,6 +44,7 @@ public final class TuiCommandHandler {
                 case "run" -> showRun(parts);
                 case "events" -> showEvents(parts);
                 case "kill" -> kill(parts);
+                case "inbox", "sq" -> sqBridge(parts);
                 case "quit", "exit", "q" -> List.of("__QUIT__");
                 default -> List.of("Unknown command: /" + command + ". Type /help");
             };
@@ -67,6 +68,7 @@ public final class TuiCommandHandler {
             "  /run <runId>       Run status + metrics",
             "  /events <runId>    Last 20 run events",
             "  /kill <id> [reason]",
+            "  /sq | /inbox [process]   SQ bridge status or trigger inbox drain",
             "  /quit              Exit",
             "Env: CONTROL_PLANE_URL (default http://localhost:8080)");
     }
@@ -172,6 +174,35 @@ public final class TuiCommandHandler {
             return List.of("Usage: /events <runId>");
         }
         return tailEvents(runId, 20);
+    }
+
+    private List<String> sqBridge(List<String> parts) throws IOException, InterruptedException {
+        if (parts.size() >= 2 && "process".equalsIgnoreCase(parts.get(1))) {
+            JsonNode response = client.processSqInbox();
+            return List.of(
+                response.get("accepted").asBoolean() ? "Inbox processing started" : "Inbox busy",
+                response.get("message").asText()
+            );
+        }
+        JsonNode status = client.sqBridgeStatus();
+        List<String> lines = new ArrayList<>();
+        lines.add("SQ bridge:");
+        lines.add("  sqHomeConfigured=" + status.get("sqHomeConfigured").asBoolean()
+            + "  sqcliReachable=" + status.get("sqcliReachable").asBoolean());
+        lines.add("  pending=" + status.get("inboxPendingCount").asInt()
+            + "  processing=" + status.get("inboxProcessing").asBoolean());
+        if (status.hasNonNull("lastProbeAt")) {
+            lines.add("  lastProbeAt=" + status.get("lastProbeAt").asText());
+        }
+        if (status.has("lastInboxRun")) {
+            JsonNode run = status.get("lastInboxRun");
+            lines.add("  lastInboxRun status=" + run.get("status").asText()
+                + " processed=" + run.path("processed").asInt(0)
+                + " passed=" + run.path("passed").asInt(0)
+                + " failed=" + run.path("failed").asInt(0)
+                + " dlq=" + run.path("dlq").asInt(0));
+        }
+        return lines;
     }
 
     private List<String> kill(List<String> parts) throws IOException, InterruptedException {

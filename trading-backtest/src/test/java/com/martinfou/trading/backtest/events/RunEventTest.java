@@ -106,6 +106,15 @@ class RunEventTest {
         assertEquals(RunEventType.HEARTBEAT, heartbeat.type());
         assertEquals("BAR_LOOP", heartbeat.payload().get("source"));
         assertEquals(Instant.parse("2024-01-01T00:00:00Z"), heartbeat.timestamp());
+
+        RunEvent sqExport = RunEvent.sqExportReceived(
+            "strategy.xml",
+            "passed",
+            "strategy-1",
+            Instant.parse("2024-01-02T00:00:00Z"));
+        assertEquals(RunEventType.SQ_EXPORT_RECEIVED, sqExport.type());
+        RunEvent parsedSq = RunEventJson.fromJsonLine(RunEventJson.toJsonLine(sqExport));
+        assertEquals("passed", parsedSq.payload().get("disposition"));
     }
 
     private static List<Bar> sampleBars(String symbol, int count) {

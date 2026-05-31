@@ -25,6 +25,7 @@ public final class ControlPlaneServer implements AutoCloseable {
     private final PromoteService promoteService;
     private final KillSwitchService killSwitchService;
     private final ControlSummaryService summaryService;
+    private final SqBridgeService sqBridgeService;
     private final Javalin app;
 
     public ControlPlaneServer(
@@ -35,7 +36,9 @@ public final class ControlPlaneServer implements AutoCloseable {
         int port
     ) {
         this(runManager, eventHub, promoteService, killSwitchService,
-            new ControlSummaryService(runManager, promoteService.deploymentStore()), port);
+            new ControlSummaryService(runManager, promoteService.deploymentStore()),
+            new SqBridgeService(runManager.eventStore()),
+            port);
     }
 
     ControlPlaneServer(
@@ -44,6 +47,7 @@ public final class ControlPlaneServer implements AutoCloseable {
         PromoteService promoteService,
         KillSwitchService killSwitchService,
         ControlSummaryService summaryService,
+        SqBridgeService sqBridgeService,
         int port
     ) {
         if (runManager == null) {
@@ -61,13 +65,44 @@ public final class ControlPlaneServer implements AutoCloseable {
         if (summaryService == null) {
             throw new IllegalArgumentException("summaryService must not be null");
         }
+        if (sqBridgeService == null) {
+            throw new IllegalArgumentException("sqBridgeService must not be null");
+        }
         this.runManager = runManager;
         this.eventHub = eventHub;
         this.promoteService = promoteService;
         this.killSwitchService = killSwitchService;
         this.summaryService = summaryService;
-        this.app = createApp(runManager, eventHub, promoteService, killSwitchService, summaryService);
+        this.sqBridgeService = sqBridgeService;
+        this.app = createApp(runManager, eventHub, promoteService, killSwitchService, summaryService, sqBridgeService);
         app.start(port);
+    }
+
+    /** Package-private for tests that inject a custom {@link ControlSummaryService}. */
+    ControlPlaneServer(
+        RunManager runManager,
+        RunEventHub eventHub,
+        PromoteService promoteService,
+        KillSwitchService killSwitchService,
+        ControlSummaryService summaryService,
+        int port
+    ) {
+        this(runManager, eventHub, promoteService, killSwitchService, summaryService,
+            new SqBridgeService(runManager.eventStore()), port);
+    }
+
+    /** Package-private for tests that inject a custom {@link SqBridgeService}. */
+    ControlPlaneServer(
+        RunManager runManager,
+        RunEventHub eventHub,
+        PromoteService promoteService,
+        KillSwitchService killSwitchService,
+        int port,
+        SqBridgeService sqBridgeService
+    ) {
+        this(runManager, eventHub, promoteService, killSwitchService,
+            new ControlSummaryService(runManager, promoteService.deploymentStore()),
+            sqBridgeService, port);
     }
 
     public int port() {
@@ -77,6 +112,7 @@ public final class ControlPlaneServer implements AutoCloseable {
     @Override
     public void close() {
         app.stop();
+        sqBridgeService.close();
     }
 
     private static Javalin createApp(
@@ -84,7 +120,8 @@ public final class ControlPlaneServer implements AutoCloseable {
         RunEventHub eventHub,
         PromoteService promoteService,
         KillSwitchService killSwitchService,
-        ControlSummaryService summaryService
+        ControlSummaryService summaryService,
+        SqBridgeService sqBridgeService
     ) {
         return Javalin.create(config -> {
             config.showJavalinBanner = false;
@@ -93,6 +130,18 @@ public final class ControlPlaneServer implements AutoCloseable {
             .get("/api/health", ctx -> ctx.json(Map.of(
                 "status", "ok",
                 "version", VERSION)))
+            .get("/api/sq-bridge/status", ctx -> ctx.json(sqBridgeService.status()))
+            .post("/api/sq-bridge/process-inbox", ctx -> {
+                SqBridgeService.ProcessInboxResponse response = sqBridgeService.processInboxAsync();
+                if (response.accepted()) {
+                    ctx.status(HttpStatus.ACCEPTED);
+                } else {
+                    ctx.status(HttpStatus.CONFLICT);
+                }
+                ctx.json(Map.of(
+                    "accepted", response.accepted(),
+                    "message", response.message()));
+            })
             .get("/control/summary", ctx -> ctx.json(summaryService.buildSummary()))
             .get("/api/control/summary", ctx -> ctx.json(summaryService.buildSummary()))
             .get("/api/broker-accounts", ctx -> ctx.json(Map.of(

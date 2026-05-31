@@ -17,6 +17,8 @@ This file applies to the entire repository. Nested `AGENTS.md` files in subdirec
 | Data models, Strategy API, XML shape    | `docs/specs.md`                                            |
 | Strategy module placement & order queue | `docs/strategy-home.md`                                    |
 | Shared indicators (SMA, EMA, RSI, ATR)  | `com.martinfou.trading.core.indicators.Indicators`         |
+| StrategyQuant XML format & parser map   | `docs/sq-xml-format.md`                                    |
+| Contributor onboarding (human, FR)      | `docs/contributing.md`                                     |
 | Sprint priorities                       | `docs/sprint-plan.md`                                      |
 | JForex → Java mapping                   | `docs/conversion-guide.md`                                 |
 | Architecture overview                   | `docs/architecture.md`                                     |
@@ -36,35 +38,45 @@ This file applies to the entire repository. Nested `AGENTS.md` files in subdirec
 
 ## Module layout
 
-Respect the dependency graph (acyclic; `trading-core` has no internal trading deps):
+Respect the dependency graph (acyclic; `trading-core` has no internal trading deps). **Canonical diagram** (also in `docs/architecture.md`, `_bmad-output/project-context.md`):
 
+```mermaid
+flowchart BT
+  CORE[["trading-core<br/>domain, indicators, golden baseline"]]
+  BT_MOD["trading-backtest"] --> CORE
+  DATA["trading-data"] --> CORE
+  PARSER["trading-parser"] --> CORE
+  BROKER["trading-broker"] --> CORE
+  STRAT["trading-strategies"] --> CORE
+  STRAT --> DATA
+  GEN["trading-genetics"] --> CORE
+  GEN --> BT_MOD
+  EX["trading-examples"] --> CORE
+  EX --> BT_MOD
+  EX --> STRAT
+  EX --> DATA
+  RT["trading-runtime"] --> BT_MOD
+  RT --> STRAT
+  RT --> DATA
+  RT --> BROKER
+  TUI["trading-tui<br/>HTTP client only"]
 ```
-trading-core          ← domain, indicators, golden baseline
-trading-backtest      → trading-core
-trading-data          → trading-core
-trading-parser        → trading-core
-trading-broker        → trading-core
-trading-strategies    → trading-core, trading-data
-trading-genetics      → trading-core, trading-backtest
-trading-examples      → trading-core, trading-backtest, trading-strategies, trading-data
-trading-runtime       → trading-backtest, trading-strategies, trading-data, trading-broker
-trading-tui           → (HTTP client; Jackson + JLine3 only)
-```
+
+**Diagram policy:** use Mermaid for flows, dependencies, and topology in `docs/` — not ASCII art trees or box diagrams.
 
 
-|| Module               | Purpose                                                                          |
-|| -------------------- | -------------------------------------------------------------------------------- |
-|| `trading-core`       | `Bar`, `Order`, `Strategy`, `DataLoader`, `Indicators`, `GoldenBacktestBaseline` |
-|| `trading-backtest`   | `BacktestEngine`, `RunContext`, `RunEvent`, reports                              |
-|| `trading-data`       | OANDA client, `HistoricalDataLoader`, economic calendar                          |
-|| `trading-broker`     | OANDA / IBKR broker connectors                                                   |
-|| `trading-strategies` | Prop, sqimported, generated strategies; `StrategyCatalog`                        |
-|| `trading-runtime`    | Control plane HTTP/WS, event store, promote gates, run lifecycle                 |
-|| `trading-tui`        | JLine3 terminal client for control plane                                         |
-|| `trading-parser`     | StrategyQuant XML → Java (Epic 2)                                                |
-|| `trading-examples`   | `RunBacktest` CLI, golden tests                                                  |
-|| `trading-genetics`   | Genetic optimization (offline)                                                   |
-|| `desktop/`           | Electron + Vue 3 GUI — runs backtests, charts, compare. NOT in Maven reactor     |
+| Module               | Purpose                                                                          |
+| -------------------- | -------------------------------------------------------------------------------- |
+| `trading-core`       | `Bar`, `Order`, `Strategy`, `DataLoader`, `Indicators`, `GoldenBacktestBaseline` |
+| `trading-backtest`   | `BacktestEngine`, `RunContext`, `RunEvent`, reports                              |
+| `trading-data`       | OANDA client, `HistoricalDataLoader`, economic calendar                          |
+| `trading-broker`     | OANDA / IBKR broker connectors                                                   |
+| `trading-strategies` | Prop, sqimported, generated strategies; `StrategyCatalog`                        |
+| `trading-runtime`    | Control plane HTTP/WS, event store, promote gates, run lifecycle                 |
+| `trading-tui`        | JLine3 terminal client for control plane                                         |
+| `trading-parser`     | SQ XML parse, indicators, conditions, actions; codegen (2-9) pending             |
+| `trading-examples`   | `RunBacktest` CLI, golden tests                                                  |
+| `trading-genetics`   | Genetic optimization (offline)                                                   |
 
 
 ## Build and test
@@ -78,6 +90,29 @@ mvn test
 
 # Single module
 mvn test -pl trading-data
+mvn test -pl trading-parser
+
+# SQ hot-folder inbox (Epic 21): process pending/*.xml → passed/ or failed/
+mvn exec:java -pl trading-parser \
+  -Dexec.mainClass=com.martinfou.trading.parser.bridge.SqInboxProcessor \
+  -Dexec.args="--bars 500"
+
+# StrategyQuant sqcli wrapper (Epic 21, requires SQ_HOME)
+mvn exec:java -pl trading-parser \
+  -Dexec.mainClass=com.martinfou.trading.parser.bridge.SqCliRunner \
+  -Dexec.args="--dry-run -- -symbol action=list"
+
+# SQ named jobs + mutex (Epic 21)
+mvn exec:java -pl trading-parser \
+  -Dexec.mainClass=com.martinfou.trading.parser.bridge.SqJobRunner \
+  -Dexec.args="--list"
+
+# SQ nightly pipeline: sqcli jobs + optional export import + inbox (Epic 21)
+./scripts/sq-nightly.sh --dry-run --skip-inbox
+
+# SQ bridge status + inbox via control plane (Epic 21, requires trading-runtime)
+curl -s http://localhost:8080/api/sq-bridge/status
+# TUI: /sq  or  /inbox process
 
 # List all strategies (prop, sqimported, generated, examples)
 mvn exec:java -pl trading-examples \
@@ -184,7 +219,9 @@ Do not put broker or API code in `trading-core`. Do not implement the parser in 
 
 ## Active sprint
 
-**Epic 12 — Platform consolidation** is complete (stories 12-1 … 12-11). **Epic 13 — Platform runtime** is complete (control plane, TUI, dashboard, promote gates).
+**Epic 12 — Platform consolidation** and **Epic 13 — Platform runtime** are complete (unified backtest CLI, control plane HTTP/WS on port **8080**, TUI, promote gates, event store).
+
+**Active work — Epic 21 (SQ CLI bridge):** hot folder + manifest (`trading-parser/bridge`). Epic 2 parser **2-1…2-10** complete; see `docs/sq-xml-format.md` §6.
 
 **Desktop GUI** — all 8 epics done (endpoints → scaffold → API → dashboard → catalog → charts → compare → packaging).
 **Desktop cross-platform CI** — done (Linux/macOS/Windows matrix build).
@@ -193,4 +230,6 @@ Do not put broker or API code in `trading-core`. Do not implement the parser in 
 Next: Any epic from the main backlog (epics 3-11, 14, 18, 20).
 
 Track implementation: `_bmad-output/implementation-artifacts/sprint-status.yaml`  
-Vision roadmap: `docs/sprint-plan.md` · Architecture: `docs/architecture.md`
+Vision roadmap: `docs/sprint-plan.md` · Architecture: `docs/architecture.md` · Human onboarding: `docs/contributing.md`
+
+**Doc maintenance:** After significant parser/runtime merges, update `_bmad-output/project-context.md` (agents) and the relevant `docs/*.md` (humans). Do not duplicate the module dependency graph — keep it only in this file.

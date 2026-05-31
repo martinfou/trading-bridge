@@ -3,8 +3,10 @@ package com.martinfou.trading.runtime;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.net.URI;
+import java.nio.file.Path;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -62,6 +64,89 @@ class ControlPlaneServerTest {
         assertEquals(200, response.statusCode());
         assertTrue(response.body().contains("\"status\":\"ok\""));
         assertTrue(response.body().contains(ControlPlaneServer.VERSION));
+    }
+
+    @Test
+    void sqBridgeStatus_returns200WhenUnconfigured() throws Exception {
+        HttpResponse<String> response = get("/api/sq-bridge/status");
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("sqHomeConfigured"));
+        assertTrue(response.body().contains("inboxPendingCount"));
+    }
+
+    @Test
+    void sqBridgeProcessInbox_returnsAccepted(@TempDir Path repo) throws Exception {
+        server.close();
+        java.nio.file.Files.createDirectories(
+            com.martinfou.trading.parser.bridge.SqInboxPaths.pending(repo));
+        java.nio.file.Files.createDirectories(
+            com.martinfou.trading.parser.bridge.SqInboxPaths.passed(repo));
+        java.nio.file.Files.createDirectories(
+            com.martinfou.trading.parser.bridge.SqInboxPaths.failed(repo));
+        java.nio.file.Files.createDirectories(
+            com.martinfou.trading.parser.bridge.SqInboxPaths.dlq(repo));
+        SqBridgeService bridge = new SqBridgeService(stores.eventStore(), repo);
+        server = new ControlPlaneServer(runManager, stores.hub(), promoteService, killSwitchService, 0, bridge);
+        HttpResponse<String> response = post("/api/sq-bridge/process-inbox", "{}");
+        assertEquals(202, response.statusCode());
+        assertTrue(response.body().contains("\"accepted\":true"));
+        bridge.close();
+    }
+
+    @Test
+    void sqBridgeProcessInbox_returnsConflictWhenBusy(@TempDir Path repo) throws Exception {
+        server.close();
+        java.nio.file.Files.createDirectories(
+            com.martinfou.trading.parser.bridge.SqInboxPaths.pending(repo));
+        java.util.concurrent.atomic.AtomicReference<Runnable> heldTask = new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.ExecutorService holdingExecutor = new java.util.concurrent.AbstractExecutorService() {
+            @Override
+            public void execute(Runnable command) {
+                heldTask.set(command);
+            }
+
+            @Override
+            public void shutdown() {}
+
+            @Override
+            public java.util.List<Runnable> shutdownNow() {
+                return java.util.List.of();
+            }
+
+            @Override
+            public boolean isShutdown() {
+                return false;
+            }
+
+            @Override
+            public boolean isTerminated() {
+                return false;
+            }
+
+            @Override
+            public boolean awaitTermination(long timeout, java.util.concurrent.TimeUnit unit) {
+                return true;
+            }
+        };
+        SqBridgeService bridge = new SqBridgeService(
+            stores.eventStore(),
+            repo,
+            java.time.Clock.systemUTC(),
+            holdingExecutor,
+            new com.martinfou.trading.parser.bridge.SqInboxProcessor(),
+            new com.martinfou.trading.parser.bridge.SqCliRunner()
+        );
+        assertTrue(bridge.processInboxAsync().accepted());
+        server = new ControlPlaneServer(runManager, stores.hub(), promoteService, killSwitchService, 0, bridge);
+        HttpResponse<String> response = post("/api/sq-bridge/process-inbox", "{}");
+        assertEquals(409, response.statusCode());
+        assertTrue(response.body().contains("\"accepted\":false"));
+        Runnable pending = heldTask.get();
+        if (pending != null) {
+            pending.run();
+        }
+        bridge.close();
+        holdingExecutor.shutdown();
     }
 
     @Test
