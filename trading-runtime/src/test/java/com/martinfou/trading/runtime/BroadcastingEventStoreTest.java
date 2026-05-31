@@ -12,8 +12,24 @@ import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BroadcastingEventStoreTest {
+
+    @Test
+    void persistBeforeBroadcast_subscriberSeesStoredEvent() {
+        RunEventHub hub = new RunEventHub();
+        TrackingStore tracking = new TrackingStore(EventStores.inMemory());
+
+        hub.subscribe("run-a", json ->
+            assertTrue(tracking.persistedBeforeBroadcast, "event must be persisted before broadcast"));
+
+        try (EventStore store = new BroadcastingEventStore(tracking, hub)) {
+            store.append("run-a", sampleEvent(RunEventType.RUN_STARTED));
+        }
+
+        assertTrue(tracking.persistedBeforeBroadcast);
+    }
 
     @Test
     void append_broadcastsToHub() {
@@ -40,5 +56,46 @@ class BroadcastingEventStoreTest {
             "EUR_USD",
             RunMode.BACKTEST.name(),
             Map.of());
+    }
+
+    private static final class TrackingStore implements EventStore {
+        private final EventStore delegate;
+        private boolean persistedBeforeBroadcast;
+
+        TrackingStore(EventStore delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public long append(String runId, RunEvent event) {
+            long seq = delegate.append(runId, event);
+            persistedBeforeBroadcast = delegate.count(runId) > 0;
+            return seq;
+        }
+
+        @Override
+        public List<RunEvent> query(String runId, long afterSequence, int limit) {
+            return delegate.query(runId, afterSequence, limit);
+        }
+
+        @Override
+        public long count(String runId) {
+            return delegate.count(runId);
+        }
+
+        @Override
+        public List<RunEvent> replayAll(String runId) {
+            return delegate.replayAll(runId);
+        }
+
+        @Override
+        public List<StoredRunEvent> queryWithSequence(String runId, long afterSequence, int limit) {
+            return delegate.queryWithSequence(runId, afterSequence, limit);
+        }
+
+        @Override
+        public void close() {
+            delegate.close();
+        }
     }
 }

@@ -1,0 +1,7 @@
+{
+  "enabled": false,
+  "holdoutPct": 0.20,
+  "minHoldoutBars": 50,
+  "maxDrawdownPct": 20.0,
+  "minReturnPct": -30.0
+}

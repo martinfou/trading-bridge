@@ -208,5 +208,6 @@ trading-examples        ← RunBacktest CLI, catalog wiring
 ## 10. Références
 
 - Brainstorming : `_bmad-output/brainstorming/brainstorming-session-2026-05-23-1800.md`
+- **Plateforme distribuée (ADR-13-07 à ADR-13-14) :** `_bmad-output/planning-artifacts/adr-13-distributed-platform.md`
 - Epic 12 pipeline : stories 12.3–12.6
 - Code review 12.3–12.6 : `_bmad-output/implementation-artifacts/deferred-work.md`

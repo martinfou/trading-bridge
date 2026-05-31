@@ -4,6 +4,7 @@ import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.data.HistoricalDataLoader;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -22,6 +23,7 @@ public final class BarSourceResolver {
         }
         return switch (source.type().toLowerCase()) {
             case "sample" -> sampleBars(symbol, source.count() != null ? source.count() : 500);
+            case "ci" -> loadCiSubset(symbol);
             case "year" -> {
                 if (source.year() == null) {
                     throw new IllegalArgumentException("barsSource.year is required for type=year");
@@ -57,5 +59,14 @@ public final class BarSourceResolver {
             time = time.plusSeconds(3600);
         }
         return bars;
+    }
+
+    private static List<Bar> loadCiSubset(String symbol) throws IOException {
+        Path repoRoot = EventStoreConfig.findRepoRoot();
+        if (repoRoot == null) {
+            throw new IllegalStateException("CI barsSource requires repo root (data/ci subset)");
+        }
+        Path ciFile = repoRoot.resolve("data/ci/EUR_USD_H1_subset.csv");
+        return HistoricalDataLoader.loadPath(ciFile, symbol);
     }
 }

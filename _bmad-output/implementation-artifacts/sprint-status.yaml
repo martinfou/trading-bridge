@@ -39,7 +39,7 @@
 # Epic 12 added 2026-05-23; snapshot commit ee871f5
 
 generated: "2026-05-23"
-last_updated: "2026-05-24"
+last_updated: "2026-05-30T12:00:00Z"
 project: trading-bridge
 project_key: NOKEY
 tracking_system: file-system
@@ -111,15 +111,51 @@ development_status:
   12-7-strategy-contract-home-policy: backlog
   12-8-shared-indicators-trading-core: backlog
   12-9-architecture-docs-agents-alignment: backlog
+  12-10-backtest-engine-trust: done
+  12-11-platform-test-strategies: review
   epic-12-retrospective: optional
 
-  epic-13: backlog
+  epic-13: in-progress
   13-1-decouple-runcontext-catalog-factory: done
   13-2-event-store-sqlite: done
   13-3-control-plane-http: done
   13-4-websocket-run-events: done
-  13-5-promote-gates-deployment-store: backlog
+  13-5-promote-gates-deployment-store: done
+  13-9-run-lifecycle-interface: review
+  13-9-commission-slippage-backtest: review
+  13-8-mini-dataset-ci-golden: review
   13-6-tui-v1-jline3: backlog
   13-7-laravel-dashboard-v1: backlog
   13-8-heartbeat-stale-detection: backlog
   epic-13-retrospective: optional
+
+  epic-15: done
+  15-5-promote-gates-numeric-thresholds: done
+  15-6-execution-label-sm2: done
+  15-7-html-due-diligence-report: done
+  15-8-prop-shop-runbook: done
+  epic-15-retrospective: optional
+
+  epic-16: done
+  16-2-broker-interface-skeleton: done
+  16-3-paper-oanda-demo: done
+  16-4-paper-30-day-gate: done
+  16-5-live-worker-execution: done
+  16-6-kill-switch-operator-action: done
+  16-7-broker-journal-reconciliation: done
+  16-8-pre-trade-risk-engine: done
+  16-9-multi-account-broker: done
+  16-10-ibkr-broker-connector: done
+  epic-16-retrospective: optional
+
+  epic-17: done
+  17-9-control-summary-dashboard: done
+  17-10-daily-drawdown-guard: done
+  17-11-execution-label-ui: done
+  17-12-drift-post-broker: done
+  epic-17-retrospective: optional
+
+  epic-19: done
+  19-4-oos-holdout-gate: done
+  19-5-execution-stress-gate: done
+  epic-19-retrospective: optional

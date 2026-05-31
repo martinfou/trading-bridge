@@ -1,0 +1,10 @@
+{
+  "minObservationDays": 14,
+  "minTradesBeforeSignal": 20,
+  "rollingWindowDays": 30,
+  "drawdownReviewMultiplier": 1.5,
+  "drawdownPauseMultiplier": 2.0,
+  "winRateReviewDeltaPts": 15.0,
+  "winRatePauseDeltaPts": 25.0,
+  "tradeVolumeReviewRatio": 0.5
+}

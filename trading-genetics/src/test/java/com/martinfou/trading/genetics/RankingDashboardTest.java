@@ -406,9 +406,10 @@ class RankingDashboardTest {
             0.0,                         // totalCommission
             0.0,                         // totalSlippage
             List.of(initialCapital, (initialCapital + finalEquity) / 2, finalEquity), // equityCurve
-            List.of(),                   // trades
+            List.<com.martinfou.trading.core.Trade>of(), // trades
             Instant.parse("2024-01-01T00:00:00Z"), // periodStart
-            Instant.parse("2024-12-31T00:00:00Z")  // periodEnd
+            Instant.parse("2024-12-31T00:00:00Z"), // periodEnd
+            252.0                                   // periodsPerYear
         );
     }
 

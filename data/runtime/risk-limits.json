@@ -1,0 +1,5 @@
+{
+  "maxPositionSize": 1000000,
+  "maxOpenExposure": 2000000,
+  "maxDailyDrawdownPct": 5.0
+}

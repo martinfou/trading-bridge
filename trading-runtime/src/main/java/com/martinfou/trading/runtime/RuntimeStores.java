@@ -1,14 +1,17 @@
 package com.martinfou.trading.runtime;
 
 /**
- * Wires {@link EventStore} with optional live {@link RunEventHub} broadcast.
+ * Wires runtime persistence: events, broadcast hub, and deployments.
  */
 public final class RuntimeStores {
 
-    public record Bundle(EventStore eventStore, RunEventHub hub) implements AutoCloseable {
+    public record Bundle(EventStore eventStore, RunEventHub hub, DeploymentStore deploymentStore)
+        implements AutoCloseable {
+
         @Override
         public void close() {
             eventStore.close();
+            deploymentStore.close();
         }
     }
 
@@ -17,12 +20,18 @@ public final class RuntimeStores {
     public static Bundle inMemoryWithBroadcast() {
         RunEventHub hub = new RunEventHub();
         EventStore delegate = EventStores.inMemory();
-        return new Bundle(new BroadcastingEventStore(delegate, hub), hub);
+        return new Bundle(
+            new BroadcastingEventStore(delegate, hub),
+            hub,
+            new InMemoryDeploymentStore());
     }
 
     public static Bundle sqliteWithBroadcast(EventStoreConfig config) {
         RunEventHub hub = new RunEventHub();
         EventStore delegate = EventStores.sqlite(config);
-        return new Bundle(new BroadcastingEventStore(delegate, hub), hub);
+        return new Bundle(
+            new BroadcastingEventStore(delegate, hub),
+            hub,
+            new SqliteDeploymentStore(config));
     }
 }

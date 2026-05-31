@@ -18,3 +18,9 @@
 - `**RunPropBacktest --all` + `--json`/`--paper**` — Non supporté ; suite prop reste mode humain uniquement.
 - **Tests CLI d'intégration RunBacktest** — Pas de test end-to-end exec:java ; couverture unitaire suffisante pour MVP.
 - **Validation stricte args positionnels (capital vs chemin)** — Heuristique actuelle ; amélioration TUI/control plane.
+
+## Deferred from: code review of 12-10-backtest-engine-trust (2026-05-30)
+
+- **Golden test skip sans `data/historical/` en CI** — By design (AC3 story 12.1) ; CI sans données locales skip, pas fail.
+- **`stopSlippagePct` / take-profit non couverts par contract tests** — Hors AC2 explicite ; red team gap résiduel acceptable pour MVP trust.
+- **`BASELINE_COMMIT` hash `ec6dc72` vs re-vérif 2026-05-30** — Display-only ; mettre à jour au prochain commit intentionnel de baseline.

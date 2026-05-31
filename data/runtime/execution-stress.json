@@ -1,0 +1,9 @@
+{
+  "enabled": false,
+  "slippageMultiplier": 3.0,
+  "commissionMultiplier": 2.0,
+  "defaultSlippagePct": 0.0001,
+  "defaultCommissionPerTrade": 5.0,
+  "maxDrawdownPct": 25.0,
+  "minReturnPct": -40.0
+}

@@ -3,15 +3,24 @@ package com.martinfou.trading.runtime;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.martinfou.trading.backtest.events.RunEvent;
 
 /**
  * JSON messages for WebSocket RunEvent frames ({@code sequence} + {@code event}).
  */
 final class RunEventMessages {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper().registerModule(new JavaTimeModule());
+    static final ObjectMapper MAPPER = new ObjectMapper().registerModule(new JavaTimeModule());
 
     private RunEventMessages() {}
+
+    static String toJson(RunEvent event) {
+        try {
+            return MAPPER.writeValueAsString(event);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize RunEvent", e);
+        }
+    }
 
     static String toJson(StoredRunEvent stored) {
         try {

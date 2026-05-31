@@ -21,18 +21,51 @@ public final class ControlPlaneServer implements AutoCloseable {
 
     private final RunManager runManager;
     private final RunEventHub eventHub;
+    private final PromoteService promoteService;
+    private final KillSwitchService killSwitchService;
+    private final ControlSummaryService summaryService;
     private final Javalin app;
 
-    public ControlPlaneServer(RunManager runManager, RunEventHub eventHub, int port) {
+    public ControlPlaneServer(
+        RunManager runManager,
+        RunEventHub eventHub,
+        PromoteService promoteService,
+        KillSwitchService killSwitchService,
+        int port
+    ) {
+        this(runManager, eventHub, promoteService, killSwitchService,
+            new ControlSummaryService(runManager, promoteService.deploymentStore()), port);
+    }
+
+    ControlPlaneServer(
+        RunManager runManager,
+        RunEventHub eventHub,
+        PromoteService promoteService,
+        KillSwitchService killSwitchService,
+        ControlSummaryService summaryService,
+        int port
+    ) {
         if (runManager == null) {
             throw new IllegalArgumentException("runManager must not be null");
         }
         if (eventHub == null) {
             throw new IllegalArgumentException("eventHub must not be null");
         }
+        if (promoteService == null) {
+            throw new IllegalArgumentException("promoteService must not be null");
+        }
+        if (killSwitchService == null) {
+            throw new IllegalArgumentException("killSwitchService must not be null");
+        }
+        if (summaryService == null) {
+            throw new IllegalArgumentException("summaryService must not be null");
+        }
         this.runManager = runManager;
         this.eventHub = eventHub;
-        this.app = createApp(runManager, eventHub);
+        this.promoteService = promoteService;
+        this.killSwitchService = killSwitchService;
+        this.summaryService = summaryService;
+        this.app = createApp(runManager, eventHub, promoteService, killSwitchService, summaryService);
         app.start(port);
     }
 
@@ -45,19 +78,79 @@ public final class ControlPlaneServer implements AutoCloseable {
         app.stop();
     }
 
-    private static Javalin createApp(RunManager runManager, RunEventHub eventHub) {
+    private static Javalin createApp(
+        RunManager runManager,
+        RunEventHub eventHub,
+        PromoteService promoteService,
+        KillSwitchService killSwitchService,
+        ControlSummaryService summaryService
+    ) {
         return Javalin.create(config -> config.showJavalinBanner = false)
             .get("/api/health", ctx -> ctx.json(Map.of(
                 "status", "ok",
                 "version", VERSION)))
+            .get("/control/summary", ctx -> ctx.json(summaryService.buildSummary()))
+            .get("/api/control/summary", ctx -> ctx.json(summaryService.buildSummary()))
+            .get("/api/broker-accounts", ctx -> ctx.json(Map.of(
+                "accounts", BrokerAccountRegistry.loadDefault().listMasked())))
             .get("/api/strategies", ctx -> {
-                List<Map<String, String>> items = StrategyCatalog.entries().stream()
-                    .map(e -> Map.of(
-                        "id", e.id(),
-                        "family", e.family().name(),
-                        "defaultSymbol", e.defaultSymbol()))
+                List<Map<String, Object>> items = StrategyCatalog.entries().stream()
+                    .map(e -> {
+                        Map<String, Object> item = new LinkedHashMap<>();
+                        item.put("id", e.id());
+                        item.put("family", e.family().name());
+                        item.put("defaultSymbol", e.defaultSymbol());
+                        promoteService.deploymentStore().get(e.id())
+                            .ifPresent(d -> {
+                                item.put("deployedMode", d.mode().name());
+                                item.put("executionLabel", d.executionLabel().name());
+                                item.put("executionLabelMeta", ExecutionLabelCatalog.of(d.executionLabel()).toMap());
+                                if (d.brokerAccountId() != null && !d.brokerAccountId().isBlank()) {
+                                    item.put("brokerAccountId", d.brokerAccountId());
+                                }
+                            });
+                        return item;
+                    })
                     .toList();
                 ctx.json(Map.of("strategies", items));
+            })
+            .get("/api/strategies/{id}/deployments", ctx -> {
+                String strategyId = ctx.pathParam("id");
+                if (!StrategyCatalog.contains(strategyId)) {
+                    throw new NotFoundException("Unknown strategy: " + strategyId);
+                }
+                var deployment = promoteService.deploymentStore().get(strategyId);
+                if (deployment.isEmpty()) {
+                    ctx.json(Map.of("strategyId", strategyId, "deployment", null));
+                } else {
+                    ctx.json(Map.of("strategyId", strategyId, "deployment", deployment.get().toMap()));
+                }
+            })
+            .get("/api/strategies/{id}/promote-readiness", ctx -> {
+                String strategyId = ctx.pathParam("id");
+                if (!StrategyCatalog.contains(strategyId)) {
+                    throw new NotFoundException("Unknown strategy: " + strategyId);
+                }
+                PromoteReadinessService readiness = new PromoteReadinessService(runManager, promoteService);
+                ctx.json(readiness.assess(strategyId));
+            })
+            .post("/api/strategies/{id}/promote", ctx -> {
+                String strategyId = ctx.pathParam("id");
+                PromoteService.PromoteRequest request = ctx.bodyAsClass(PromoteService.PromoteRequest.class);
+                PromoteService.PromoteResponse response = promoteService.promote(strategyId, request);
+                if (response.promoted()) {
+                    ctx.json(response);
+                } else {
+                    ctx.status(HttpStatus.UNPROCESSABLE_CONTENT);
+                    ctx.json(response);
+                }
+            })
+            .post("/api/strategies/{id}/kill", ctx -> {
+                String strategyId = ctx.pathParam("id");
+                KillSwitchService.KillRequest request = ctx.bodyAsClass(KillSwitchService.KillRequest.class);
+                KillSwitchService.KillResponse response = killSwitchService.kill(strategyId, request);
+                ctx.status(HttpStatus.ACCEPTED);
+                ctx.json(response);
             })
             .post("/api/runs", ctx -> {
                 RunManager.StartRunRequest request = ctx.bodyAsClass(RunManager.StartRunRequest.class);
@@ -72,6 +165,20 @@ public final class ControlPlaneServer implements AutoCloseable {
                 RunRecord record = runManager.getRun(runId)
                     .orElseThrow(() -> new NotFoundException("Run not found: " + runId));
                 ctx.json(toRunJson(runManager, record));
+            })
+            .get("/api/runs/{runId}/export", ctx -> {
+                String runId = ctx.pathParam("runId");
+                RunRecord record = runManager.getRun(runId)
+                    .orElseThrow(() -> new NotFoundException("Run not found: " + runId));
+                var deployment = promoteService.deploymentStore().get(record.strategyId());
+                String format = ctx.queryParam("format");
+                if (format != null && format.equalsIgnoreCase("html")) {
+                    ctx.contentType("text/html; charset=utf-8");
+                    ctx.result(DueDiligenceHtmlExporter.exportHtml(record, runManager.eventStore(), deployment));
+                } else {
+                    ctx.contentType("application/x-ndjson");
+                    ctx.result(EvidencePackExporter.exportJsonl(record, runManager.eventStore(), deployment));
+                }
             })
             .get("/api/runs/{runId}/events", ctx -> {
                 String runId = ctx.pathParam("runId");
@@ -154,12 +261,31 @@ public final class ControlPlaneServer implements AutoCloseable {
         json.put("strategyId", record.strategyId());
         json.put("symbol", record.symbol());
         json.put("mode", record.mode().name());
+        json.put("executionLabel", record.configSnapshot().containsKey("resolvedExecutionLabel")
+            ? String.valueOf(record.configSnapshot().get("resolvedExecutionLabel"))
+            : ExecutionLabel.forRunMode(record.mode()).name());
+        ExecutionLabel label = ControlSummaryService.executionLabel(record);
+        json.put("executionLabelMeta", ExecutionLabelCatalog.of(label).toMap());
         json.put("status", record.status().name());
         json.put("startedAt", record.startedAt().toString());
+        json.put("configSnapshot", record.configSnapshot());
+        json.put("configHash", record.configHash());
         record.completedAt().ifPresent(t -> json.put("completedAt", t.toString()));
         record.errorMessage().ifPresent(m -> json.put("error", m));
         record.endedPayload().ifPresent(p -> json.put("result", p));
-        json.put("eventCount", runManager.eventStore().count(record.runId()));
+        record.lastEventAt().ifPresent(t -> json.put("lastEventAt", t.toString()));
+
+        long eventCount = runManager.eventStore().count(record.runId());
+        json.put("eventCount", eventCount);
+
+        EventGapDetector.Result gaps = EventGapDetector.analyze(record.runId(), runManager.eventStore());
+        json.put("maxEventSequence", gaps.maxSequence());
+        json.put("eventLogComplete", gaps.complete());
+        if (!gaps.gaps().isEmpty()) {
+            json.put("sequenceGaps", gaps.gaps().stream()
+                .map(g -> Map.of("from", g.fromSequence(), "to", g.toSequence()))
+                .toList());
+        }
         return json;
     }
 
@@ -174,7 +300,11 @@ public final class ControlPlaneServer implements AutoCloseable {
         if (value == null || value.isBlank()) {
             return defaultValue;
         }
-        return Long.parseLong(value);
+        try {
+            return Long.parseLong(value.trim());
+        } catch (NumberFormatException e) {
+            throw new BadRequestException("Invalid numeric parameter: " + value);
+        }
     }
 
     static final class NotFoundException extends RuntimeException {

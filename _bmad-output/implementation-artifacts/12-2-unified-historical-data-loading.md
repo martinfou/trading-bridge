@@ -17,11 +17,11 @@ so that CSV, Dukascopy, and `.bars` formats resolve consistently.
 
 ## Tasks / Subtasks
 
-- [x] Task 1: Fix download script + document millis (AC: 2)
-- [x] Task 2: Enhance HistoricalDataLoader as single entry (AC: 1)
-- [x] Task 3: Wire RunBacktest and BatchStrategyRunner (AC: 1, 3)
-- [x] Task 4: Add BarStore/HistoricalDataLoader tests (AC: 4)
-- [x] Task 5: Verify build + golden test (AC: 4)
+- Task 1: Fix download script + document millis (AC: 2)
+- Task 2: Enhance HistoricalDataLoader as single entry (AC: 1)
+- Task 3: Wire RunBacktest and BatchStrategyRunner (AC: 1, 3)
+- Task 4: Add BarStore/HistoricalDataLoader tests (AC: 4)
+- Task 5: Verify build + golden test (AC: 4)
 
 ## Dev Agent Record
 
@@ -55,6 +55,6 @@ Composer
 
 ### Review Findings
 
-- [x] [Review][Patch] Fichiers tests + story non suivis — `BarStoreTest.java`, `HistoricalDataLoaderTest.java`, `12-2-unified-historical-data-loading.md` en `??`
-- [x] [Review][Defer] `.bars` existants en secondes vs script millis — lecture legacy OK, re-download documenté dans `docs/testing.md` — deferred, by design
-- [x] [Review][Defer] `BatchStrategyRunner` n'expose pas encore `SYMBOL YEAR` via `loadFromArgs` — hors scope 12.2, CLI unifiée en 12.3 — deferred
+- [Review][Patch] Fichiers tests + story non suivis — `BarStoreTest.java`, `HistoricalDataLoaderTest.java`, `12-2-unified-historical-data-loading.md` en `??`
+- [Review][Defer] `.bars` existants en secondes vs script millis — lecture legacy OK, re-download documenté dans `docs/testing.md` — deferred, by design
+- [Review][Defer] `BatchStrategyRunner` n'expose pas encore `SYMBOL YEAR` via `loadFromArgs` — hors scope 12.2, CLI unifiée en 12.3 — deferred
