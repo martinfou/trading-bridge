@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<StrategyFile Version="1.0">
+  <Strategy name="gap-ichimoku" engine="MetaTrader">
+    <MoneyManagement type="FixedSize">
+      <params>
+        <Param key="#Size#" type="double">0.1</Param>
+      </params>
+    </MoneyManagement>
+    <Rules>
+      <Events>
+        <Event key="OnBarUpdate">
+          <Rule name="Long entry" type="IfThen">
+            <If>
+              <Item key="Ichimoku" returnType="price" categoryType="indicator">
+                <Param key="#Period#" type="int">9</Param>
+              </Item>
+            </If>
+            <Then>
+              <Item key="EnterAtStop" returnType="order" categoryType="other">
+                <Param key="#Size#" type="double">0.1</Param>
+              </Item>
+            </Then>
+          </Rule>
+        </Event>
+      </Events>
+    </Rules>
+    <Variables />
+  </Strategy>
+</StrategyFile>
