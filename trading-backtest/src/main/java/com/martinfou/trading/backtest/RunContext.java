@@ -1,7 +1,6 @@
 package com.martinfou.trading.backtest;
 
 import com.martinfou.trading.backtest.events.RunEvent;
-import com.martinfou.trading.backtest.paper.PaperExecutor;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Strategy;
 
@@ -21,11 +20,16 @@ public record RunContext(
     List<Bar> bars,
     double initialCapital,
     Strategy strategy,
-    Consumer<RunEvent> eventListener
+    Consumer<RunEvent> eventListener,
+    String assignedRunId,
+    BacktestExecutionCost executionCost
 ) {
 
     public RunContext {
         bars = List.copyOf(bars);
+        if (executionCost == null) {
+            executionCost = BacktestExecutionCost.ZERO;
+        }
     }
 
     /**
@@ -64,6 +68,22 @@ public record RunContext(
         double initialCapital,
         Consumer<RunEvent> eventListener
     ) {
+        return forStrategy(null, strategyId, strategy, symbol, mode, bars, initialCapital, eventListener);
+    }
+
+    /**
+     * Control-plane run with a pre-assigned run id (events use this id consistently).
+     */
+    public static RunContext forStrategy(
+        String assignedRunId,
+        String strategyId,
+        Strategy strategy,
+        String symbol,
+        RunMode mode,
+        List<Bar> bars,
+        double initialCapital,
+        Consumer<RunEvent> eventListener
+    ) {
         return new RunContext(
             strategyId,
             symbol,
@@ -71,34 +91,72 @@ public record RunContext(
             bars,
             initialCapital,
             strategy,
-            eventListener);
+            eventListener,
+            assignedRunId,
+            BacktestExecutionCost.ZERO);
+    }
+
+    public static RunContext forStrategy(
+        String assignedRunId,
+        String strategyId,
+        Strategy strategy,
+        String symbol,
+        RunMode mode,
+        List<Bar> bars,
+        double initialCapital,
+        Consumer<RunEvent> eventListener,
+        BacktestExecutionCost executionCost
+    ) {
+        return new RunContext(
+            strategyId,
+            symbol,
+            mode,
+            bars,
+            initialCapital,
+            strategy,
+            eventListener,
+            assignedRunId,
+            executionCost);
     }
 
     /** Returns a copy wired to the given event listener. */
     public RunContext withEventListener(Consumer<RunEvent> listener) {
-        return new RunContext(strategyId, symbol, mode, bars, initialCapital, strategy, listener);
+        return new RunContext(strategyId, symbol, mode, bars, initialCapital, strategy, listener, assignedRunId, executionCost);
     }
 
     /**
      * Executes this run. {@link RunMode#BACKTEST} and {@link RunMode#PAPER} (stub) are supported.
      */
     public BacktestResult run() {
-        String runId = UUID.randomUUID().toString();
+        String runId = assignedRunId != null ? assignedRunId : UUID.randomUUID().toString();
         String eventStrategyId = strategyId != null ? strategyId : strategy.name();
-        emit(RunEvent.started(runId, eventStrategyId, symbol, mode, Map.of(
-            "barCount", bars.size(),
-            "initialCapital", initialCapital)));
+        var startedPayload = new java.util.LinkedHashMap<String, Object>();
+        startedPayload.put("barCount", bars.size());
+        startedPayload.put("initialCapital", initialCapital);
+        if (!executionCost.isZero()) {
+            startedPayload.put("executionCost", executionCost.toMap());
+        }
+        emit(RunEvent.started(runId, eventStrategyId, symbol, mode, Map.copyOf(startedPayload)));
 
         try {
             BacktestResult result = switch (mode) {
-                case BACKTEST -> new BacktestEngine(strategy, bars, initialCapital).run();
-                case PAPER -> PaperExecutor.run(strategy, bars, initialCapital);
+                case BACKTEST -> executionCost.configure(new BacktestEngine(strategy, bars, initialCapital)).run();
+                case PAPER -> executionCost.configure(new BacktestEngine(strategy, bars, initialCapital)).run();
                 case LIVE -> throw new UnsupportedOperationException(mode + " not implemented");
             };
-            emit(RunEvent.ended(runId, eventStrategyId, symbol, mode, Map.of(
-                "totalTrades", result.totalTrades(),
-                "totalReturnPct", result.totalReturnPct(),
-                "finalEquity", result.finalEquity())));
+            var endedPayload = new java.util.LinkedHashMap<String, Object>();
+            endedPayload.put("totalTrades", result.totalTrades());
+            endedPayload.put("totalReturnPct", result.totalReturnPct());
+            endedPayload.put("finalEquity", result.finalEquity());
+            if (result.totalCommission() > 0.0 || result.totalSlippage() > 0.0) {
+                endedPayload.put("totalCommission", result.totalCommission());
+                endedPayload.put("totalSlippage", result.totalSlippage());
+            }
+            endedPayload.put("maxDrawdownPct", result.maxDrawdownPct());
+            endedPayload.put("sharpeRatio", result.sharpeRatio());
+            endedPayload.put("profitFactor", result.profitFactor());
+            endedPayload.put("winRatePct", result.winRatePct());
+            emit(RunEvent.ended(runId, eventStrategyId, symbol, mode, Map.copyOf(endedPayload)));
             return result;
         } catch (RuntimeException e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();

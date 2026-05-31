@@ -1,0 +1,8 @@
+{
+  "minTrades": 1,
+  "maxDrawdownPct": 15.0,
+  "minReturnPct": -50.0,
+  "goldenReturnTolerancePct": 1.0,
+  "paperDaysBeforeLive": 30,
+  "validationModuleEnabled": false
+}

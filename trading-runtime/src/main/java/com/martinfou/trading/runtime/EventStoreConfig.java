@@ -9,9 +9,6 @@ import java.nio.file.Path;
  */
 public final class EventStoreConfig {
 
-    private static final Path HOME_FALLBACK = Path.of(
-        System.getProperty("user.home"), ".trading-bridge", "events.db");
-
     private final Path dbPath;
 
     private EventStoreConfig(Path dbPath) {
@@ -19,11 +16,12 @@ public final class EventStoreConfig {
     }
 
     public static EventStoreConfig defaults() {
-        Path repoRoot = findRepoRoot();
-        if (repoRoot != null) {
-            return withDbPath(repoRoot.resolve("data/runtime/events.db"));
-        }
-        return withDbPath(HOME_FALLBACK);
+        return withDbPath(RuntimeDataPaths.defaultEventStorePath());
+    }
+
+    /** Same as {@link #defaults()} but allows tests to override env via system properties if needed. */
+    public static EventStoreConfig fromRuntimeEnvironment() {
+        return defaults();
     }
 
     public static EventStoreConfig withDbPath(Path dbPath) {

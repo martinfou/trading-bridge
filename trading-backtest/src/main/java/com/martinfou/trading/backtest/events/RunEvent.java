@@ -74,4 +74,48 @@ public record RunEvent(
             mode.name(),
             Map.of("message", message));
     }
+
+    public static RunEvent operatorAction(
+        String runId,
+        String strategyId,
+        String symbol,
+        RunMode mode,
+        String action,
+        String actor,
+        String reason,
+        Instant timestamp
+    ) {
+        var payload = new java.util.LinkedHashMap<String, Object>();
+        payload.put("action", action);
+        payload.put("actor", actor);
+        payload.put("reason", reason);
+        return new RunEvent(
+            SCHEMA_VERSION,
+            RunEventType.OPERATOR_ACTION,
+            timestamp,
+            runId,
+            strategyId,
+            symbol,
+            mode.name(),
+            Map.copyOf(payload));
+    }
+
+    public static RunEvent reconciliationAlert(
+        String runId,
+        String strategyId,
+        String symbol,
+        RunMode mode,
+        Map<String, Object> payload,
+        Instant timestamp
+    ) {
+        return new RunEvent(
+            SCHEMA_VERSION,
+            RunEventType.RECONCILIATION_ALERT,
+            timestamp,
+            runId,
+            strategyId,
+            symbol,
+            mode.name(),
+            Map.copyOf(payload));
+    }
 }

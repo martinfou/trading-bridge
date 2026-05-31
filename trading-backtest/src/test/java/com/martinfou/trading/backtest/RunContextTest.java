@@ -1,5 +1,6 @@
 package com.martinfou.trading.backtest;
 
+import com.martinfou.trading.backtest.events.RunEvent;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Strategy;
 
@@ -8,8 +9,10 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RunContextTest {
 
@@ -33,6 +36,35 @@ class RunContextTest {
         assertEquals(direct.totalTrades(), viaContext.totalTrades());
         assertEquals(direct.totalPnl(), viaContext.totalPnl(), 0.01);
         assertEquals(direct.totalReturnPct(), viaContext.totalReturnPct(), 0.0001);
+    }
+
+    @Test
+    void executionCost_reducesPnlAndEmitsCostPayload() {
+        var bars = TestBars.ohlc(new double[][] {
+            {1.1000, 1.1010, 1.0990, 1.1005},
+            {1.1010, 1.1020, 1.1000, 1.1015}
+        });
+        BacktestResult noCost = RunContext.forStrategy(
+            TestStrategies.buyOnce(), "EUR_USD", RunMode.BACKTEST, bars, CAPITAL).run();
+
+        var cost = BacktestExecutionCost.ofCommissionAndSlippage(5.0, 0.0001);
+        List<RunEvent> events = new CopyOnWriteArrayList<>();
+        BacktestResult withCost = RunContext.forStrategy(
+            null,
+            null,
+            TestStrategies.buyOnce(),
+            "EUR_USD",
+            RunMode.BACKTEST,
+            bars,
+            CAPITAL,
+            events::add,
+            cost).run();
+
+        assertTrue(withCost.totalPnl() < noCost.totalPnl());
+        assertTrue(withCost.totalCommission() > 0 || withCost.totalSlippage() > 0);
+        assertTrue(events.getFirst().payload().containsKey("executionCost"));
+        assertTrue(events.getLast().payload().containsKey("totalCommission"));
+        assertTrue(events.getLast().payload().containsKey("totalSlippage"));
     }
 
     @Test

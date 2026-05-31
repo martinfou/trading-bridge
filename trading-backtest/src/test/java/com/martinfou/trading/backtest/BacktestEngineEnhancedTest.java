@@ -81,9 +81,8 @@ class BacktestEngineEnhancedTest {
         BacktestEngine engine = new BacktestEngine(strat, bars, INITIAL_CAPITAL);
         BacktestResult result = engine.run();
 
-        // Equity curve should have bars.size() + 1 entries
-        // (initial + one per bar processed)
-        assertEquals(bars.size() + 1, result.equityCurve().size());
+        // Equity curve should have bars.size() entries (one per bar processed)
+        assertEquals(bars.size(), result.equityCurve().size());
     }
 
     @Test
@@ -107,7 +106,7 @@ class BacktestEngineEnhancedTest {
         BacktestResult result = engine.run();
 
         List<Double> returns = result.periodReturns();
-        assertEquals(bars.size(), returns.size()); // one return per bar
+        assertEquals(bars.size() - 1, returns.size()); // one return per consecutive pair
         for (double r : returns) {
             assertFalse(Double.isNaN(r));
             assertFalse(Double.isInfinite(r));

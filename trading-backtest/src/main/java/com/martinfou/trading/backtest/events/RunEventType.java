@@ -9,5 +9,8 @@ public enum RunEventType {
     BAR,
     ORDER_SUBMITTED,
     FILL,
-    ERROR
+    REJECT,
+    ERROR,
+    OPERATOR_ACTION,
+    RECONCILIATION_ALERT
 }

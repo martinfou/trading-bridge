@@ -84,7 +84,7 @@ class SqliteEventStoreTest {
         }
         EventStoreConfig config = EventStoreConfig.defaults();
         assertEquals(
-            repoRoot.resolve("data/runtime/events.db").toAbsolutePath().normalize(),
+            RuntimeDataPaths.defaultEventStorePath(),
             config.dbPath());
     }
 

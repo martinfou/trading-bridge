@@ -2,7 +2,7 @@
 
 Status: done
 
-<!-- Validation optional: bmad-create-story validate before bmad-dev-story -->
+
 
 ## Story
 
@@ -12,7 +12,7 @@ so that Epic 12 consolidation changes can be validated without regressions.
 
 ## Acceptance Criteria
 
-1. **AC1 — Golden test:** Integration test loads EUR_USD H1 2012 via `HistoricalDataLoader`, runs `LondonOpenRangeBreakoutStrategy`, and asserts bar count (~8760), trade count (~63), and total PnL within ±1% of recorded baseline.
+1. **AC1 — Golden test:** Integration test loads EUR_USD H1 2012 via `HistoricalDataLoader`, runs `LondonOpenRangeBreakoutStrategy`, and asserts bar count (~~8760), trade count (~~63), and total PnL within ±1% of recorded baseline.
 2. **AC2 — Build:** `mvn clean install` succeeds from repo root on current JDK/Maven versions.
 3. **AC3 — Data prerequisite:** Test skips gracefully with clear message if `data/historical/` files missing (CI may use fixture subset or `@EnabledIf`).
 4. **AC4 — Baseline doc:** Baseline values documented in test class or `docs/testing.md` with commit hash when captured.
@@ -20,17 +20,17 @@ so that Epic 12 consolidation changes can be validated without regressions.
 
 ## Tasks / Subtasks
 
-- [x] Task 1: Capture baseline (AC: 1, 4)
-  - [x] Run prop backtest on EUR_USD 2012; record bars, trades, PnL, max drawdown
-  - [x] Store constants in test or golden JSON resource
-- [x] Task 2: Add integration test (AC: 1, 3)
-  - [x] Module: `trading-backtest` or `trading-examples` (prefer backtest if no circular deps)
-  - [x] Use `HistoricalDataLoader.load(symbol, H1, year)`
-  - [x] Assert metrics within tolerance
-- [x] Task 3: Verify full reactor build (AC: 2)
-  - [x] Run `mvn clean install`; fix any failures unrelated to consolidation scope
-- [x] Task 4: Document clean requirement (AC: 5)
-  - [x] One paragraph in AGENTS.md troubleshooting section
+- Task 1: Capture baseline (AC: 1, 4)
+  - Run prop backtest on EUR_USD 2012; record bars, trades, PnL, max drawdown
+  - Store constants in test or golden JSON resource
+- Task 2: Add integration test (AC: 1, 3)
+  - Module: `trading-backtest` or `trading-examples` (prefer backtest if no circular deps)
+  - Use `HistoricalDataLoader.load(symbol, H1, year)`
+  - Assert metrics within tolerance
+- Task 3: Verify full reactor build (AC: 2)
+  - Run `mvn clean install`; fix any failures unrelated to consolidation scope
+- Task 4: Document clean requirement (AC: 5)
+  - One paragraph in AGENTS.md troubleshooting section
 
 ## Dev Notes
 
@@ -92,7 +92,8 @@ Composer
 
 ### Review Findings
 
-- [x] [Review][Patch] Fichiers clés non suivis par git — `GoldenBacktestTest.java` et `docs/testing.md` sont `??` ; risque de commit incomplet [`trading-backtest/.../GoldenBacktestTest.java`, `docs/testing.md`]
-- [x] [Review][Patch] AC1 PnL absolu non vérifié — le test asserte `totalReturnPct` mais pas `totalPnl` (~$16,439.51) [`GoldenBacktestTest.java:57`]
-- [x] [Review][Defer] Tests JForex skip permanents sans fixture externe — pré-existant, `assumeTrue` acceptable pour build portable [`JForexConverterTest.java:141`] — deferred, pre-existing
-- [x] [Review][Defer] Golden test invisible en CI sans `data/historical/` — comportement voulu (AC3), documenté dans `docs/testing.md` — deferred, by design
+- [Review][Patch] Fichiers clés non suivis par git — `GoldenBacktestTest.java` et `docs/testing.md` sont `??` ; risque de commit incomplet [`trading-backtest/.../GoldenBacktestTest.java`, `docs/testing.md`]
+- [Review][Patch] AC1 PnL absolu non vérifié — le test asserte `totalReturnPct` mais pas `totalPnl` (~$16,439.51) [`GoldenBacktestTest.java:57`]
+- [Review][Defer] Tests JForex skip permanents sans fixture externe — pré-existant, `assumeTrue` acceptable pour build portable [`JForexConverterTest.java:141`] — deferred, pre-existing
+- [Review][Defer] Golden test invisible en CI sans `data/historical/` — comportement voulu (AC3), documenté dans `docs/testing.md` — deferred, by design
+

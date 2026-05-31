@@ -15,30 +15,83 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * Golden integration test — detects regressions in data loading, backtest engine,
- * and prop strategy behaviour. Requires local {@code data/historical/} files.
- * Baseline documented in {@code docs/testing.md}.
+ * and prop strategy behaviour.
+ * <ul>
+ *   <li>CI subset ({@code data/ci/EUR_USD_H1_subset.csv}) — always runs in CI</li>
+ *   <li>Full year 2012 — optional local validation when {@code data/historical/} present</li>
+ * </ul>
+ * Baselines documented in {@code docs/testing.md}.
  */
 class GoldenBacktestTest {
 
-    /** Baseline captured 2026-05-23; commit {@value #BASELINE_COMMIT}. */
+    /** Baseline re-verified 2026-05-30 via RunBacktest (see docs/testing.md). */
     static final String BASELINE_COMMIT = "ec6dc72";
 
     static final String SYMBOL = "EUR_USD";
     static final int YEAR = 2012;
     static final double INITIAL_CAPITAL = 100_000.0;
 
+    /** Committed CI mini-dataset (January 2012 H1). */
+    static final Path CI_SUBSET_PATH = Path.of("data/ci/EUR_USD_H1_subset.csv");
+
+    static final int CI_BASELINE_BARS = 744;
+    static final int CI_BASELINE_TRADES = 3;
+    static final double CI_BASELINE_RETURN_PCT = 1.8153285714287921;
+    static final double CI_BASELINE_TOTAL_PNL = 1_815.3285714287921;
+    static final double CI_BASELINE_MAX_DRAWDOWN_PCT = 0.03;
+
     static final int BASELINE_BARS = 8760;
     static final int BASELINE_TRADES = 63;
-    static final double BASELINE_RETURN_PCT = 16.44;
-    static final double BASELINE_TOTAL_PNL = 16_439.51;
+    /** Full-precision values from RunBacktest JSON (display: 16.44%, $16,439.51). */
+    static final double BASELINE_RETURN_PCT = 16.439514464285008;
+    static final double BASELINE_TOTAL_PNL = 16_439.514464285;
     static final double BASELINE_MAX_DRAWDOWN_PCT = 0.12;
     static final double RETURN_TOLERANCE_PCT = 0.01; // ±1% of baseline return
+
+    static {
+        double expectedPnlFromReturn = BASELINE_RETURN_PCT / 100.0 * INITIAL_CAPITAL;
+        if (Math.abs(expectedPnlFromReturn - BASELINE_TOTAL_PNL) > 0.01) {
+            throw new ExceptionInInitializerError(
+                "Golden baseline inconsistent: return % implies PnL " + expectedPnlFromReturn
+                    + " but BASELINE_TOTAL_PNL is " + BASELINE_TOTAL_PNL);
+        }
+        double ciExpectedPnl = CI_BASELINE_RETURN_PCT / 100.0 * INITIAL_CAPITAL;
+        if (Math.abs(ciExpectedPnl - CI_BASELINE_TOTAL_PNL) > 0.01) {
+            throw new ExceptionInInitializerError(
+                "CI golden baseline inconsistent: return % implies PnL " + ciExpectedPnl
+                    + " but CI_BASELINE_TOTAL_PNL is " + CI_BASELINE_TOTAL_PNL);
+        }
+    }
+
+    @Test
+    void londonOpenRangeBreakout_ciSubset_matchesMiniGoldenBaseline() throws IOException {
+        assertTrue(Files.isRegularFile(CI_SUBSET_PATH),
+            "CI subset required at " + CI_SUBSET_PATH + " — run scripts/generate-ci-golden-subset.sh");
+
+        List<Bar> bars = HistoricalDataLoader.loadPath(CI_SUBSET_PATH, SYMBOL);
+        assertFalse(bars.isEmpty(), "Expected bars in CI subset");
+
+        BacktestResult result = RunContexts.backtest("LondonOpenRangeBreakout", SYMBOL, bars, INITIAL_CAPITAL).run();
+
+        assertEquals(CI_BASELINE_BARS, bars.size(), "bar count");
+        assertEquals(CI_BASELINE_TRADES, result.totalTrades(), "trade count");
+
+        double minReturn = CI_BASELINE_RETURN_PCT * (1.0 - RETURN_TOLERANCE_PCT);
+        double maxReturn = CI_BASELINE_RETURN_PCT * (1.0 + RETURN_TOLERANCE_PCT);
+        assertTrue(result.totalReturnPct() >= minReturn && result.totalReturnPct() <= maxReturn,
+            () -> String.format("return %.4f%% outside [%.4f%%, %.4f%%]",
+                result.totalReturnPct(), minReturn, maxReturn));
+
+        double pnlTolerance = CI_BASELINE_TOTAL_PNL * RETURN_TOLERANCE_PCT;
+        assertEquals(CI_BASELINE_TOTAL_PNL, result.totalPnl(), pnlTolerance, "total PnL");
+
+        assertEquals(CI_BASELINE_MAX_DRAWDOWN_PCT, result.maxDrawdownPct(), 0.01, "max drawdown %");
+    }
 
     @Test
     void londonOpenRangeBreakout_eurUsd2012_matchesGoldenBaseline() throws IOException {

@@ -147,10 +147,9 @@ public class BacktestEngine {
         // Close any remaining open positions at last bar's close
         if (!bars.isEmpty()) {
             closeRemainingPositions(bars.getLast());
+            // Final equity recompute (no floating P&L — all positions closed)
+            recomputeEquity(bars.getLast());
         }
-
-        // Final equity recompute (no floating P&L — all positions closed)
-        recomputeEquity(bars.getLast());
 
         return buildResult();
     }
