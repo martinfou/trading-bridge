@@ -18,6 +18,10 @@ public record SqXmlItem(
         return key.startsWith("EnterAt") && "order".equals(returnType);
     }
 
+    public boolean isExitAction() {
+        return "CloseAllPositions".equals(key);
+    }
+
     public boolean isIndicator() {
         return "indicator".equals(categoryType);
     }

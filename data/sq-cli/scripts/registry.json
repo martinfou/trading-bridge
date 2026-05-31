@@ -1,0 +1,29 @@
+{
+  "scripts": [
+    {
+      "id": "list-symbols",
+      "description": "List StrategyQuant symbols",
+      "args": ["-symbol", "action=list"]
+    },
+    {
+      "id": "update-data",
+      "description": "Update all StrategyQuant historical data",
+      "args": ["-data", "action=update"]
+    },
+    {
+      "id": "list-databanks",
+      "description": "List databanks in Builder project",
+      "args": ["-databank", "action=list", "project=Builder"]
+    },
+    {
+      "id": "setup-tb-fitness",
+      "description": "Register TB fitness external indicator (story 21-8)",
+      "args": [
+        "-extindicators",
+        "action=add",
+        "name=tbFitness",
+        "values=sharpe,profitFactor,maxDrawdown,compositeScore"
+      ]
+    }
+  ]
+}

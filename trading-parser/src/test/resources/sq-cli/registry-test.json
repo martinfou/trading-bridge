@@ -1,0 +1,9 @@
+{
+  "scripts": [
+    {
+      "id": "test-job",
+      "description": "Test job",
+      "args": ["-symbol", "action=list"]
+    }
+  ]
+}

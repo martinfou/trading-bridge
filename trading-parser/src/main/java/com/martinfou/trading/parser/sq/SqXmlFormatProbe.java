@@ -31,7 +31,7 @@ public final class SqXmlFormatProbe {
         return analyze(SqXmlParser.parse(xmlStream));
     }
 
-    static SqXmlFormatReport analyze(SqStrategyDocument document) {
+    public static SqXmlFormatReport analyze(SqStrategyDocument document) {
         Set<String> signalIds = new LinkedHashSet<>();
         Set<String> blockKeys = new LinkedHashSet<>();
         List<SqXmlBuildingBlock> blocks = new ArrayList<>();

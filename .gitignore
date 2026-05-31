@@ -76,6 +76,17 @@ data/historical/*
 data/runtime/*.db
 data/runtime/*.db-shm
 data/runtime/*.db-wal
+
+# SQ hot-folder drops (StrategyQuant XML + sidecar manifests — not committed)
+data/sq-inbox/pending/*
+!data/sq-inbox/pending/.gitkeep
+data/sq-inbox/passed/*
+!data/sq-inbox/passed/.gitkeep
+data/sq-inbox/failed/*
+!data/sq-inbox/failed/.gitkeep
+data/sq-inbox/dlq/*
+!data/sq-inbox/dlq/.gitkeep
+data/sq-cli/.sq-job.lock
 deploy/active-strategy.txt
 deployments/deploy-log.json
 deployments/
