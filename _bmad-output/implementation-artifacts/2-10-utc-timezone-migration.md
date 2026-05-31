@@ -1,6 +1,6 @@
 # Story 2.10: UTC Timezone Migration
 
-Status: review
+Status: done
 
 ## Story
 
@@ -141,3 +141,17 @@ Composer (dev-story workflow)
 - [Review][Defer] **BacktestEngine diff minimal** — Suppression d’import seulement ; compilable avec `Instant` via types domaine. — deferred, verified OK
 - [Review][Defer] **Preuve AC7 `mvn clean install`** — Non exécuté dans l’environnement de revue ; à valider localement par le dev. — deferred, environment
 - [Review][Defer] **Zone Germany PMI (Berlin vs London)** — Décision 4-C : confirmer sur calendrier source avant changement. [`EconomicCalendar.java:56`] — deferred, verify source
+
+### Review Findings (2026-05-30 — re-review)
+
+**Verdict:** ✅ Patches du 2026-05-18 vérifiés en code ; AC1–AC7 satisfaits ; `mvn clean install` OK.
+
+#### defer
+
+- [x] [Review][Defer] **Stratégies creative UTC+2** — `SessionCloseReversalStrategy` et autres utilisent encore `ZoneOffset.ofHours(2)` ; hors scope AC6, migration séparée si souhaitée.
+- [x] [Review][Defer] **Horloge UTC injectable** — `TimeConventions.clock()` statique ; tests temporels non déterministes sur `Order`/`AutoTrader`.
+- [x] [Review][Defer] **Lignes CSV ignorées silencieusement** — comportement pré-existant dans `DataLoader`.
+- [x] [Review][Defer] **Tests unitaires OandaPriceClient parsing** — smoke `OandaTest` seulement.
+- [x] [Review][Defer] **Zone Germany PMI (Berlin vs London)** — Javadoc marque « verify source » ; pas de changement sans confirmation calendrier.
+- [x] [Review][Defer] **`LocalDateTime.now()` rapports backtest** — pieds de page HTML/MD (`BacktestReportGenerator`, etc.) ; affichage rapport, pas logique trading.
+- [x] [Review][Defer] **`newsTime` substring `.contains()`** — calendrier curated ; risque ambiguïté faible tant que noms d’événements restent uniques.
