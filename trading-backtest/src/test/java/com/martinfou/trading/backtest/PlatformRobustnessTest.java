@@ -19,6 +19,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Parameterized platform tests: each scenario runs through BACKTEST and PAPER
  * via {@link RunContext} and asserts parity plus accounting invariants.
+ *
+ * <p>Note: {@link RunMode#PAPER} in {@link RunContext} currently delegates to the same
+ * {@link BacktestEngine} path as BACKTEST (paper stub). Parity assertions guard against
+ * accidental divergence when Epic 4 introduces a live paper executor.
  */
 class PlatformRobustnessTest {
 
@@ -98,8 +102,8 @@ class PlatformRobustnessTest {
                 }), 1,
                 r -> assertEquals(1.1050, r.trades().getFirst().exitPrice(), 1e-9)),
             new PlatformCase("smaCrossover_producesTrades", TestStrategies.smaCrossover(3, 10),
-                TestBars.flat(30, 1.1000), -1,
-                r -> assertTrue(r.totalTrades() >= 0))
+                TestBars.uptrend(30, 1.1000, 0.0010), -1,
+                r -> assertTrue(r.totalTrades() > 0, "uptrend should produce SMA crossover trades"))
         );
     }
 
@@ -160,7 +164,9 @@ class PlatformRobustnessTest {
                 TestBars.ohlc(new double[][] {
                     {1.1010, 1.1020, 1.1000, 1.1015},
                     {1.1000, 1.1005, 1.0980, 1.0995}
-                }), 1),
+                }), 1,
+                r -> assertEquals(1.0995, r.trades().getFirst().entryPrice(), 1e-9,
+                    "STOP SELL fill uses max(bar.close(), stop) per BacktestEngine")),
             new PlatformCase("doubleMarketBuySameBar_addsQty", TestStrategies.doubleMarketBuySameBar(),
                 TestBars.flat(2, 1.1000), 1,
                 r -> assertEquals(10_000, r.trades().getFirst().quantity(), 1e-9)),

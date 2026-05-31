@@ -39,4 +39,15 @@ public final class TestBars {
     public static List<Bar> flat(int count, double price) {
         return flat(DEFAULT_SYMBOL, count, price);
     }
+
+    /** Monotonic rising closes (deterministic fuel for SMA crossover smoke tests). */
+    public static List<Bar> uptrend(int count, double startClose, double closeStep) {
+        double[][] rows = new double[count][4];
+        for (int i = 0; i < count; i++) {
+            double close = startClose + closeStep * i;
+            double open = i == 0 ? startClose : startClose + closeStep * (i - 1);
+            rows[i] = new double[] {open, close + 0.0010, Math.min(open, close) - 0.0010, close};
+        }
+        return ohlc(rows);
+    }
 }

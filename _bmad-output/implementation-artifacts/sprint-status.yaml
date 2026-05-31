@@ -39,7 +39,7 @@
 # Epic 12 added 2026-05-23; snapshot commit ee871f5
 
 generated: "2026-05-23"
-last_updated: "2026-05-30T20:00:00Z"
+last_updated: "2026-05-30T22:00:00Z"
 project: trading-bridge
 project_key: NOKEY
 tracking_system: file-system
@@ -112,10 +112,10 @@ development_status:
   12-8-shared-indicators-trading-core: backlog
   12-9-architecture-docs-agents-alignment: backlog
   12-10-backtest-engine-trust: done
-  12-11-platform-test-strategies: review
+  12-11-platform-test-strategies: done
   epic-12-retrospective: optional
 
-  epic-13: in-progress
+  epic-13: done
   13-1-decouple-runcontext-catalog-factory: done
   13-2-event-store-sqlite: done
   13-3-control-plane-http: done
@@ -127,7 +127,7 @@ development_status:
   13-6-tui-v1-jline3: done
   13-7-laravel-dashboard-v1: done
   13-8-heartbeat-stale-detection: done
-  epic-13-retrospective: optional
+  epic-13-retrospective: done
 
   epic-15: done
   15-5-promote-gates-numeric-thresholds: done
