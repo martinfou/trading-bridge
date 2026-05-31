@@ -10,19 +10,21 @@ This file applies to the entire repository. Nested `AGENTS.md` files in subdirec
 
 ## Quick reference
 
-| Topic | Read first |
-|-------|------------|
-| Agent implementation rules | `_bmad-output/project-context.md` |
-| Data models, Strategy API, XML shape | `docs/specs.md` |
-| Strategy module placement & order queue | `docs/strategy-home.md` |
-| Shared indicators (SMA, EMA, RSI, ATR) | `com.martinfou.trading.core.indicators.Indicators` |
-| Sprint priorities | `docs/sprint-plan.md` |
-| JForex → Java mapping | `docs/conversion-guide.md` |
-| Architecture overview | `docs/architecture.md` |
-| Architecture overview (FR) | `docs/README.md` |
-| Golden backtest & CI | `docs/testing.md` |
-| Epic / story tracking | `_bmad-output/implementation-artifacts/sprint-status.yaml` |
-| BMAD workflows | `.agents/skills/` |
+
+| Topic                                   | Read first                                                 |
+| --------------------------------------- | ---------------------------------------------------------- |
+| Agent implementation rules              | `_bmad-output/project-context.md`                          |
+| Data models, Strategy API, XML shape    | `docs/specs.md`                                            |
+| Strategy module placement & order queue | `docs/strategy-home.md`                                    |
+| Shared indicators (SMA, EMA, RSI, ATR)  | `com.martinfou.trading.core.indicators.Indicators`         |
+| Sprint priorities                       | `docs/sprint-plan.md`                                      |
+| JForex → Java mapping                   | `docs/conversion-guide.md`                                 |
+| Architecture overview                   | `docs/architecture.md`                                     |
+| Architecture overview (FR)              | `docs/README.md`                                           |
+| Golden backtest & CI                    | `docs/testing.md`                                          |
+| Epic / story tracking                   | `_bmad-output/implementation-artifacts/sprint-status.yaml` |
+| BMAD workflows                          | `.agents/skills/`                                          |
+
 
 ## Tech stack
 
@@ -48,18 +50,20 @@ trading-runtime       → trading-backtest, trading-strategies, trading-data, tr
 trading-tui           → (HTTP client; Jackson + JLine3 only)
 ```
 
-| Module | Purpose |
-|--------|---------|
-| `trading-core` | `Bar`, `Order`, `Strategy`, `DataLoader`, `Indicators`, `GoldenBacktestBaseline` |
-| `trading-backtest` | `BacktestEngine`, `RunContext`, `RunEvent`, reports |
-| `trading-data` | OANDA client, `HistoricalDataLoader`, economic calendar |
-| `trading-broker` | OANDA / IBKR broker connectors |
-| `trading-strategies` | Prop, sqimported, generated strategies; `StrategyCatalog` |
-| `trading-runtime` | Control plane HTTP/WS, event store, promote gates, run lifecycle |
-| `trading-tui` | JLine3 terminal client for control plane |
-| `trading-parser` | StrategyQuant XML → Java (Epic 2) |
-| `trading-examples` | `RunBacktest` CLI, golden tests |
-| `trading-genetics` | Genetic optimization (offline) |
+
+| Module               | Purpose                                                                          |
+| -------------------- | -------------------------------------------------------------------------------- |
+| `trading-core`       | `Bar`, `Order`, `Strategy`, `DataLoader`, `Indicators`, `GoldenBacktestBaseline` |
+| `trading-backtest`   | `BacktestEngine`, `RunContext`, `RunEvent`, reports                              |
+| `trading-data`       | OANDA client, `HistoricalDataLoader`, economic calendar                          |
+| `trading-broker`     | OANDA / IBKR broker connectors                                                   |
+| `trading-strategies` | Prop, sqimported, generated strategies; `StrategyCatalog`                        |
+| `trading-runtime`    | Control plane HTTP/WS, event store, promote gates, run lifecycle                 |
+| `trading-tui`        | JLine3 terminal client for control plane                                         |
+| `trading-parser`     | StrategyQuant XML → Java (Epic 2)                                                |
+| `trading-examples`   | `RunBacktest` CLI, golden tests                                                  |
+| `trading-genetics`   | Genetic optimization (offline)                                                   |
+
 
 ## Build and test
 
@@ -123,15 +127,17 @@ If tests fail with `Unresolved compilation problem`, `cannot find symbol`, or be
 
 ## Where to put new code
 
-| Code type | Module |
-|-----------|--------|
-| Domain models, Strategy interface | `trading-core` |
-| XML parsing, code generation | `trading-parser` |
-| Broker / REST API clients | `trading-data` or `trading-broker` |
-| Backtest engine changes | `trading-backtest` |
-| Control plane / promote / event store | `trading-runtime` |
-| Example / generated strategies | `trading-examples` |
-| Production strategies (prop, sq) | `trading-strategies` |
+
+| Code type                             | Module                             |
+| ------------------------------------- | ---------------------------------- |
+| Domain models, Strategy interface     | `trading-core`                     |
+| XML parsing, code generation          | `trading-parser`                   |
+| Broker / REST API clients             | `trading-data` or `trading-broker` |
+| Backtest engine changes               | `trading-backtest`                 |
+| Control plane / promote / event store | `trading-runtime`                  |
+| Example / generated strategies        | `trading-examples`                 |
+| Production strategies (prop, sq)      | `trading-strategies`               |
+
 
 Do not put broker or API code in `trading-core`. Do not implement the parser in `trading-examples`.
 
