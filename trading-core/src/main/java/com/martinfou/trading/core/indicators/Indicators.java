@@ -1,13 +1,15 @@
-package com.martinfou.trading.strategies.prop;
+package com.martinfou.trading.core.indicators;
 
 import com.martinfou.trading.core.Bar;
 
 import java.util.List;
 
-/** Technical indicators for mechanical prop-firm strategies. */
-public final class PropIndicators {
+/** Shared bar-based technical indicators for strategies and backtests. */
+public final class Indicators {
 
-    private PropIndicators() {}
+    private Indicators() {}
+
+    public enum TradeSide { LONG, SHORT }
 
     public static double pipSize(String symbol) {
         return symbol.contains("JPY") ? 0.01 : 0.0001;
@@ -23,6 +25,7 @@ public final class PropIndicators {
     }
 
     public static double smaLatest(List<Bar> bars, int period) {
+        if (bars.isEmpty()) return Double.NaN;
         return sma(bars, period, bars.size() - 1);
     }
 
@@ -90,8 +93,9 @@ public final class PropIndicators {
             && cur.open() > prev.close();
     }
 
+    /** @return {lower band, upper band, band width} */
     public static double[] bollingerWidth(List<Bar> bars, int period, double mult) {
-        if (bars.size() < period) return new double[] {Double.NaN, Double.NaN};
+        if (bars.size() < period) return new double[] {Double.NaN, Double.NaN, Double.NaN};
         double mid = smaLatest(bars, period);
         double var = 0;
         for (int i = bars.size() - period; i < bars.size(); i++) {
@@ -102,10 +106,8 @@ public final class PropIndicators {
         return new double[] {mid - mult * std, mid + mult * std, 2 * mult * std};
     }
 
-    public static double riskRewardTp(double entry, double sl, OrderSide side, double rr) {
-        double risk = side == OrderSide.LONG ? entry - sl : sl - entry;
-        return side == OrderSide.LONG ? entry + risk * rr : entry - risk * rr;
+    public static double riskRewardTp(double entry, double sl, TradeSide side, double rr) {
+        double risk = side == TradeSide.LONG ? entry - sl : sl - entry;
+        return side == TradeSide.LONG ? entry + risk * rr : entry - risk * rr;
     }
-
-    public enum OrderSide { LONG, SHORT }
 }

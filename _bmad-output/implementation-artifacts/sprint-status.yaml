@@ -39,7 +39,7 @@
 # Epic 12 added 2026-05-23; snapshot commit ee871f5
 
 generated: "2026-05-23"
-last_updated: "2026-05-30T22:00:00Z"
+last_updated: "2026-05-31T02:45:00Z"
 project: trading-bridge
 project_key: NOKEY
 tracking_system: file-system
@@ -101,19 +101,19 @@ development_status:
   5-7-user-documentation: backlog
   epic-5-retrospective: optional
 
-  epic-12: in-progress
+  epic-12: done
   12-1-golden-backtest-stabilization: done
   12-2-unified-historical-data-loading: done
   12-3-unified-backtest-cli-strategy-catalog: done
   12-4-run-context-unified-runtime: done
   12-5-run-event-stream-jsonl: done
   12-6-paper-runner-stub: done
-  12-7-strategy-contract-home-policy: backlog
-  12-8-shared-indicators-trading-core: backlog
-  12-9-architecture-docs-agents-alignment: backlog
+  12-7-strategy-contract-home-policy: done
+  12-8-shared-indicators-trading-core: done
+  12-9-architecture-docs-agents-alignment: done
   12-10-backtest-engine-trust: done
   12-11-platform-test-strategies: done
-  epic-12-retrospective: optional
+  epic-12-retrospective: done
 
   epic-13: done
   13-1-decouple-runcontext-catalog-factory: done

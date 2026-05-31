@@ -14,9 +14,14 @@ This file applies to the entire repository. Nested `AGENTS.md` files in subdirec
 |-------|------------|
 | Agent implementation rules | `_bmad-output/project-context.md` |
 | Data models, Strategy API, XML shape | `docs/specs.md` |
+| Strategy module placement & order queue | `docs/strategy-home.md` |
+| Shared indicators (SMA, EMA, RSI, ATR) | `com.martinfou.trading.core.indicators.Indicators` |
 | Sprint priorities | `docs/sprint-plan.md` |
 | JForex → Java mapping | `docs/conversion-guide.md` |
-| Architecture overview | `docs/README.md` |
+| Architecture overview | `docs/architecture.md` |
+| Architecture overview (FR) | `docs/README.md` |
+| Golden backtest & CI | `docs/testing.md` |
+| Epic / story tracking | `_bmad-output/implementation-artifacts/sprint-status.yaml` |
 | BMAD workflows | `.agents/skills/` |
 
 ## Tech stack
@@ -31,25 +36,30 @@ This file applies to the entire repository. Nested `AGENTS.md` files in subdirec
 Respect the dependency graph (acyclic; `trading-core` has no internal trading deps):
 
 ```
-trading-core          ← domain models, Strategy interface, DataLoader
+trading-core          ← domain, indicators, golden baseline
 trading-backtest      → trading-core
 trading-data          → trading-core
 trading-parser        → trading-core
-trading-broker        → (scaffold)
+trading-broker        → trading-core
 trading-strategies    → trading-core, trading-data
-trading-examples      → trading-core, trading-backtest
-trading-genetics      → (genetic optimization)
+trading-genetics      → trading-core, trading-backtest
+trading-examples      → trading-core, trading-backtest, trading-strategies, trading-data
+trading-runtime       → trading-backtest, trading-strategies, trading-data, trading-broker
+trading-tui           → (HTTP client; Jackson + JLine3 only)
 ```
 
 | Module | Purpose |
 |--------|---------|
-| `trading-core` | `Bar`, `Order`, `Strategy`, `DataLoader` |
-| `trading-backtest` | `BacktestEngine`, `BacktestResult` |
-| `trading-parser` | StrategyQuant XML → Java (Sprint 2) |
-| `trading-data` | OANDA client, economic calendar |
-| `trading-broker` | Broker connectors (Sprint 4) |
-| `trading-strategies` | Live strategy runners |
-| `trading-examples` | Sample strategies, backtest launcher |
+| `trading-core` | `Bar`, `Order`, `Strategy`, `DataLoader`, `Indicators`, `GoldenBacktestBaseline` |
+| `trading-backtest` | `BacktestEngine`, `RunContext`, `RunEvent`, reports |
+| `trading-data` | OANDA client, `HistoricalDataLoader`, economic calendar |
+| `trading-broker` | OANDA / IBKR broker connectors |
+| `trading-strategies` | Prop, sqimported, generated strategies; `StrategyCatalog` |
+| `trading-runtime` | Control plane HTTP/WS, event store, promote gates, run lifecycle |
+| `trading-tui` | JLine3 terminal client for control plane |
+| `trading-parser` | StrategyQuant XML → Java (Epic 2) |
+| `trading-examples` | `RunBacktest` CLI, golden tests |
+| `trading-genetics` | Genetic optimization (offline) |
 
 ## Build and test
 
@@ -85,6 +95,14 @@ mvn exec:java -pl trading-examples \
 
 # Deprecated aliases (delegate to RunBacktest): RunPropBacktest, RunSqBacktest
 # RunPropBacktest --all / --all --sample remains for prop suite runs only
+
+# Control plane (port 8080 by default)
+mvn exec:java -pl trading-runtime \
+  -Dexec.mainClass="com.martinfou.trading.runtime.ControlPlaneMain"
+
+# TUI client (requires running control plane)
+mvn exec:java -pl trading-tui \
+  -Dexec.mainClass="com.martinfou.trading.tui.TradingTuiMain"
 ```
 
 Before marking work done: `mvn clean install` must pass for affected modules.
@@ -111,7 +129,9 @@ If tests fail with `Unresolved compilation problem`, `cannot find symbol`, or be
 | XML parsing, code generation | `trading-parser` |
 | Broker / REST API clients | `trading-data` or `trading-broker` |
 | Backtest engine changes | `trading-backtest` |
+| Control plane / promote / event store | `trading-runtime` |
 | Example / generated strategies | `trading-examples` |
+| Production strategies (prop, sq) | `trading-strategies` |
 
 Do not put broker or API code in `trading-core`. Do not implement the parser in `trading-examples`.
 
@@ -130,6 +150,7 @@ Do not put broker or API code in `trading-core`. Do not implement the parser in 
 
 ## Active sprint
 
-**Sprint 12 — Platform consolidation** (Epic 12): golden backtest, unified data loader, single backtest CLI, strategy contract fixes, shared indicators, docs alignment. See `_bmad-output/planning-artifacts/sprint-12-consolidation-plan.md`.
+**Epic 12 — Platform consolidation** is complete (stories 12-1 … 12-11). **Epic 13 — Platform runtime** is complete (control plane, TUI, dashboard, promote gates).
 
-See `docs/sprint-plan.md` for the full roadmap.
+Track implementation: `_bmad-output/implementation-artifacts/sprint-status.yaml`  
+Vision roadmap: `docs/sprint-plan.md` · Architecture: `docs/architecture.md`

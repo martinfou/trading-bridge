@@ -12,9 +12,9 @@ Committed under `data/ci/` so CI runs without `data/historical/`.
 |--------|-------------------------|-----------|
 | Bars | 744 | exact |
 | Trades | 3 | exact |
-| Total return % | 1.82 (exact: 1.8153285714287921) | ±1% |
-| Total PnL | $1,815.33 (exact: 1815.3285714287921) | ±1% |
-| Max drawdown % | 0.03 | ±0.01 |
+| Total return % | 0.014 (exact: 0.0137585714285704) | ±1% relative |
+| Total PnL | $13.76 (exact: 13.758571428570399) | ±1% relative |
+| Max drawdown % | 0.027 (exact: 0.0266378078515083) | ±0.01 pp |
 
 - **File:** `data/ci/EUR_USD_H1_subset.csv`
 - **Provenance:** First 744 H1 bars of Dukascopy EUR_USD 2012 CSV (January)
@@ -26,12 +26,13 @@ Committed under `data/ci/` so CI runs without `data/historical/`.
 | Metric | Baseline | Tolerance |
 |--------|----------|-----------|
 | Bars (EUR_USD H1 2012) | 8760 | exact |
-| Trades | 63 | exact |
-| Total return % | 16.44 (exact: 16.439514464285008) | ±1% |
-| Total PnL | $16,439.51 (exact: 16439.514464285) | ±1% |
-| Max drawdown % | 0.12 | ±0.01 |
+| Trades | 61 | exact |
+| Total return % | 0.14 (exact: 0.1396741071428578) | ±1% relative |
+| Total PnL | $139.67 (exact: 139.67410714285776) | ±1% relative |
+| Max drawdown % | 0.048 (exact: 0.0475867243182637) | ±0.01 pp |
 
-- **Baseline commit:** `ec6dc72` (display values); full-precision constants in `GoldenBacktestTest` re-verified 2026-05-30
+- **Canonical constants:** `com.martinfou.trading.core.GoldenBacktestBaseline` (shared with promote gates)
+- **Captured:** 2026-05-31 (`LondonOpenRangeBreakout`, $100k capital)
 - **Initial capital:** $100,000
 - **Data:** `data/historical/bars/EUR_USD_H1_2012.bars` or Dukascopy CSV equivalent
 
@@ -40,12 +41,18 @@ The full-year test skips (does not fail) when local historical data is missing.
 ### Re-capture baseline
 
 ```bash
+# Print live metrics vs documented constants
+mvn -q test-compile exec:java -pl trading-examples \
+  -Dexec.classpathScope=test \
+  -Dexec.mainClass=com.martinfou.trading.examples.GoldenBaselineCapture
+
+# Human-readable summary
 mvn exec:java -pl trading-examples \
-  -Dexec.mainClass="com.martinfou.trading.examples.RunPropBacktest" \
+  -Dexec.mainClass="com.martinfou.trading.examples.RunBacktest" \
   -Dexec.args="LondonOpenRangeBreakout EUR_USD 2012"
 ```
 
-Update constants in `trading-examples/.../GoldenBacktestTest.java` and this table when behaviour intentionally changes.
+Update `GoldenBacktestBaseline.java` and this table when behaviour intentionally changes.
 
 ### Run golden test only
 
@@ -92,7 +99,7 @@ Example:
 
 ```json
 {"schemaVersion":1,"type":"RUN_STARTED","timestamp":"2026-05-23T12:00:00Z","runId":"…","strategyId":"LondonOpenRangeBreakout","symbol":"EUR_USD","mode":"BACKTEST","payload":{"barCount":8760,"initialCapital":100000.0}}
-{"schemaVersion":1,"type":"RUN_ENDED","timestamp":"2026-05-23T12:00:01Z","runId":"…","strategyId":"LondonOpenRangeBreakout","symbol":"EUR_USD","mode":"BACKTEST","payload":{"totalTrades":63,"totalReturnPct":16.44,"finalEquity":116439.51}}
+{"schemaVersion":1,"type":"RUN_ENDED","timestamp":"2026-05-31T02:00:00Z","runId":"…","strategyId":"LondonOpenRangeBreakout","symbol":"EUR_USD","mode":"BACKTEST","payload":{"totalTrades":61,"totalReturnPct":0.1396741071428578,"finalEquity":100139.67410714286,"maxDrawdownPct":0.0475867243182637}}
 ```
 
 Tests: `RunEventTest` in `trading-backtest`.

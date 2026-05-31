@@ -84,8 +84,10 @@ final class PromoteGates {
         GoldenBaselineProfiles.Profile golden = profile.get();
         BacktestRunMetrics metrics = BacktestRunMetrics.fromRun(run);
         boolean tradesOk = metrics.totalTrades() == golden.expectedTrades();
-        boolean returnOk = Math.abs(metrics.totalReturnPct() - golden.expectedReturnPct())
-            <= golden.returnTolerancePct();
+        boolean returnOk = golden.expectedReturnPct() == 0.0
+            ? Math.abs(metrics.totalReturnPct()) <= golden.returnTolerancePct()
+            : Math.abs(metrics.totalReturnPct() - golden.expectedReturnPct())
+                <= golden.expectedReturnPct() * golden.returnTolerancePct();
         boolean ddOk = Math.abs(metrics.maxDrawdownPct() - golden.expectedMaxDrawdownPct())
             <= golden.maxDrawdownTolerancePct();
         boolean passed = tradesOk && returnOk && ddOk;

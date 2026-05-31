@@ -1,6 +1,7 @@
 package com.martinfou.trading.strategies.prop;
 
 import com.martinfou.trading.core.Bar;
+import com.martinfou.trading.core.indicators.Indicators;
 
 /**
  * London–NY overlap momentum burst from 2-hour consolidation.
@@ -42,7 +43,7 @@ public final class OverlapMomentumBurstStrategy extends AbstractPropStrategy {
         double range = rangeHigh - rangeLow;
         if (range <= 0) return;
 
-        double pip = PropIndicators.pipSize(symbol);
+        double pip = Indicators.pipSize(symbol);
         if (bar.close() > rangeHigh + pip && bar.close() > bar.open()) {
             double entry = bar.close();
             double sl = rangeLow - range * 0.3;

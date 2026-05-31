@@ -3,6 +3,7 @@ package com.martinfou.trading.strategies.prop;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.core.Strategy;
+import com.martinfou.trading.core.indicators.Indicators;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,7 +29,7 @@ public abstract class AbstractPropStrategy implements Strategy {
     protected int tradesToday;
     protected int consecutiveLosses;
 
-    private PropIndicators.OrderSide activeSide;
+    private Indicators.TradeSide activeSide;
     private double activeSl;
     private double activeTp;
     private int barsInTrade;
@@ -77,7 +78,7 @@ public abstract class AbstractPropStrategy implements Strategy {
         barsInTrade++;
         boolean hitSl = false;
         boolean hitTp = false;
-        if (activeSide == PropIndicators.OrderSide.LONG) {
+        if (activeSide == Indicators.TradeSide.LONG) {
             hitSl = activeSl > 0 && bar.low() <= activeSl;
             hitTp = activeTp > 0 && bar.high() >= activeTp;
         } else {
@@ -99,7 +100,7 @@ public abstract class AbstractPropStrategy implements Strategy {
     protected void enterLong(Bar bar, double sl, double tp) {
         pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, QUANTITY, bar.close())
             .withStopLoss(sl).withTakeProfit(tp));
-        activeSide = PropIndicators.OrderSide.LONG;
+        activeSide = Indicators.TradeSide.LONG;
         activeSl = sl;
         activeTp = tp;
         barsInTrade = 0;
@@ -109,19 +110,19 @@ public abstract class AbstractPropStrategy implements Strategy {
     protected void enterShort(Bar bar, double sl, double tp) {
         pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, QUANTITY, bar.close())
             .withStopLoss(sl).withTakeProfit(tp));
-        activeSide = PropIndicators.OrderSide.SHORT;
+        activeSide = Indicators.TradeSide.SHORT;
         activeSl = sl;
         activeTp = tp;
         barsInTrade = 0;
         tradesToday++;
     }
 
-    protected double rrTp(double entry, double sl, PropIndicators.OrderSide side) {
-        return PropIndicators.riskRewardTp(entry, sl, side, RR);
+    protected double rrTp(double entry, double sl, Indicators.TradeSide side) {
+        return Indicators.riskRewardTp(entry, sl, side, RR);
     }
 
     protected double atr(int period) {
-        return PropIndicators.atr(history, period);
+        return Indicators.atr(history, period);
     }
 
     private void clearActive() {

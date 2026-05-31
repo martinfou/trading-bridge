@@ -1,6 +1,7 @@
 package com.martinfou.trading.strategies.prop;
 
 import com.martinfou.trading.core.Bar;
+import com.martinfou.trading.core.indicators.Indicators;
 
 /**
  * Inside bar breakout with Bollinger bandwidth compression filter.
@@ -26,15 +27,15 @@ public final class InsideBarBreakoutStrategy extends AbstractPropStrategy {
             int end = history.size() - 3 - i;
             if (end < 20) break;
             var sub = history.subList(0, end + 1);
-            widths[i] = PropIndicators.bollingerWidth(sub, 20, 2.0)[2];
+            widths[i] = Indicators.bollingerWidth(sub, 20, 2.0)[2];
         }
-        double currentWidth = PropIndicators.bollingerWidth(history, 20, 2.0)[2];
+        double currentWidth = Indicators.bollingerWidth(history, 20, 2.0)[2];
         double[] sorted = java.util.Arrays.stream(widths).filter(w -> !Double.isNaN(w)).sorted().toArray();
         if (sorted.length < 20) return;
         double p20 = sorted[(int) (sorted.length * 0.20)];
         if (currentWidth > p20) return;
 
-        double pip = PropIndicators.pipSize(symbol);
+        double pip = Indicators.pipSize(symbol);
         double motherRange = mother.high() - mother.low();
         if (motherRange > atr(14) * 1.5) return;
 

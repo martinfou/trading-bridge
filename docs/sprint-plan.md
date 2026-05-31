@@ -3,6 +3,9 @@
 > Planning agile pour le projet Trading Bridge
 > Martin Fournier — Mai 2026
 
+> **Suivi d'implémentation (source de vérité) :** `_bmad-output/implementation-artifacts/sprint-status.yaml`  
+> Ce document décrit la **vision long terme** (modules VISION.md). Les numéros de sprint ci-dessous ne correspondent pas toujours aux epics BMAD (ex. Epic 12 = consolidation plateforme, Epic 13 = runtime). Voir aussi `docs/architecture.md`.
+
 ---
 
 ## Sprint 1 ✅ — Fondation (TERMINÉ)

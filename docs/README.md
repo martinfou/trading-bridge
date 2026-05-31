@@ -19,47 +19,38 @@ flowchart LR
 
 ## 🏗️ Architecture
 
+Voir **`docs/architecture.md`** (anglais, référence agents) pour le graphe de modules à jour.
+
 ```
 trading-bridge/
-├── trading-core/          # Domain models + interfaces
-│   ├── Bar.java           # Bougie OHLCV
-│   ├── Order.java         # Ordre (market/limit/stop)
-│   ├── Position.java      # Position ouverte
-│   ├── Trade.java         # Trade fermé
-│   ├── Strategy.java      # Interface stratégie
-│   ├── StrategyConfig.java # Config parsing XML
-│   └── DataLoader.java    # Import CSV/StrategyQuant
-│
-├── trading-parser/        # StrategyQuant XML → Java
-│   ├── SqXmlParser.java   # Parseur XML principal
-│   ├── Indicators.java    # Indicateurs techniques
-│   └── Conditions.java    # Règles d'entrée/sortie
-│
-├── trading-backtest/      # Moteur de simulation
-│   ├── BacktestEngine.java # Simulation OHLCV
-│   ├── BacktestResult.java # Statistiques
-│   └── ReportGenerator.java # Rapport HTML/CSV
-│
-├── trading-broker/        # Connecteurs bourse
-│   ├── Broker.java        # Interface commune
-│   ├── OandaBroker.java   # OANDA v20 REST API
-│   ├── IbkrBroker.java    # Interactive Brokers API
-│   └── MarketData.java    # Flux tick/bars temps réel
-│
-└── trading-examples/      # Stratégies de démonstration
-    ├── SmaCrossover.java  # SMA Crossover
-    └── RunBacktest.java   # Lanceur backtest
+├── trading-core/           # Domaine, Strategy, Indicators, golden baseline
+├── trading-backtest/       # BacktestEngine, RunContext, RunEvent
+├── trading-data/           # HistoricalDataLoader, OANDA, calendrier
+├── trading-strategies/     # Prop, sqimported, generated + StrategyCatalog
+├── trading-broker/         # Connecteurs OANDA / IBKR
+├── trading-runtime/        # Control plane HTTP/WS, promote, event store
+├── trading-tui/            # Client terminal JLine3
+├── trading-examples/       # RunBacktest CLI, tests golden
+├── trading-parser/         # XML StrategyQuant → Java (Epic 2)
+├── trading-genetics/       # Optimisation génétique (hors catalog runtime)
+├── dashboard/              # Laravel control room (hors reactor Maven)
+└── data/                   # historical/, ci/, runtime/
 ```
 
 ## 🧩 Modules
 
 | Module | Description | Statut |
 |--------|-------------|--------|
-| core | Modèles, interfaces, utilitaires | ✅ Compile |
-| backtest | Moteur de backtesting OHLCV | ✅ Compile |
-| parser | Parseur XML StrategyQuant | 🚧 Sprint 2 |
-| broker | OANDA + IBKR connectors | 🚧 Sprint 3 |
-| examples | Stratégies d'exemple | ✅ Compile |
+| core | Modèles, Strategy, indicateurs partagés | ✅ |
+| backtest | Moteur backtest, RunContext, événements JSONL | ✅ |
+| data | Chargement historique unifié, OANDA | ✅ |
+| strategies | Stratégies prop / SQ / generated | ✅ |
+| broker | OANDA + IBKR (paper/live) | ✅ |
+| runtime | Control plane, promote gates | ✅ |
+| tui | Client terminal | ✅ |
+| examples | CLI RunBacktest | ✅ |
+| parser | Parseur XML StrategyQuant | 🚧 Epic 2 |
+| genetics | Recherche génétique offline | ✅ |
 
 ## 🎯 Bmad Sprints
 
@@ -153,6 +144,18 @@ mvn exec:java -pl trading-examples \
 mvn exec:java -pl trading-examples \
   -Dexec.mainClass="com.martinfou.trading.examples.RunBacktest" \
   -Dexec.args="LondonOpenRangeBreakout EUR_USD 2012 --paper --json"
+```
+
+### Control plane + TUI
+
+```bash
+# Serveur (port 8080 par défaut)
+mvn exec:java -pl trading-runtime \
+  -Dexec.mainClass="com.martinfou.trading.runtime.ControlPlaneMain"
+
+# Client terminal (control plane doit tourner)
+mvn exec:java -pl trading-tui \
+  -Dexec.mainClass="com.martinfou.trading.tui.TradingTuiMain"
 ```
 
 ## 📝 Format des données

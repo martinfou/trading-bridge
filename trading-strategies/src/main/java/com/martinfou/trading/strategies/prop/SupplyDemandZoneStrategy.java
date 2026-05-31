@@ -1,6 +1,7 @@
 package com.martinfou.trading.strategies.prop;
 
 import com.martinfou.trading.core.Bar;
+import com.martinfou.trading.core.indicators.Indicators;
 
 /**
  * Supply/Demand Zone Rejection — trade origin of last impulsive H4-equivalent leg.
@@ -37,13 +38,13 @@ public final class SupplyDemandZoneStrategy extends AbstractPropStrategy {
         if (bullishImpulse && bar.low() <= zoneHigh && bar.close() > zoneLow
             && bar.low() > prev.low() && bar.close() > bar.open()) {
             double entry = bar.close();
-            double sl = zoneLow - Math.max(PropIndicators.pipSize(symbol) * 5, atr * 0.3);
-            enterLong(bar, sl, rrTp(entry, sl, PropIndicators.OrderSide.LONG));
+            double sl = zoneLow - Math.max(Indicators.pipSize(symbol) * 5, atr * 0.3);
+            enterLong(bar, sl, rrTp(entry, sl, Indicators.TradeSide.LONG));
         } else if (!bullishImpulse && bar.high() >= zoneLow && bar.close() < zoneHigh
             && bar.high() < prev.high() && bar.close() < bar.open()) {
             double entry = bar.close();
-            double sl = zoneHigh + Math.max(PropIndicators.pipSize(symbol) * 5, atr * 0.3);
-            enterShort(bar, sl, rrTp(entry, sl, PropIndicators.OrderSide.SHORT));
+            double sl = zoneHigh + Math.max(Indicators.pipSize(symbol) * 5, atr * 0.3);
+            enterShort(bar, sl, rrTp(entry, sl, Indicators.TradeSide.SHORT));
         }
     }
 }

@@ -1,6 +1,7 @@
 package com.martinfou.trading.strategies.prop;
 
 import com.martinfou.trading.core.Bar;
+import com.martinfou.trading.core.indicators.Indicators;
 
 /**
  * London Open Range Breakout — breakout of first-hour range with H1 trend filter.
@@ -39,20 +40,20 @@ public final class LondonOpenRangeBreakoutStrategy extends AbstractPropStrategy 
 
         if (!rangeLocked || h < 8 || h > 9) return;
 
-        double ema20 = PropIndicators.emaLatest(history, 20);
-        double ema200 = PropIndicators.emaLatest(history, 200);
+        double ema20 = Indicators.emaLatest(history, 20);
+        double ema200 = Indicators.emaLatest(history, 200);
         double atr = atr(14);
-        double pip = PropIndicators.pipSize(symbol);
+        double pip = Indicators.pipSize(symbol);
         double buffer = Math.max(pip, atr * 0.5);
 
         if (bar.close() > rangeHigh + pip && ema20 > ema200) {
             double entry = bar.close();
             double sl = rangeLow - buffer;
-            enterLong(bar, sl, rrTp(entry, sl, PropIndicators.OrderSide.LONG));
+            enterLong(bar, sl, rrTp(entry, sl, Indicators.TradeSide.LONG));
         } else if (bar.close() < rangeLow - pip && ema20 < ema200) {
             double entry = bar.close();
             double sl = rangeHigh + buffer;
-            enterShort(bar, sl, rrTp(entry, sl, PropIndicators.OrderSide.SHORT));
+            enterShort(bar, sl, rrTp(entry, sl, Indicators.TradeSide.SHORT));
         }
     }
 }
