@@ -79,7 +79,9 @@ final class BrokerRunExecutor {
 
         strategy.reset();
         ReconciliationService reconciliation = new ReconciliationService();
+        int barIndex = 0;
         for (Bar bar : bars) {
+            HeartbeatEvents.emitBarHeartbeat(runId, config, runMode, eventStore, bar, barIndex++);
             if (riskContext != null && ReconciliationService.isBrokerBacked(label)) {
                 dailyDdPaused = evaluateDailyDrawdown(
                     runId, config, runMode, label, broker, eventStore, riskContext, bar, dailyDdPaused);

@@ -42,6 +42,25 @@ class RunEventTest {
     }
 
     @Test
+    void jsonRoundTrip_preservesHeartbeatFields() {
+        Instant barTime = Instant.parse("2024-06-01T12:00:00Z");
+        RunEvent original = RunEvent.heartbeat(
+            "run-hb",
+            "LondonOpenRangeBreakout",
+            "EUR_USD",
+            RunMode.PAPER,
+            Map.of("source", "BAR_LOOP", "barIndex", 3, "barTime", barTime.toString()),
+            barTime);
+
+        RunEvent parsed = RunEventJson.fromJsonLine(RunEventJson.toJsonLine(original));
+
+        assertEquals(RunEventType.HEARTBEAT, parsed.type());
+        assertEquals(barTime, parsed.timestamp());
+        assertEquals("BAR_LOOP", parsed.payload().get("source"));
+        assertEquals(3, ((Number) parsed.payload().get("barIndex")).intValue());
+    }
+
+    @Test
     void runContext_emitsStartedThenEnded_withMatchingRunId() {
         List<Bar> bars = sampleBars("EUR_USD", 200);
         List<RunEvent> events = new ArrayList<>();
@@ -76,6 +95,17 @@ class RunEventTest {
             "boom");
         assertEquals(RunEventType.ERROR, error.type());
         assertEquals("boom", error.payload().get("message"));
+
+        RunEvent heartbeat = RunEvent.heartbeat(
+            "id",
+            "Strat",
+            "EUR_USD",
+            com.martinfou.trading.backtest.RunMode.PAPER,
+            Map.of("source", "BAR_LOOP", "barIndex", 0),
+            Instant.parse("2024-01-01T00:00:00Z"));
+        assertEquals(RunEventType.HEARTBEAT, heartbeat.type());
+        assertEquals("BAR_LOOP", heartbeat.payload().get("source"));
+        assertEquals(Instant.parse("2024-01-01T00:00:00Z"), heartbeat.timestamp());
     }
 
     private static List<Bar> sampleBars(String symbol, int count) {

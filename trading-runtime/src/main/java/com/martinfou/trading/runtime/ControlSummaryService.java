@@ -18,7 +18,6 @@ import java.util.Optional;
 public final class ControlSummaryService {
 
     public static final int SCHEMA_VERSION = 1;
-    public static final long DEFAULT_STALE_THRESHOLD_SECONDS = 120;
 
     private final RunManager runManager;
     private final long staleThresholdSeconds;
@@ -26,13 +25,13 @@ public final class ControlSummaryService {
     private final DriftSignalService driftSignalService;
 
     public ControlSummaryService(RunManager runManager) {
-        this(runManager, DEFAULT_STALE_THRESHOLD_SECONDS, Clock.systemUTC(), null);
+        this(runManager, StaleThresholds.loadDefault().runningStaleThresholdSeconds(), Clock.systemUTC(), null);
     }
 
     public ControlSummaryService(RunManager runManager, DeploymentStore deploymentStore) {
         this(
             runManager,
-            DEFAULT_STALE_THRESHOLD_SECONDS,
+            StaleThresholds.loadDefault().runningStaleThresholdSeconds(),
             Clock.systemUTC(),
             deploymentStore != null ? new DriftSignalService(runManager, deploymentStore) : null);
     }
@@ -60,7 +59,9 @@ public final class ControlSummaryService {
         Instant now = Instant.now(clock);
         List<Map<String, Object>> runItems = new ArrayList<>();
         List<Map<String, Object>> gapSignals = new ArrayList<>();
+        List<Map<String, Object>> staleSignals = new ArrayList<>();
         Optional<Instant> globalLastEvent = Optional.empty();
+        int staleRunCount = 0;
 
         for (RunRecord record : runManager.list(null)) {
             EventGapDetector.Result gaps = EventGapDetector.analyze(record.runId(), runManager.eventStore());
@@ -102,6 +103,26 @@ public final class ControlSummaryService {
 
             runItems.add(item);
 
+            if (isStale) {
+                staleRunCount++;
+                Map<String, Object> staleSignal = new LinkedHashMap<>();
+                staleSignal.put("runId", record.runId());
+                staleSignal.put("strategyId", record.strategyId());
+                staleSignal.put("executionLabel", label.name());
+                staleSignal.put("status", record.status().name());
+                lastEventAt.ifPresent(t -> staleSignal.put("lastEventAt", t.toString()));
+                if (lastEventAt.isPresent()) {
+                    staleSignal.put(
+                        "secondsSinceLastEvent",
+                        Math.max(0, Duration.between(lastEventAt.get(), now).getSeconds()));
+                } else {
+                    staleSignal.put(
+                        "secondsSinceLastEvent",
+                        Math.max(0, Duration.between(record.startedAt(), now).getSeconds()));
+                }
+                staleSignals.add(staleSignal);
+            }
+
             if (!gaps.gaps().isEmpty()) {
                 Map<String, Object> signal = new LinkedHashMap<>();
                 signal.put("runId", record.runId());
@@ -117,19 +138,22 @@ public final class ControlSummaryService {
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("schemaVersion", SCHEMA_VERSION);
         summary.put("executionLabelCatalog", ExecutionLabelCatalog.catalogMap());
-        summary.put("freshness", buildFreshness(globalLastEvent, now));
+        summary.put("freshness", buildFreshness(globalLastEvent, now, staleRunCount));
         summary.put("runs", runItems);
         List<Map<String, Object>> driftSignals = driftSignalService != null
             ? driftSignalService.buildDriftSignals()
             : List.of();
         summary.put("signals", Map.of(
             "gaps", gapSignals,
-            "drift", driftSignals));
+            "drift", driftSignals,
+            "stale", staleSignals));
         return Map.copyOf(summary);
     }
 
-    private Map<String, Object> buildFreshness(Optional<Instant> globalLastEvent, Instant now) {
+    private Map<String, Object> buildFreshness(Optional<Instant> globalLastEvent, Instant now, int staleRunCount) {
         Map<String, Object> freshness = new LinkedHashMap<>();
+        freshness.put("staleThresholdSeconds", staleThresholdSeconds);
+        freshness.put("staleRunCount", staleRunCount);
         if (globalLastEvent.isEmpty()) {
             freshness.put("lastEventAt", null);
             freshness.put("secondsSinceLastEvent", null);

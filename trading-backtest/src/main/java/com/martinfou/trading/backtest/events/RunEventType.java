@@ -12,5 +12,6 @@ public enum RunEventType {
     REJECT,
     ERROR,
     OPERATOR_ACTION,
-    RECONCILIATION_ALERT
+    RECONCILIATION_ALERT,
+    HEARTBEAT
 }

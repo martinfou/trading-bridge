@@ -113,6 +113,17 @@ class ControlSummaryServiceTest {
             Map<String, Object> runItem = ((List<Map<String, Object>>) summary.get("runs")).getFirst();
             assertEquals("LIVE_OANDA", runItem.get("executionLabel"));
             assertTrue((Boolean) runItem.get("isStale"));
+
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> staleSignals = (List<Map<String, Object>>)
+                ((Map<?, ?>) summary.get("signals")).get("stale");
+            assertEquals(1, staleSignals.size());
+            assertEquals(run.runId(), staleSignals.getFirst().get("runId"));
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> freshness = (Map<String, Object>) summary.get("freshness");
+            assertEquals(120L, freshness.get("staleThresholdSeconds"));
+            assertEquals(1, freshness.get("staleRunCount"));
         }
     }
 

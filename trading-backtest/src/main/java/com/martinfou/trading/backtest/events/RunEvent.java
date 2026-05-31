@@ -118,4 +118,23 @@ public record RunEvent(
             mode.name(),
             Map.copyOf(payload));
     }
+
+    public static RunEvent heartbeat(
+        String runId,
+        String strategyId,
+        String symbol,
+        RunMode mode,
+        Map<String, Object> payload,
+        Instant timestamp
+    ) {
+        return new RunEvent(
+            SCHEMA_VERSION,
+            RunEventType.HEARTBEAT,
+            timestamp,
+            runId,
+            strategyId,
+            symbol,
+            mode.name(),
+            Map.copyOf(payload));
+    }
 }
