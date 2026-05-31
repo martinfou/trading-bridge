@@ -136,6 +136,48 @@ mvn test -pl trading-backtest -Dtest=PlatformRobustnessTest,BacktestEngineContra
 
 `RunContext` with `RunMode.LIVE` in `trading-backtest` still throws `UnsupportedOperationException` — runtime LIVE is a separate path. Covered by `PlatformRobustnessTest.liveMode_throwsUnsupported`.
 
+## TUI workshop (Story 13.6)
+
+JLine3 terminal client in `trading-tui` — thin HTTP consumer of the control plane (no trading logic in the TUI).
+
+**Terminal 1 — control plane:**
+
+```bash
+mvn exec:java -pl trading-runtime \
+  -Dexec.mainClass=com.martinfou.trading.runtime.ControlPlaneMain
+```
+
+**Terminal 2 — TUI:**
+
+```bash
+mvn exec:java -pl trading-tui \
+  -Dexec.mainClass=com.martinfou.trading.tui.TradingTuiMain
+```
+
+Environment: `CONTROL_PLANE_URL` (default `http://localhost:8080`).
+
+Slash commands: `/list`, `/status`, `/backtest <strategyId>`, `/promote <id> PAPER|LIVE`, `/run`, `/events`, `/kill`, `/help`, `/quit`.
+
+Tests: `TuiCommandHandlerTest`.
+
+## Laravel control room (Story 13.7)
+
+Thin Laravel app in `dashboard/` — polls Java control plane (no trading logic in PHP).
+
+**Terminal 1 — control plane:** (same as TUI above)
+
+**Terminal 2 — dashboard:**
+
+```bash
+cd dashboard && php artisan serve --port=8000
+```
+
+Open http://localhost:8000/control — auto-refresh every 5s (`CONTROL_ROOM_REFRESH_SECONDS`).
+
+Env: `CONTROL_PLANE_URL` (default `http://127.0.0.1:8080`).
+
+Tests: `cd dashboard && php artisan test`
+
 ## Promote gates (Story 15.5)
 
 Automated gates before `POST /api/strategies/{id}/promote` → PAPER or LIVE. Failed checks return HTTP 422 with structured `GateCheckResult` entries (`name`, `passed`, `message`, optional `threshold`, `actual`).
@@ -247,9 +289,11 @@ Prop-shop control room read model:
 curl http://localhost:8080/control/summary
 ```
 
-Returns `schemaVersion: 1`, global `freshness`, `executionLabelCatalog`, `runs[]` (with `executionLabel`, `executionLabelMeta`, `isStale`, `gaps`, `latestEvent`, optional daily DD metrics), and `signals.gaps` / `signals.drift[]`. Drift signals are broker-only (Story 17.12): `PAPER_STUB` and backtest-only history yield `HOLD` with `dataSource: INSUFFICIENT`. Runs sorted stale/gaps first. Stale threshold: 120s without events on RUNNING runs.
+Returns `schemaVersion: 1`, global `freshness` (`staleThresholdSeconds`, `staleRunCount`, `lastEventAt`, `secondsSinceLastEvent`), `executionLabelCatalog`, `runs[]` (with `executionLabel`, `executionLabelMeta`, `isStale`, `gaps`, `latestEvent`, optional daily DD metrics), and `signals.gaps` / `signals.drift[]` / `signals.stale[]`. Drift signals are broker-only (Story 17.12): `PAPER_STUB` and backtest-only history yield `HOLD` with `dataSource: INSUFFICIENT`. Runs sorted stale/gaps first.
 
-Tests: `ControlSummaryServiceTest`, `ControlPlaneServerTest`.
+Broker runs emit `HEARTBEAT` events once per bar (Story 13.8). Stale detection flags `RUNNING` runs with no events for longer than `runningStaleThresholdSeconds` (default **120**; override via `data/runtime/stale-thresholds.json` or `TRADING_BRIDGE_STALE_THRESHOLDS`). Set the threshold above your bar interval for hourly strategies.
+
+Tests: `ControlSummaryServiceTest`, `StaleThresholdsTest`, `BrokerRunExecutorTest`, `ControlPlaneServerTest`.
 
 ## Execution label UI metadata (Story 17.11)
 

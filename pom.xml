@@ -13,6 +13,7 @@
         <module>trading-core</module>
         <module>trading-backtest</module>
         <module>trading-runtime</module>
+        <module>trading-tui</module>
         <module>trading-broker</module>
         <module>trading-parser</module>
         <module>trading-data</module>
@@ -74,6 +75,11 @@
                 <groupId>io.javalin</groupId>
                 <artifactId>javalin</artifactId>
                 <version>${javalin.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.jline</groupId>
+                <artifactId>jline</artifactId>
+                <version>3.26.3</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

@@ -44,6 +44,10 @@ class BrokerRunExecutorTest {
 
             var events = store.replayAll("run-1");
             assertTrue(events.stream().anyMatch(e -> e.type() == RunEventType.RUN_STARTED));
+            assertEquals(2, events.stream().filter(e -> e.type() == RunEventType.HEARTBEAT).count());
+            assertEquals(
+                Instant.parse("2024-01-01T00:00:00Z"),
+                events.stream().filter(e -> e.type() == RunEventType.HEARTBEAT).findFirst().orElseThrow().timestamp());
             assertTrue(events.stream().anyMatch(e -> e.type() == RunEventType.ORDER_SUBMITTED));
             assertTrue(events.stream().anyMatch(e -> e.type() == RunEventType.FILL));
             assertTrue(events.stream().anyMatch(e -> e.type() == RunEventType.RUN_ENDED));
