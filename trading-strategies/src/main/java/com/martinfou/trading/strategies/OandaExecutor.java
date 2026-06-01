@@ -36,14 +36,22 @@ public class OandaExecutor {
     }
 
     public OrderResult placeMarketOrder(String instrument, String units, String tag) throws Exception {
+        return placeMarketOrder(instrument, units, tag, false);
+    }
+
+    public OrderResult placeMarketOrder(String instrument, String units, String tag, boolean reduceOnly) throws Exception {
+        var orderBody = new java.util.LinkedHashMap<String, Object>() {{
+            put("type", "MARKET");
+            put("instrument", instrument);
+            put("units", units);
+            put("timeInForce", "FOK");
+            putAll(clientExtensions(tag));
+            if (reduceOnly) {
+                put("positionFill", "REDUCE_ONLY");
+            }
+        }};
         String body = mapper.writeValueAsString(new java.util.HashMap<>() {{
-            put("order", new java.util.HashMap<>() {{
-                put("type", "MARKET");
-                put("instrument", instrument);
-                put("units", units);
-                put("timeInForce", "FOK");
-                putAll(clientExtensions(tag));
-            }});
+            put("order", orderBody);
         }});
 
         var req = HttpRequest.newBuilder()

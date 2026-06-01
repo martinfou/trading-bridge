@@ -150,7 +150,7 @@ public class SessionCloseReversalStrategy implements Strategy {
 
     private void closePosition(Bar bar) {
         pending.add(new Order(SYMBOL, Order.Side.SELL, Order.Type.MARKET,
-            positionSize, bar.close()));
+            positionSize, bar.close()).closeOnly());
         inTrade = false;
     }
 

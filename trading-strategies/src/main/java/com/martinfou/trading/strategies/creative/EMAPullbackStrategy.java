@@ -182,7 +182,7 @@ public class EMAPullbackStrategy implements Strategy {
 
     private void closePosition(double price) {
         Order.Side closeSide = tradeDirection == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
-        pending.add(new Order(symbol, closeSide, Order.Type.MARKET, positionSize, price));
+        pending.add(new Order(symbol, closeSide, Order.Type.MARKET, positionSize, price).closeOnly());
         inTrade = false;
     }
 

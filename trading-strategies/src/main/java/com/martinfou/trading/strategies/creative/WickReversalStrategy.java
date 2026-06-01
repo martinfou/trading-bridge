@@ -65,7 +65,7 @@ public class WickReversalStrategy implements Strategy {
     }
 
     private void closePosition(double price) {
-        pending.add(new Order(symbol, tradeDirection == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY, Order.Type.MARKET, positionSize, price));
+        pending.add(new Order(symbol, tradeDirection == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY, Order.Type.MARKET, positionSize, price).closeOnly());
         inTrade = false;
     }
 
