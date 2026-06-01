@@ -67,6 +67,58 @@ services:
           cpus: '0.5'
           memory: 256M
 
+  # Composite Momentum — USD/JPY (OOS PF=2.24, Sharpe=1.00, DD=8.6%)
+  comp-momentum:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading-comp-momentum
+    restart: unless-stopped
+    env_file:
+      - /home/martinfou/projects/trading-dashboard/.env
+    environment:
+      - OANDA_ENV=practice
+      - LOG_LEVEL=INFO
+      - STRATEGY=${COMP_STRATEGY:-compmomentum}
+      - STRATEGY_PAIR=${COMP_PAIR:-USD_JPY}
+      - GRANULARITY=${COMP_GRANULARITY:-H1}
+      - INTERVAL_SEC=${COMP_INTERVAL:-60}
+    command: ["$${OANDA_API_KEY}", "$${OANDA_ACCOUNT_ID}", "$${STRATEGY}", "$${GRANULARITY}", "$${INTERVAL_SEC}"]
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # Month Week-Phase — USD/JPY (OOS PF=2.33, DD=4.86%, strong DD control)
+  month-week:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading-month-week
+    restart: unless-stopped
+    env_file:
+      - /home/martinfou/projects/trading-dashboard/.env
+    environment:
+      - OANDA_ENV=practice
+      - LOG_LEVEL=INFO
+      - STRATEGY=${MWP_STRATEGY:-monthweekphase}
+      - STRATEGY_PAIR=${MWP_PAIR:-USD_JPY}
+      - GRANULARITY=${MWP_GRANULARITY:-H1}
+      - INTERVAL_SEC=${MWP_INTERVAL:-60}
+    command: ["$${OANDA_API_KEY}", "$${OANDA_ACCOUNT_ID}", "$${STRATEGY}", "$${GRANULARITY}", "$${INTERVAL_SEC}"]
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
 volumes:
   data:
   logs:
