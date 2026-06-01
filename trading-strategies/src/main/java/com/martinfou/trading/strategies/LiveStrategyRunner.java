@@ -428,7 +428,7 @@ public class LiveStrategyRunner implements Runnable {
             log.info("📐 Risk cap: {} units requested, {} max (${} × {}% / {} pips) — capping to {}",
                 (int)requestedUnits, (int)maxUnits,
                 String.format("%.0f", balance), riskPct,
-                String.format("%.5f", slDistance),
+                formatPrice(slDistance, toOandaSymbol()),
                 (int)maxUnits);
             return Math.floor(maxUnits);
         }
@@ -523,6 +523,9 @@ public class LiveStrategyRunner implements Runnable {
             map.put("vwappremium", Class.forName("com.martinfou.trading.strategies.creative.VwapPremiumReversionStrategy")
                 .asSubclass(Strategy.class));
             map.put("turnofmonth", Class.forName("com.martinfou.trading.strategies.creative.TurnOfMonthFlowStrategy")
+                .asSubclass(Strategy.class));
+            // NFP Week — Short EUR/USD macro play for NFP weeks
+            map.put("nfpweek", Class.forName("com.martinfou.trading.strategies.creative.NfpWeekStrategy")
                 .asSubclass(Strategy.class));
         } catch (ClassNotFoundException e) {
             throw new RuntimeException("Strategy class not found", e);
@@ -899,19 +902,19 @@ public class LiveStrategyRunner implements Runnable {
                 totalPnl += pnl;
                 log.info("═══════ EXIT {} {} @ {} PnL: {}{} ═══════",
                     trade.symbol, trade.side,
-                    String.format("%.5f", exitPrice),
+                    formatPrice(exitPrice, trade.symbol),
                     pnl >= 0 ? "+" : "",
                     String.format("%.2f", pnl / trade.quantity * 100000));
                 it.remove();
             } else {
                 log.info("   {} {} | Entry: {} | Current: {} | PnL: {}{} | SL: {} TP: {}",
                     trade.symbol, trade.side,
-                    String.format("%.5f", trade.entryPrice),
-                    String.format("%.5f", mid),
+                    formatPrice(trade.entryPrice, trade.symbol),
+                    formatPrice(mid, trade.symbol),
                     pnl >= 0 ? "+" : "",
                     String.format("%.2f", pnl),
-                    trade.stopLoss > 0 ? String.format("%.5f", trade.stopLoss) : "—",
-                    trade.takeProfit > 0 ? String.format("%.5f", trade.takeProfit) : "—");
+                    trade.stopLoss > 0 ? formatPrice(trade.stopLoss, trade.symbol) : "—",
+                    trade.takeProfit > 0 ? formatPrice(trade.takeProfit, trade.symbol) : "—");
             }
         }
     }
