@@ -37,6 +37,11 @@
 # SOURCE: _bmad-output/planning-artifacts/epics.md
 # SPRINT 12: Platform Consolidation — see sprint-12-consolidation-plan.md
 # Epic 12 added 2026-05-23; snapshot commit ee871f5
+#
+# DOC SYNC (2026-05-31): Human onboarding → docs/contributing.md
+# Agent rules → _bmad-output/project-context.md · Module graph → AGENTS.md only
+# Parser story sequence → docs/sq-xml-format.md §6 (may be ahead of story rows below)
+# Epic 21 SQ CLI Bridge — brainstorming 2026-05-31, stories 21.1–21.8
 
 generated: "2026-05-23"
 last_updated: "2026-06-04T15:10:00Z"
@@ -56,22 +61,22 @@ development_status:
   1-7-foundation-documentation: done
   epic-1-retrospective: optional
 
-  epic-2: in-progress
+  epic-2: done
   2-1-analyze-strategyquant-xml-format: done
   2-2-sqxmlparser-implementation: done
   2-3-strategyconfig-pojo: done
   2-4-core-indicators-sma-ema-rsi: done
   2-5-extended-indicators-macd-bollinger-atr: done
-  2-6-entry-conditions: backlog
-  2-7-exit-conditions: backlog
-  2-8-position-sizing: backlog
-  2-9-java-code-generator: backlog
+  2-6-entry-conditions: done
+  2-7-exit-conditions: done
+  2-8-position-sizing: done
+  2-9-java-code-generator: done
   2-10-utc-timezone-migration: done
   epic-2-retrospective: optional
 
   epic-3: backlog
   3-1-complete-limit-and-stop-order-simulation: backlog
-  3-2-commission-and-slippage: backlog
+  3-2-commission-and-slippage: done  # BacktestEngine + BacktestExecutionCost; epic-3 not closed
   3-3-trade-exit-lifecycle: backlog
   3-4-multi-timeframe-support: backlog
   3-5-risk-management-rules: backlog
@@ -180,3 +185,14 @@ development_status:
   dbj-3-jvm-lifecycle: done
   dbj-4-extra-resources: done
   dbj-5-ci-feed: done
+
+  epic-21: done
+  21-1-hot-folder-strategy-manifest: done
+  21-2-sq-inbox-processor: done
+  21-3-xml-validation-dlq-coverage: done
+  21-4-sqcli-runner-mac: done
+  21-5-sq-job-mutex-script-registry: done
+  21-6-nightly-pipeline-sqcli-inbox: done
+  21-7-runtime-sq-bridge-hooks: done
+  21-8-fitness-external-indicators-loop: done
+  epic-21-retrospective: optional
