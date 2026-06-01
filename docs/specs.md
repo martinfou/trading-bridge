@@ -9,59 +9,32 @@
 
 ### 1.1 Diagramme de séquence — Backtest
 
-```
-BacktestEngine          Strategy                DataLoader           Historique
-     │                      │                       │                    │
-     │     load(path)       │                       │                    │
-     │──────────────────────┼───────────────────────┤──── CSV ───────────│
-     │                      │                       │                    │
-     │   List<Bar> bars     │                       │                    │
-     │◄─────────────────────┼───────────────────────┤                    │
-     │                      │                       │                    │
-     │  run()               │                       │                    │
-     │  for each bar ────┐  │                       │                    │
-     │  ┌────────────────┘  │                       │                    │
-     │  │ onBar(bar)        │                       │                    │
-     │  │───────────────────┤                       │                    │
-     │  │                   │   calcul indicateurs  │                    │
-     │  │                   │   ────┐               │                    │
-     │  │                   │   ┌───┘               │                    │
-     │  │                   │   │ vérifier règles   │                    │
-     │  │                   │   │ ────┐             │                    │
-     │  │                   │   │ ┌───┘             │                    │
-     │  │  getPendingOrders │   │ │                 │                    │
-     │  │◄──────────────────┤   │ │                 │                    │
-     │  │  processOrders()  │   │ │                 │                    │
-     │  │  ────┐            │   │ │                 │                    │
-     │  │  ┌───┘            │   │ │                 │                    │
-     │  │  │ fill/not       │   │ │                 │                    │
-     │  │  │ update equity  │   │ │                 │                    │
-     │  │  │ track drawdown │   │ │                 │                    │
-     │  └──│────────────────┘   │ │                 │                    │
-     │      v                   │ │                 │                    │
-     └──────┴───────────────────┴─┴─────────────────┴────────────────────┘
+```mermaid
+sequenceDiagram
+    participant CSV as Historique CSV
+    participant DL as DataLoader
+    participant BE as BacktestEngine
+    participant S as Strategy
+
+    DL->>CSV: load(path)
+    DL-->>BE: List of Bar
+    loop each bar
+        BE->>S: onBar(bar)
+        Note over S: indicateurs + règles
+        S-->>BE: getPendingOrders (copy + clear)
+        BE->>BE: processOrders, fill, equity, drawdown
+    end
 ```
 
 ### 1.2 Flux exécution live
 
-```
-                   ┌──────────┐
-                   │ Strategy │
-                   │ (Java)   │
-                   └────┬─────┘
-                        │ onBar() / onTick()
-                        v
-              ┌─────────────────┐
-              │  TradingEngine  │
-              │  (ordonnanceur)  │
-              └────────┬────────┘
-                       │ ordres
-          ┌────────────┼────────────┐
-          v            v            v
-   ┌──────────┐ ┌──────────┐ ┌──────────┐
-   │ OANDA   │ │   IBKR   │ │ Backtest │
-   │ Broker  │ │  Broker  │ │ Engine   │
-   └──────────┘ └──────────┘ └──────────┘
+```mermaid
+flowchart TB
+    S[Strategy Java]
+    S -->|onBar / onTick| ENG[TradingEngine ordonnanceur]
+    ENG --> OANDA[OANDA Broker]
+    ENG --> IBKR[IBKR Broker]
+    ENG --> BT[BacktestEngine]
 ```
 
 ## 2. Modèles de données
@@ -169,7 +142,7 @@ public interface Strategy {
 
 ### 4.1 Structure du XML StrategyQuant
 
-> **Format réel (Epic 2) :** voir [`docs/sq-xml-format.md`](sq-xml-format.md) — le schéma ci-dessous est un **résumé conceptuel** pour la conversion Java, pas le XML exporté par StrategyQuant X (`StrategyFile` + building blocks).
+> **Format réel (Epic 2) :** voir [`docs/sq-xml-format.md`](sq-xml-format.md) — le schéma ci-dessous est un **résumé conceptuel** pour la conversion Java, pas le XML exporté par StrategyQuant X (`StrategyFile` + building blocks). Implémentation runtime : packages `trading-parser` (`sq`, `config`, `indicators`, `conditions`, `actions`) — statut des stories §6 de sq-xml-format. Onboarding : [`docs/contributing.md`](contributing.md).
 
 Le format conceptuel cible pour le générateur Java :
 

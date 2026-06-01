@@ -29,73 +29,66 @@ Un système où :
 
 ## 🏗️ Architecture Globale
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      TRADING BRIDGE                          │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │              USER INTERFACES                         │    │
-│  │  ┌─────────┐ ┌──────────┐ ┌─────────┐ ┌─────────┐  │    │
-│  │  │ Terminal│ │ Dashboard│ │Mobile   │ │ Telegram│  │    │
-│  │  │ (CLI)   │ │ (Web)    │ │(App)    │ │ Bot     │  │    │
-│  │  └─────────┘ └──────────┘ └─────────┘ └─────────┘  │    │
-│  └──────────────────┬─────────────────────────────┬────┘    │
-│                     │                             │          │
-│  ┌──────────────────▼─────────────────────────────▼────┐    │
-│  │              CORE ENGINE (Java 21+)                  │    │
-│  │                                                      │    │
-│  │  ┌─────────┐ ┌──────────┐ ┌──────────┐             │    │
-│  │  │ Data    │ │ Strategy │ │ Execution│             │    │
-│  │  │ Pipeline│ │ Engine   │ │ Engine   │             │    │
-│  │  └────┬────┘ └────┬─────┘ └────┬─────┘             │    │
-│  │       │           │            │                    │    │
-│  │  ┌────▼───────────▼────────────▼─────┐              │    │
-│  │  │         Risk Manager              │              │    │
-│  │  └────────────────┬──────────────────┘              │    │
-│  │                   │                                 │    │
-│  │  ┌────────────────▼──────────────────┐              │    │
-│  │  │      Portfolio Manager            │              │    │
-│  │  └────────────────┬──────────────────┘              │    │
-│  └───────────────────┬─────────────────────────────────┘    │
-│                      │                                       │
-│  ┌───────────────────▼─────────────────────────────────┐    │
-│  │            ANALYTICS & BACKTESTING                   │    │
-│  │  ┌─────────┐ ┌──────────┐ ┌──────────┐ ┌─────────┐  │    │
-│  │  │Backtest │ │ Monte    │ │Walk-     │ │Portfolio│  │    │
-│  │  │Engine   │ │ Carlo    │ │Forward   │ │Builder  │  │    │
-│  │  └─────────┘ └──────────┘ └──────────┘ └─────────┘  │    │
-│  │  ┌─────────┐ ┌──────────┐ ┌──────────┐              │    │
-│  │  │Correl.  │ │ ML       │ │Regime    │              │    │
-│  │  │Matrix   │ │ Engine   │ │Detector  │              │    │
-│  │  └─────────┘ └──────────┘ └──────────┘              │    │
-│  └───────────────────┬─────────────────────────────────┘    │
-│                      │                                       │
-│  ┌───────────────────▼─────────────────────────────────┐    │
-│  │            DATA INFRASTRUCTURE                       │    │
-│  │  ┌─────────┐ ┌──────────┐ ┌──────────┐ ┌─────────┐  │    │
-│  │  │Market   │ │Historical│ │Economic  │ │News +   │  │    │
-│  │  │Data Live│ │ Data     │ │Calendar  │ │Sentiment│  │    │
-│  │  └─────────┘ └──────────┘ └──────────┘ └─────────┘  │    │
-│  └───────────────────┬─────────────────────────────────┘    │
-│                      │                                       │
-│  ┌───────────────────▼─────────────────────────────────┐    │
-│  │            BROKER CONNECTORS                         │    │
-│  │  ┌─────────┐ ┌──────────┐ ┌──────────┐ ┌─────────┐  │    │
-│  │  │ OANDA   │ │  IBKR    │ │(Future)  │ │Paper    │  │    │
-│  │  │ v20     │ │  TWS API │ │Alpaca/etc│ │Simulator│  │    │
-│  │  └─────────┘ └──────────┘ └──────────┘ └─────────┘  │    │
-│  └──────────────────────────────────────────────────────┘    │
-│                                                              │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │              CROSS-CUTTING                            │    │
-│  │  ┌──────────┐ ┌────────┐ ┌─────────┐ ┌───────────┐  │    │
-│  │  │ Logging  │ │ Security│ │Telemetry│ │Persistence│  │    │
-│  │  │ + Audit  │ │ (2FA)   │ │+ Metrics│ │ (SQL/NoSQL)│  │    │
-│  │  └──────────┘ └────────┘ └─────────┘ └───────────┘  │    │
-│  └──────────────────────────────────────────────────────┘    │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
+> Vision produit (cible long terme). Implémentation actuelle du monorepo : [`architecture.md`](architecture.md) + [`AGENTS.md`](../AGENTS.md).
+
+```mermaid
+flowchart TB
+    subgraph UI [User interfaces]
+        CLI[Terminal TUI]
+        WEB[Dashboard Web]
+        MOB[Mobile future]
+        TG[Telegram Bot]
+    end
+
+    subgraph CORE [Core engine Java 21+]
+        DP[Data pipeline]
+        SE[Strategy engine]
+        EE[Execution engine]
+        DP --> RM[Risk manager]
+        SE --> RM
+        EE --> RM
+        RM --> PM[Portfolio manager]
+    end
+
+    subgraph ANALYTICS [Analytics and backtesting]
+        BE[Backtest engine]
+        MC[Monte Carlo]
+        WF[Walk-forward]
+        PB[Portfolio builder]
+        COR[Correlation matrix]
+        ML[ML engine future]
+        RD[Regime detector]
+    end
+
+    subgraph DATA [Data infrastructure]
+        LIVE[Market data live]
+        HIST[Historical data]
+        CAL[Economic calendar]
+        NEWS[News sentiment]
+    end
+
+    subgraph BROKERS [Broker connectors]
+        OANDA[OANDA v20]
+        IBKR[IBKR TWS]
+        PAPER[Paper simulator]
+        FUT[Alpaca etc future]
+    end
+
+    subgraph XCUT [Cross-cutting]
+        LOG[Logging audit]
+        SEC[Security 2FA]
+        TEL[Telemetry metrics]
+        PERS[Persistence SQL]
+    end
+
+    UI --> CORE
+    CORE --> ANALYTICS
+    ANALYTICS --> DATA
+    DATA --> BROKERS
+    CORE --> BROKERS
+    XCUT -.-> CORE
+    XCUT -.-> ANALYTICS
+    XCUT -.-> BROKERS
 ```
 
 ---

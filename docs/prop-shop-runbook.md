@@ -8,8 +8,12 @@ Operational ritual for the 30-day OANDA paper observation period (Story 15.8 / P
 
 ## Pipeline overview
 
-```
-BACKTEST → promote PAPER_OANDA → 30-day observation → promote LIVE → kill switch if needed
+```mermaid
+flowchart LR
+    BT[BACKTEST] --> PAPER[promote PAPER_OANDA]
+    PAPER --> OBS[30-day observation]
+    OBS --> LIVE[promote LIVE]
+    LIVE --> KS[kill switch if needed]
 ```
 
 | Stage | Execution label | Counts toward paper period? |

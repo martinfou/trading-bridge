@@ -86,20 +86,15 @@ Custom     → ⚪ Blanc
 
 ## 📁 Structure de dossiers
 
-```
-trading-strategies/src/main/java/com/martinfou/trading/strategies/
-├── generated/           ← Stratégies générées (batch, genetic)
-│   ├── TR_EU_L_042.java
-│   ├── MR_UC_S_013.java
-│   └── ...
-├── sqimported/          ← Stratégies importées de StrategyQuant
-│   ├── SQ_TR_EU_L_177_v2.1.0.java
-│   └── ...
-├── news/                ← Stratégies news-based (existantes)
-│   └── NewsTradingStrategy.java
-└── live/                ← Stratégies actuellement en production
-    ├── TR_EU_L_042.java  (symlink vers generated/)
-    └── MR_UC_S_013.java
+```mermaid
+flowchart TB
+    ROOT["strategies/ com.martinfou.trading.strategies"]
+    ROOT --> GEN["generated/ batch genetic"]
+    ROOT --> SQ["sqimported/ StrategyQuant"]
+    ROOT --> NEWS["news/"]
+    ROOT --> LIVE["live/ production symlinks"]
+    GEN --> G1["TR_EU_L_042.java …"]
+    SQ --> S1["SQ_TR_EU_L_177_v2.1.0.java …"]
 ```
 
 ## 📊 Métadonnées (StrategyRegistry + JSON)
@@ -132,17 +127,17 @@ Chaque stratégie a un fichier de métadonnées associé :
 
 ## 🗺️ Strategy Lifecycle
 
-```
-┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
-│  DEV     │───▶│ BACKTEST │───▶│  PAPER   │───▶│   LIVE   │───▶│ RETIRED  │
-│ (genetic)│    │ (valider)│    │ (simuler)│    │ (argent) │    │ (archive)│
-└──────────┘    └──────────┘    └──────────┘    └──────────┘    └──────────┘
-                     │                                │
-                     ▼                                ▼
-                 Failed (❌)                     Paused (⏸️)
-                                                        │
-                                                        ▼
-                                                    Drawdown (⚠️)
+```mermaid
+stateDiagram-v2
+    [*] --> DEV: genetic / ideation
+    DEV --> BACKTEST: valider
+    BACKTEST --> PAPER: simuler
+    BACKTEST --> Failed: échec gates
+    PAPER --> LIVE: argent réel
+    LIVE --> RETIRED: archive
+    LIVE --> Paused: opérateur
+    Paused --> Drawdown: alerte perf
+    RETIRED --> [*]
 ```
 
 ## 👁️ Dashboard — Vue par stratégie
