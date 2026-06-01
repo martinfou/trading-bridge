@@ -62,7 +62,8 @@ inputDocuments:
 - docs/sprint-plan.md
 - _bmad-output/implementation-artifacts/12-10-backtest-engine-trust.md
 - _bmad-output/implementation-artifacts/12-11-platform-test-strategies.md
-approvedStructure: "Epics 13-20, Epic 17 Phase A puis Phase B, ordre 13→14→15→16→17-A"
+- _bmad-output/brainstorming/brainstorming-session-2026-05-31.md
+approvedStructure: "Epics 13-20, Epic 17 Phase A puis Phase B, ordre 13→14→15→16→17-A ; Epic 21 SQ CLI Bridge (2026-05-31)"
 legacyReference:
 - _bmad-output/planning-artifacts/epics-legacy-sprint-plan.md
 
@@ -305,6 +306,10 @@ FR14: Epic 17 Phase B — Audit immuable
 FR15: Epic 17 Phase B — Signaux drift
 FR16: Epic 17 Phase B — Retune workflow
 FR17: Epic 14 — Genetics → catalog
+FR-SQ1: Epic 21 — Hot folder ingest automatique (21.1–21.3)
+FR-SQ2: Epic 21 — Pilotage sqcli Mac (21.4–21.5)
+FR-SQ3: Epic 21 — Pipeline nightly (21.6)
+FR-SQ4: Epic 21 — Fitness CSV → SQ ext indicators (21.8)
 
 ## Epic List
 
@@ -347,6 +352,11 @@ Martin peut appliquer purged WFA, CPCV, **stress tests exécution** (spread/slip
 
 Martin peut générer des ébauches Java via DeepSeek soumises aux mêmes gates.
 **FRs covered:** FR3 | **Phase:** 3
+
+### Epic 21: Pont StrategyQuant CLI (pipeline automatisé)
+
+Martin peut faire communiquer StrategyQuant X et Trading Bridge sur Mac : hot folder XML, pilotage sqcli, pipeline nightly et boucle fitness TB→SQ via indicateurs externes.
+**FRs covered:** FR-SQ1–FR-SQ4, FR1 (automatisé) | **Prérequis:** Epic 2 (parser 2-1…2-8), Epic 12/13 (RunBacktest, runtime optionnel) | **Sprint:** post Epic 2 codegen (2-9) ou parallèle inbox | **Source:** brainstorming 2026-05-31
 
 ### Synthèse prop-shop (enrichissement Epic 13–20)
 
@@ -1262,3 +1272,152 @@ So that audit distinguishes AI-authored strategies.
 **When** `RUN_STARTED` snapshot is captured
 **Then** metadata includes `origin: AI` and `llmProvider: deepseek`
 **And** visible in evidence pack and API
+
+---
+
+## Epic 21: Pont StrategyQuant CLI (pipeline automatisé)
+
+Martin peut orchestrer StrategyQuant X depuis Trading Bridge sur **Mac** : déposer des exports XML, lancer sqcli de façon fiable, exécuter un pipeline nightly, et renvoyer des scores fitness à SQ via indicateurs externes — sans agent Windows ni parsing `.sqx`.
+
+**Prérequis :** Epic 2 stories 2-1…2-8 ; `RunBacktest` / `StrategyCatalog` (Epic 12) ; runtime (Epic 13) optionnel pour 21.7.
+
+**Module cible :** `trading-parser` (`com.martinfou.trading.parser.sq.bridge.*`) ; scripts `scripts/sq/` ; data `data/sq-inbox/`.
+
+**Ordre recommandé :** 21.1 → 21.2 → 21.3 → 21.4 → 21.5 → 21.6 → 21.7 → 21.8
+
+### Story 21.1: Hot folder et manifest stratégie
+
+As a Martin,
+I want a standard inbox folder layout and JSON manifest schema for SQ XML drops,
+So that every export is traceable before parse or backtest.
+
+**Acceptance Criteria:**
+
+**Given** the repo root
+**When** I run setup or first inbox use
+**Then** directories exist: `data/sq-inbox/{pending,passed,failed,dlq}`
+**And** dropping an XML into `pending/` expects an optional sidecar `*.manifest.json` with fields: `id`, `symbol`, `timeframe`, `sqBuild`, `contentSha256`, `exportedAt` (ISO-8601 UTC)
+**And** if manifest is absent, processor generates one from XML probe (`SqXmlFormatProbe`) before move
+**And** `docs/contributing.md` documents Mac paths and « no spaces in sqcli paths » workaround (symlink staging)
+**And** `.gitignore` excludes inbox contents except `.gitkeep`
+
+### Story 21.2: SqInboxProcessor — ingest automatique XML
+
+As a Martin,
+I want a CLI that processes pending SQ XML through parse and backtest,
+So that I get pass/fail classification without manual Maven steps.
+
+**Acceptance Criteria:**
+
+**Given** one or more XML files in `data/sq-inbox/pending/`
+**When** I run `SqInboxProcessor` via `mvn exec:java -pl trading-parser` (or documented script)
+**Then** each file is parsed with `SqXmlParser` into `StrategyConfig`
+**And** a backtest runs via shared `RunBacktest` helper or equivalent with configurable symbol/bars/capital (defaults documented)
+**And** on success the XML (+ manifest) moves to `passed/` and a summary JSON is written alongside
+**And** on parse/backtest failure files move to `failed/` or `dlq/` per story 21.3 rules
+**And** unit/integration test uses at least one existing `sqimported` XML fixture
+**And** works offline without control plane running (FR-SQ1)
+
+### Story 21.3: Validation XML, DLQ et couverture parser
+
+As a Martin,
+I want invalid or partially unsupported SQ exports rejected with explicit reasons,
+So that the inbox never silently ingests garbage.
+
+**Acceptance Criteria:**
+
+**Given** an XML file in `pending/`
+**When** `SqInboxProcessor` runs validation before expensive backtest
+**Then** `XmlValidator` checks well-formed XML and minimum StrategyFile structure
+**And** `ParseCoverageReport` lists supported vs unsupported building blocks with percentages
+**And** files below configurable coverage threshold (default documented) go to `dlq/` with `reason.json`
+**And** malformed XML never reaches backtest
+**And** tests cover: valid fixture → passed path; fixture with known unsupported block → dlq with reason
+
+### Story 21.4: SqCliRunner — wrapper sqcli Mac natif
+
+As a Martin,
+I want Trading Bridge to invoke StrategyQuant CLI reliably on Mac,
+So that sqcli becomes a programmable pipeline step.
+
+**Acceptance Criteria:**
+
+**Given** `SQ_HOME` env var or `sq.home` property pointing to StrategyQuant install (Mac)
+**When** `SqCliRunner.run(List<String> args)` or `runScript(Path commandsFile)` is called
+**Then** ProcessBuilder executes `$SQ_HOME/sqcli` with captured stdout/stderr
+**And** exit code, duration, and command line are logged via SLF4J
+**And** missing `SQ_HOME` fails fast with clear error
+**And** integration test skipped in CI when `SQ_HOME` unset ; runnable locally when set
+**And** FR-SQ2 satisfied
+
+### Story 21.5: Mutex jobs sqcli et registre de scripts
+
+As a Martin,
+I want only one sqcli job at a time and versioned command scripts,
+So that concurrent runs never corrupt SQ databanks.
+
+**Acceptance Criteria:**
+
+**Given** multiple callers could trigger sqcli
+**When** `SqJobMutex` acquires a file lock under `data/sq-inbox/.sqcli.lock`
+**Then** second caller blocks or fails with « sqcli busy » per config
+**And** lock releases on process exit or timeout (documented)
+**And** `scripts/sq/` contains at least `commands-update-data.txt` and `commands-list-databanks.txt` with documented sqcli lines
+**And** `SqCliRunner.runScript("update-data")` resolves script by name from that directory
+**And** unit test verifies mutex exclusion with mock/long-running stub
+
+### Story 21.6: Pipeline nightly sqcli → inbox
+
+As a Martin,
+I want one command to run sqcli maintenance then drain the inbox,
+So that SQ generation and TB validation chain nightly without babysitting.
+
+**Acceptance Criteria:**
+
+**Given** `SQ_HOME` configured and sqcli scripts present
+**When** I run documented entry point (e.g. `scripts/sq-nightly.sh` or Maven profile `sq-nightly`)
+**Then** sqcli runs `update-data` then `list-databanks` scripts under mutex
+**And** optional export step copies new XML from configured SQ export path into `data/sq-inbox/pending/` (env `SQ_EXPORT_DIR`)
+**And** `SqInboxProcessor` runs automatically after export
+**And** summary report printed: sqcli exit codes, files processed, passed/failed/dlq counts
+**And** `caffeinate -i` documented for long Mac runs (optional wrapper flag)
+**And** FR-SQ3 satisfied
+
+### Story 21.7: Hooks runtime — santé sqcli et job optionnel
+
+As a Martin,
+I want the control plane to expose SQ bridge status and optional job triggers,
+So that the TUI/dashboard shows whether SQ integration is alive.
+
+**Acceptance Criteria:**
+
+**Given** control plane running (Epic 13)
+**When** `GET /health` or `GET /api/sq-bridge/status` is called
+**Then** response includes `sqHomeConfigured`, `sqcliReachable` (last probe result), `inboxPendingCount`
+**And** optional `POST /api/sq-bridge/process-inbox` enqueues inbox drain (async, respects mutex)
+**And** optional `RunEvent` type `SQ_EXPORT_RECEIVED` when inbox file processed
+**And** TUI `/sq` or `/inbox` command lists pending count (extends 13.6)
+**And** all endpoints no-op gracefully when SQ not configured
+
+### Story 21.8: Boucle fitness TB→SQ via indicateurs externes
+
+As a Martin,
+I want backtest scores exported as SQ external indicator CSV and re-imported via sqcli,
+So that StrategyQuant Retester can filter candidates using TB validation.
+
+**Acceptance Criteria:**
+
+**Given** completed inbox/backtest results with metrics (Sharpe, PF, max DD, composite score)
+**When** `--sq-feedback` flag or config enabled on batch/inbox run
+**Then** TB writes CSV matching SQ ext-indicator format (date `dd/MM/yyyy`, time `HH:mm:ss` per SQ CLI doc)
+**And** `SqCliRunner` runs `-extindicators action=import name=tbFitness file=…` under mutex
+**And** indicator `tbFitness` created once via documented `action=add` script if missing
+**And** end-to-end test skipped in CI without SQ_HOME ; manual checklist in dev notes
+**And** FR-SQ4 satisfied
+
+**Notes Epic 21 :**
+
+- Ne pas parser `.sqx` — rejeter avec message clair.
+- Epic 14 = onboarding manuel ; Epic 21 = flux automatisé SQ↔TB.
+- Story 2-9 (codegen) indépendante ; inbox évalue via interpréteur parser.
+- Dedup hash (brainstorm #67) : optionnel post-21.2 si retraitement bruyant.

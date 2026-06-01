@@ -25,7 +25,7 @@ optimized_for_llm: true
 
 **Trading Bridge** converts StrategyQuant / JForex strategies to pure Java, with backtesting, a platform runtime (control plane), and broker connectors (OANDA, IBKR). Maven monorepo, Java 21.
 
-**Active epics (2026-05):** Epic 12 / 13 **done**. Epic 2 parser: **2-1**–**2-5** + **2-10** done ; **2-6** entry conditions next. See `docs/sq-xml-format.md`.
+**Active epics (2026-05):** Epic 12 / 13 **done**. Epic 2 parser: **2-1**–**2-9** implemented in `trading-parser` ; **2-10** UTC migration in progress/review. See `docs/sq-xml-format.md` §6.
 
 ---
 
@@ -44,19 +44,28 @@ optimized_for_llm: true
 | Dashboard (adjacent) | Python `dashboard/oanda_server.py` + static HTML — not part of Maven reactor |
 
 
-**Module dependency graph (respect this):**
+**Module dependency graph (respect this):** same Mermaid as `AGENTS.md` § Module layout.
 
-```
-trading-core          ← no internal trading deps
-trading-backtest      → trading-core
-trading-data          → trading-core
-trading-parser        → trading-core   (scaffold)
-trading-broker        → trading-core
-trading-strategies    → trading-core, trading-data
-trading-genetics      → trading-core, trading-backtest
-trading-examples      → trading-core, trading-backtest, trading-strategies, trading-data
-trading-runtime       → trading-backtest, trading-strategies, trading-data, trading-broker
-trading-tui           → HTTP client only (not on engine classpath)
+```mermaid
+flowchart BT
+  CORE[["trading-core"]]
+  BT_MOD["trading-backtest"] --> CORE
+  DATA["trading-data"] --> CORE
+  PARSER["trading-parser<br/>SQ evaluators; codegen 2-9 pending"] --> CORE
+  BROKER["trading-broker"] --> CORE
+  STRAT["trading-strategies"] --> CORE
+  STRAT --> DATA
+  GEN["trading-genetics"] --> CORE
+  GEN --> BT_MOD
+  EX["trading-examples"] --> CORE
+  EX --> BT_MOD
+  EX --> STRAT
+  EX --> DATA
+  RT["trading-runtime"] --> BT_MOD
+  RT --> STRAT
+  RT --> DATA
+  RT --> BROKER
+  TUI["trading-tui<br/>HTTP client only"]
 ```
 
 ---
@@ -77,7 +86,7 @@ trading-tui           → HTTP client only (not on engine classpath)
 ### Framework / Domain Rules (Trading Bridge)
 
 - `**Strategy` contract** (`trading-core`): Implement `name()`, `onBar(Bar)`, `onTick(bid, ask, volume)`, `getPendingOrders()`, `reset()`.
-- **Order submission pattern:** Strategies queue orders privately; `getPendingOrders()` must **return a copy and clear** the queue. Use `StrategyOrderQueues.drainPending()` or equivalent — see `docs/strategy-home.md`.
+- **Order submission pattern:** Strategies queue orders privately; `getPendingOrders()` must **return a copy and clear** the queue. Prefer `StrategyOrderQueues.drainPending()` in `trading-strategies` — see [`docs/strategy-home.md`](../docs/strategy-home.md).
 - **Indicators:** Shared bar-based TA in `com.martinfou.trading.core.indicators.Indicators` — do not duplicate SMA/EMA/RSI/ATR in strategies.
 - **Backtest fill semantics:** `BacktestEngine` fills `MARKET` at **`bar.open()`** (not close). `LIMIT`/`STOP` use bar high/low; SL/TP on open positions are enforced on subsequent bars.
 - **Backtest costs:** Commission and slippage configurable on `BacktestEngine` / `RunContext` via `BacktestExecutionCost`.
@@ -90,7 +99,8 @@ trading-tui           → HTTP client only (not on engine classpath)
 
 - **Framework:** JUnit 5 (`@Test`), tests under `src/test/java` mirroring main package.
 - **Existing pattern:** `OandaTest` calls live-ish helpers (`EconomicCalendar.printWeek()`) — prefer unit tests with mocks for new code; mark integration tests clearly if they hit OANDA.
-- **Run:** `mvn test` from root or `-pl trading-data` for a single module.
+- **Run:** `mvn test` from root or `-pl trading-parser` / `-pl trading-data` for a single module.
+- **Parser tests:** `mvn test -pl trading-parser`
 - **Before claiming done:** `mvn clean install` must pass for affected modules.
 
 ### Code Quality & Style Rules
@@ -125,7 +135,19 @@ trading-tui           → HTTP client only (not on engine classpath)
 | Expand scope to Spring/SQLite dashboard         | Sprint 5 unless user requests                                     |
 
 
-**Sprint 2 parser checklist (from specs):** `SqXmlParser`, `StrategyConfig` POJO, indicators (SMA first, then EMA/RSI/MACD/Bollinger/ATR), entry/exit rules, optional Java codegen — output must compile and backtest coherently with `BacktestEngine`.
+**Epic 2 parser (implemented vs pending):**
+
+| Area | Package / class | Status |
+|------|-----------------|--------|
+| XML DOM + POJO | `sq.SqXmlParser`, `config.StrategyConfig` | Done |
+| Indicators | `indicators.SqIndicatorRegistry`, core + extended | Done |
+| Entry / signal conditions | `conditions.SqConditionEvaluator`, `SqEntryEvaluator`, `SqSignalEvaluator` | Done |
+| Exit conditions | `conditions.SqExitEvaluator` | Done |
+| Actions / sizing intents | `actions.SqActionParser`, `SqStrategyActionsEvaluator`, `SqOrderIntent` | Done |
+| Java codegen from XML | `codegen.SqStrategyCodeGenerator`, `SqInterpretedStrategy` | Done (2-9) |
+| Bar-history operators (`IsFalling`, …) | registry gaps | Deferred — see `docs/sq-xml-format.md` §6 |
+
+Until **2-9** ships, bulk migration may use **JForex export + `JForexConverter`**. Runtime evaluation must stay in `trading-parser`, not `trading-examples`.
 
 ---
 
@@ -143,8 +165,13 @@ trading-tui           → HTTP client only (not on engine classpath)
 | `trading-data/.../data/`               | OANDA client, `HistoricalDataLoader`        |
 | `trading-broker/`                      | OANDA / IBKR connectors                     |
 | `trading-tui/`                         | JLine3 control plane client                 |
-| `trading-parser/`                      | Epic 2 — XML → Java (scaffold)              |
-| `docs/architecture.md`                 | Module DAG, entry points (agents)           |
+| `trading-parser/.../sq/`               | `SqXmlParser`, `SqStrategyDocument`       |
+| `trading-parser/.../conditions/`       | `SqConditionEvaluator`, entry/exit/signal   |
+| `trading-parser/.../actions/`          | `SqStrategyActionsEvaluator`, order intents |
+| `trading-parser/.../indicators/`       | `SqIndicatorRegistry`                     |
+| `docs/sq-xml-format.md`                | SQ XML ground truth + story sequence        |
+| `docs/architecture.md`                 | Module DAG, runtime, parser flow            |
+| `docs/contributing.md`                 | Human onboarding (FR)                       |
 | `docs/strategy-home.md`                | Strategy placement, order queue contract    |
 | `docs/testing.md`                      | Golden backtest, promote gate thresholds    |
 | `_bmad-output/`                        | BMAD artifacts, sprint-status.yaml          |

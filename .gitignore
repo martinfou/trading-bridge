@@ -59,8 +59,7 @@ _bmad/**/*.bak
 *.log
 logs/
 
-# BMAD generated reports
-_bmad-output/
+# BMAD generated reports (batch-results etc. stay ignored; _bmad-output is tracked)
 batch-results/
 backtest-*-report.md
 genetic-results/
