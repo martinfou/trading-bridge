@@ -1,6 +1,6 @@
 # Architecture (Trading Bridge)
 
-English reference for agents and operators. Human-facing overview: `docs/README.md` (French). Implementation rules: `_bmad-output/project-context.md`, `AGENTS.md`.
+English reference for agents and operators. Human-facing overview: `docs/README.md` (French). Implementation rules: `_bmad-output/project-context.md`, `AGENTS.md`. **Diagrams:** Mermaid only (no ASCII box/tree diagrams). **Module graph:** must match `AGENTS.md` § Module layout.
 
 ## System overview
 
@@ -58,17 +58,26 @@ flowchart TB
 
 Acyclic — `trading-core` has no internal trading dependencies.
 
-```
-trading-core
-├── trading-backtest
-├── trading-data
-├── trading-parser          (scaffold)
-├── trading-broker          → trading-core
-├── trading-strategies      → trading-core, trading-data
-├── trading-genetics        → trading-core, trading-backtest
-├── trading-examples        → trading-core, trading-backtest, trading-strategies, trading-data
-├── trading-runtime         → trading-backtest, trading-strategies, trading-data, trading-broker
-└── trading-tui             (HTTP client only — not on engine classpath)
+```mermaid
+flowchart BT
+  CORE[["trading-core"]]
+  BT_MOD["trading-backtest"] --> CORE
+  DATA["trading-data"] --> CORE
+  PARSER["trading-parser<br/>SQ XML evaluators"] --> CORE
+  BROKER["trading-broker"] --> CORE
+  STRAT["trading-strategies"] --> CORE
+  STRAT --> DATA
+  GEN["trading-genetics"] --> CORE
+  GEN --> BT_MOD
+  EX["trading-examples"] --> CORE
+  EX --> BT_MOD
+  EX --> STRAT
+  EX --> DATA
+  RT["trading-runtime"] --> BT_MOD
+  RT --> STRAT
+  RT --> DATA
+  RT --> BROKER
+  TUI["trading-tui<br/>HTTP client only"]
 ```
 
 
@@ -82,11 +91,36 @@ trading-core
 | `trading-runtime`    | Control plane, event store, promote gates, run lifecycle                                           |
 | `trading-tui`        | Terminal client for control plane                                                                  |
 | `trading-examples`   | `RunBacktest` CLI, golden tests                                                                    |
-| `trading-parser`     | StrategyQuant XML → Java (Epic 2, scaffold)                                                        |
+| `trading-parser`     | `SqXmlParser`, `StrategyConfig`, `SqIndicatorRegistry`, condition/action evaluators (Epic 2)       |
 | `trading-genetics`   | Genetic strategy search (batch, not runtime catalog)                                               |
 
 
 **Outside reactor:** `dashboard/` (Laravel control room), `batch-results/` (GA output, not compiled).
+
+## StrategyQuant XML pipeline (Epic 2)
+
+```mermaid
+flowchart LR
+    XML[SQ StrategyFile XML]
+    PARSER[SqXmlParser]
+    CFG[StrategyConfig]
+    IND[SqIndicatorRegistry]
+    COND[SqConditionEvaluator / Entry / Exit / Signal]
+    ACT[SqStrategyActionsEvaluator]
+    INT[Order intents SqOrderIntent SqCloseIntent]
+
+    XML --> PARSER --> CFG
+    CFG --> IND
+    CFG --> COND
+    COND --> ACT --> INT
+```
+
+- **Parse & POJO:** `com.martinfou.trading.parser.sq`, `com.martinfou.trading.parser.config`
+- **Indicators:** `com.martinfou.trading.parser.indicators` (delegates to `trading-core` `Indicators` where applicable)
+- **Conditions:** `com.martinfou.trading.parser.conditions`
+- **Actions:** `com.martinfou.trading.parser.actions`
+- **Format reference:** `docs/sq-xml-format.md`
+- **Not yet:** full Java `Strategy` codegen (story 2-9); gaps listed in sq-xml-format §6
 
 ## Runtime data layout
 
@@ -133,5 +167,7 @@ See `docs/strategy-home.md` — prop/sqimported/generated live in `trading-strat
 | `docs/testing.md`          | Golden backtest, promote gates         |
 | `docs/strategy-home.md`    | Module placement, order queue contract |
 | `docs/conversion-guide.md` | JForex → Java                          |
+| `docs/sq-xml-format.md`    | SQ XML topology, parser story status   |
+| `docs/contributing.md`     | Contributor onboarding (French)        |
 
 

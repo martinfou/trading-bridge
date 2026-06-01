@@ -1,6 +1,6 @@
 # Contribuer à Trading Bridge
 
-Guide d’onboarding humain (français). Les agents IA utilisent [`AGENTS.md`](../AGENTS.md) et [`project-context.md`](../_bmad-output/project-context.md) (anglais).
+Guide d’onboarding humain (français). Les agents IA utilisent `[AGENTS.md](../AGENTS.md)` et `[project-context.md](../_bmad-output/project-context.md)` (anglais).
 
 **Dernière revue :** 2026-05-31 · Epics 12–13 terminés · Epic 2 parser terminé (2-1…2-10) · Epic 21 SQ inbox en cours.
 
@@ -13,7 +13,7 @@ Guide d’onboarding humain (français). Les agents IA utilisent [`AGENTS.md`](.
 mvn clean install
 ```
 
-Si des tests échouent avec `cannot find symbol` après un pull partiel, relancer **`mvn clean install`** avant de déboguer — les classes sous `target/` peuvent être obsolètes.
+Si des tests échouent avec `cannot find symbol` après un pull partiel, relancer `**mvn clean install**` avant de déboguer — les classes sous `target/` peuvent être obsolètes.
 
 ## Par où commencer (~15 min)
 
@@ -28,36 +28,40 @@ flowchart LR
     T --> TB[testing.md si backtest]
 ```
 
+
+
 Ordre **canonique** (identique à [README.md](README.md) § Par où commencer) :
 
 1. **[README.md](README.md)** (~2 min) — vue d’ensemble et état du projet
 2. **Ce guide** (~8 min) — règles, pièges, commandes ci-dessous
 3. **[architecture.md](architecture.md)** — runtime, flux parser SQ (pas le graphe Maven)
 4. **[AGENTS.md](../AGENTS.md)** — section « Module layout » uniquement (graphe de dépendances canonique)
-5. **`mvn clean install`** à la racine du dépôt
-6. **`mvn test -pl trading-parser`** — valider l’environnement
+5. `**mvn clean install`** à la racine du dépôt
+6. `**mvn test -pl trading-parser**` — valider l’environnement
 7. **[sq-xml-format.md](sq-xml-format.md)** — si vous touchez au XML StrategyQuant
 8. **[testing.md](testing.md)** — si vous lancez des backtests (golden CI vs skip local)
 
 ## Où mettre du code
 
-| Type | Module | Ne pas mettre dans |
-|------|--------|-------------------|
-| Modèles domaine, `Strategy` | `trading-core` | — |
-| Parser XML, conditions, actions SQ | `trading-parser` | `trading-examples` |
-| Moteur backtest, `RunContext` | `trading-backtest` | — |
-| Control plane, promote, events | `trading-runtime` | `trading-core` |
-| Stratégies prop / SQ / generated | `trading-strategies` | `trading-parser` |
-| CLI backtest, golden tests | `trading-examples` | — |
-| OANDA / données historiques | `trading-data` | `trading-core` |
-| Connecteurs broker | `trading-broker` | `trading-core` |
+
+| Type                               | Module               | Ne pas mettre dans |
+| ---------------------------------- | -------------------- | ------------------ |
+| Modèles domaine, `Strategy`        | `trading-core`       | —                  |
+| Parser XML, conditions, actions SQ | `trading-parser`     | `trading-examples` |
+| Moteur backtest, `RunContext`      | `trading-backtest`   | —                  |
+| Control plane, promote, events     | `trading-runtime`    | `trading-core`     |
+| Stratégies prop / SQ / generated   | `trading-strategies` | `trading-parser`   |
+| CLI backtest, golden tests         | `trading-examples`   | —                  |
+| OANDA / données historiques        | `trading-data`       | `trading-core`     |
+| Connecteurs broker                 | `trading-broker`     | `trading-core`     |
+
 
 Graphe complet : **[AGENTS.md](../AGENTS.md)** (ne pas le recopier ailleurs). File d’ordres : [strategy-home.md](strategy-home.md) (`StrategyOrderQueues.drainPending`).
 
 ## Règles qui piègent les nouveaux contributeurs
 
-1. **`getPendingOrders()`** — retourne une copie et **vide** la file ; l’engine ne consomme les ordres qu’une fois par barre.
-2. **Ordres MARKET** — remplis au **`open()`** de la barre, pas au close.
+1. `**getPendingOrders()`** — retourne une copie et **vide** la file ; l’engine ne consomme les ordres qu’une fois par barre.
+2. **Ordres MARKET** — remplis au `**open()`** de la barre, pas au close.
 3. **Temps** — UTC (`Instant`) en logique trading ; pas `LocalDateTime.now()` pour les décisions.
 4. **Golden backtest** — le test année complète **skip** sans `data/historical/` local ; le sous-ensemble CI dans `data/ci/` tourne toujours. Voir [testing.md](testing.md).
 5. **Backtest vs control plane** — `RunBacktest` (`trading-examples`) ≠ `ControlPlaneMain` (`trading-runtime`, port **8080**). Le TUI nécessite le control plane démarré.
@@ -95,7 +99,7 @@ mvn exec:java -pl trading-tui \
   -Dexec.mainClass=com.martinfou.trading.tui.TradingTuiMain
 ```
 
-Alias dépréciés : `RunPropBacktest`, `RunSqBacktest` → utiliser **`RunBacktest`**.
+Alias dépréciés : `RunPropBacktest`, `RunSqBacktest` → utiliser `**RunBacktest**`.
 
 ## StrategyQuant — hot folder (Epic 21)
 
@@ -109,6 +113,8 @@ flowchart TB
     INBOX --> FAILED[failed/ parse ou backtest]
     INBOX --> DLQ[dlq/ rejet validation]
 ```
+
+
 
 **Manifest sidecar** (`StrategyManifest` dans `trading-parser`, package `bridge`) : `id`, `symbol`, `timeframe`, `sqBuild`, `contentSha256`, `exportedAt` (UTC). Si le fichier `*.manifest.json` est absent à côté du XML, il est généré via `SqXmlFormatProbe` :
 
@@ -130,21 +136,23 @@ mvn exec:java -pl trading-parser \
 
 Succès → `passed/` + `*-result.json` (métriques incl. Sharpe, profit factor, drawdown, compositeScore). Échec parse/backtest → `failed/`. Hors ligne : pas de control plane.
 
-**Boucle fitness TB→SQ (story 21-8)** — après drain inbox, `--sq-feedback` exporte `data/sq-cli/fitness/tb-fitness.csv` et importe via sqcli (`setup-tb-fitness` + `-extindicators action=import`). Voir [`docs/sq-cli-bridge.md`](sq-cli-bridge.md).
+**Boucle fitness TB→SQ (story 21-8)** — après drain inbox, `--sq-feedback` exporte `data/sq-cli/fitness/tb-fitness.csv` et importe via sqcli (`setup-tb-fitness` + `-extindicators action=import`). Voir `[docs/sq-cli-bridge.md](sq-cli-bridge.md)`.
 
 **Validation et DLQ (story 21-3)** — avant backtest :
 
-| Destination | Cas |
-|-------------|-----|
-| `dlq/` | XML trop volumineux, chemin hors `pending/`, blocs **GAP** (`SqImportedBlockInventory`), action d’entrée autre que `EnterAtStop` |
-| `failed/` | XML illisible, exception backtest |
-| `passed/` | Parse + couverture OK + backtest sans exception |
+
+| Destination | Cas                                                                                                                              |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `dlq/`      | XML trop volumineux, chemin hors `pending/`, blocs **GAP** (`SqImportedBlockInventory`), action d’entrée autre que `EnterAtStop` |
+| `failed/`   | XML illisible, exception backtest                                                                                                |
+| `passed/`   | Parse + couverture OK + backtest sans exception                                                                                  |
+
 
 Chaque traitement écrit aussi `*-coverage.json` (blocs supportés, deferred, inline, gap, unknown).
 
 ### StrategyQuant X sur Mac
 
-- Variable d’environnement **`SQ_HOME`** : répertoire d’installation de StrategyQuant X (sans espaces dans le chemin si possible).
+- Variable d’environnement `**SQ_HOME`** : répertoire d’installation de StrategyQuant X (sans espaces dans le chemin si possible).
 - Si le chemin d’export contient des espaces, utiliser un **symlink** vers un staging court, par ex. :
 
 ```bash
@@ -240,7 +248,7 @@ curl -X POST http://localhost:8080/api/sq-bridge/process-inbox
 
 ## État du sprint (source de vérité)
 
-- **Stories :** [`sprint-status.yaml`](../_bmad-output/implementation-artifacts/sprint-status.yaml)
+- **Stories :** `[sprint-status.yaml](../_bmad-output/implementation-artifacts/sprint-status.yaml)`
 - **Vision long terme :** [sprint-plan.md](sprint-plan.md) (numéros d’epic peuvent différer des epics BMAD 12/13)
 
 ## Maintenance de la documentation
@@ -248,23 +256,26 @@ curl -X POST http://localhost:8080/api/sq-bridge/process-inbox
 Après un merge significatif (parser, runtime, backtest, `BacktestEngine`) :
 
 1. Mettre à jour **[project-context.md](../_bmad-output/project-context.md)** si le comportement agent change.
-2. Mettre à jour le **`docs/*.md`** concerné pour les humains (FR).
+2. Mettre à jour le `**docs/*.md`** concerné pour les humains (FR).
 3. Garder **une seule** copie du graphe de modules dans **[AGENTS.md](../AGENTS.md)**.
 4. Revoir la date « Dernière revue » en tête de ce fichier et de [README.md](README.md).
 5. **Diagrammes** : flux, dépendances et topologies → **Mermaid** (`flowchart`, `sequenceDiagram`, `stateDiagram-v2`) — pas d’ASCII art (boîtes `┌─┐`, arbres `├──`).
 
 ## Index des documents
 
-| Document | Public | Contenu |
-|----------|--------|---------|
-| [README.md](README.md) | Humain FR | Vue d’ensemble, état projet |
-| [contributing.md](contributing.md) | Humain FR | Ce guide |
-| [architecture.md](architecture.md) | Humain + agent EN | Runtime, flux parser SQ |
-| [specs.md](specs.md) | Humain FR | Modèles, API Strategy |
-| [sq-xml-format.md](sq-xml-format.md) | Agent + humain EN | XML StrategyQuant, statut stories |
-| [testing.md](testing.md) | Tous | Golden backtest, CI, promote gates |
-| [strategy-home.md](strategy-home.md) | Dev | Placement stratégies, file d’ordres |
-| [conversion-guide.md](conversion-guide.md) | Dev | JForex → Java |
-| [sprint-plan.md](sprint-plan.md) | PM | Roadmap |
-| [AGENTS.md](../AGENTS.md) | Agent EN | Entrée rapide, graphe modules |
-| [project-context.md](../_bmad-output/project-context.md) | Agent EN | Règles d’implémentation |
+
+| Document                                                 | Public            | Contenu                             |
+| -------------------------------------------------------- | ----------------- | ----------------------------------- |
+| [README.md](README.md)                                   | Humain FR         | Vue d’ensemble, état projet         |
+| [contributing.md](contributing.md)                       | Humain FR         | Ce guide                            |
+| [architecture.md](architecture.md)                       | Humain + agent EN | Runtime, flux parser SQ             |
+| [specs.md](specs.md)                                     | Humain FR         | Modèles, API Strategy               |
+| [sq-xml-format.md](sq-xml-format.md)                     | Agent + humain EN | XML StrategyQuant, statut stories   |
+| [testing.md](testing.md)                                 | Tous              | Golden backtest, CI, promote gates  |
+| [strategy-home.md](strategy-home.md)                     | Dev               | Placement stratégies, file d’ordres |
+| [conversion-guide.md](conversion-guide.md)               | Dev               | JForex → Java                       |
+| [sprint-plan.md](sprint-plan.md)                         | PM                | Roadmap                             |
+| [AGENTS.md](../AGENTS.md)                                | Agent EN          | Entrée rapide, graphe modules       |
+| [project-context.md](../_bmad-output/project-context.md) | Agent EN          | Règles d’implémentation             |
+
+

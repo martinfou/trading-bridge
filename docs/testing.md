@@ -1,5 +1,16 @@
 # Testing
 
+## Contributor onboarding — what “green” means
+
+| Check | Command | Note |
+|-------|---------|------|
+| Full rebuild | `mvn clean install` | Required after refactors; stale `target/` causes false compile errors |
+| Parser module | `mvn test -pl trading-parser` | Always runs in CI |
+| Golden CI subset | `mvn test -pl trading-examples -Dtest=GoldenBacktestTest` (or method filter below if your Maven supports it) | Uses `data/ci/` — does **not** skip |
+| Golden full year | same test class, full-year method | **Skips** if `data/historical/` missing locally |
+
+A passing `mvn test` at root with only skips on full-year golden is **not** the same as having reproduced the full baseline locally. See [contributing.md](contributing.md).
+
 ## Golden backtest
 
 Integration test `GoldenBacktestTest` validates end-to-end behaviour: historical data load, `BacktestEngine`, and the `LondonOpenRangeBreakout` prop strategy.
@@ -58,6 +69,13 @@ Update `GoldenBacktestBaseline.java` and this table when behaviour intentionally
 
 ```bash
 mvn test -pl trading-examples -Dtest=GoldenBacktestTest
+```
+
+Optional single-method filter (Maven 4.x; if it fails, use the class command above):
+
+```bash
+mvn test -pl trading-examples \
+  -Dtest=GoldenBacktestTest#londonOpenRangeBreakout_ciSubset_matchesMiniGoldenBaseline
 ```
 
 ## Build hygiene
