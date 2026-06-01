@@ -202,7 +202,12 @@ public class BacktestEngine {
 
                 // Open or add to position
                 Position existing = openPositions.get(order.symbol());
-                if (existing != null && existing.side() == order.side()) {
+                if (order.isCloseOnly()) {
+                    // close-only order: reduce or close existing position, never open new
+                    if (existing != null) {
+                        closePosition(existing, adjustedPrice, bar.timestamp());
+                    }
+                } else if (existing != null && existing.side() == order.side()) {
                     existing.addQuantity(order.quantity(), adjustedPrice);
                 } else if (existing != null) {
                     // Opposite-side MARKET/STOP/LIMIT order while position exists:

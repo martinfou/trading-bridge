@@ -128,7 +128,7 @@ public class OpeningRangeBreakoutStrategy implements Strategy {
 
     private void closePosition(Bar bar) {
         Order.Side closeSide = tradeDirection == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
-        pending.add(new Order(symbol, closeSide, Order.Type.MARKET, positionSize, bar.close()));
+        pending.add(new Order(symbol, closeSide, Order.Type.MARKET, positionSize, bar.close()).closeOnly());
         inTrade = false;
     }
 

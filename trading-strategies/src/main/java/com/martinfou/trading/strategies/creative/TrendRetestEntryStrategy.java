@@ -155,7 +155,7 @@ public class TrendRetestEntryStrategy implements Strategy {
             Order.Type.MARKET,
             positionSize,
             price
-        ));
+        ).closeOnly());
         inTrade = false;
     }
 

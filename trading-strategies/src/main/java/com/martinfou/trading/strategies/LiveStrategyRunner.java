@@ -768,14 +768,16 @@ public class LiveStrategyRunner implements Runnable {
             var tag = strategyShortName + "_" + oandaSymbol.replace("_", "");
 
             // Detect if this order closes an existing active trade BEFORE margin check
-            boolean isClose = false;
-            for (ActiveTrade at : activeTrades) {
-                if (at.symbol.equals(oandaSymbol)) {
-                    boolean isOpposite = (order.side() == Order.Side.BUY && at.side.equals("SELL"))
-                        || (order.side() == Order.Side.SELL && at.side.equals("BUY"));
-                    if (isOpposite) {
-                        isClose = true;
-                        break;
+            boolean isClose = order.isCloseOnly();
+            if (!isClose) {
+                for (ActiveTrade at : activeTrades) {
+                    if (at.symbol.equals(oandaSymbol)) {
+                        boolean isOpposite = (order.side() == Order.Side.BUY && at.side.equals("SELL"))
+                            || (order.side() == Order.Side.SELL && at.side.equals("BUY"));
+                        if (isOpposite) {
+                            isClose = true;
+                            break;
+                        }
                     }
                 }
             }
@@ -795,7 +797,8 @@ public class LiveStrategyRunner implements Runnable {
                         }
                     }
                 }
-                var result = executor.placeMarketOrder(oandaSymbol, unitsStr, tag);
+                // Use REDUCE_ONLY so this closes the existing position on hedging-enabled accounts
+                var result = executor.placeMarketOrder(oandaSymbol, unitsStr, tag, true);
                 // Remove the closed trade(s) from active list
                 activeTrades.removeIf(at -> at.symbol.equals(oandaSymbol));
                 totalExits++;

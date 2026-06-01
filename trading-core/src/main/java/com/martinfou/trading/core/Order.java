@@ -16,6 +16,7 @@ public class Order {
     private double price;
     private double stopLoss;
     private double takeProfit;
+    private boolean closeOnly;
     private Status status = Status.PENDING;
     private Instant createdAt = TimeConventions.now();
     private Instant filledAt;
@@ -36,12 +37,15 @@ public class Order {
     public double price() { return price; }
     public double stopLoss() { return stopLoss; }
     public double takeProfit() { return takeProfit; }
+    public boolean isCloseOnly() { return closeOnly; }
     public Status status() { return status; }
     public Instant createdAt() { return createdAt; }
     public Instant filledAt() { return filledAt; }
 
     public Order withStopLoss(double sl) { this.stopLoss = sl; return this; }
     public Order withTakeProfit(double tp) { this.takeProfit = tp; return this; }
+    /** Mark this order as close-only: reduces existing position instead of opening new one (avoids hedging on OANDA). */
+    public Order closeOnly() { this.closeOnly = true; return this; }
 
     public Order fill() {
         this.status = Status.FILLED;
