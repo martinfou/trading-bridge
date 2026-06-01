@@ -40,6 +40,33 @@ services:
           cpus: '1'
           memory: 512M
 
+  # NFP Week — Short EUR/USD macro play during NFP release week
+  # Runs June 1-5, 2026. Volatility-aware trailing stop with NFP-day widening.
+  nfp-week:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading-nfp-week
+    restart: "no"
+    env_file:
+      - /home/martinfou/projects/trading-dashboard/.env
+    environment:
+      - OANDA_ENV=practice
+      - LOG_LEVEL=INFO
+      - STRATEGY=${NFP_STRATEGY:-nfpweek}
+      - STRATEGY_PAIR=${NFP_PAIR:-EUR_USD}
+      - GRANULARITY=${NFP_GRANULARITY:-H1}
+      - INTERVAL_SEC=${NFP_INTERVAL:-60}
+    command: ["$${OANDA_API_KEY}", "$${OANDA_ACCOUNT_ID}", "$${STRATEGY}", "$${GRANULARITY}", "$${INTERVAL_SEC}"]
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
 volumes:
   data:
   logs:
