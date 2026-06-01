@@ -527,6 +527,13 @@ public class LiveStrategyRunner implements Runnable {
             // NFP Week — Short EUR/USD macro play for NFP weeks
             map.put("nfpweek", Class.forName("com.martinfou.trading.strategies.creative.NfpWeekStrategy")
                 .asSubclass(Strategy.class));
+            // V2 — Backtest-qualified (June 2026)
+            map.put("compmomentum", Class.forName("com.martinfou.trading.strategies.creative.CompositeMomentumRankingStrategy")
+                .asSubclass(Strategy.class));
+            map.put("atrexpansion", Class.forName("com.martinfou.trading.strategies.creative.ATRExpansionMomentumStrategy")
+                .asSubclass(Strategy.class));
+            map.put("monthweekphase", Class.forName("com.martinfou.trading.strategies.creative.MonthWeekPhaseStrategy")
+                .asSubclass(Strategy.class));
         } catch (ClassNotFoundException e) {
             throw new RuntimeException("Strategy class not found", e);
         }
@@ -954,6 +961,10 @@ public class LiveStrategyRunner implements Runnable {
         if (name.contains("NYMID")) return "EUR_USD";
         if (name.contains("GOBIG")) return "GBP_USD";
         if (name.contains("CASINO")) return "USD_JPY";
+        // V2 — Backtest-qualified (June 2026)
+        if (name.contains("COMPOSITEMOMENTUM")) return "USD_JPY";
+        if (name.contains("ATREXPANSIONMOMENTUM")) return "GBP_USD";
+        if (name.contains("MONTHWEEKPHASE")) return "USD_JPY";
         // Default — safe pair
         return "GBP_JPY";
     }
