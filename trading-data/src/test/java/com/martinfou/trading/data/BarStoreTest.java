@@ -37,6 +37,7 @@ class BarStoreTest {
         Path file = dir.resolve("EUR_USD_H1_2012.bars");
         long epochSec = Instant.parse("2012-06-01T12:00:00Z").getEpochSecond();
         var bytes = java.nio.ByteBuffer.allocate(BarStore.BAR_SIZE);
+        bytes.order(java.nio.ByteOrder.LITTLE_ENDIAN);
         bytes.putLong(epochSec);
         bytes.putDouble(1.1);
         bytes.putDouble(1.2);

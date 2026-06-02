@@ -40,6 +40,14 @@ public class BarStore {
     private MappedByteBuffer buffer;
     private int barCount;
 
+    /**
+     * Byte order used by the download scripts (Python struct.pack '&lt;qddddi').
+     * On x86-64 Linux, the default JVM byte order is LITTLE_ENDIAN anyway,
+     * but we assert it explicitly so the contract with the Python pipeline
+     * is self-documenting and portable.
+     */
+    private static final ByteOrder DATA_BYTE_ORDER = ByteOrder.LITTLE_ENDIAN;
+
     public BarStore(String symbol, String timeframe, Path dataDir) {
         this.symbol = symbol;
         this.timeframe = timeframe;
@@ -55,6 +63,7 @@ public class BarStore {
             var channel = file.getChannel();
             buffer = channel.map(FileChannel.MapMode.READ_WRITE, 0, 
                 (long) bars.size() * BAR_SIZE);
+            buffer.order(DATA_BYTE_ORDER);
             
             for (var bar : bars) {
                 buffer.putLong(bar.timestamp().toEpochMilli());
@@ -106,6 +115,7 @@ public class BarStore {
             long size = channel.size();
             this.barCount = (int) (size / BAR_SIZE);
             this.buffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, size);
+            this.buffer.order(DATA_BYTE_ORDER);
         }
     }
 
