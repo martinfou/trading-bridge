@@ -161,8 +161,7 @@ public class MomentumAccelerationStrategy implements Strategy {
             stopLoss = entryPrice - atr * ATR_STOP_MULT;
             takeProfit = entryPrice + atr * ATR_STOP_MULT * RR_TARGET;
             highestSinceEntry = entryPrice;
-            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, positionSize, entryPrice)
-                .withStopLoss(stopLoss).withTakeProfit(takeProfit));
+            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, positionSize, entryPrice));
             inTrade = true;
             tradeDirection = Order.Side.BUY;
             barsInTrade = 0;
@@ -173,8 +172,7 @@ public class MomentumAccelerationStrategy implements Strategy {
             stopLoss = entryPrice + atr * ATR_STOP_MULT;
             takeProfit = entryPrice - atr * ATR_STOP_MULT * RR_TARGET;
             lowestSinceEntry = entryPrice;
-            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, positionSize, entryPrice)
-                .withStopLoss(stopLoss).withTakeProfit(takeProfit));
+            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, positionSize, entryPrice));
             inTrade = true;
             tradeDirection = Order.Side.SELL;
             barsInTrade = 0;
