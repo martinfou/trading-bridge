@@ -8,100 +8,92 @@ import java.util.*;
 /**
  * Turn-of-Month Flow Strategy — Seasonality/Calendar
  *
- * 📊 Inspiration: forex-seasonality quarter-end/month-end patterns from
- *    DailyFX, Quantified Strategies, and academic research. Forex month-end
- *    is driven by institutional portfolio rebalancing, repatriation flows,
- *    and options expiry. EUR/USD shows mean reversion in the last 3 trading
- *    days of each month, while USD/JPY tends to trend with the month bias.
+ * 📊 Inspiration: forex-seasonality — FX_Programmer's quarterly rebalancing,
+ *    Olsen Ltd.'s calendar effect research, and the month-end window detection
+ *    from the seasonality skill reference (month-end-window-detection.md).
  *
  * 🔧 Mechanism:
- *    - Detect last 3 trading days of each calendar month
- *    - Quarterly ends (Mar, Jun, Sep, Dec) have stronger signals:
- *      fade the month's dominant direction (rebalancing flow)
- *    - Non-quarterly month ends: trade in direction of monthly bias
- *    - Entry: on the first of the last 3 trading days
- *    - Exit: end of 3rd trading day of the new month
- *    - Stop: 2× ATR(14) from entry
+ *    - Detect last 3 trading days of each month
+ *    - Use per-pair monthly bias matrix to determine direction
+ *    - Quarter-end (Mar/Jun/Sep/Dec): FADE the monthly bias
+ *      (institutional rebalancing reverses the trend)
+ *    - Non-quarter end: TRADE WITH the monthly bias
+ *    - Enter on first bar of the window only
+ *    - Exit: ATR trailing stop (1.5×), max 10 bars, or window closes
  *
- * 🎯 Originality: Pure calendar-based strategy exploiting institutional
- *    flow patterns. Unlike typical seasonal strategies that trade all
- *    month, this focuses on the concentrated 3-day month-end window
- *    where rebalancing flows are strongest and most predictable.
+ * 🎯 Originality: Unlike MonthWeekPhaseStrategy (week-of-month phase logic)
+ *    and MonthlyRotationStrategy (same logic all month with monthly bias),
+ *    this strategy trades ONLY the last-3-days window with a distinct
+ *    quarter-end rebalancing fade mechanism.
  *
- * References:
- *   - DailyFX Seasonality Tool: month-end USD strength
- *   - Quantified Strategies: monthly pattern book
- *   - FX_Programmer (Forex Factory): quarter-end rebalancing
+ * Reference: forex-seasonality skill, month-end-window-detection.md,
+ *   "Major Known Seasonal Patterns" table from the skill.
  */
 public class TurnOfMonthFlowStrategy implements Strategy {
 
+    private static final int MIN_HISTORY = 60;
     private static final int ATR_PERIOD = 14;
-    private static final double ATR_STOP_MULT = 2.0;
-    private static final double RR = 2.0;
-    private static final int MIN_HISTORY = 30;
+    private static final int RANGE_MEDIAN = 20;
+    private static final double ATR_STOP_MULT = 1.5;
+    private static final double RR_TARGET = 2.0;
+    private static final int MAX_BARS_HOLD = 10;
     private static final double MIN_POSITION = 1000;
+    private static final int COOLDOWN_BARS = 5;
 
-    // Monthly directional bias based on known seasonal patterns
-    // +1 = long bias, -1 = short bias, 0 = neutral
-    // Based on EUR/USD historical patterns
-    private static final int[] MONTHLY_DIRECTION = {
-         1,  // Jan: +1.2% avg, 65% WR
-         0,  // Feb: mixed
-         0,  // Mar: quarter-end, rebalancing
-        -1,  // Apr: tax season USD strength
-         0,  // May: mixed
-        -1,  // Jun: quarter-end, USD typically strong
-         0,  // Jul: summer, mixed
-         0,  // Aug: summer doldrums
-         0,  // Sep: quarter-end, rebalancing
-         1,  // Oct: positive bias
-         0,  // Nov: mixed
-         1   // Dec: Santa rally, holiday drift
-    };
-
-    // Quarter-end months have stronger signals
+    // Quarter-end months: Mar(3), Jun(6), Sep(9), Dec(12)
     private static final boolean[] IS_QUARTER_END = {
-        false, // Jan
-        false, // Feb
-        true,  // Mar (Q1)
-        false, // Apr
-        false, // May
-        true,  // Jun (Q2)
-        false, // Jul
-        false, // Aug
-        true,  // Sep (Q3)
-        false, // Oct
-        false, // Nov
-        true   // Dec (Q4)
+        false, false, true,  // Jan, Feb, Mar
+        false, false, true,  // Apr, May, Jun
+        false, false, true,  // Jul, Aug, Sep
+        false, false, true   // Oct, Nov, Dec
     };
+
+    // Monthly bias by pair from forex-seasonality skill research:
+    // +1 = long bias, -1 = short bias, 0 = neutral
+    // Index: 0=Jan, 1=Feb, ..., 11=Dec
+    // EUR/USD: Jan+, Aug/Sep-, Dec+
+    private static final Map<String, int[]> MONTHLY_BIAS = new HashMap<>();
+    static {
+        MONTHLY_BIAS.put("EUR_USD", new int[]{ 1,  0,  0,  0,  0,  0,  0, -1, -1,  0,  0,  1});
+        MONTHLY_BIAS.put("GBP_USD", new int[]{ 1,  0, -1,  0,  0,  0,  0,  0,  0,  0,  0,  1});
+        MONTHLY_BIAS.put("USD_JPY", new int[]{ 1,  0,  0,  1,  0,  0,  0,  0,  0,  0,  0,  0});
+        MONTHLY_BIAS.put("AUD_USD", new int[]{ 1,  1,  1,  0,  0,  0,  0,  0, -1,  0,  0,  0});
+        MONTHLY_BIAS.put("USD_CAD", new int[]{-1,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0});
+        MONTHLY_BIAS.put("NZD_USD", new int[]{ 0,  1,  1,  1,  0,  0,  0,  0,  0,  0,  0,  0});
+        MONTHLY_BIAS.put("USD_CHF", new int[]{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0});
+        MONTHLY_BIAS.put("EUR_JPY", new int[]{ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0});
+        MONTHLY_BIAS.put("GBP_JPY", new int[]{ 0,  0,  0,  1,  0,  0,  0, -1,  0,  1,  0,  1});
+    }
 
     private final String name;
     private final String symbol;
     private final List<Order> pending = new ArrayList<>();
     private final List<Bar> history = new ArrayList<>();
+    private final ZoneId nyZone = ZoneId.of("America/New_York");
 
-    // Month-end window tracking
-    private boolean inWindow = false;
-    private int windowStartDay = -1;
-    private int windowEndDay = -1;
-    private int windowMonth = -1;
-    private int windowYear = -1;
-    private int daysInWindow = 0;
-
-    // Trade state
     private boolean inTrade = false;
     private Order.Side tradeDirection;
     private double entryPrice;
     private double stopLoss;
     private double takeProfit;
     private int barsInTrade;
-    private int currentMonth = -1;
+    private double highestSinceEntry;
+    private double lowestSinceEntry;
     private double positionSize;
+    private int cooldownBars;
+    private boolean inWindow = false;
+    private int daysInWindow = 0;
+    private int windowMonth = -1;
+    private int tradeCountThisMonth;
+
+    // Bias for this pair
+    private int[] monthlyBias;
 
     public TurnOfMonthFlowStrategy(String name, String symbol) {
         this.name = name;
         this.symbol = symbol;
         this.positionSize = MIN_POSITION;
+        this.monthlyBias = MONTHLY_BIAS.getOrDefault(symbol, new int[]{0,0,0,0,0,0,0,0,0,0,0,0});
     }
 
     public TurnOfMonthFlowStrategy() {
@@ -117,11 +109,17 @@ public class TurnOfMonthFlowStrategy implements Strategy {
         history.add(bar);
         if (history.size() < MIN_HISTORY) return;
 
-        managePosition(bar);
+        // Track month for trade counting
+        int barMonth = bar.timestamp().atZone(nyZone).getMonthValue();
+
+        // Update turn-of-month window state
         updateMonthWindow(bar);
 
-        if (!inTrade && inWindow) {
-            evaluateEntry(bar);
+        managePosition(bar);
+
+        if (!inTrade) {
+            if (cooldownBars > 0) { cooldownBars--; return; }
+            evaluateEntry(bar, barMonth);
         }
     }
 
@@ -140,13 +138,12 @@ public class TurnOfMonthFlowStrategy implements Strategy {
         history.clear();
         pending.clear();
         inTrade = false;
-        inWindow = false;
-        windowStartDay = -1;
-        windowEndDay = -1;
-        windowMonth = -1;
         barsInTrade = 0;
+        cooldownBars = 0;
+        inWindow = false;
         daysInWindow = 0;
-        currentMonth = -1;
+        windowMonth = -1;
+        tradeCountThisMonth = 0;
     }
 
     private void managePosition(Bar bar) {
@@ -154,119 +151,169 @@ public class TurnOfMonthFlowStrategy implements Strategy {
         barsInTrade++;
 
         if (tradeDirection == Order.Side.BUY) {
-            if (bar.low() <= stopLoss || bar.high() >= takeProfit) {
-                inTrade = false;
-                return;
-            }
+            highestSinceEntry = Math.max(highestSinceEntry, bar.high());
         } else {
-            if (bar.high() >= stopLoss || bar.low() <= takeProfit) {
-                inTrade = false;
-                return;
-            }
+            lowestSinceEntry = Math.min(lowestSinceEntry, bar.low());
         }
 
-        // Check if we should exit due to time (end of window)
-        if (!inWindow) {
-            inTrade = false;
+        boolean stopHit = (tradeDirection == Order.Side.BUY && bar.low() <= stopLoss)
+            || (tradeDirection == Order.Side.SELL && bar.high() >= stopLoss);
+        boolean tpHit = (tradeDirection == Order.Side.BUY && bar.high() >= takeProfit)
+            || (tradeDirection == Order.Side.SELL && bar.low() <= takeProfit);
+
+        // Exit when window closes or max bars reached
+        if (stopHit || tpHit || barsInTrade >= MAX_BARS_HOLD || !inWindow) {
+            closePosition(bar.close());
+            return;
+        }
+
+        // Trailing stop
+        double atr = atr();
+        if (!Double.isNaN(atr) && atr > 0) {
+            if (tradeDirection == Order.Side.BUY) {
+                double trail = highestSinceEntry - atr * ATR_STOP_MULT;
+                stopLoss = Math.max(stopLoss, trail);
+                if (bar.low() <= stopLoss) { closePosition(bar.close()); return; }
+            } else {
+                double trail = lowestSinceEntry + atr * ATR_STOP_MULT;
+                stopLoss = Math.min(stopLoss, trail);
+                if (bar.high() >= stopLoss) { closePosition(bar.close()); return; }
+            }
         }
     }
 
-    private void updateMonthWindow(Bar bar) {
-        ZonedDateTime zdt = bar.timestamp().atZone(ZoneOffset.UTC);
-        int year = zdt.getYear();
-        int month = zdt.getMonthValue();
-        int dayOfMonth = zdt.getDayOfMonth();
-        int dayOfWeek = zdt.getDayOfWeek().getValue(); // 1=Mon, 7=Sun
+    private void evaluateEntry(Bar bar, int barMonth) {
+        if (!inWindow) return;
+        if (daysInWindow > 1) return; // first bar of window only
+        if (tradeCountThisMonth >= 1) return; // one trade per month max
 
-        // Track if we're in a new month
-        if (month != currentMonth) {
-            // Previous month window just ended — check if we were in window
-            currentMonth = month;
-            inWindow = false;
-            daysInWindow = 0;
-        }
+        int bias = computeEffectiveBias(barMonth);
+        if (bias == 0) return;
 
-        // Determine the last 3 trading days (Mon-Fri) of the month
-        if (dayOfMonth >= 25 && dayOfWeek <= 5) { // Last week, weekday
-            // Check if this could be one of the last 3 trading days
-            LocalDate ld = zdt.toLocalDate();
-            LocalDate endOfMonth = ld.withDayOfMonth(ld.lengthOfMonth());
-
-            // Count backwards from end of month to find last 3 trading days
-            int tradingDaysLeft = 0;
-            LocalDate cursor = endOfMonth;
-            while (!cursor.isBefore(ld)) {
-                if (cursor.getDayOfWeek().getValue() <= 5) { // weekday
-                    tradingDaysLeft++;
-                }
-                cursor = cursor.minusDays(1);
-            }
-
-            if (tradingDaysLeft <= 3 && tradingDaysLeft > 0) {
-                if (!inWindow) {
-                    inWindow = true;
-                    windowStartDay = dayOfMonth;
-                    windowMonth = month;
-                    windowYear = year;
-                }
-                daysInWindow++;
-            }
-        } else if (dayOfMonth <= 3 && inWindow && month == windowMonth) {
-            // Still in window at start of next month (trades can run into next month)
-            // Actually the window should end when the month changes
-        } else if (dayOfMonth > 3 && inWindow) {
-            // Past the window
-            inWindow = false;
-            daysInWindow = 0;
-        }
-    }
-
-    private void evaluateEntry(Bar bar) {
-        ZonedDateTime zdt = bar.timestamp().atZone(ZoneOffset.UTC);
-        int month = zdt.getMonthValue();
-
-        // Only enter on first day of window
-        if (daysInWindow > 1) return;
-
-        double atr = Indicators.atr(history, ATR_PERIOD);
+        double atr = atr();
         if (Double.isNaN(atr) || atr <= 0) return;
 
-        int direction = MONTHLY_DIRECTION[month - 1];
-        boolean quarterEnd = IS_QUARTER_END[month - 1];
-
-        // Quarter-end rebalancing: fade the month's dominant move
-        // Non-quarter-end: trade in direction of monthly bias
-        if (direction == 0) return; // Neutral month — skip
-
-        // Quarter-end: fade the bias (rebalancing flow)
-        if (quarterEnd) {
-            direction = -direction;
+        // Enter with momentum confirmation (bar should close in bias direction)
+        boolean validEntry;
+        if (bias > 0) {
+            validEntry = bar.close() > bar.open() || bar.close() > history.get(history.size() - 2).close();
+        } else {
+            validEntry = bar.close() < bar.open() || bar.close() < history.get(history.size() - 2).close();
         }
 
-        double pip = Indicators.pipSize(symbol);
+        if (!validEntry) return;
 
-        if (direction > 0) {
-            // Long bias
+        // Above-median range filter for conviction
+        if (!hasAboveMedianRange()) return;
+
+        if (bias > 0) {
             entryPrice = bar.close();
             stopLoss = entryPrice - atr * ATR_STOP_MULT;
-            takeProfit = entryPrice + atr * ATR_STOP_MULT * RR;
-
+            takeProfit = entryPrice + atr * ATR_STOP_MULT * RR_TARGET;
+            highestSinceEntry = entryPrice;
             pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, positionSize, entryPrice)
                 .withStopLoss(stopLoss).withTakeProfit(takeProfit));
             inTrade = true;
             tradeDirection = Order.Side.BUY;
-            barsInTrade = 0;
         } else {
-            // Short bias
             entryPrice = bar.close();
             stopLoss = entryPrice + atr * ATR_STOP_MULT;
-            takeProfit = entryPrice - atr * ATR_STOP_MULT * RR;
-
+            takeProfit = entryPrice - atr * ATR_STOP_MULT * RR_TARGET;
+            lowestSinceEntry = entryPrice;
             pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, positionSize, entryPrice)
                 .withStopLoss(stopLoss).withTakeProfit(takeProfit));
             inTrade = true;
             tradeDirection = Order.Side.SELL;
-            barsInTrade = 0;
         }
+        barsInTrade = 0;
+        tradeCountThisMonth++;
+    }
+
+    /**
+     * Compute effective bias for the given month.
+     * Quarter-end: FADE the monthly bias (rebalancing reverse).
+     * Non-quarter: TRADE WITH the monthly bias.
+     */
+    private int computeEffectiveBias(int month) {
+        int bias = monthlyBias[month - 1];
+        if (bias == 0) return 0;
+
+        boolean quarterEnd = IS_QUARTER_END[month - 1];
+        if (quarterEnd) {
+            return -bias;
+        }
+        return bias;
+    }
+
+    /**
+     * Update the month-end window state.
+     * Detects last 3 trading days of each month.
+     */
+    private void updateMonthWindow(Bar bar) {
+        ZonedDateTime zdt = bar.timestamp().atZone(nyZone);
+        int year = zdt.getYear();
+        int month = zdt.getMonthValue();
+        int dayOfMonth = zdt.getDayOfMonth();
+
+        // Only check from day 25 onward (last week of month)
+        if (dayOfMonth < 25) {
+            inWindow = false;
+            daysInWindow = 0;
+            return;
+        }
+
+        LocalDate ld = zdt.toLocalDate();
+        LocalDate endOfMonth = ld.withDayOfMonth(ld.lengthOfMonth());
+
+        // Count trading days (Mon-Fri) from current date to end of month
+        int tradingDaysLeft = 0;
+        LocalDate cursor = endOfMonth;
+        while (!cursor.isBefore(ld)) {
+            if (cursor.getDayOfWeek().getValue() <= 5) { // weekday
+                tradingDaysLeft++;
+            }
+            cursor = cursor.minusDays(1);
+        }
+
+        boolean wasInWindow = inWindow;
+        inWindow = (tradingDaysLeft <= 3 && tradingDaysLeft > 0);
+
+        if (inWindow) {
+            if (!wasInWindow) {
+                daysInWindow = 1;
+                windowMonth = month;
+            } else {
+                daysInWindow++;
+            }
+        } else {
+            daysInWindow = 0;
+        }
+    }
+
+    private boolean hasAboveMedianRange() {
+        int end = history.size() - 1;
+        int lookback = Math.min(RANGE_MEDIAN, end);
+        if (lookback < 3) return true;
+
+        double[] ranges = new double[lookback];
+        for (int i = 0; i < lookback; i++) {
+            int idx = end - lookback + 1 + i;
+            ranges[i] = history.get(idx).high() - history.get(idx).low();
+        }
+        double latestRange = history.get(end).high() - history.get(end).low();
+        Arrays.sort(ranges);
+        double median = ranges[lookback / 2];
+        return latestRange >= median;
+    }
+
+    private void closePosition(double price) {
+        Order.Side exitSide = tradeDirection == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
+        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, positionSize, price).closeOnly());
+        inTrade = false;
+        cooldownBars = COOLDOWN_BARS;
+    }
+
+    private double atr() {
+        return Indicators.atr(history, ATR_PERIOD);
     }
 }
