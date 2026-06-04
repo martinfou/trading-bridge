@@ -1,7 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useControlPlane } from '@/composables/useControlPlane'
 import type { Strategy, RunConfig } from '@/types/control-plane'
+
+const props = defineProps<{
+  preselectedStrategy?: string
+  preselectedSymbol?: string
+}>()
 
 const emit = defineEmits<{
   runStart: [runId: string]
@@ -17,6 +22,19 @@ const selectedYear = ref(2025)
 const capital = ref(100000)
 const commission = ref(0.07)
 const slippage = ref(0.0001)
+
+watch(() => props.preselectedStrategy, (val) => {
+  if (val && strategies.value.some((s) => s.id === val)) {
+    selectedStrategy.value = val
+    onStrategyChange()
+  }
+}, { immediate: true })
+
+watch(() => props.preselectedSymbol, (val) => {
+  if (val && symbolOptions.includes(val)) {
+    selectedSymbol.value = val
+  }
+}, { immediate: true })
 
 const years = Array.from({ length: 17 }, (_, i) => 2010 + i)
 const symbolOptions = [

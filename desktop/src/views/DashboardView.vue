@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useControlPlane } from '@/composables/useControlPlane'
 import { useRunWebSocket } from '@/composables/useRunWebSocket'
 import type { RunResult } from '@/types/control-plane'
@@ -9,6 +9,7 @@ import KpiStrip from '@/components/KpiStrip.vue'
 import EquityChart from '@/components/EquityChart.vue'
 
 const router = useRouter()
+const route = useRoute()
 const { getRun, getEquityCurve } = useControlPlane()
 const ws = useRunWebSocket()
 
@@ -16,6 +17,12 @@ const result = ref<RunResult | null>(null)
 const equityCurve = ref<number[]>([])
 const viewError = ref<string | null>(null)
 const polling = ref(false)
+const preselectedStrategy = ref<string | undefined>(
+  typeof route.query.strategyId === 'string' ? route.query.strategyId : undefined,
+)
+const preselectedSymbol = ref<string | undefined>(
+  typeof route.query.symbol === 'string' ? route.query.symbol : undefined,
+)
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
 async function onRunStart(runId: string) {
@@ -59,7 +66,12 @@ function viewFullResults() {
     <h1>Dashboard</h1>
     <p class="subtitle">Run backtests and view results</p>
 
-    <BacktestForm @run-start="onRunStart" @error="onFormError" />
+    <BacktestForm
+      @run-start="onRunStart"
+      @error="onFormError"
+      :preselected-strategy="preselectedStrategy"
+      :preselected-symbol="preselectedSymbol"
+    />
 
     <div v-if="viewError" class="banner error">{{ viewError }}</div>
 
