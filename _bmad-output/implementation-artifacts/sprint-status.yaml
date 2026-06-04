@@ -39,7 +39,7 @@
 # Epic 12 added 2026-05-23; snapshot commit ee871f5
 
 generated: "2026-05-23"
-last_updated: "2026-05-31T02:45:00Z"
+last_updated: "2026-06-04T15:10:00Z"
 project: trading-bridge
 project_key: NOKEY
 tracking_system: file-system
@@ -159,3 +159,24 @@ development_status:
   19-4-oos-holdout-gate: done
   19-5-execution-stress-gate: done
   epic-19-retrospective: done
+
+# ── Desktop GUI (Electron + Vue 3) ─────────────────────────────────────────
+  epic-desktop-gui: done
+  dg-1-java-endpoints: done
+  dg-2-electron-scaffold: done
+  dg-3-api-client-websocket: done
+  dg-4-dashboard: done
+  dg-5-strategy-catalog: done
+  dg-6-results-charts: done
+  dg-7-compare-runs: done
+  dg-8-packaging-ci: done
+
+  epic-desktop-crossplatform-ci: done
+  dci-1-matrix-build: done
+
+  epic-desktop-bundle-java: done
+  dbj-1-fat-jar: done
+  dbj-2-jlink-script: done
+  dbj-3-jvm-lifecycle: done
+  dbj-4-extra-resources: done
+  dbj-5-ci-feed: done
