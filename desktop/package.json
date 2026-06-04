@@ -1,14 +1,17 @@
 {
   "name": "trading-bridge-desktop",
   "version": "0.1.0",
-  "description": "Desktop backtest runner for Trading Bridge",
-  "main": "electron/main.js",
+  "description": "Desktop backtest runner for Trading Bridge — run, analyse, and compare strategies",
+  "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "electron:dev": "vite",
-    "electron:build": "vite build && electron-builder"
+    "electron:build": "npm run build && electron-builder",
+    "package:linux": "npm run build && electron-builder --linux",
+    "package:win": "npm run build && electron-builder --win",
+    "package:mac": "npm run build && electron-builder --mac"
   },
   "dependencies": {
     "lightweight-charts": "^5.0.0",
@@ -29,20 +32,34 @@
     "appId": "com.martinfou.trading-bridge-desktop",
     "productName": "Trading Bridge",
     "directories": {
-      "output": "dist-electron"
+      "output": "release"
     },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ],
     "linux": {
       "target": [
-        "AppImage",
-        "deb"
+        { "target": "AppImage", "arch": ["x64"] },
+        { "target": "deb", "arch": ["x64"] },
+        { "target": "pacman", "arch": ["x64"] }
       ],
       "category": "Finance"
     },
     "mac": {
       "target": [
-        "dmg"
+        { "target": "dmg", "arch": ["x64", "arm64"] }
       ],
       "category": "public.app-category.finance"
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
     }
   }
 }
