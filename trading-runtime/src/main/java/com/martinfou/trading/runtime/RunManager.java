@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -332,11 +333,32 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
             requireTerminalEvent(runId, RunEventType.RUN_ENDED);
             if (record.status() == RunRecord.Status.RUNNING) {
                 record.noteEventAt(latestEventTimestamp(runId).orElse(Instant.now()));
-                record.markCompleted(Map.of(
-                    "totalTrades", result.totalTrades(),
-                    "totalReturnPct", result.totalReturnPct(),
-                    "finalEquity", result.finalEquity(),
-                    "maxDrawdownPct", result.maxDrawdownPct()));
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("totalTrades", result.totalTrades());
+                payload.put("totalReturnPct", result.totalReturnPct());
+                payload.put("finalEquity", result.finalEquity());
+                payload.put("maxDrawdownPct", result.maxDrawdownPct());
+                payload.put("sharpeRatio", result.sharpeRatio());
+                payload.put("profitFactor", result.profitFactor());
+                payload.put("winRatePct", result.winRatePct());
+                payload.put("totalCommission", result.totalCommission());
+                payload.put("totalSlippage", result.totalSlippage());
+                payload.put("equityCurveSample", sampleEquityCurve(result.equityCurve(), 500));
+                payload.put("trades", result.trades().stream()
+                    .map(t -> {
+                        Map<String, Object> tm = new LinkedHashMap<>();
+                        tm.put("symbol", t.symbol());
+                        tm.put("side", t.side().name());
+                        tm.put("entryPrice", t.entryPrice());
+                        tm.put("exitPrice", t.exitPrice());
+                        tm.put("quantity", t.quantity());
+                        tm.put("entryTime", t.entryTime().toString());
+                        tm.put("exitTime", t.exitTime().toString());
+                        tm.put("pnl", t.pnl());
+                        return tm;
+                    })
+                    .toList());
+                record.markCompleted(payload);
                 notifyTransition(before, record, RunTransition.COMPLETE);
             } else if (record.status() == RunRecord.Status.PAUSED) {
                 record.noteEventAt(latestEventTimestamp(runId).orElse(Instant.now()));
@@ -508,5 +530,18 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
         if (mode == RunMode.LIVE && !label.isLiveBroker()) {
             throw new IllegalArgumentException("LIVE mode requires executionLabel LIVE_OANDA or LIVE_IBKR");
         }
+    }
+
+    /** Downsample an equity curve to max N points for frontend display. */
+    static List<Double> sampleEquityCurve(List<Double> curve, int maxPoints) {
+        if (curve == null || curve.isEmpty()) return List.of();
+        if (curve.size() <= maxPoints) return List.copyOf(curve);
+        List<Double> sampled = new ArrayList<>(maxPoints);
+        double step = (double) (curve.size() - 1) / (maxPoints - 1);
+        for (int i = 0; i < maxPoints; i++) {
+            int index = Math.min((int) Math.round(i * step), curve.size() - 1);
+            sampled.add(curve.get(index));
+        }
+        return sampled;
     }
 }

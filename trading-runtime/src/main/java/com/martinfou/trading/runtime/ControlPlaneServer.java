@@ -180,6 +180,24 @@ public final class ControlPlaneServer implements AutoCloseable {
                     ctx.result(EvidencePackExporter.exportJsonl(record, runManager.eventStore(), deployment));
                 }
             })
+            .get("/api/runs/{runId}/trades", ctx -> {
+                String runId = ctx.pathParam("runId");
+                RunRecord record = runManager.getRun(runId)
+                    .orElseThrow(() -> new NotFoundException("Run not found: " + runId));
+                List<?> trades = record.endedPayload()
+                    .map(p -> (List<?>) p.get("trades"))
+                    .orElse(List.of());
+                ctx.json(Map.of("runId", runId, "trades", trades));
+            })
+            .get("/api/runs/{runId}/equity-curve", ctx -> {
+                String runId = ctx.pathParam("runId");
+                RunRecord record = runManager.getRun(runId)
+                    .orElseThrow(() -> new NotFoundException("Run not found: " + runId));
+                List<?> curve = record.endedPayload()
+                    .map(p -> (List<?>) p.get("equityCurveSample"))
+                    .orElse(List.of());
+                ctx.json(Map.of("runId", runId, "equityCurve", curve));
+            })
             .get("/api/runs/{runId}/events", ctx -> {
                 String runId = ctx.pathParam("runId");
                 runManager.getRun(runId)
