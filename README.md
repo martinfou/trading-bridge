@@ -77,19 +77,25 @@ annulaient le P&L réel.
 Trois branches dans `processOrders()` : **même sens** → ajouter à la position ;
 **sens opposé** → fermer seulement (sans ré-ouvrir) ; **pas de position** → ouvrir.
 
-### 🛑 5. JPAIRES JPY — Précision des stop orders (🔴 NON RÉSOLU)
+### 🛑 5. JPAIRES JPY — Précision des stop orders (✅ RÉSOLU)
 
-**Problème :** `Order.setStopLossOnFill()` utilise `String.format("%.5f", price)`.
+**Problème :** `String.format("%.5f", price)` appliqué à toutes les paires.
 Les paires JPY (USD/JPY, GBP/JPY, EUR/JPY) ont une précision à 3 décimales max.
-OANDA rejette les stops avec 5 décimales → **0 trades JPY exécutés** depuis le
-déploiement.
+OANDA rejette les stops avec 5 décimales → **0 trades JPY exécutés** avant le fix.
 
-**Fix 🔴 Non appliqué :**
+**Fix ✅** (dans `LiveStrategyRunner.java`) :
 ```java
-if (instrument.endsWith("JPY")) 
-    // utiliser scale(3) au lieu de %.5f
+static String formatPrice(double price, String oandaSymbol) {
+    int precision = switch (oandaSymbol) {
+        case "GBP_JPY", "USD_JPY" -> 3;
+        case "XAU_USD", "XAG_USD" -> 1;
+        default -> 5;
+    };
+    return String.format("%." + precision + "f", price);
+}
 ```
-Voir `LiveStrategyRunner` et `OandaExecutor` pour les endroits à corriger.
+`executeTrade()` et `placeOandaStopOrder()` utilisent `formatPrice()` pour SL/TP,
+garantissant la bonne précision par instrument.
 
 ### ⚠️ 6. SHARPE NÉGATIF SUR 20 ANS — Anomalie connue
 
