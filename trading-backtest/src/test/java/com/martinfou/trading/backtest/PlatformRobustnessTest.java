@@ -74,14 +74,17 @@ class PlatformRobustnessTest {
                     {1.2510, 1.2520, 1.2500, 1.2515}
                 }), 1,
                 r -> assertEquals(1.2500, r.trades().getFirst().entryPrice(), 1e-9)),
-            new PlatformCase("buyThenSell_explicitExit", TestStrategies.buyThenSell(),
+            new PlatformCase("buyThenSell_createsHedge", TestStrategies.buyThenSell(),
                 TestBars.ohlc(new double[][] {
                     {1.1000, 1.1010, 1.0990, 1.1005},
                     {1.1010, 1.1020, 1.1000, 1.1015},
                     {1.1020, 1.1030, 1.1010, 1.1025}
-                }), 1,
-                r -> assertEquals(1.1010, r.trades().getFirst().exitPrice(), 1e-9)),
-            new PlatformCase("alternating_twoRoundTrips", TestStrategies.alternatingRoundTrips(2),
+                }), 2,
+                r -> {
+                    assertEquals(1.1025, r.trades().get(0).exitPrice(), 1e-9, "LONG exits at final close");
+                    assertEquals(1.1025, r.trades().get(1).exitPrice(), 1e-9, "SHORT exits at final close");
+                }),
+            new PlatformCase("alternating_twoRoundTrips_hedged", TestStrategies.alternatingRoundTrips(2),
                 TestBars.flat(5, 1.1000), 2),
             new PlatformCase("limitBuy_fillsAtLimit", TestStrategies.limitBuy(1.1000, 10_000),
                 TestBars.ohlc(new double[][] {
@@ -130,13 +133,16 @@ class PlatformRobustnessTest {
                 TestBars.flat(5, 1.1000), 1),
             new PlatformCase("sellOnce_singleBar", TestStrategies.sellOnce(),
                 TestBars.ohlc(new double[][] {{1.1000, 1.1010, 1.0990, 1.1005}}), 1),
-            new PlatformCase("sellThenBuy_coverWithoutReversal", TestStrategies.sellThenBuy(),
+            new PlatformCase("sellThenBuy_createsHedge", TestStrategies.sellThenBuy(),
                 TestBars.ohlc(new double[][] {
                     {1.1000, 1.1010, 1.0990, 1.1005},
                     {1.1010, 1.1020, 1.1000, 1.1015},
                     {1.1020, 1.1030, 1.1010, 1.1025}
-                }), 1,
-                r -> assertEquals(1.1010, r.trades().getFirst().exitPrice(), 1e-9)),
+                }), 2,
+                r -> {
+                    assertEquals(1.1025, r.trades().get(0).exitPrice(), 1e-9, "SHORT exits at final close");
+                    assertEquals(1.1025, r.trades().get(1).exitPrice(), 1e-9, "LONG exits at final close");
+                }),
             new PlatformCase("stopLoss_gapsThrough_exitsAtSl", TestStrategies.buyWithStopLoss(1.1950),
                 TestBars.ohlc(new double[][] {
                     {1.2000, 1.2010, 1.1990, 1.2000},
