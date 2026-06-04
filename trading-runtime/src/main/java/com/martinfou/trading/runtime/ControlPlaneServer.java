@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.time.Instant;
 import java.util.function.Consumer;
 
 /**
@@ -85,7 +86,10 @@ public final class ControlPlaneServer implements AutoCloseable {
         KillSwitchService killSwitchService,
         ControlSummaryService summaryService
     ) {
-        return Javalin.create(config -> config.showJavalinBanner = false)
+        return Javalin.create(config -> {
+            config.showJavalinBanner = false;
+            config.bundledPlugins.enableCors(cors -> cors.addRule(it -> it.anyHost()));
+        })
             .get("/api/health", ctx -> ctx.json(Map.of(
                 "status", "ok",
                 "version", VERSION)))
@@ -159,6 +163,20 @@ public final class ControlPlaneServer implements AutoCloseable {
                 ctx.json(Map.of(
                     "runId", runId,
                     "status", RunRecord.Status.RUNNING.name()));
+            })
+            .get("/api/runs", ctx -> {
+                List<Map<String, Object>> items = runManager.list(null).stream()
+                    .map(r -> {
+                        Map<String, Object> m = new LinkedHashMap<>();
+                        m.put("runId", r.runId());
+                        m.put("strategyId", r.strategyId());
+                        m.put("symbol", r.symbol());
+                        m.put("status", r.status().name());
+                        m.put("completedAt", r.completedAt().map(Instant::toString).orElse(null));
+                        return m;
+                    })
+                    .toList();
+                ctx.json(Map.of("runs", items));
             })
             .get("/api/runs/{runId}", ctx -> {
                 String runId = ctx.pathParam("runId");

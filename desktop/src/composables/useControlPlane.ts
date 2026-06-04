@@ -1,6 +1,6 @@
 import { ref, reactive } from 'vue'
 import { useControlPlaneConfig } from './controlPlaneConfig'
-import type { Strategy, RunConfig, RunResult, Trade } from '@/types/control-plane'
+import type { Strategy, RunConfig, RunResult, Trade, RunSummary } from '@/types/control-plane'
 
 interface StartRunResponse {
   runId: string
@@ -106,12 +106,18 @@ export function useControlPlane() {
     return data.equityCurve
   }
 
+  async function listRuns(): Promise<RunSummary[]> {
+    const data = await apiGet<{ runs: RunSummary[] }>('/api/runs', controlPlaneUrl.value)
+    return data.runs
+  }
+
   return {
     startRun,
     getRun,
     getStrategies,
     getTrades,
     getEquityCurve,
+    listRuns,
     error,
     loading,
     controlPlaneUrl,

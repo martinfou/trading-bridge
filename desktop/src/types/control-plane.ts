@@ -17,6 +17,15 @@ export interface RunConfig {
   slippagePct?: number
 }
 
+export interface RunSummary {
+  runId: string
+  strategyId: string
+  symbol: string
+  status: string
+  startedAt?: string
+  completedAt?: string
+}
+
 export interface RunResult {
   runId: string
   strategyId: string
