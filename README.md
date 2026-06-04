@@ -1,143 +1,181 @@
 # Trading Bridge
 
-> Pont entre backtesting et exécution live (OANDA Practice)
-> Projet personnel — Martin Fournier
+> Pont de bout en bout entre l'idée (stratégie) et l'exécution (OANDA / IBKR).
+> Projet personnel — [Martin Fournier](https://martinfournier.com)
 
-## Architecture
+[![CI](https://github.com/martinfou/trading-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/martinfou/trading-bridge/actions/workflows/ci.yml)
+![Java](https://img.shields.io/badge/Java-21-%23ED8B00?logo=openjdk)
+![Maven](https://img.shields.io/badge/Maven-4.x-C71A36?logo=apache-maven)
+[![OANDA](https://img.shields.io/badge/OANDA-v20-%233498DB)](https://developer.oanda.com/)
+
+---
+
+## 🧭 Architecture
 
 ```
-trading-core/           Domain models, Strategy interface, Indicators
-trading-backtest/       BacktestEngine, RunContext, reports
-trading-data/           HistoricalDataLoader, OANDA price client
-trading-strategies/     45+ creative + imported strategies
-trading-broker/         OANDA / IBKR broker connectors
-trading-runtime/        HTTP control plane, event store
-trading-examples/       CLI RunBacktest, golden tests
+trading-core/         Modèles de domaine (Bar, Order, Position, Trade)
+trading-backtest/     BacktestEngine, RunContext, rapports PDF/HTML
+trading-data/         HistoricalDataLoader, OANDA price client
+trading-strategies/   55+ stratégies prop (créatives, génétiques)
+trading-broker/       OANDA v20 + IBKR (paper/live)
+trading-runtime/      Serveur HTTP, promote gates, event store
+trading-examples/     CLI RunBacktest, golden tests
+trading-genetics/     Optimisation génétique offline
+trading-parser/       Parsing XML StrategyQuant → Java (🚧)
+trading-tui/          Client terminal JLine3
+trading-runtime/      Control plane, promote gates, kill switch
 ```
 
-## Déploiement
+Le module `trading-core` est le socle sans dépendances internes. Tout est orienté autour de l'interface `Strategy` :
+une classe Java, une liste de `Bar` en entrée, une file d'ordres `Order` en sortie.
+
+---
+
+## 🚀 Quick Start
+
+### Prérequis
+
+- **Java 21+** (Temurin recommandé)
+- **Maven 3.9+**
+
+### Build
 
 ```bash
-docker compose up -d comp-momentum month-week nfp-week
+mvn clean install
 ```
 
-## Problèmes connus et correctifs
+### Backtest d'une stratégie
 
-### 🛑 1. HEDGING — Close orders créent des hedges au lieu de fermer (JUIN 2026)
+```bash
+# Lister les stratégies disponibles
+mvn exec:java -pl trading-examples \
+  -Dexec.mainClass="com.martinfou.trading.examples.RunBacktest" \
+  -Dexec.args="--list"
 
-**Problème :** Le compte OANDA a `hedgingEnabled: true`. Quand une stratégie appelle
-`closePosition()`, elle envoie un ordre MARKET en sens opposé. Sans `positionFill:
-REDUCE_ONLY`, OANDA interprète ça comme une **nouvelle position hedge** au lieu de
-fermer l'existante. Résultat : des dizaines de trades long + short simultanés,
-marge consommée à 99%, P&L qui s'annule.
-
-**Fix ✅** (commit `dde8812`, June 1 2026) :
-- `Order.java` : nouveau champ `closeOnly` + fluent `.closeOnly()`
-- `BacktestEngine` : un ordre `closeOnly` ferme la position sans en créer de nouvelle
-- `OandaExecutor` : support `positionFill: "REDUCE_ONLY"` via overload
-- `LiveStrategyRunner` : utilisation de `REDUCE_ONLY` pour les close orders
-- **45 stratégies** : `.closeOnly()` chaîné sur chaque `closePosition()`
-
-### 🛑 2. CRASH RECOVERY — État non persisté après restart Docker (MAI 2026)
-
-**Problème :** `LiveStrategyRunner.resumeState()` restaure les trades OANDA ouverts,
-mais les flags `inTrade`, `tradesToday`, `lastTradeDay` des stratégies n'étaient pas
-sauvegardés. Après un restart Docker, chaque stratégie pense n'avoir **aucun trade
-ouvert** et génère une entrée à chaque nouvelle barre → **43 trades en 7 heures,
-99.6% de marge utilisée**.
-
-**Fix ✅** (May 29-30 2026) :
-- Toutes les stratégies doivent implémenter 5 getters (`getTradesToday()`,
-  `getLastTradeDay()`, `isInTrade()`, `getTradeDirection()`, `getCooldownBars()`)
-  + `restoreState()`.
-- `LiveStrategyRunner.saveStateNow()` appelle ces getters via reflection.
-- Si une stratégie ne les a pas, le save/restore est silencieusement ignoré.
-
-### 🛑 3. SL/TP NON CHAÎNÉS — Ordres sans stops sur OANDA (MAI 2026)
-
-**Problème :** Les stratégies calculaient `entryStop` et `entryTarget` mais créaient
-l'Order sans `.withStopLoss()`. `executeTrade()` voyait `stopLoss() == 0` et
-n'attachait aucun SL/TP côté OANDA → trades ouverts indéfiniment.
-
-**Fix ✅** (May 29 2026) :
-```java
-pending.add(new Order(..., price)
-    .withStopLoss(entryStop).withTakeProfit(entryTarget));
+# Backtest sample (SmaCrossover)
+mvn exec:java -pl trading-examples \
+  -Dexec.mainClass="com.martinfou.trading.examples.RunBacktest" \
+  -Dexec.args="--sample"
 ```
-Toutes les nouvelles stratégies (Juin 2026) incluent cette pratique.
 
-### 🛑 4. EQUITY CURVE PLATEAU — Flip positions dans le backtest (MAI 2026)
+### Déploiement OANDA (paper trading)
 
-**Problème :** `closePosition()` ajoute un MARKET order opposé.
-`BacktestEngine.processOrders()` interprétait ça comme une nouvelle entrée.
-~50% des trades backtestés étaient des positions flip indésirables qui
-annulaient le P&L réel.
-
-**Fix ✅** (May 30 2026) :
-Trois branches dans `processOrders()` : **même sens** → ajouter à la position ;
-**sens opposé** → fermer seulement (sans ré-ouvrir) ; **pas de position** → ouvrir.
-
-### 🛑 5. JPAIRES JPY — Précision des stop orders (✅ RÉSOLU)
-
-**Problème :** `String.format("%.5f", price)` appliqué à toutes les paires.
-Les paires JPY (USD/JPY, GBP/JPY, EUR/JPY) ont une précision à 3 décimales max.
-OANDA rejette les stops avec 5 décimales → **0 trades JPY exécutés** avant le fix.
-
-**Fix ✅** (dans `LiveStrategyRunner.java`) :
-```java
-static String formatPrice(double price, String oandaSymbol) {
-    int precision = switch (oandaSymbol) {
-        case "GBP_JPY", "USD_JPY" -> 3;
-        case "XAU_USD", "XAG_USD" -> 1;
-        default -> 5;
-    };
-    return String.format("%." + precision + "f", price);
-}
+```bash
+docker compose build trader && docker compose up -d trader
 ```
-`executeTrade()` et `placeOandaStopOrder()` utilisent `formatPrice()` pour SL/TP,
-garantissant la bonne précision par instrument.
 
-### ⚠️ 6. SHARPE NÉGATIF SUR 20 ANS — Anomalie connue
+Variables d'environnement requises : `OANDA_API_KEY`, `OANDA_ACCOUNT_ID` dans `.env`.
 
-**Problème :** Sur des datasets H1 de 20+ ans (~693k barres), le Sharpe peut être
-négatif même avec PF > 3 et WR > 67%. C'est un artefact du calcul de Sharpe sur
-des périodes trop longues.
+---
 
-**Workaround :** Utiliser PF + WR + DD comme filtres principaux,
-pas Sharpe seul. Si PF ≥ 2.5, WR ≥ 60%, DD < 15% sur ≥3 assets, la
-stratégie est qualifiée via le `primaryFilterPf` override.
+## ⚙️ Backtest Engine — Fonctionnalités clés
 
-### ⚠️ 7. MAPPING STRATÉGIE → PAIRE — Hardcodé dans le runner
+| Fonctionnalité | Statut | Description |
+|---|---|---|
+| MARKET / LIMIT / STOP fills | ✅ | À l'ouverture de la barre, avec slippage configurable |
+| Commission + slippage | ✅ | Fixe ($) ou % du notionnel |
+| **Hedging (Edging)** | ✅ | Ordres opposés créent des hedge positions (comme OANDA `hedgingEnabled=true`) |
+| **REDUCE_ONLY** | ✅ | `.closeOnly()` = ordre REDUCE_ONLY sans réouverture |
+| SL / TP par position | ✅ | Indépendants pour chaque position, même sur le même symbole |
+| Monte Carlo | ✅ | 1000 runs, block bootstrap |
+| Walk-Forward | ✅ | IS/OOS 70/30 avec dégradation PF |
+| Métriques avancées | ✅ | Sharpe, Sortino, Calmar, Profit Factor |
+| Rapports PDF | ✅ | Style StrategyQuant (portrait A4, KPI tiles, equity chart) |
+| Rapports HTML | ✅ | Due diligence export (sans CDN, consultable hors-ligne) |
+| JSONL events | ✅ | Machine-readable pour Laravel dashboard |
 
-**Problème :** `LiveStrategyRunner.toOandaSymbol()` détermine la paire par
-recherche de sous-chaîne dans le nom de la stratégie. Pas de configuration
-externe. Ajouter une stratégie = modifier le code Java.
+### Hedging — Ce qui a changé (Juin 2026)
 
-**Fix envisagé :** Table de mapping dans `live-config.json` (Docker volume
-`/app/config/`).
+Le backtest engine reproduit maintenant le comportement **OANDA hedging-enabled** :
 
-### ⚠️ 8. BACKTEST QUALIFICATION — 0/24 au seuil strict
+| Ordre | Comportement avant | Comportement maintenant |
+|---|---|---|
+| BUY puis SELL (sans `.closeOnly()`) | SELL fermait le BUY | SELL crée un **SHORT hedge** |
+| BUY puis SELL `.closeOnly()` | inchangé | REDUCE_ONLY : réduit la position BUY |
+| SL sur hedge | inchangé | Ne ferme que la position touchée |
+| Same-side (scale-in) | inchangé | `addQuantity()` comme avant |
 
-**Résultats (Juin 2026) :** 3 nouvelles stratégies × 8 paires = 0/24 qualifié
-au seuil Prop Shop (Sharpe ≥ 1.5 OOS).
+> ⚠️ Les 55 stratégies prop utilisent déjà `.closeOnly()` sur leurs `closePosition()`.
+> Si tu écris une nouvelle stratégie, **chaîne toujours `.closeOnly()` sur tes ordres de sortie**
+> pour garantir la parité backtest ↔ live OANDA.
 
-**Meilleur résultat :** `CompositeMomentumRanking` sur **USD/JPY**
-- IS : Sharpe=0.35, PF=1.80, DD=10.24%, 795 trades
-- OOS : **Sharpe=1.00, PF=2.24, DD=8.60%, 313 trades**
-- PF amélioré de 24% en OOS (rare — signe de robustesse)
+---
 
-Déployé en paper trading le 1er Juin 2026.
-
-## Stratégies actives (paper trading)
+## 📊 Paper Trading (Actif)
 
 | Conteneur | Stratégie | Paire | Granularité |
-|-----------|-----------|-------|:-----------:|
+|---|---|---|---|
 | `trading-comp-momentum` | CompositeMomentumRanking | USD/JPY | H1 |
 | `trading-month-week` | MonthWeekPhase | USD/JPY | H1 |
 | `trading-nfp-week` | NfpWeekShortEURUSD | EUR/USD | H1 (NFP week) |
 
-## Build
+Monitoring : `docker compose ps` + `curl -s "https://api-fxpractice.oanda.com/v3/accounts/{id}/summary"`
+
+---
+
+## 🧪 Tests
 
 ```bash
-docker compose build [service] && docker compose up -d [service]
+# Tous les tests
+mvn clean install
+
+# Tests backtest seulement
+mvn test -pl trading-backtest
+
+# Tests avec scénarios déterministes + edging
+mvn test -pl trading-backtest -Dtest="BacktestEngineContractTest,PlatformRobustnessTest"
+
+# Golden backtest (nécessite data/ci/ — présent dans le repo)
+mvn test -pl trading-examples -Dtest=GoldenBacktestTest
 ```
+
+Le projet contient **118+ tests** couvrant :
+- 20+ scénarios de fills (MARKET, LIMIT, STOP, SL, TP)
+- 6 scénarios d'edging (coexistence long/short, SL indépendants, closeOnly no-op)
+- Parité BACKTEST ↔ PAPER (mêmes résultats)
+- Invariants comptables (totalPnl = sum(pnl) - costs)
+
+---
+
+## 🐛 Problèmes connus et correctifs
+
+| # | Problème | Fix | Commit |
+|---|---|---|---|
+| 1 | Hedging : les ordres de sortie créaient des hedges au lieu de fermer | `Order.closeOnly()` + `REDUCE_ONLY` sur OANDA | `dde8812` |
+| 2 | Crash recovery : état non persisté après restart Docker | Reflection-based save/restore (5 getters + restoreState) | Mai 2026 |
+| 3 | SL/TP non chaînés sur OANDA | `.withStopLoss()` + `.withTakeProfit()` obligatoires | Mai 2026 |
+| 4 | Equity curve plateau (flip positions) | 3-way branch dans processOrders() | Mai 2026 |
+| 5 | Paires JPY : stop orders rejetés (précision 5 décimales) | `formatPrice()` par instrument | `#fix-jpy` |
+| **6** | **Backtest ≠ Live : edging non modélisé** | **Hedging complet dans BacktestEngine** | **`aea009a`** ✅ |
+| 7 | Sharpe négatif sur 20 ans | Prioriser PF + WR + DD comme filtres | Documentation |
+
+---
+
+## 📚 Documentation
+
+| Document | Contenu | Langue |
+|---|---|---|
+| [`docs/README.md`](docs/README.md) | Architecture, modules, CLI, formats | FR |
+| [`docs/testing.md`](docs/testing.md) | Golden backtest, tests, CI, promote gates | EN |
+| [`docs/architecture.md`](docs/architecture.md) | Graphe de modules, dépendances | EN/FR |
+| [`docs/specs.md`](docs/specs.md) | Data models, Strategy API, XML shape | EN |
+| [`docs/conversion-guide.md`](docs/conversion-guide.md) | JForex → Java mapping | EN |
+| [`docs/prop-shop-runbook.md`](docs/prop-shop-runbook.md) | Paper → LIVE promotion checklist | EN |
+| [`docs/MISSION_CONTROL.md`](docs/MISSION_CONTROL.md) | Dashboard Laravel | FR |
+| `AGENTS.md` | Instructions pour les AI coding agents | EN |
+
+---
+
+## 🔧 Stack technique
+
+- **Java 21** — Records, sealed classes, pattern matching
+- **Maven 4.x** — Multi-module, version `1.0.0-SNAPSHOT`
+- **JUnit 5** — Tests paramétrés, invariants
+- **Jackson 2.17** — JSON serialization
+- **SLF4J 2.0 + Logback** — Logging structuré
+- **Docker** — Déploiement OANDA (image `maven:3-eclipse-temurin-21`)
+- **OANDA v20 REST API** — Broker primaire
+
+---
+
+📄 Usage personnel — Martin Fournier — 2026
