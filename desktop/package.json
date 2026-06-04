@@ -38,6 +38,13 @@
       "dist/**/*",
       "dist-electron/**/*"
     ],
+    "extraResources": [
+      {
+        "from": "desktop-resources",
+        "to": "resources",
+        "filter": ["**/*"]
+      }
+    ],
     "linux": {
       "target": [
         { "target": "AppImage", "arch": ["x64"] },
