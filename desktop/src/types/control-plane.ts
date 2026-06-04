@@ -1,0 +1,58 @@
+export interface Strategy {
+  id: string
+  family: string
+  defaultSymbol: string
+  deployedMode?: string
+  executionLabel?: string
+  brokerAccountId?: string
+}
+
+export interface RunConfig {
+  strategyId: string
+  symbol: string
+  mode: 'BACKTEST' | 'PAPER' | 'LIVE'
+  barsSource: { type: 'year', year?: number } | { type: 'ci' }
+  capital: number
+  commissionPerTrade?: number
+  slippagePct?: number
+}
+
+export interface RunResult {
+  runId: string
+  strategyId: string
+  symbol: string
+  status: string
+  result?: {
+    totalTrades: number
+    totalReturnPct: number
+    finalEquity: number
+    maxDrawdownPct: number
+    sharpeRatio: number
+    profitFactor: number
+    winRatePct: number
+    totalCommission: number
+    totalSlippage: number
+  }
+  trades?: Trade[]
+  equityCurve?: number[]
+}
+
+export interface Trade {
+  symbol: string
+  side: 'BUY' | 'SELL'
+  entryPrice: number
+  exitPrice: number
+  quantity: number
+  entryTime: string
+  exitTime: string
+  pnl: number
+}
+
+export interface Bar {
+  time: string
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+}
