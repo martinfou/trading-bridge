@@ -691,4 +691,150 @@ public final class TestStrategies {
             pending.clear();
         }
     }
+
+    // ---------------------------------------------------------------
+    //  Edging-specific test strategies
+    // ---------------------------------------------------------------
+
+    /** BUY bar 0, SELL closeOnly bar 1 — tests REDUCE_ONLY semantics. */
+    public static Strategy buyThenCloseOnlySell() {
+        return new BuyThenCloseOnlySell();
+    }
+
+    static final class BuyThenCloseOnlySell extends ScriptedStrategy {
+        private int barIndex;
+
+        @Override
+        public String name() { return "BuyThenCloseOnlySell"; }
+
+        @Override
+        public void onBar(Bar bar) {
+            pending.clear();
+            if (barIndex == 0) {
+                pending.add(new Order(bar.symbol(), Order.Side.BUY, Order.Type.MARKET, 10_000, 0));
+            } else if (barIndex == 1) {
+                pending.add(new Order(bar.symbol(), Order.Side.SELL, Order.Type.MARKET, 10_000, 0).closeOnly());
+            }
+            barIndex++;
+        }
+
+        @Override
+        protected void onReset() { barIndex = 0; }
+    }
+
+    /** SELL closeOnly bar 0, no opposite position — tests silent no-op. */
+    public static Strategy closeOnlyWithoutPosition() {
+        return new CloseOnlyWithoutPosition();
+    }
+
+    static final class CloseOnlyWithoutPosition extends ScriptedStrategy {
+        private boolean sent;
+
+        @Override
+        public String name() { return "CloseOnlyNoOp"; }
+
+        @Override
+        public void onBar(Bar bar) {
+            pending.clear();
+            if (!sent) {
+                pending.add(new Order(bar.symbol(), Order.Side.SELL, Order.Type.MARKET, 10_000, 0).closeOnly());
+                sent = true;
+            }
+        }
+
+        @Override
+        protected void onReset() { sent = false; }
+    }
+
+    /** BUY bar 0, SELL bar 1 (hedge), both survive to end. */
+    public static Strategy longThenShortHedge() {
+        return new LongThenShortHedge();
+    }
+
+    static final class LongThenShortHedge extends ScriptedStrategy {
+        private int barIndex;
+
+        @Override
+        public String name() { return "LongThenShortHedge"; }
+
+        @Override
+        public void onBar(Bar bar) {
+            pending.clear();
+            if (barIndex == 0) {
+                pending.add(new Order(bar.symbol(), Order.Side.BUY, Order.Type.MARKET, 10_000, 0));
+            } else if (barIndex == 1) {
+                pending.add(new Order(bar.symbol(), Order.Side.SELL, Order.Type.MARKET, 10_000, 0));
+            }
+            barIndex++;
+        }
+
+        @Override
+        protected void onReset() { barIndex = 0; }
+    }
+
+    /** BUY with stop-loss, then SHORT hedge — tests SL fires only on one side. */
+    public static Strategy longWithStopThenShortHedge(double longStopLoss) {
+        return new LongWithStopThenShortHedge(longStopLoss);
+    }
+
+    static final class LongWithStopThenShortHedge extends ScriptedStrategy {
+        private final double longStopLoss;
+        private int barIndex;
+
+        LongWithStopThenShortHedge(double longStopLoss) {
+            this.longStopLoss = longStopLoss;
+        }
+
+        @Override
+        public String name() { return "LongWithStopThenShortHedge"; }
+
+        @Override
+        public void onBar(Bar bar) {
+            pending.clear();
+            if (barIndex == 0) {
+                pending.add(new Order(bar.symbol(), Order.Side.BUY, Order.Type.MARKET, 10_000, 0)
+                    .withStopLoss(longStopLoss));
+            } else if (barIndex == 1) {
+                pending.add(new Order(bar.symbol(), Order.Side.SELL, Order.Type.MARKET, 10_000, 0));
+            }
+            barIndex++;
+        }
+
+        @Override
+        protected void onReset() { barIndex = 0; }
+    }
+
+    /** LONG and SHORT with independent SL/TP — tests per-side stop handling. */
+    public static Strategy longAndShortWithSeparateStops(double longSl, double shortSl) {
+        return new LongAndShortWithSeparateStops(longSl, shortSl);
+    }
+
+    static final class LongAndShortWithSeparateStops extends ScriptedStrategy {
+        private final double longSl, shortSl;
+        private int barIndex;
+
+        LongAndShortWithSeparateStops(double longSl, double shortSl) {
+            this.longSl = longSl;
+            this.shortSl = shortSl;
+        }
+
+        @Override
+        public String name() { return "LongAndShortWithStops"; }
+
+        @Override
+        public void onBar(Bar bar) {
+            pending.clear();
+            if (barIndex == 0) {
+                pending.add(new Order(bar.symbol(), Order.Side.BUY, Order.Type.MARKET, 10_000, 0)
+                    .withStopLoss(longSl));
+            } else if (barIndex == 1) {
+                pending.add(new Order(bar.symbol(), Order.Side.SELL, Order.Type.MARKET, 10_000, 0)
+                    .withStopLoss(shortSl));
+            }
+            barIndex++;
+        }
+
+        @Override
+        protected void onReset() { barIndex = 0; }
+    }
 }

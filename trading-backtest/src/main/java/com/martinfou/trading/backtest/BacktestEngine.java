@@ -14,6 +14,13 @@ import java.util.*;
  * commission and slippage, stop-loss / take-profit exit simulation,
  * and computes advanced performance metrics (Sharpe, Sortino, etc.).</p>
  *
+ * <h3>Hedging (Edging) Support</h3>
+ * <p>This engine mirrors OANDA's {@code hedgingEnabled=true} behavior:
+ * opposite-side MARKET/STOP/LIMIT orders create new independent positions
+ * (hedges) instead of closing existing ones. Use {@link Order#closeOnly()}
+ * to <em>reduce</em> an existing opposite-side position — the backtest equivalent
+ * of OANDA's {@code positionFill: REDUCE_ONLY}.</p>
+ *
  * <h3>Configuration</h3>
  * <ul>
  *   <li>Commission: per-trade fixed cost and/or percentage of notional</li>
@@ -35,7 +42,13 @@ public class BacktestEngine {
     private int totalTrades, winningTrades, losingTrades;
     private final List<Trade> trades = new ArrayList<>();
     private final List<Double> equityCurve = new ArrayList<>();
-    private final Map<String, Position> openPositions = new HashMap<>();
+    /**
+     * Hedging-enabled position store. Each symbol can hold multiple independent
+     * positions (one per side, plus additional entries). Use {@link Order#isCloseOnly()}
+     * to reduce an opposite-side position (REDUCE_ONLY); non-closeOnly opposite-side
+     * orders add new hedge positions, matching OANDA hedging semantics.
+     */
+    private final Map<String, List<Position>> openPositionsBySymbol = new HashMap<>();
 
     // Cost configuration
     private double commissionFixed = 0.0;        // USD per trade
@@ -155,6 +168,31 @@ public class BacktestEngine {
     }
 
     // ---------------------------------------------------------------
+    //  Position helpers
+    // ---------------------------------------------------------------
+
+    /** Returns the mutable position list for a symbol, creating it if absent. */
+    private List<Position> positions(String symbol) {
+        return openPositionsBySymbol.computeIfAbsent(symbol, k -> new ArrayList<>());
+    }
+
+    /** Finds the first same-side position for a symbol, or null. */
+    private Position findSameSide(String symbol, Order.Side side) {
+        for (Position p : positions(symbol)) {
+            if (p.side() == side) return p;
+        }
+        return null;
+    }
+
+    /** Finds the first opposite-side position for a symbol, or null. */
+    private Position findOppositeSide(String symbol, Order.Side side) {
+        for (Position p : positions(symbol)) {
+            if (p.side() != side) return p;
+        }
+        return null;
+    }
+
+    // ---------------------------------------------------------------
     //  Order processing
     // ---------------------------------------------------------------
 
@@ -200,28 +238,16 @@ public class BacktestEngine {
 
                 totalCommission += commission;
 
-                // Open or add to position
-                Position existing = openPositions.get(order.symbol());
                 if (order.isCloseOnly()) {
-                    // close-only order: reduce or close existing position, never open new
-                    if (existing != null) {
-                        closePosition(existing, adjustedPrice, bar.timestamp());
-                    }
-                } else if (existing != null && existing.side() == order.side()) {
-                    existing.addQuantity(order.quantity(), adjustedPrice);
-                } else if (existing != null) {
-                    // Opposite-side MARKET/STOP/LIMIT order while position exists:
-                    // This is a close/exit order (from strategy.closePosition()).
-                    // Close the existing position but do NOT open a new opposite one.
-                    // The strategy will generate a fresh entry on a future bar via onBar().
-                    closePosition(existing, adjustedPrice, bar.timestamp());
+                    // REDUCE_ONLY: find opposite-side position, reduce or close it
+                    // NEVER open a new position
+                    reduceOppositeSide(order, adjustedPrice, bar.timestamp());
                 } else {
-                    // No existing position — this is a new entry order
-                    Position pos = new Position(order.symbol(), order.side(),
-                        order.quantity(), adjustedPrice);
-                    if (order.stopLoss() != 0) pos.withStopLoss(order.stopLoss());
-                    if (order.takeProfit() != 0) pos.withTakeProfit(order.takeProfit());
-                    openPositions.put(order.symbol(), pos);
+                    // Normal (non-closeOnly) order — OANDA hedging semantics:
+                    //   same-side → scale in
+                    //   opposite-side → create new hedge position
+                    //   no position → create new
+                    handleEntryOrder(order, adjustedPrice);
                 }
 
                 log.debug("FILLED: {} {} @ {:.5f} (cost: ${:.2f})",
@@ -230,40 +256,97 @@ public class BacktestEngine {
         }
     }
 
+    /**
+     * REDUCE_ONLY: reduces the first opposite-side position by the order's quantity.
+     * If the position is fully reduced, a Trade is recorded and the position is removed.
+     * If no opposite-side position exists, the order is silently dropped (no-op),
+     * matching OANDA REDUCE_ONLY when no opposite position exists.
+     */
+    private void reduceOppositeSide(Order order, double adjustedPrice, Instant timestamp) {
+        Position opposite = findOppositeSide(order.symbol(), order.side());
+        if (opposite == null) return; // nothing to reduce — silent no-op
+
+        double qty = Math.min(order.quantity(), opposite.quantity());
+        double exitPrice = adjustedPrice;
+        double entryValue = opposite.entryPrice() * qty;
+        double exitValue = exitPrice * qty;
+        double pnl = opposite.side() == Order.Side.BUY
+            ? exitValue - entryValue
+            : entryValue - exitValue;
+        totalTrades++;
+        if (pnl > 0) winningTrades++;
+        else if (pnl < 0) losingTrades++;
+
+        trades.add(new Trade(order.symbol(), opposite.side(), opposite.entryPrice(), exitPrice,
+            qty, timestamp, timestamp));
+
+        opposite.reduceQuantity(qty);
+
+        // Remove the position if fully reduced
+        if (opposite.quantity() <= 0) {
+            positions(order.symbol()).remove(opposite);
+        }
+
+        log.debug("REDUCE_ONLY: {} {} PnL:${:.2f}", order.symbol(), opposite.side(), pnl);
+    }
+
+    /**
+     * Handles a non-closeOnly entry order with OANDA hedging semantics:
+     * <ul>
+     *   <li>Same-side position exists → addQuantity (scale in)</li>
+     *   <li>No same-side position → create a new independent position (hedge if opposite already exists)</li>
+     * </ul>
+     */
+    private void handleEntryOrder(Order order, double adjustedPrice) {
+        Position sameSide = findSameSide(order.symbol(), order.side());
+        if (sameSide != null) {
+            // Same-side exists — scale in (SL/TP from the first entry remain)
+            sameSide.addQuantity(order.quantity(), adjustedPrice);
+        } else {
+            // No same-side position — create new position (may be a hedge)
+            Position pos = new Position(order.symbol(), order.side(),
+                order.quantity(), adjustedPrice);
+            if (order.stopLoss() != 0) pos.withStopLoss(order.stopLoss());
+            if (order.takeProfit() != 0) pos.withTakeProfit(order.takeProfit());
+            positions(order.symbol()).add(pos);
+        }
+    }
+
     // ---------------------------------------------------------------
     //  Stop-loss / take-profit checking
     // ---------------------------------------------------------------
 
     private void checkStopLossesTakeProfits(Bar bar) {
-        List<Map.Entry<String, Position>> toClose = new ArrayList<>();
-        for (Position pos : openPositions.values()) {
-            double sl = pos.stopLoss();
-            double tp = pos.takeProfit();
+        List<Position> toClose = new ArrayList<>();
+        for (List<Position> posList : openPositionsBySymbol.values()) {
+            for (Position pos : posList) {
+                double sl = pos.stopLoss();
+                double tp = pos.takeProfit();
 
-            if (pos.side() == Order.Side.BUY) {
-                // SL hit
-                if (sl > 0 && bar.low() <= sl) {
-                    toClose.add(Map.entry(pos.symbol(), pos));
-                    continue;
-                }
-                // TP hit
-                if (tp > 0 && bar.high() >= tp) {
-                    toClose.add(Map.entry(pos.symbol(), pos));
-                }
-            } else {
-                // SELL position
-                if (sl > 0 && bar.high() >= sl) {
-                    toClose.add(Map.entry(pos.symbol(), pos));
-                    continue;
-                }
-                if (tp > 0 && bar.low() <= tp) {
-                    toClose.add(Map.entry(pos.symbol(), pos));
+                if (pos.side() == Order.Side.BUY) {
+                    // SL hit
+                    if (sl > 0 && bar.low() <= sl) {
+                        toClose.add(pos);
+                        continue;
+                    }
+                    // TP hit
+                    if (tp > 0 && bar.high() >= tp) {
+                        toClose.add(pos);
+                    }
+                } else {
+                    // SELL position
+                    if (sl > 0 && bar.high() >= sl) {
+                        toClose.add(pos);
+                        continue;
+                    }
+                    if (tp > 0 && bar.low() <= tp) {
+                        toClose.add(pos);
+                    }
                 }
             }
         }
 
-        for (var entry : toClose) {
-            Position pos = entry.getValue();
+        for (Position pos : toClose) {
             double exitPrice = pos.stopLoss() > 0 && hitStopLoss(pos, bar)
                 ? pos.stopLoss() : pos.takeProfit();
             // Apply stop slippage (only on SL fills, not TP — TPs are limit orders)
@@ -299,13 +382,26 @@ public class BacktestEngine {
 
         trades.add(new Trade(pos.symbol(), pos.side(), pos.entryPrice(), exitPrice,
             pos.quantity(), timestamp, timestamp));
-        openPositions.remove(pos.symbol());
+
+        // Remove from the symbol's position list
+        List<Position> posList = openPositionsBySymbol.get(pos.symbol());
+        if (posList != null) {
+            posList.remove(pos);
+            if (posList.isEmpty()) {
+                openPositionsBySymbol.remove(pos.symbol());
+            }
+        }
 
         log.debug("CLOSED: {} {} PnL:${:.2f}", pos.symbol(), pos.side(), pnl);
     }
 
     private void closeRemainingPositions(Bar lastBar) {
-        for (Position pos : List.copyOf(openPositions.values())) {
+        // Collect all positions first (avoid ConcurrentModification)
+        List<Position> allOpen = new ArrayList<>();
+        for (List<Position> posList : openPositionsBySymbol.values()) {
+            allOpen.addAll(posList);
+        }
+        for (Position pos : allOpen) {
             closePosition(pos, lastBar.close(), lastBar.timestamp());
         }
     }
@@ -317,8 +413,10 @@ public class BacktestEngine {
     private void recomputeEquity(Bar bar) {
         double realizedPnl = trades.stream().mapToDouble(Trade::pnl).sum();
         double floatingPnl = 0;
-        for (Position pos : openPositions.values()) {
-            floatingPnl += pos.currentPnl(bar.close());
+        for (List<Position> posList : openPositionsBySymbol.values()) {
+            for (Position pos : posList) {
+                floatingPnl += pos.currentPnl(bar.close());
+            }
         }
         equity = initialCapital - totalCommission - totalSlippage + realizedPnl + floatingPnl;
     }
@@ -402,5 +500,9 @@ public class BacktestEngine {
 
     // Exposed for testing
     double getEquity() { return equity; }
-    int getOpenPositionCount() { return openPositions.size(); }
+    int getOpenPositionCount() {
+        return openPositionsBySymbol.values().stream()
+            .mapToInt(List::size)
+            .sum();
+    }
 }
