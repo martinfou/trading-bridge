@@ -44,7 +44,10 @@ jobs:
           IBKR_USE_STUB: "true"
 
   desktop:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         working-directory: desktop
@@ -65,14 +68,25 @@ jobs:
       - name: TypeScript check + build
         run: npm run build
 
-      - name: Package (Linux AppImage)
-        run: npx electron-builder --linux AppImage
+      - name: Package (${{ matrix.os }})
+        run: |
+          case "${{ matrix.os }}" in
+            ubuntu-latest)   npx electron-builder --linux ;;
+            macos-latest)    npx electron-builder --mac ;;
+            windows-latest)  npx electron-builder --win ;;
+          esac
+        shell: bash
         env:
           ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES: true
 
-      - name: Upload artifact
+      - name: Upload artifact (${{ matrix.os }})
         uses: actions/upload-artifact@v4
         with:
-          name: trading-bridge-desktop-linux
-          path: desktop/release/*.AppImage
+          name: trading-bridge-desktop-${{ matrix.os }}
+          path: |
+            desktop/release/*.AppImage
+            desktop/release/*.deb
+            desktop/release/*.pkg.tar.zst
+            desktop/release/*.dmg
+            desktop/release/*.exe
           if-no-files-found: warn

@@ -74,6 +74,8 @@ download/
 # Historical market data — downloaded, not committed
 data/historical/*
 data/runtime/*.db
+data/runtime/*.db-shm
+data/runtime/*.db-wal
 deploy/active-strategy.txt
 deployments/deploy-log.json
 deployments/
