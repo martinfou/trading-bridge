@@ -22,6 +22,15 @@ export interface RunResult {
   strategyId: string
   symbol: string
   status: string
+  startedAt?: string
+  completedAt?: string
+  configSnapshot?: {
+    mode: string
+    capital: number
+    commissionPerTrade?: number
+    slippagePct?: number
+    barsSource?: string
+  }
   result?: {
     totalTrades: number
     totalReturnPct: number

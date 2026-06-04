@@ -5,6 +5,7 @@ import { createChart, type IChartApi, type ISeriesApi, type LineData, ColorType,
 const props = defineProps<{
   data: number[]
   height?: number
+  showTimeScale?: boolean
 }>()
 
 const container = ref<HTMLDivElement>()
@@ -26,7 +27,9 @@ function render() {
         horzLines: { color: '#222' },
       },
       timeScale: {
-        visible: false,
+        visible: props.showTimeScale ?? false,
+        borderColor: '#333',
+        timeVisible: false,
       },
       rightPriceScale: {
         borderColor: '#333',
@@ -35,6 +38,8 @@ function render() {
         vertLine: { color: '#555', labelBackgroundColor: '#333' },
         horzLine: { color: '#555', labelBackgroundColor: '#333' },
       },
+      handleScroll: props.showTimeScale ?? false,
+      handleScale: props.showTimeScale ?? false,
     })
 
     lineSeries = chart.addSeries(LineSeries, {
@@ -43,6 +48,9 @@ function render() {
       crosshairMarkerVisible: true,
       crosshairMarkerRadius: 4,
       priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+      lastValueVisible: true,
+      priceLineVisible: true,
+      priceLineColor: '#444',
     })
 
     chart.timeScale().fitContent()
@@ -54,11 +62,19 @@ function render() {
   }))
 
   lineSeries?.setData(lineData)
+  chart?.timeScale().fitContent()
+}
+
+function resize() {
+  if (chart && container.value) {
+    chart.applyOptions({ height: props.height ?? 200, width: container.value.clientWidth })
+  }
 }
 
 onMounted(render)
 
 watch(() => props.data, render, { deep: true })
+watch(() => props.height, resize)
 
 onUnmounted(() => {
   chart?.remove()
@@ -68,7 +84,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div ref="container" class="equity-chart" :style="{ height: height + 'px' }"></div>
+  <div ref="container" class="equity-chart" :style="{ height: (height ?? 200) + 'px' }"></div>
 </template>
 
 <style scoped>
