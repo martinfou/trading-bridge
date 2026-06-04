@@ -1,0 +1,245 @@
+<script setup lang="ts">
+import type { Strategy } from '@/types/control-plane'
+import { useRouter } from 'vue-router'
+
+const props = defineProps<{
+  strategy: Strategy
+  expanded?: boolean
+}>()
+
+const emit = defineEmits<{
+  toggleExpand: [id: string]
+}>()
+
+const router = useRouter()
+
+const familyColors: Record<string, string> = {
+  PROP: '#6366f1',
+  SQ_IMPORTED: '#f59e0b',
+  GENERATED: '#22c55e',
+  EXAMPLE: '#a855f7',
+}
+
+function familyColor(family: string): string {
+  return familyColors[family] || '#888'
+}
+
+function runBacktest() {
+  const symbol = props.strategy.defaultSymbol?.replace(/_/g, '/') || 'EUR/USD'
+  router.push(`/dashboard?strategyId=${props.strategy.id}&symbol=${symbol}`)
+}
+</script>
+
+<template>
+  <div
+    :class="['strategy-card', { expanded }]"
+    :style="{ borderLeftColor: familyColor(strategy.family) }"
+  >
+    <div class="card-header" @click="emit('toggleExpand', strategy.id)">
+      <div class="card-info">
+        <div class="card-title-row">
+          <span class="family-badge" :style="{ background: familyColor(strategy.family) }">
+            {{ strategy.family }}
+          </span>
+          <span class="strategy-name">{{ strategy.id }}</span>
+        </div>
+        <div class="card-meta">
+          <span class="meta-item">📊 {{ strategy.defaultSymbol || '—' }}</span>
+          <span v-if="strategy.deployedMode" class="meta-item deploy-badge">
+            🟢 {{ strategy.deployedMode }}
+          </span>
+        </div>
+      </div>
+      <span class="expand-icon">{{ expanded ? '▾' : '▸' }}</span>
+    </div>
+
+    <div v-if="expanded" class="card-detail">
+      <div class="detail-grid">
+        <div class="detail-item">
+          <span class="detail-label">Strategy ID</span>
+          <code class="detail-value">{{ strategy.id }}</code>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Family</span>
+          <span class="detail-value">{{ strategy.family }}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Default Symbol</span>
+          <span class="detail-value">{{ strategy.defaultSymbol || '—' }}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Execution Label</span>
+          <span class="detail-value">{{ strategy.executionLabel || '—' }}</span>
+        </div>
+      </div>
+
+      <div v-if="strategy.deployedMode" class="deploy-info">
+        <h4>Deployment</h4>
+        <div class="detail-grid">
+          <div class="detail-item">
+            <span class="detail-label">Mode</span>
+            <span class="detail-value">{{ strategy.deployedMode }}</span>
+          </div>
+          <div v-if="strategy.brokerAccountId" class="detail-item">
+            <span class="detail-label">Broker Account</span>
+            <span class="detail-value">{{ strategy.brokerAccountId }}</span>
+          </div>
+        </div>
+      </div>
+
+      <button class="run-btn" @click="runBacktest">
+        ▶ Run Backtest
+      </button>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.strategy-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid #888;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: all 0.15s;
+}
+
+.strategy-card:hover {
+  border-color: #444;
+}
+
+.strategy-card.expanded {
+  border-left-width: 3px;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 0.85rem 1rem;
+  cursor: pointer;
+}
+
+.card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.family-badge {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.strategy-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.card-meta {
+  display: flex;
+  gap: 0.75rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.deploy-badge {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.expand-icon {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: 0.25rem;
+  flex-shrink: 0;
+}
+
+.card-detail {
+  padding: 0 1rem 1rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.detail-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.detail-value {
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
+code.detail-value {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.8rem;
+  background: var(--bg-primary);
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  word-break: break-all;
+}
+
+.deploy-info {
+  margin-bottom: 0.75rem;
+}
+
+.deploy-info h4 {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--success);
+  margin-bottom: 0.4rem;
+}
+
+.run-btn {
+  background: var(--accent);
+  color: #000;
+  border: none;
+  border-radius: 6px;
+  padding: 0.5rem 1.25rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.run-btn:hover {
+  background: var(--accent-hover);
+}
+</style>
