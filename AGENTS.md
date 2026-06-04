@@ -32,6 +32,7 @@ This file applies to the entire repository. Nested `AGENTS.md` files in subdirec
 - **JUnit 5**, **Jackson 2.17**, **SLF4J 2.0**
 - No Lombok, no Spring (unless explicitly requested)
 - Adjacent Python dashboard in `dashboard/` — not part of the Maven reactor
+- **Desktop app** in `desktop/` — Electron + Vue 3 + Vite + TypeScript, not part of the Maven reactor
 
 ## Module layout
 
@@ -51,18 +52,19 @@ trading-tui           → (HTTP client; Jackson + JLine3 only)
 ```
 
 
-| Module               | Purpose                                                                          |
-| -------------------- | -------------------------------------------------------------------------------- |
-| `trading-core`       | `Bar`, `Order`, `Strategy`, `DataLoader`, `Indicators`, `GoldenBacktestBaseline` |
-| `trading-backtest`   | `BacktestEngine`, `RunContext`, `RunEvent`, reports                              |
-| `trading-data`       | OANDA client, `HistoricalDataLoader`, economic calendar                          |
-| `trading-broker`     | OANDA / IBKR broker connectors                                                   |
-| `trading-strategies` | Prop, sqimported, generated strategies; `StrategyCatalog`                        |
-| `trading-runtime`    | Control plane HTTP/WS, event store, promote gates, run lifecycle                 |
-| `trading-tui`        | JLine3 terminal client for control plane                                         |
-| `trading-parser`     | StrategyQuant XML → Java (Epic 2)                                                |
-| `trading-examples`   | `RunBacktest` CLI, golden tests                                                  |
-| `trading-genetics`   | Genetic optimization (offline)                                                   |
+|| Module               | Purpose                                                                          |
+|| -------------------- | -------------------------------------------------------------------------------- |
+|| `trading-core`       | `Bar`, `Order`, `Strategy`, `DataLoader`, `Indicators`, `GoldenBacktestBaseline` |
+|| `trading-backtest`   | `BacktestEngine`, `RunContext`, `RunEvent`, reports                              |
+|| `trading-data`       | OANDA client, `HistoricalDataLoader`, economic calendar                          |
+|| `trading-broker`     | OANDA / IBKR broker connectors                                                   |
+|| `trading-strategies` | Prop, sqimported, generated strategies; `StrategyCatalog`                        |
+|| `trading-runtime`    | Control plane HTTP/WS, event store, promote gates, run lifecycle                 |
+|| `trading-tui`        | JLine3 terminal client for control plane                                         |
+|| `trading-parser`     | StrategyQuant XML → Java (Epic 2)                                                |
+|| `trading-examples`   | `RunBacktest` CLI, golden tests                                                  |
+|| `trading-genetics`   | Genetic optimization (offline)                                                   |
+|| `desktop/`           | Electron + Vue 3 GUI — runs backtests, charts, compare. NOT in Maven reactor     |
 
 
 ## Build and test
@@ -107,6 +109,32 @@ mvn exec:java -pl trading-runtime \
 # TUI client (requires running control plane)
 mvn exec:java -pl trading-tui \
   -Dexec.mainClass="com.martinfou.trading.tui.TradingTuiMain"
+```
+
+# Desktop app (Electron)
+
+```bash
+# Prerequisites: fat JAR for the embedded Java control plane
+cd desktop
+
+# Build fat JAR (from repo root)
+(cd .. && mvn package -pl trading-runtime -am -DskipTests)
+
+# Prepare JRE + JAR for packaging
+mkdir -p desktop-resources/jar
+cp ../trading-runtime/target/*-shaded.jar desktop-resources/jar/control-plane.jar
+bash scripts/build-jre.sh desktop-resources/jar/control-plane.jar desktop-resources
+
+# Dev mode (hot reload)
+npm run electron:dev
+
+# Build for production
+npm run build
+
+# Package per platform
+npm run package:linux   # AppImage + deb + pacman
+npm run package:mac     # DMG (x64 + arm64)
+npm run package:win     # NSIS installer
 ```
 
 Before marking work done: `mvn clean install` must pass for affected modules.
@@ -157,6 +185,12 @@ Do not put broker or API code in `trading-core`. Do not implement the parser in 
 ## Active sprint
 
 **Epic 12 — Platform consolidation** is complete (stories 12-1 … 12-11). **Epic 13 — Platform runtime** is complete (control plane, TUI, dashboard, promote gates).
+
+**Desktop GUI** — all 8 epics done (endpoints → scaffold → API → dashboard → catalog → charts → compare → packaging).
+**Desktop cross-platform CI** — done (Linux/macOS/Windows matrix build).
+**Desktop Java bundling** — done (fat JAR + jlink JRE → Electron main process spawns JVM automatically).
+
+Next: Any epic from the main backlog (epics 3-11, 14, 18, 20).
 
 Track implementation: `_bmad-output/implementation-artifacts/sprint-status.yaml`  
 Vision roadmap: `docs/sprint-plan.md` · Architecture: `docs/architecture.md`
