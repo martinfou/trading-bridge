@@ -26,7 +26,7 @@ public class RunCronStrategyBacktest {
     private static final int BAR_SIZE = 44;
     private static final double CAPITAL = 50_000;
     private static final double COMMISSION = 0.07;
-    private static final String DISPLAY_LABEL = "2026-06-04-cron";
+    private static final String DISPLAY_LABEL = "2026-06-05-cron";
 
     static final LinkedHashMap<String, String> ASSETS = new LinkedHashMap<>();
     static {
@@ -89,16 +89,18 @@ public class RunCronStrategyBacktest {
             System.err.println("ERROR: No assets loaded!"); System.exit(1);
         }
 
-        // 2. Create 3 strategies
+        // 2. Create 3 strategies — new ideas for this run (2026-06-05)
+        // Previous run (May 23 batch): all 3 strategies FAILED with 2-7 trades OOS (overfiltering).
+        // NEW designs deliberately simple to generate 100+ trades:
         List<Strategy> strategies = new ArrayList<>();
-        strategies.add(new com.martinfou.trading.strategies.creative.LondonSessionEMAPullbackStrategy());
-        strategies.add(new com.martinfou.trading.strategies.creative.SessionOverlapBreakoutStrategy());
-        strategies.add(new com.martinfou.trading.strategies.creative.MonthPhaseMomentumStrategy());
+        strategies.add(new com.martinfou.trading.strategies.creative.TrueRangeMomentumStrategy());
+        strategies.add(new com.martinfou.trading.strategies.creative.WeekendContinuationStrategy());
+        strategies.add(new com.martinfou.trading.strategies.creative.MidMonthExhaustionStrategy());
 
         String[] categories = {
-            "LondonSessionEMAPullback  (Structure/Technical)",
-            "SessionOverlapBreakout    (News/Sentiment)",
-            "MonthPhaseMomentum        (Seasonality/Calendar)"
+            "TrueRangeMomentum          (Structure/Technical)",
+            "WeekendContinuation        (News/Sentiment)",
+            "MidMonthExhaustion         (Seasonality/Calendar)"
         };
 
         for (int si = 0; si < strategies.size(); si++) {
@@ -228,9 +230,9 @@ public class RunCronStrategyBacktest {
             }
 
             String category = switch (stratName) {
-                case "LondonSessionEMAPullback" -> "Structure/Technical";
-                case "SessionOverlapBreakout" -> "News/Sentiment";
-                case "MonthPhaseMomentum" -> "Seasonality/Calendar";
+                case "TrueRangeMomentum" -> "Structure/Technical";
+                case "WeekendContinuation" -> "News/Sentiment";
+                case "MidMonthExhaustion" -> "Seasonality/Calendar";
                 default -> "Other";
             };
 
