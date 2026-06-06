@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onUnmounted, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { Key } from '@lucide/vue'
 import { useControlPlane } from '@/composables/useControlPlane'
 import type { RunResult } from '@/types/control-plane'
 import BacktestForm from '@/components/BacktestForm.vue'
@@ -279,8 +280,16 @@ onUnmounted(() => {
 
 <template>
   <div class="view">
-    <h1>Dashboard</h1>
-    <p class="subtitle">Run backtests and view results</p>
+    <div class="dashboard-header" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem;">
+      <div>
+        <h1 style="margin-bottom: 0.25rem;">Dashboard</h1>
+        <p class="subtitle" style="margin-bottom: 0;">Run backtests and view results</p>
+      </div>
+      <button class="setup-broker-btn" @click="router.push('/live-trading?setupBroker=true')">
+        <Key class="btn-icon" />
+        <span>Setup Broker</span>
+      </button>
+    </div>
 
     <BacktestForm
       @runs-start="onRunsStart"
@@ -532,6 +541,31 @@ h2 { font-size: 1.15rem; margin-bottom: 0.25rem; }
 h3 { font-size: 0.9rem; margin-bottom: 0.5rem; color: var(--text-secondary); }
 
 .subtitle { color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 1.5rem; }
+
+.setup-broker-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.setup-broker-btn:hover {
+  background: var(--accent);
+  color: #000;
+}
+
+.btn-icon {
+  width: 1rem;
+  height: 1rem;
+}
 
 .banner {
   padding: 0.75rem 1rem;

@@ -48,6 +48,7 @@ dashboard/oanda_creds.json
 **/credentials.json
 **/*.pem
 **/*.key
+data/runtime/broker-accounts.local.json
 
 # BMAD personal / generated backups
 _bmad/config.user.toml

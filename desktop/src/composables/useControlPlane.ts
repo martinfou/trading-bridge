@@ -1,5 +1,6 @@
 import { ref, reactive } from 'vue'
 import { useControlPlaneConfig } from './controlPlaneConfig'
+import { useStatusBar } from './useStatusBar'
 import type { Strategy, RunConfig, RunResult, Trade, RunSummary, Bar, BrokerAccount, PromoteGateThresholds } from '@/types/control-plane'
 
 interface StartRunResponse {
@@ -14,28 +15,53 @@ interface ApiResponse<T> {
 }
 
 async function apiGet<T>(path: string, baseUrl: string): Promise<T> {
-  const resp = await fetch(`${baseUrl}${path}`, {
-    headers: { Accept: 'application/json' },
-  })
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => '')
-    throw new Error(`GET ${path} ${resp.status}: ${body.slice(0, 200)}`)
+  try {
+    const resp = await fetch(`${baseUrl}${path}`, {
+      headers: { Accept: 'application/json' },
+    })
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '')
+      const errMsg = `GET ${path} ${resp.status}: ${body.slice(0, 200)}`
+      useStatusBar().setStatus(errMsg, 'error')
+      throw new Error(errMsg)
+    }
+    return await resp.json()
+  } catch (err: any) {
+    if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+      const cleanMsg = `Connection to Control Plane at ${baseUrl} failed.`
+      useStatusBar().setStatus(cleanMsg, 'error')
+    } else {
+      useStatusBar().setStatus(err.message, 'error')
+    }
+    throw err
   }
-  return resp.json()
 }
 
 async function apiPost<T>(path: string, body: unknown, baseUrl: string): Promise<T> {
-  const resp = await fetch(`${baseUrl}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify(body),
-  })
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => '')
-    throw new Error(`POST ${path} ${resp.status}: ${text.slice(0, 200)}`)
+  try {
+    const resp = await fetch(`${baseUrl}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '')
+      const errMsg = `POST ${path} ${resp.status}: ${text.slice(0, 200)}`
+      useStatusBar().setStatus(errMsg, 'error')
+      throw new Error(errMsg)
+    }
+    return await resp.json()
+  } catch (err: any) {
+    if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+      const cleanMsg = `Connection to Control Plane at ${baseUrl} failed.`
+      useStatusBar().setStatus(cleanMsg, 'error')
+    } else {
+      useStatusBar().setStatus(err.message, 'error')
+    }
+    throw err
   }
-  return resp.json()
 }
+
 
 export function useControlPlane() {
   const { controlPlaneUrl } = useControlPlaneConfig()
@@ -64,31 +90,40 @@ export function useControlPlane() {
   }
 
   async function startRun(config: RunConfig): Promise<StartRunResponse> {
-    const barsSource =
-      config.barsSource.type === 'ci'
-        ? { type: 'ci' }
-        : { type: 'year', year: config.barsSource.year?.toString() }
+    loading.value = true
+    error.value = null
+    try {
+      const barsSource =
+        config.barsSource.type === 'ci'
+          ? { type: 'ci' }
+          : { type: 'year', year: config.barsSource.year?.toString() }
 
-    return apiPost<StartRunResponse>(
-      '/api/runs',
-      {
-        strategyId: config.strategyId,
-        symbol: config.symbol,
-        mode: config.mode,
-        barsSource,
-        capital: config.capital,
-        lotSize: config.lotSize,
-        commissionPerTrade: config.commissionPerTrade,
-        slippagePct: config.slippagePct,
-        dataTimeframe: config.dataTimeframe,
-        strategyTimeframe: config.strategyTimeframe,
-        executionLabel: config.executionLabel,
-        brokerAccountId: config.brokerAccountId,
-        dailyLossLimitPct: config.dailyLossLimitPct,
-        weeklyLossLimitPct: config.weeklyLossLimitPct,
-      },
-      controlPlaneUrl.value,
-    )
+      return await apiPost<StartRunResponse>(
+        '/api/runs',
+        {
+          strategyId: config.strategyId,
+          symbol: config.symbol,
+          mode: config.mode,
+          barsSource,
+          capital: config.capital,
+          lotSize: config.lotSize,
+          commissionPerTrade: config.commissionPerTrade,
+          slippagePct: config.slippagePct,
+          dataTimeframe: config.dataTimeframe,
+          strategyTimeframe: config.strategyTimeframe,
+          executionLabel: config.executionLabel,
+          brokerAccountId: config.brokerAccountId,
+          dailyLossLimitPct: config.dailyLossLimitPct,
+          weeklyLossLimitPct: config.weeklyLossLimitPct,
+        },
+        controlPlaneUrl.value,
+      )
+    } catch (e: any) {
+      error.value = e.message
+      throw e
+    } finally {
+      loading.value = false
+    }
   }
 
   async function getRun(runId: string): Promise<RunResult> {
@@ -148,16 +183,21 @@ export function useControlPlane() {
     brokerAccountId?: string
   ): Promise<any> {
     const path = `/api/strategies/${strategyId}/promote`
-    const resp = await fetch(`${controlPlaneUrl.value}${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ targetMode, runId, executionLabel, brokerAccountId }),
-    })
-    if (resp.status === 422 || resp.ok) {
-      return resp.json()
+    try {
+      const resp = await fetch(`${controlPlaneUrl.value}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ targetMode, runId, executionLabel, brokerAccountId }),
+      })
+      if (resp.status === 422 || resp.ok) {
+        return resp.json()
+      }
+      const text = await resp.text().catch(() => '')
+      throw new Error(`POST ${path} ${resp.status}: ${text.slice(0, 200)}`)
+    } catch (e: any) {
+      useStatusBar().setStatus(e.message, 'error')
+      throw e
     }
-    const text = await resp.text().catch(() => '')
-    throw new Error(`POST ${path} ${resp.status}: ${text.slice(0, 200)}`)
   }
 
   async function getPromoteGates(): Promise<PromoteGateThresholds> {
@@ -197,6 +237,10 @@ export function useControlPlane() {
     return apiPost<any>('/api/broker-accounts/test', account, controlPlaneUrl.value)
   }
 
+  async function getMonteCarlo(runId: string, runs = 1000, blockSize = 3): Promise<any> {
+    return apiGet<any>(`/api/runs/${runId}/monte-carlo?runs=${runs}&blockSize=${blockSize}`, controlPlaneUrl.value)
+  }
+
   return {
     startRun,
     getRun,
@@ -210,6 +254,7 @@ export function useControlPlane() {
     getBrokerAccounts,
     saveBrokerAccounts,
     testBrokerAccount,
+    getMonteCarlo,
     promoteStrategy,
     getPromoteGates,
     updatePromoteGates,

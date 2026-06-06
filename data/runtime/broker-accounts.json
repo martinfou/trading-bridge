@@ -11,8 +11,8 @@
     "clientIdEnv" : "IBKR_CLIENT_ID",
     "defaultPortPaper" : 7497,
     "defaultPortLive" : 7496,
-    "token" : "54737dffdd6fa39e36b135e174eaa787-821c13d17b7e14ddfc2db34f8d1fd66f",
-    "accountId" : "101-002-4729622-011",
+    "token" : null,
+    "accountId" : null,
     "host" : "127.0.0.1",
     "port" : 7497
   }, {

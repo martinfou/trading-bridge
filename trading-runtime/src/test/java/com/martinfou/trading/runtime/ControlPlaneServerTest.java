@@ -35,7 +35,12 @@ class ControlPlaneServerTest {
     @BeforeEach
     void setUp() {
         stores = RuntimeStores.inMemoryWithBroadcast();
-        runManager = new RunManager(stores.eventStore(), stores.deploymentStore());
+        runManager = new RunManager(
+            stores.eventStore(),
+            config -> new com.martinfou.trading.broker.FakeBroker(100_000.0),
+            stores.deploymentStore(),
+            BrokerAccountRegistry.loadDefault()
+        );
         promoteService = new PromoteService(
             runManager,
             stores.deploymentStore(),
@@ -216,6 +221,21 @@ class ControlPlaneServerTest {
         assertTrue(events.body().contains("\"sequence\""));
         assertTrue(events.body().contains("RUN_STARTED"));
         assertTrue(events.body().contains("RUN_ENDED"));
+    }
+
+    @Test
+    void postRun_missingBars_returns400() throws Exception {
+        String body = """
+            {
+              "strategyId": "LondonOpenRangeBreakout",
+              "symbol": "EUR_USD",
+              "mode": "BACKTEST",
+              "barsSource": { "type": "year", "year": "2035" }
+            }
+            """;
+        HttpResponse<String> response = post("/api/runs", body);
+        assertEquals(400, response.statusCode());
+        assertTrue(response.body().contains("Failed to load bars for run"));
     }
 
     @Test
@@ -520,6 +540,29 @@ class ControlPlaneServerTest {
     @Test
     void getRun_unknownId_returns404() throws Exception {
         HttpResponse<String> response = get("/api/runs/no-such-run");
+        assertEquals(404, response.statusCode());
+    }
+
+    @Test
+    void getMonteCarlo_returnsStatistics() throws Exception {
+        String runId = startSampleBacktest();
+        waitForCompletion(runId, Duration.ofSeconds(10));
+
+        HttpResponse<String> response = get("/api/runs/" + runId + "/monte-carlo?runs=100&blockSize=3");
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("\"runId\":\"" + runId + "\""));
+        assertTrue(response.body().contains("\"pnlPercentiles\""));
+        assertTrue(response.body().contains("\"drawdownPercentiles\""));
+        assertTrue(response.body().contains("\"sharpePercentiles\""));
+        assertTrue(response.body().contains("\"worstPnl\""));
+        assertTrue(response.body().contains("\"bestPnl\""));
+        assertTrue(response.body().contains("\"var95\""));
+        assertTrue(response.body().contains("\"probabilityOfLoss\""));
+    }
+
+    @Test
+    void getMonteCarlo_unknownId_returns404() throws Exception {
+        HttpResponse<String> response = get("/api/runs/no-such-run/monte-carlo");
         assertEquals(404, response.statusCode());
     }
 

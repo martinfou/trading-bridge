@@ -8,8 +8,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 echo "=== 1. Compiling & Testing Java Backend ==="
-mvn clean test
-mvn package -pl trading-runtime -am -DskipTests
+./mvnw clean test
+./mvnw package -pl trading-runtime -am -DskipTests
 
 echo "=== 2. Setting up Java Environment ==="
 # Detect JAVA_HOME on macOS if not set

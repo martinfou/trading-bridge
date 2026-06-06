@@ -5,6 +5,9 @@ export interface Strategy {
   deployedMode?: string
   executionLabel?: string
   brokerAccountId?: string
+  type?: string
+  indicators?: string[]
+  description?: string
 }
 
 export interface RunConfig {

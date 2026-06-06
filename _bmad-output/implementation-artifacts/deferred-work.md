@@ -105,3 +105,8 @@ Items deferred during code reviews — not blocking current stories.
 ## Deferred from: code review of 21-8-fitness-external-indicators-loop (2026-05-31)
 
 - **Control plane `process-inbox` has no `--sq-feedback`** — `SqBridgeService` drains inbox only; fitness loop remains CLI/nightly per AC3 scope.
+
+## Deferred from: code review of 22-1-weekly-intel-brief-ingest.md (2026-06-06)
+
+- **Notion de Sentiment Retail Oanda limitée au propre compte utilisateur** — L'analyseur appelle `/openTrades` de l'account ID configuré, ce qui correspond aux transactions de l'utilisateur lui-même et non au sentiment retail global.
+- **Mode Oanda Practice configuré en dur à true** — Pas de paramétrage externe pour basculer en mode de production réel.

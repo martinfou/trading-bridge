@@ -52,6 +52,7 @@ function onPromoted() {
         </div>
         <div class="card-meta">
           <span class="meta-item">📊 {{ strategy.defaultSymbol || '—' }}</span>
+          <span v-if="strategy.type" class="meta-item type-badge">🏷️ {{ strategy.type }}</span>
           <span v-if="strategy.deployedMode" class="meta-item deploy-badge">
             🟢 {{ strategy.deployedMode }}
           </span>
@@ -61,6 +62,21 @@ function onPromoted() {
     </div>
 
     <div v-if="expanded" class="card-detail">
+      <!-- Strategy Description -->
+      <div v-if="strategy.description" class="description-block">
+        <p class="description-text">{{ strategy.description }}</p>
+      </div>
+
+      <!-- Indicators Used -->
+      <div v-if="strategy.indicators && strategy.indicators.length" class="indicators-block">
+        <span class="detail-label">Indicators Used</span>
+        <div class="indicator-chips">
+          <span v-for="ind in strategy.indicators" :key="ind" class="indicator-chip">
+            {{ ind }}
+          </span>
+        </div>
+      </div>
+
       <div class="detail-grid">
         <div class="detail-item">
           <span class="detail-label">Strategy ID</span>
@@ -185,6 +201,47 @@ function onPromoted() {
 .deploy-badge {
   color: var(--success);
   font-weight: 600;
+}
+
+.type-badge {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.description-block {
+  background: rgba(255, 255, 255, 0.02);
+  border-left: 2px solid var(--border);
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.85rem;
+  border-radius: 0 4px 4px 0;
+}
+
+.description-text {
+  font-size: 0.825rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.indicators-block {
+  margin-bottom: 0.85rem;
+}
+
+.indicator-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.3rem;
+}
+
+.indicator-chip {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.725rem;
+  color: var(--text-primary);
+  font-weight: 500;
 }
 
 .expand-icon {

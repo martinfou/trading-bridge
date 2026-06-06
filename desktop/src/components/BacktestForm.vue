@@ -6,19 +6,25 @@ import type { Strategy, RunConfig } from '@/types/control-plane'
 const props = defineProps<{
   preselectedStrategy?: string
   preselectedSymbol?: string
+  isDownloading?: boolean
 }>()
 
 const emit = defineEmits<{
   runsStart: [runs: { symbol: string, runId: string }[]]
-  error: [message: string]
+  error: [message: string, context?: { symbol: string, year: string, tf: string }]
 }>()
 
 const { getStrategies, startRun, loading, error, getBrokerAccounts } = useControlPlane()
 
+const isSubmitting = ref(false)
 const strategies = ref<Strategy[]>([])
 const selectedStrategy = ref('')
 const selectedSymbols = ref<string[]>([])
 const selectedYear = ref<number | string>(2025)
+const yearSelectionMode = ref<'single' | 'range' | 'all'>('single')
+const selectedStartYear = ref(2020)
+const selectedEndYear = ref(2025)
+
 const capital = ref(1000)
 const lotSize = ref(0.01)
 const commission = ref(0.07)
@@ -48,6 +54,11 @@ const isValidTimeframe = computed(() => {
   return dVal <= sVal
 })
 
+const isValidYearRange = computed(() => {
+  if (yearSelectionMode.value !== 'range') return true
+  return Number(selectedStartYear.value) <= Number(selectedEndYear.value)
+})
+
 const dropdownRef = ref<HTMLElement | null>(null)
 const dropdownOpen = ref(false)
 
@@ -66,10 +77,70 @@ onMounted(async () => {
     ])
     strategies.value = strats
     accounts.value = accs
+
+    // Restore from localStorage
+    const savedStrategy = localStorage.getItem('bt_selectedStrategy')
+    if (savedStrategy && strats.some(s => s.id === savedStrategy)) {
+      selectedStrategy.value = savedStrategy
+    }
+    const savedSymbols = localStorage.getItem('bt_selectedSymbols')
+    if (savedSymbols) {
+      try {
+        selectedSymbols.value = JSON.parse(savedSymbols)
+      } catch {}
+    }
+    const savedYearMode = localStorage.getItem('bt_yearSelectionMode')
+    if (savedYearMode) {
+      yearSelectionMode.value = savedYearMode as any
+    }
+    const savedYear = localStorage.getItem('bt_selectedYear')
+    if (savedYear) {
+      selectedYear.value = savedYear === 'all' ? 'all' : (parseInt(savedYear) || 2025)
+    }
+    const savedStartYear = localStorage.getItem('bt_selectedStartYear')
+    if (savedStartYear) {
+      selectedStartYear.value = parseInt(savedStartYear) || 2020
+    }
+    const savedEndYear = localStorage.getItem('bt_selectedEndYear')
+    if (savedEndYear) {
+      selectedEndYear.value = parseInt(savedEndYear) || 2025
+    }
+    const savedCapital = localStorage.getItem('bt_capital')
+    if (savedCapital) capital.value = parseInt(savedCapital) || 1000
+    const savedLotSize = localStorage.getItem('bt_lotSize')
+    if (savedLotSize) lotSize.value = parseFloat(savedLotSize) || 0.01
+    const savedCommission = localStorage.getItem('bt_commission')
+    if (savedCommission) commission.value = parseFloat(savedCommission) || 0.07
+    const savedSlippage = localStorage.getItem('bt_slippage')
+    if (savedSlippage) slippage.value = parseFloat(savedSlippage) || 0.0001
+    const savedDataTf = localStorage.getItem('bt_dataTimeframe')
+    if (savedDataTf) dataTimeframe.value = savedDataTf
+    const savedStratTf = localStorage.getItem('bt_strategyTimeframe')
+    if (savedStratTf) strategyTimeframe.value = savedStratTf
+    const savedRunMode = localStorage.getItem('bt_runMode')
+    if (savedRunMode) runMode.value = savedRunMode as any
+    const savedAccountId = localStorage.getItem('bt_accountId')
+    if (savedAccountId) selectedAccountId.value = savedAccountId
   } catch (e: any) {
     emit('error', `Failed to load initialization data: ${e.message}`)
   }
 })
+
+// Setup watchers to save to localStorage
+watch(selectedStrategy, (val) => localStorage.setItem('bt_selectedStrategy', val))
+watch(selectedSymbols, (val) => localStorage.setItem('bt_selectedSymbols', JSON.stringify(val)), { deep: true })
+watch(yearSelectionMode, (val) => localStorage.setItem('bt_yearSelectionMode', val))
+watch(selectedYear, (val) => localStorage.setItem('bt_selectedYear', val.toString()))
+watch(selectedStartYear, (val) => localStorage.setItem('bt_selectedStartYear', val.toString()))
+watch(selectedEndYear, (val) => localStorage.setItem('bt_selectedEndYear', val.toString()))
+watch(capital, (val) => localStorage.setItem('bt_capital', val.toString()))
+watch(lotSize, (val) => localStorage.setItem('bt_lotSize', val.toString()))
+watch(commission, (val) => localStorage.setItem('bt_commission', val.toString()))
+watch(slippage, (val) => localStorage.setItem('bt_slippage', val.toString()))
+watch(dataTimeframe, (val) => localStorage.setItem('bt_dataTimeframe', val))
+watch(strategyTimeframe, (val) => localStorage.setItem('bt_strategyTimeframe', val))
+watch(runMode, (val) => localStorage.setItem('bt_runMode', val))
+watch(selectedAccountId, (val) => localStorage.setItem('bt_accountId', val))
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
@@ -115,15 +186,23 @@ function onStrategyChange() {
 }
 
 async function run() {
+  if (isSubmitting.value) return
   if (!selectedStrategy.value || selectedSymbols.value.length === 0) return
 
+  isSubmitting.value = true
   try {
+    const yearSpec = yearSelectionMode.value === 'all'
+      ? 'all'
+      : (yearSelectionMode.value === 'range'
+          ? `${selectedStartYear.value}-${selectedEndYear.value}`
+          : selectedYear.value.toString())
+
     const runPromises = selectedSymbols.value.map(async (sym) => {
       const config: any = {
         strategyId: selectedStrategy.value,
         symbol: sym.replace('/', '_'),
         mode: runMode.value === 'BACKTEST' ? 'BACKTEST' : (runMode.value === 'PAPER_OANDA' ? 'PAPER' : 'LIVE'),
-        barsSource: { type: 'year', year: selectedYear.value },
+        barsSource: { type: 'year', year: yearSpec },
         capital: capital.value,
         lotSize: lotSize.value,
         commissionPerTrade: commission.value,
@@ -144,7 +223,18 @@ async function run() {
     const started = await Promise.all(runPromises)
     emit('runsStart', started)
   } catch (e: any) {
-    emit('error', `Execution launch failed: ${e.message}`)
+    const yearSpec = yearSelectionMode.value === 'all'
+      ? 'all'
+      : (yearSelectionMode.value === 'range'
+          ? `${selectedStartYear.value}-${selectedEndYear.value}`
+          : selectedYear.value.toString())
+    emit('error', `Execution launch failed: ${e.message}`, {
+      symbol: selectedSymbols.value[0]?.replace('/', '_').toLowerCase() || 'eur_usd',
+      year: yearSpec,
+      tf: dataTimeframe.value.toLowerCase()
+    })
+  } finally {
+    isSubmitting.value = false
   }
 }
 </script>
@@ -218,11 +308,27 @@ async function run() {
         </div>
       </div>
       <div v-if="runMode === 'BACKTEST'" class="field">
-        <label>Year</label>
-        <select v-model="selectedYear">
-          <option value="all">All Years</option>
-          <option v-for="y in years" :key="y" :value="y">{{ y }}</option>
-        </select>
+        <label>Backtest Period</label>
+        <div style="display: flex; flex-direction: column; gap: 0.35rem;">
+          <select v-model="yearSelectionMode" style="width: 100%;">
+            <option value="single">Single Year</option>
+            <option value="range">Year Range</option>
+            <option value="all">All History</option>
+          </select>
+          
+          <select v-if="yearSelectionMode === 'single'" v-model="selectedYear" style="width: 100%;">
+            <option v-for="y in years" :key="y" :value="y">{{ y }}</option>
+          </select>
+          
+          <div v-if="yearSelectionMode === 'range'" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem;">
+            <select v-model="selectedStartYear" style="width: 100%; font-size: 0.8rem; padding: 0.4rem 0.5rem;">
+              <option v-for="y in years" :key="y" :value="y">{{ y }}</option>
+            </select>
+            <select v-model="selectedEndYear" style="width: 100%; font-size: 0.8rem; padding: 0.4rem 0.5rem;">
+              <option v-for="y in years" :key="y" :value="y">{{ y }}</option>
+            </select>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -274,14 +380,30 @@ async function run() {
       Validation Error: Data Timeframe cannot be higher than Strategy Timeframe.
     </div>
 
+    <div v-if="runMode === 'BACKTEST' && !isValidYearRange" class="form-error">
+      Validation Error: Start Year cannot be greater than End Year.
+    </div>
+
     <div v-if="error" class="form-error">{{ error }}</div>
 
-    <button class="run-btn" :disabled="loading || !selectedStrategy || selectedSymbols.length === 0 || !isValidTimeframe" @click="run">
-      <span v-if="loading" class="spinner"></span>
-      <span v-else>
-        {{ runMode === 'BACKTEST' ? '▶ Run Backtest' : (runMode === 'PAPER_OANDA' ? '▶ Start Paper Trading' : '▶ Start Live Trading') }}
-      </span>
-    </button>
+    <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+      <button class="run-btn" :disabled="loading || isSubmitting || props.isDownloading || !selectedStrategy || selectedSymbols.length === 0 || !isValidTimeframe || !isValidYearRange" @click="run">
+        <span v-if="loading || isSubmitting" class="spinner"></span>
+        <span v-if="loading || isSubmitting">
+          Starting (ingestion may take a moment)...
+        </span>
+        <span v-else-if="props.isDownloading">
+          ⏳ Ingestion in progress...
+        </span>
+        <span v-else>
+          {{ runMode === 'BACKTEST' ? '▶ Run Backtest' : (runMode === 'PAPER_OANDA' ? '▶ Start Paper Trading' : '▶ Start Live Trading') }}
+        </span>
+      </button>
+
+      <div v-if="isSubmitting" class="banner info">
+        ℹ️ Launching backtest. If historical price files are missing for the selected pair(s)/year, they will be auto-downloaded first. This can take up to a minute.
+      </div>
+    </div>
   </div>
 </template>
 
@@ -472,5 +594,17 @@ select option {
   align-items: center;
   height: 100%;
   padding-top: 0.25rem;
+}
+
+.banner {
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  border: 1px solid transparent;
+}
+.banner.info {
+  background: #0f1d2d;
+  color: #93c5fd;
+  border-color: #1e3a5f;
 }
 </style>

@@ -5,7 +5,7 @@ set -e
 cd /home/martinfou/projects/trading-bridge
 
 OANDA_KEY="${1:-$(grep OANDA_API_KEY deploy/openclaw.env 2>/dev/null | cut -d= -f2)}"
-OANDA_ACCT="${2:-101-002-4729622-011}"
+OANDA_ACCT="${2:-$(grep OANDA_ACCOUNT_ID deploy/openclaw.env 2>/dev/null | cut -d= -f2)}"
 
 docker run --rm -v "$(pwd):/app" -w /app --entrypoint bash maven:3-eclipse-temurin-21 << 'SCRIPT'
   set -e

@@ -6,6 +6,7 @@ import ResultsView from './views/ResultsView.vue'
 import StrategiesView from './views/StrategiesView.vue'
 import CompareView from './views/CompareView.vue'
 import LiveTradingView from './views/LiveTradingView.vue'
+import DataManagerView from './views/DataManagerView.vue'
 
 const routes = [
   { path: '/', redirect: '/dashboard' },
@@ -14,6 +15,7 @@ const routes = [
   { path: '/strategies', name: 'strategies', component: StrategiesView },
   { path: '/live-trading', name: 'live-trading', component: LiveTradingView },
   { path: '/compare', name: 'compare', component: CompareView },
+  { path: '/data-manager', name: 'data-manager', component: DataManagerView },
 ]
 
 const router = createRouter({

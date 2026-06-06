@@ -91,7 +91,7 @@ class ControlSummaryServiceTest {
         Clock clock = Clock.fixed(now, ZoneOffset.UTC);
 
         try (EventStore store = EventStores.inMemory();
-             RunManager manager = new RunManager(store)) {
+             RunManager manager = new RunManager(store, config -> new com.martinfou.trading.broker.FakeBroker(100_000.0))) {
             RunConfigSnapshot config = new RunConfigSnapshot(
                 "LondonOpenRangeBreakout",
                 "EUR_USD",

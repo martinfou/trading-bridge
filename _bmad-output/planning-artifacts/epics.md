@@ -8,7 +8,7 @@ propShopValidation:
   psgrCoverage: pass
   dependencies: pass-with-note
   note: "15.8 implémentée après 16.3 (prérequis cross-epic)"
-  storyCount: 57
+  storyCount: 65
   propShopStories: 18
   mustShip: 14
   phase2: 8
@@ -63,6 +63,8 @@ inputDocuments:
 - _bmad-output/implementation-artifacts/12-10-backtest-engine-trust.md
 - _bmad-output/implementation-artifacts/12-11-platform-test-strategies.md
 - _bmad-output/brainstorming/brainstorming-session-2026-05-31.md
+- _bmad-output/planning-artifacts/prds/prd-agentic-strategist-2026-06-06/prd.md
+- _bmad-output/planning-artifacts/architecture.md
 approvedStructure: "Epics 13-20, Epic 17 Phase A puis Phase B, ordre 13→14→15→16→17-A ; Epic 21 SQ CLI Bridge (2026-05-31)"
 legacyReference:
 - _bmad-output/planning-artifacts/epics-legacy-sprint-plan.md
@@ -138,6 +140,20 @@ FR19: Walk-Forward Analysis (WFA) and Optimization — The system supports Walk-
 
 FR20: Walk-Forward recalibration signals — System tracks calibration freshness (DAILY/WEEKLY/MONTHLY/etc.) based on calendar time, bar count, or trade count, signaling "WF due!" or "WF overdue" in the control plane.
 
+FR21: Ingestion & Régime (Orchestration) - L'agent ingère les événements macro, le sentiment et la saisonnalité pour classifier le régime de marché ($\ge 85\%$ de précision, latence $\le 15$s).
+FR22: Isolation des Modules - La logique LLM et LangChain4j réside dans `trading-intelligence` tandis que les DTOs partagés (`WeeklyStrategyOutlook`) sont définis dans `trading-core` pour préserver un graphe acyclique.
+FR23: Prompt & Logique Déterministe Java - Utilisation de prompt système avec calculs mathématiques et règles de confort calculés programmatiquement en Java.
+FR24: Target Schema (Raw vs Final) - Séparation entre `WeeklyStrategyOutlookRaw` (brut LLM) et `WeeklyStrategyOutlook` (record final Java).
+FR25: Outil Calendrier Macro Temporel - Ingestion ForexFactory HIGH, neutralisant le champ actual pour les événements futurs lors des simulations.
+FR26: Outil Sentiment Temporel - Ingestion du sentiment et news, filtrant par cutoff temporel.
+FR27: Outil Saisonnalité Temporel - Ingestion des matrices de saisonnalité historiques avec filtrage cutoff temporel.
+FR28: Factory de Modèle Hybride - Factory supportant DeepSeek (via client compatible OpenAI) et Ollama local.
+FR29: Garde-fous ReAct & Coût - Boucle ReAct limitée à 4 itérations, timeout global de 40s et limite de coût à 0.50 USD.
+FR30: Comfort Level & Validations Financières - Calcul de ComfortLevel et validation Java des ordres ($\pm 5\%$ sur zone de prix, stop loss entre 10 et 200 pips).
+FR31: Bypass Fallback Résilient - Fallback automatique sur un outlook neutre en cas d'erreur ou timeout.
+FR32: Experience Store Feedback Loop - Apprentissage continu par post-mortem d'erreurs et injection few-shot.
+FR33: Persistance JSON Cache - Sauvegarde des outlooks générés sous format JSON plat.
+
 ### NonFunctional Requirements
 
 NFR1: Temps — UTC (`Instant`) partout en logique trading ; affichage Toronto optionnel UI.
@@ -164,6 +180,10 @@ NFR11: Monte Carlo performance — Running a 1000-run Monte Carlo simulation mus
 
 NFR12: WFA purging discipline — Boundary purging must clear overlap trades with a gap margin proportional to maximum strategy position duration to completely prevent out-of-sample look-ahead bias.
 
+NFR13: Timeout strict du thread d'orchestration global fixé à 40 secondes.
+NFR14: Timeout individuel des outils fixé à 3.0s avec 1 retry après 1.0s.
+NFR15: Utilisation de Java 21 Records sans Spring ni Lombok.
+
 ### Additional Requirements
 
 - **Brownfield** — Extension modules Maven existants (`trading-runtime`, `trading-backtest`, etc.).
@@ -175,6 +195,9 @@ NFR12: WFA purging discipline — Boundary purging must clear overlap trades wit
 - **Module `trading-node` (S15)** — Epic 18.
 - **WFA Boundary Purging** — Purge overlapping stateful trades near the boundary to avoid look-ahead leakage.
 - **WFO Calibration Settings** — Support defining WFO frequency, IS months, and OOS weeks inside strategy metadata.
+- **DeepSeek Integration** — Intégration du connecteur compatible OpenAI pour DeepSeek API.
+- **Temporal Isolation Enforcement** — Implémentation du filtrage de sécurité temporelle avec le paramètre Instant cutoffTimestamp dans tous les scrapers.
+- **Experience Store Local Folder** — Persistance locale dans data/experience-store/ pour les leçons apprises.
 
 ### UX Design Requirements
 
@@ -333,6 +356,7 @@ FR-SQ1: Epic 21 — Hot folder ingest automatique (21.1–21.3)
 FR-SQ2: Epic 21 — Pilotage sqcli Mac (21.4–21.5)
 FR-SQ3: Epic 21 — Pipeline nightly (21.6)
 FR-SQ4: Epic 21 — Fitness CSV → SQ ext indicators (21.8)
+FR21-FR33: Epic 25 — Agentic Market Strategist (Orchestration Layer)
 
 ## Epic List
 
@@ -395,6 +419,11 @@ Martin peut lancer des simulations Monte Carlo (trade shuffle / block bootstrap)
 
 Martin peut effectuer des analyses Walk-Forward en divisant l'historique en fenêtres glissantes In-Sample (IS) et Out-of-Sample (OOS), optimiser les paramètres, purger les frontières pour éviter les fuites de données, générer la courbe OOS combinée et suivre la fraîcheur de calibration dans le dashboard.
 **FRs covered:** FR19, FR20 | **NFRs:** NFR12 | **UX-DRs:** UX-DR11, UX-DR12 | **Sprint:** S6
+
+### Epic 25: Agentic Market Strategist (Orchestration Layer)
+
+Martin peut exécuter un agent d'orchestration basé sur LangChain4j et DeepSeek/Ollama pour classifier le régime de marché en ingérant des indicateurs macro, sentiment et saisonnalité temporels de façon sécurisée (sans lookahead bias) et bénéficier d'une mémoire de feedback (Experience Store) pour l'apprentissage continu.
+**FRs covered:** FR21, FR22, FR23, FR24, FR25, FR26, FR27, FR28, FR29, FR30, FR31, FR32, FR33 | **NFRs:** NFR13, NFR14, NFR15 | **Sprint:** S7
 
 ### Synthèse prop-shop (enrichissement Epic 13–20)
 
@@ -1761,5 +1790,116 @@ So that I know when a strategy needs to be recalibrated.
 **When** strategy has active live/paper runs
 **Then** the control plane calculates if calibration is due or overdue based on trades/bars/time since `lastWalkForwardDate`
 **And** displays status icons (🔋, 🔔, ⚠️) next to the strategy in the dashboard and TUI
+
+## Epic 25: Agentic Market Strategist (Orchestration Layer)
+
+L'Agentic Market Strategist utilise LangChain4j et DeepSeek/Ollama pour analyser les données hebdomadaires macro, sentiment et saisonnalité de façon isolée temporellement (sans lookahead bias) et produire un outlook hebdomadaire déterminé. Il intègre une boucle d'apprentissage continu (Experience Store) pour apprendre de ses erreurs de prédiction passées.
+
+**Module cible :** `trading-intelligence` et `trading-core`
+**Ordre recommandé :** 25.1 → 25.2 → 25.3 → 25.4 → 25.5 → 25.6 → 25.7 → 25.8
+
+### Story 25.1: Configuration des dépendances Maven et Factory de modèles DeepSeek/Ollama
+
+As a developer,
+I want to add the required LangChain4j dependencies and implement an LLM client factory,
+So that I can connect to DeepSeek or local Ollama models dynamically.
+
+**Acceptance Criteria:**
+**Given** the Maven parent POM and `trading-intelligence/pom.xml`
+**When** I add dependencies for `langchain4j-open-ai` and `langchain4j-ollama`
+**Then** the project compiles successfully using `./mvnw clean install`
+**And** `AgenticModelFactory` resolves the `DEEPSEEK_API_KEY` env variable and returns an `OpenAiChatModel` pointing to `https://api.deepseek.com`
+**And** if `DEEPSEEK_API_KEY` is absent or configured for local dev, it returns an `OllamaChatModel` pointing to the local Ollama host
+
+### Story 25.2: Déclaration des records cibles et DTOs partagés
+
+As a developer,
+I want to declare the required Java 21 Records for the target schema and ingestion tools,
+So that downstream modules can consume them without depending on the LLM framework.
+
+**Acceptance Criteria:**
+**Given** the `trading-core` module
+**When** I create package `com.martinfou.trading.core.agent`
+**Then** it contains public records `WeeklyStrategyOutlook`, `TradeTriggerCondition`, `RiskFactors` and enums `MarketDirection`, `MarketRegime`, `ComfortLevel`
+**And** `trading-intelligence` package `com.martinfou.trading.intelligence.agent` contains `WeeklyStrategyOutlookRaw`, `SentimentData`, and `SeasonalityData`
+**And** all records match the specifications defined in PRD §5
+
+### Story 25.3: Implémentation des outils d'ingestion avec isolation temporelle
+
+As a quantitative developer,
+I want to implement the macroeconomic calendar, sentiment, and seasonality tools with strict temporal isolation,
+So that future data is masked during backtesting simulations.
+
+**Acceptance Criteria:**
+**Given** the `trading-intelligence` tools package
+**When** I implement `MacroTools`, `SentimentTools`, and `SeasonalityTools` as LangChain4j `@Tool` classes
+**Then** each tool requires an `Instant cutoffTimestamp` parameter representing the current simulation time
+**And** `MacroTools` filters ForexFactory events, returning only `ImpactLevel.HIGH` and masking the `actual` value for events after the cutoff
+**And** `SentimentTools` and `SeasonalityTools` query databases using the cutoff to prevent lookahead leakage
+
+### Story 25.4: Développement du service d'orchestration AgenticStrategistService et de la boucle ReAct
+
+As a developer,
+I want to implement the central orchestration service utilizing a LangChain4j ReAct loop,
+So that the LLM can sequentially call tools to formulate the market outlook.
+
+**Acceptance Criteria:**
+**Given** the orchestration prompt under `/prompts/agentic-strategist-system.txt`
+**When** `AgenticStrategistService.run(String asset, Instant cutoff)` is called
+**Then** it starts a LangChain4j AI Service with the system prompt, injecting `targetAsset` and `currentAssetPrice`
+**And** it restricts the ReAct loop to a maximum of 4 iterations
+**And** it applies a 40-second execution thread limit and aborts if transaction cost exceeds $0.50 USD
+
+### Story 25.5: Logique de Comfort Level, validations financières et désérialisation Jackson
+
+As a developer,
+I want to parse the LLM JSON output resiliently and apply programmatic validations,
+So that invalid trade parameters or capitalization mismatches are corrected programmatically.
+
+**Acceptance Criteria:**
+**Given** a raw JSON response from the LLM
+**When** the service deserializes it into `WeeklyStrategyOutlookRaw`
+**Then** it uses a case-insensitive Jackson ObjectMapper to tolerate enum capitalization discrepancies
+**And** it programmatically calculates the `ComfortLevel` (HIGH, MEDIUM, LOW) based on the PRD rules
+**And** it validates that the targeted price zone is within $\pm 5\%$ of the close price and invalidation pips are within 10 to 200 pips
+
+### Story 25.6: Mécanisme de fallback dégradé, bypass et télémétrie
+
+As a system operator,
+I want a safe fallback mechanism and telemetry counter,
+So that any LLM API error, timeout, or validation failure does not halt execution but logs the error and returns a safe neutral outlook.
+
+**Acceptance Criteria:**
+**Given** an exception, timeout, or validation failure during the agent run
+**When** the service catches the error
+**Then** it logs a warning with the stack trace via SLF4J
+**And** it increments the Prometheus counter `agentic_fallback_failures_total`
+**And** it returns the default neutral fallback outlook defined in PRD §6.3
+
+### Story 25.7: Experience Store - Boucle de feedback RAG
+
+As a quantitative researcher,
+I want a post-mortem discrepancy detector and experience memory store,
+So that the agent learns from its past prediction mistakes.
+
+**Acceptance Criteria:**
+**Given** the end of a trading week or simulation run
+**When** `ExperienceStoreService` runs its post-mortem check
+**Then** it compares the agent's outlook with actual performance metrics (e.g. comfort level high but drawdown occurred)
+**And** if an error is detected, it generates a JSON "Lesson Learned" under `data/experience-store/`
+**And** on subsequent runs, it queries similar context lessons and injects them as few-shot examples into the system prompt
+
+### Story 25.8: Intégration du control plane HTTP, écriture JSON et tests unitaires
+
+As a Martin,
+I want to invoke the agent via a control plane REST endpoint, save generated outlooks, and run verification tests,
+So that the agent is integrated into the platform runtime and CLI.
+
+**Acceptance Criteria:**
+**Given** the running control plane
+**When** I call `POST /api/agentic-strategist/run` with a JSON payload containing the cutoff time
+**Then** it triggers the agentic strategist and returns the JSON `WeeklyStrategyOutlook`
+**And** it caches the result under `data/agentic-outlooks/outlook-{year}-W{week}.json`
+**And** unit tests verify the entire pipeline, including tool mocks, timeout recovery, and lookahead protection
 
 

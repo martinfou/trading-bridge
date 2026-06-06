@@ -311,12 +311,29 @@ onMounted(async () => {
   if (typeof runId === 'string') {
     inspectRun(runId)
   }
+  if (route.query.setupBroker === 'true') {
+    showAccountsConfig.value = true
+    fetchAccounts()
+    editingAccount.value = null
+    accountsError.value = null
+    accountsSuccess.value = null
+  }
   pollTimer = setInterval(fetchSummary, 10000)
 })
 
 watch(() => route.query.runId, (newRunId) => {
   if (typeof newRunId === 'string') {
     inspectRun(newRunId)
+  }
+})
+
+watch(() => route.query.setupBroker, (newSetupBroker) => {
+  if (newSetupBroker === 'true') {
+    showAccountsConfig.value = true
+    fetchAccounts()
+    editingAccount.value = null
+    accountsError.value = null
+    accountsSuccess.value = null
   }
 })
 
