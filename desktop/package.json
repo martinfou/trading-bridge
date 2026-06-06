@@ -1,6 +1,8 @@
 {
   "name": "trading-bridge-desktop",
   "version": "0.1.0",
+  "author": "Martin Fou <martin@martinfou.com>",
+  "homepage": "https://github.com/martinfou/trading-bridge",
   "description": "Desktop backtest runner for Trading Bridge — run, analyse, and compare strategies",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -49,6 +51,7 @@
       }
     ],
     "linux": {
+      "maintainer": "Martin Fou <martin@martinfou.com>",
       "target": [
         {
           "target": "AppImage",
