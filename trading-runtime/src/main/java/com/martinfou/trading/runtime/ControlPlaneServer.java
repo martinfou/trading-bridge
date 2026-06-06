@@ -216,9 +216,17 @@ public final class ControlPlaneServer implements AutoCloseable {
                 Map<String, Object> body = ctx.bodyAsClass(Map.class);
                 String pair = (String) body.get("pair");
                 Integer year = body.get("year") != null ? ((Number) body.get("year")).intValue() : null;
+                Integer startYear = body.get("startYear") != null ? ((Number) body.get("startYear")).intValue() : null;
+                Integer endYear = body.get("endYear") != null ? ((Number) body.get("endYear")).intValue() : null;
                 String tf = (String) body.getOrDefault("tf", "h1");
                 Boolean syncMode = (Boolean) body.getOrDefault("syncMode", false);
-                boolean accepted = historicalDataService.triggerDownload(pair, year, tf, syncMode);
+                
+                boolean accepted;
+                if (startYear != null && endYear != null) {
+                    accepted = historicalDataService.triggerDownload(pair, startYear, endYear, tf, syncMode);
+                } else {
+                    accepted = historicalDataService.triggerDownload(pair, year, tf, syncMode);
+                }
                 ctx.status(accepted ? HttpStatus.ACCEPTED : HttpStatus.CONFLICT);
                 ctx.json(Map.of("accepted", accepted));
             })

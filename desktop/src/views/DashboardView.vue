@@ -158,6 +158,9 @@ const actionLoading = ref(false)
 const selectedPair = ref('eurusd')
 const selectedYear = ref(new Date().getFullYear())
 const selectedTf = ref<'h1' | 'm1'>('h1')
+const downloadMode = ref<'single' | 'range' | 'all'>('single')
+const selectedStartYear = ref(2006)
+const selectedEndYear = ref(new Date().getFullYear())
 
 const pairsList = ['eurusd', 'gbpusd', 'gbpjpy', 'usdcad', 'usdjpy', 'audusd', 'nzdusd', 'usdchf']
 const yearsList = computed(() => {
@@ -203,9 +206,32 @@ async function triggerDownload(sync = false) {
   actionLoading.value = true
   try {
     dataTimeframe.value = selectedTf.value
-    const params = sync
-      ? { syncMode: true, tf: selectedTf.value }
-      : { pair: selectedPair.value, year: selectedYear.value, tf: selectedTf.value }
+    let params: any
+    if (sync) {
+      params = { syncMode: true, tf: selectedTf.value }
+    } else {
+      if (downloadMode.value === 'all') {
+        params = {
+          pair: selectedPair.value,
+          startYear: 2006,
+          endYear: new Date().getFullYear(),
+          tf: selectedTf.value
+        }
+      } else if (downloadMode.value === 'range') {
+        params = {
+          pair: selectedPair.value,
+          startYear: selectedStartYear.value,
+          endYear: selectedEndYear.value,
+          tf: selectedTf.value
+        }
+      } else {
+        params = {
+          pair: selectedPair.value,
+          year: selectedYear.value,
+          tf: selectedTf.value
+        }
+      }
+    }
     await downloadHistoricalData(params)
     refreshDataStatus()
   } catch (err: any) {
@@ -445,8 +471,32 @@ onUnmounted(() => {
               </select>
             </div>
             <div class="field">
+              <label>Mode</label>
+              <select v-model="downloadMode">
+                <option value="single">Single Year</option>
+                <option value="range">Year Range</option>
+                <option value="all">All History</option>
+              </select>
+            </div>
+            <div class="field" v-if="downloadMode === 'single'">
               <label>Year</label>
               <select v-model="selectedYear">
+                <option v-for="y in yearsList" :key="y" :value="y">
+                  {{ y }}
+                </option>
+              </select>
+            </div>
+            <div class="field" v-if="downloadMode === 'range'">
+              <label>Start Year</label>
+              <select v-model="selectedStartYear">
+                <option v-for="y in yearsList" :key="y" :value="y">
+                  {{ y }}
+                </option>
+              </select>
+            </div>
+            <div class="field" v-if="downloadMode === 'range'">
+              <label>End Year</label>
+              <select v-model="selectedEndYear">
                 <option v-for="y in yearsList" :key="y" :value="y">
                   {{ y }}
                 </option>
