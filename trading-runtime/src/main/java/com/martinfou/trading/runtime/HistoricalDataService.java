@@ -106,7 +106,13 @@ public final class HistoricalDataService implements AutoCloseable {
     }
 
     public synchronized boolean triggerDownload(String pair, Integer year, String tf, boolean syncMode) {
-        String key = syncMode ? "sync-" + tf : pair + "-" + year + "-" + tf;
+        return triggerDownload(pair, year, year, tf, syncMode);
+    }
+
+    public synchronized boolean triggerDownload(String pair, Integer startYear, Integer endYear, String tf, boolean syncMode) {
+        String key = syncMode ? "sync-" + tf : (startYear != null && endYear != null && !startYear.equals(endYear))
+            ? pair + "-" + startYear + "-" + endYear + "-" + tf
+            : pair + "-" + (startYear != null ? startYear : "") + "-" + tf;
         if (activeDownloads.contains(key)) {
             return false;
         }
@@ -115,7 +121,7 @@ public final class HistoricalDataService implements AutoCloseable {
         activeTasks.put(key, new DownloadTaskStatus(key, 0, "Initializing..."));
         executor.submit(() -> {
             try {
-                runDownloadProcess(pair, year, tf, syncMode);
+                runDownloadProcess(pair, startYear, endYear, tf, syncMode);
             } finally {
                 activeDownloads.remove(key);
                 activeTasks.remove(key);
@@ -124,8 +130,10 @@ public final class HistoricalDataService implements AutoCloseable {
         return true;
     }
 
-    private void runDownloadProcess(String pair, Integer year, String tf, boolean syncMode) {
-        String key = syncMode ? "sync-" + tf : pair + "-" + year + "-" + tf;
+    private void runDownloadProcess(String pair, Integer startYear, Integer endYear, String tf, boolean syncMode) {
+        String key = syncMode ? "sync-" + tf : (startYear != null && endYear != null && !startYear.equals(endYear))
+            ? pair + "-" + startYear + "-" + endYear + "-" + tf
+            : pair + "-" + (startYear != null ? startYear : "") + "-" + tf;
         List<String> command = new ArrayList<>();
         command.add("./scripts/download-data.sh");
         if (syncMode) {
@@ -133,8 +141,13 @@ public final class HistoricalDataService implements AutoCloseable {
         } else {
             command.add("--pair");
             command.add(pair);
-            command.add("--year");
-            command.add(String.valueOf(year));
+            if (startYear != null && endYear != null && !startYear.equals(endYear)) {
+                command.add("--range");
+                command.add(startYear + "-" + endYear);
+            } else if (startYear != null) {
+                command.add("--year");
+                command.add(String.valueOf(startYear));
+            }
         }
         command.add("--tf");
         command.add(tf.toLowerCase());
@@ -148,8 +161,9 @@ public final class HistoricalDataService implements AutoCloseable {
             Process process = pb.start();
             try (var reader = new java.io.BufferedReader(new java.io.InputStreamReader(process.getInputStream()))) {
                 String line;
-                int startYear = 2006;
-                int endYear = LocalDate.now().getYear();
+                int startYearVal = 2006;
+                int endYearVal = LocalDate.now().getYear();
+                int currentProcessingYear = (startYear != null) ? startYear : startYearVal;
                 int currentMonth = 1;
                 int totalMonths = 12;
                 while ((line = reader.readLine()) != null) {
@@ -163,7 +177,7 @@ public final class HistoricalDataService implements AutoCloseable {
                                     String yearStr = parts[1].replaceAll("[^0-9]", "").trim();
                                     if (yearStr.length() == 4) {
                                         int y = Integer.parseInt(yearStr);
-                                        int pct = (y - startYear) * 100 / (endYear - startYear + 1);
+                                        int pct = (y - startYearVal) * 100 / (endYearVal - startYearVal + 1);
                                         activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(pct, 1, 99), "Syncing year " + y + "..."));
                                     }
                                 } catch (Exception ignored) {}
@@ -183,6 +197,21 @@ public final class HistoricalDataService implements AutoCloseable {
                             activeTasks.put(key, new DownloadTaskStatus(key, basePct, "Syncing " + pairToSym(detectedPair) + "..."));
                         }
                     } else {
+                        if (line.contains("—")) {
+                            String[] parts = line.split("—");
+                            if (parts.length > 1) {
+                                try {
+                                    String yearStr = parts[1].replaceAll("[^0-9]", "").trim();
+                                    if (yearStr.length() == 4) {
+                                        int parsedY = Integer.parseInt(yearStr);
+                                        if (startYear != null && endYear != null && parsedY >= startYear && parsedY <= endYear) {
+                                            currentProcessingYear = parsedY;
+                                        }
+                                    }
+                                } catch (Exception ignored) {}
+                            }
+                        }
+
                         String detectedPair = null;
                         for (String p : PAIRS) {
                             if (line.toLowerCase().contains(p)) {
@@ -199,45 +228,39 @@ public final class HistoricalDataService implements AutoCloseable {
                                     currentMonth = Integer.parseInt(slash[0].trim());
                                     totalMonths = slash.length > 1 ? Integer.parseInt(slash[1].replaceAll("[^0-9]", "").trim()) : 12;
                                     
-                                    int pct = 5 + (currentMonth * 80 / totalMonths);
-                                    if (pair == null) {
-                                        int pIdx = PAIRS.indexOf(detectedPair != null ? detectedPair : "");
-                                        if (pIdx >= 0) {
-                                            int base = pIdx * 100 / 8;
-                                            pct = base + (currentMonth * 12 / totalMonths);
-                                        }
+                                    int pct;
+                                    if (startYear != null && endYear != null && endYear > startYear) {
+                                        int yearIndex = currentProcessingYear - startYear;
+                                        int totalYears = endYear - startYear + 1;
+                                        int basePct = yearIndex * 100 / totalYears;
+                                        pct = basePct + (currentMonth * 80 / (totalMonths * totalYears));
+                                    } else {
+                                        pct = 5 + (currentMonth * 80 / totalMonths);
                                     }
-                                    activeTasks.put(key, new DownloadTaskStatus(key, pct, "Ingesting " + pairToSym(detectedPair != null ? detectedPair : pair) + " Month " + currentMonth + "/" + totalMonths + "..."));
+                                    activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(pct, 1, 99), "Ingesting " + pairToSym(detectedPair != null ? detectedPair : pair) + " " + currentProcessingYear + " Month " + currentMonth + "/" + totalMonths + "..."));
                                 }
                             } catch (Exception ignored) {}
                         } else {
-                            if (pair == null) {
-                                if (detectedPair != null) {
-                                    int idx = PAIRS.indexOf(detectedPair);
-                                    int base = idx * 100 / 8;
-                                    if (line.contains("downloading...")) {
-                                        activeTasks.put(key, new DownloadTaskStatus(key, base + 3, "Downloading " + pairToSym(detectedPair) + " (" + (idx + 1) + "/8)..."));
-                                    } else if (line.contains("Converting file") || line.contains("Converted")) {
-                                        activeTasks.put(key, new DownloadTaskStatus(key, base + 9, "Converting " + pairToSym(detectedPair) + " (" + (idx + 1) + "/8)..."));
-                                    } else {
-                                        activeTasks.put(key, new DownloadTaskStatus(key, base, "Syncing " + pairToSym(detectedPair) + " (" + (idx + 1) + "/8)..."));
-                                    }
+                            if (line.contains("downloading...")) {
+                                int pct;
+                                if (startYear != null && endYear != null && endYear > startYear) {
+                                    int yearIndex = currentProcessingYear - startYear;
+                                    int totalYears = endYear - startYear + 1;
+                                    pct = yearIndex * 100 / totalYears + 2;
+                                } else {
+                                    pct = 30;
                                 }
-                            } else {
-                                if (line.contains("downloading...")) {
-                                    if (tf.equalsIgnoreCase("m1") || tf.equalsIgnoreCase("m1_data")) {
-                                        int pct = 5 + (currentMonth * 80 / totalMonths);
-                                        activeTasks.put(key, new DownloadTaskStatus(key, pct, "Downloading " + pairToSym(pair) + " Month " + currentMonth + "/" + totalMonths + "..."));
-                                    } else {
-                                        activeTasks.put(key, new DownloadTaskStatus(key, 30, "Downloading " + pairToSym(pair) + " " + year + "..."));
-                                    }
-                                } else if (line.contains("Converting file") || line.contains("Converted")) {
-                                    if (tf.equalsIgnoreCase("m1") || tf.equalsIgnoreCase("m1_data")) {
-                                        activeTasks.put(key, new DownloadTaskStatus(key, 90, "Converting " + pairToSym(pair) + " " + year + " to binary `.bars`..."));
-                                    } else {
-                                        activeTasks.put(key, new DownloadTaskStatus(key, 75, "Converting " + pairToSym(pair) + " " + year + " to binary `.bars`..."));
-                                    }
+                                activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(pct, 1, 99), "Downloading " + pairToSym(pair) + " " + currentProcessingYear + "..."));
+                            } else if (line.contains("Converting file") || line.contains("Converted")) {
+                                int pct;
+                                if (startYear != null && endYear != null && endYear > startYear) {
+                                    int yearIndex = currentProcessingYear - startYear;
+                                    int totalYears = endYear - startYear + 1;
+                                    pct = yearIndex * 100 / totalYears + 9;
+                                } else {
+                                    pct = 75;
                                 }
+                                activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(pct, 1, 99), "Converting " + pairToSym(pair) + " " + currentProcessingYear + " to binary `.bars`..."));
                             }
                         }
                     }
