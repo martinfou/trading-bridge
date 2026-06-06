@@ -43,6 +43,12 @@ Provide a world-class, institutional-grade ("prop-shop quality") control center 
   - Risk Metrics: Live daily drawdown % and max daily drawdown % with a warning indicator if close to limits.
 - **FR-2.4 (Action Triggers):** Each card must feature a prominent **Inspect** button and a secondary **Kill Switch** button.
 
+### Advanced Risk Controls (Circuit Breakers & Locks)
+- **FR-2.5 (Daily Loss Limit - DLL):** Hard stop at a configurable percentage (e.g., default 5.0% for prop-shops or 2.0% conservative) of starting daily equity. Upon breach, the system must immediately close all open positions, cancel all active orders, and transition the strategy status to `SUSPENDED_DAILY` (lockout active until next calendar day's 5:00 PM EST/UTC rollover).
+- **FR-2.6 (Weekly Loss Limit - WLL):** Cumulative stop at a configurable percentage (e.g., default 10.0%) of starting weekly equity (Monday open). Upon breach, all strategy operations are halted, positions are flatted, and status transitions to `SUSPENDED_WEEKLY` until the weekly session resets.
+- **FR-2.7 (Strategy Volatility Lock / Cooldown):** A temporary cooling-off lockout (e.g., 4 hours) triggered automatically if a strategy registers 3 consecutive losses or 5 total losses within a rolling 2-hour window. Status transitions to `COOLDOWN`.
+- **FR-2.8 (Lockout Status Display):** Strategy cards and detail panels in the Live Room must display the active suspension reason (`SUSPENDED_DAILY`, `SUSPENDED_WEEKLY`, or `COOLDOWN`) and the remaining lockout time.
+
 ### Inspection View (Slide-out Drawer or Nested View)
 - **FR-3.1 (Inspection Layout):** Inspecting a running strategy must load a tabbed results workspace:
   - **Overview Tab:** General strategy configuration, allocated capital, and daily drawdown metrics.

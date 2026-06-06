@@ -17,18 +17,30 @@ import java.nio.file.Path;
 public record RiskLimits(
     double maxPositionSize,
     double maxOpenExposure,
-    Double maxDailyDrawdownPct
+    Double maxDailyDrawdownPct,
+    Double dailyLossLimitPct,
+    Double weeklyLossLimitPct
 ) {
 
-    public static final RiskLimits DEFAULT = new RiskLimits(1_000_000, 2_000_000, 5.0);
+    public static final RiskLimits DEFAULT = new RiskLimits(1_000_000, 2_000_000, 5.0, 5.0, 10.0);
 
     public RiskLimits(double maxPositionSize, double maxOpenExposure) {
-        this(maxPositionSize, maxOpenExposure, 5.0);
+        this(maxPositionSize, maxOpenExposure, 5.0, 5.0, 10.0);
+    }
+
+    public RiskLimits(double maxPositionSize, double maxOpenExposure, Double maxDailyDrawdownPct) {
+        this(maxPositionSize, maxOpenExposure, maxDailyDrawdownPct, 5.0, 10.0);
     }
 
     public RiskLimits {
         if (maxDailyDrawdownPct == null) {
             maxDailyDrawdownPct = 5.0;
+        }
+        if (dailyLossLimitPct == null) {
+            dailyLossLimitPct = 5.0;
+        }
+        if (weeklyLossLimitPct == null) {
+            weeklyLossLimitPct = 10.0;
         }
     }
 

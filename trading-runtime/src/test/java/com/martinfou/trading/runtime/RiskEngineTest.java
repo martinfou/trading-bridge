@@ -159,6 +159,11 @@ class RiskEngineTest {
         }
 
         @Override
+        public OrderSubmitResult cancelOrder(String brokerOrderId) {
+            return delegate.cancelOrder(brokerOrderId);
+        }
+
+        @Override
         public List<Position> getPositions() {
             return delegate.getPositions();
         }
@@ -286,5 +291,39 @@ class RiskEngineTest {
             ordered = false;
             pending.clear();
         }
+    }
+
+    @Test
+    void checkDailyLossLimit_passesWithinLimit() {
+        RiskEngine engine = new RiskEngine(new RiskLimits(1_000_000, 2_000_000, 5.0, 5.0, 10.0));
+        RiskCheckResult result = engine.checkDailyLossLimit(100_000.0, 96_000.0);
+        assertTrue(result.passed());
+    }
+
+    @Test
+    void checkDailyLossLimit_breachesLimit() {
+        RiskEngine engine = new RiskEngine(new RiskLimits(1_000_000, 2_000_000, 5.0, 5.0, 10.0));
+        RiskCheckResult result = engine.checkDailyLossLimit(100_000.0, 94_000.0);
+        assertFalse(result.passed());
+        assertEquals("daily_loss_limit", result.limitName());
+        assertEquals(5.0, result.threshold());
+        assertEquals(6.0, result.actual());
+    }
+
+    @Test
+    void checkWeeklyLossLimit_passesWithinLimit() {
+        RiskEngine engine = new RiskEngine(new RiskLimits(1_000_000, 2_000_000, 5.0, 5.0, 10.0));
+        RiskCheckResult result = engine.checkWeeklyLossLimit(100_000.0, 91_000.0);
+        assertTrue(result.passed());
+    }
+
+    @Test
+    void checkWeeklyLossLimit_breachesLimit() {
+        RiskEngine engine = new RiskEngine(new RiskLimits(1_000_000, 2_000_000, 5.0, 5.0, 10.0));
+        RiskCheckResult result = engine.checkWeeklyLossLimit(100_000.0, 89_000.0);
+        assertFalse(result.passed());
+        assertEquals("weekly_loss_limit", result.limitName());
+        assertEquals(10.0, result.threshold());
+        assertEquals(11.0, result.actual());
     }
 }

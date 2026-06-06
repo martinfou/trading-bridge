@@ -9,6 +9,9 @@ import java.util.List;
 public interface OandaRestClient {
 
     OandaMarketOrderResult placeMarketOrder(String instrument, long units, String clientTag);
+    OandaMarketOrderResult placeOrder(String type, String instrument, long units, double price, double stopLoss, double takeProfit, String clientTag);
+    boolean cancelOrder(String orderId);
+    java.util.List<java.util.Map<String, Object>> fetchTransactions(int limit);
 
     OandaAccountSnapshot fetchAccountSummary();
 

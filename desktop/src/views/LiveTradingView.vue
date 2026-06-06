@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useControlPlane } from '../composables/useControlPlane'
 import TradeChart from '../components/TradeChart.vue'
 import TradeTable from '../components/TradeTable.vue'
@@ -7,7 +8,8 @@ import KpiStrip from '../components/KpiStrip.vue'
 import EquityChart from '../components/EquityChart.vue'
 import type { Bar, Trade } from '@/types/control-plane'
 
-const { getControlSummary, killStrategy, getBars, getTrades, getEquityCurve } = useControlPlane()
+const { getControlSummary, killStrategy, getBars, getTrades, getEquityCurve, getBrokerAccounts, saveBrokerAccounts, testBrokerAccount } = useControlPlane()
+const route = useRoute()
 
 const summary = ref<any>(null)
 const loading = ref(true)
@@ -18,6 +20,58 @@ const activeTab = ref<'overview' | 'chart' | 'trades' | 'positions'>('overview')
 // Telemetry polling timer
 let pollTimer: any = null
 
+// Accounts configuration state
+const accounts = ref<any[]>([])
+const loadingAccounts = ref(false)
+const showAccountsConfig = ref(false)
+const savingAccounts = ref(false)
+const accountsError = ref<string | null>(null)
+const accountsSuccess = ref<string | null>(null)
+const editingAccount = ref<any | null>(null)
+
+// Connection testing state
+const testingConnection = ref(false)
+const testResult = ref<{ success: boolean; balance?: number; currency?: string; message?: string } | null>(null)
+
+async function testAccountConnection() {
+  if (!editingAccount.value) return
+  testingConnection.value = true
+  testResult.value = null
+  accountsError.value = null
+  accountsSuccess.value = null
+  try {
+    const payload = {
+      id: editingAccount.value.id,
+      provider: editingAccount.value.provider,
+      token: editingAccount.value.token.trim() || null,
+      accountId: editingAccount.value.accountId.trim() || null,
+      host: editingAccount.value.host,
+      port: editingAccount.value.port,
+      defaultRestUrl: editingAccount.value.provider === 'OANDA' ? 'https://api-fxpractice.oanda.com' : null
+    }
+    const res = await testBrokerAccount(payload)
+    if (res && res.success) {
+      testResult.value = {
+        success: true,
+        balance: res.balance,
+        currency: res.currency
+      }
+    } else {
+      testResult.value = {
+        success: false,
+        message: res.error || 'Connection check failed'
+      }
+    }
+  } catch (err: any) {
+    testResult.value = {
+      success: false,
+      message: err.message
+    }
+  } finally {
+    testingConnection.value = false
+  }
+}
+
 async function fetchSummary() {
   try {
     const data = await getControlSummary()
@@ -27,6 +81,145 @@ async function fetchSummary() {
     error.value = e.message
   } finally {
     loading.value = false
+  }
+}
+
+async function fetchAccounts() {
+  loadingAccounts.value = true
+  try {
+    accounts.value = await getBrokerAccounts()
+  } catch (err: any) {
+    accountsError.value = err.message
+  } finally {
+    loadingAccounts.value = false
+  }
+}
+
+function toggleAccountsConfig() {
+  showAccountsConfig.value = !showAccountsConfig.value
+  if (showAccountsConfig.value) {
+    fetchAccounts()
+    editingAccount.value = null
+    accountsError.value = null
+    accountsSuccess.value = null
+  }
+}
+
+function startEditAccount(acc?: any) {
+  testResult.value = null
+  if (acc) {
+    editingAccount.value = {
+      id: acc.id,
+      provider: acc.provider,
+      token: acc.configured ? '********' : '',
+      accountId: acc.maskedAccountId || '',
+      host: acc.host || '127.0.0.1',
+      port: acc.port || 7497,
+      isNew: false
+    }
+  } else {
+    editingAccount.value = {
+      id: '',
+      provider: 'OANDA',
+      token: '',
+      accountId: '',
+      host: '127.0.0.1',
+      port: 7497,
+      isNew: true
+    }
+  }
+}
+
+async function saveAccountChanges() {
+  if (!editingAccount.value) return
+  if (!editingAccount.value.id.trim()) {
+    alert('Account ID is required')
+    return
+  }
+  
+  savingAccounts.value = true
+  accountsError.value = null
+  accountsSuccess.value = null
+
+  try {
+    const currentMasked = await getBrokerAccounts()
+    const accountsPayload: any[] = []
+    let exists = false
+
+    currentMasked.forEach(acc => {
+      if (acc.id === editingAccount.value.id) {
+        exists = true
+        accountsPayload.push({
+          id: editingAccount.value.id,
+          provider: editingAccount.value.provider,
+          token: editingAccount.value.token.trim() || null,
+          accountId: editingAccount.value.accountId.trim() || null,
+          host: editingAccount.value.host,
+          port: editingAccount.value.port
+        })
+      } else {
+        accountsPayload.push({
+          id: acc.id,
+          provider: acc.provider,
+          token: null,
+          accountId: null,
+          host: null,
+          port: null
+        })
+      }
+    })
+
+    if (!exists) {
+      accountsPayload.push({
+        id: editingAccount.value.id,
+        provider: editingAccount.value.provider,
+        token: editingAccount.value.token.trim() || null,
+        accountId: editingAccount.value.accountId.trim() || null,
+        host: editingAccount.value.host,
+        port: editingAccount.value.port
+      })
+    }
+
+    await saveBrokerAccounts(accountsPayload)
+    accountsSuccess.value = 'Broker configuration updated successfully!'
+    editingAccount.value = null
+    await fetchAccounts()
+  } catch (err: any) {
+    accountsError.value = err.message
+  } finally {
+    savingAccounts.value = false
+  }
+}
+
+async function deleteAccount(id: string) {
+  if (id === 'default') {
+    alert('Cannot delete the default account entry')
+    return
+  }
+  if (!confirm(`Are you sure you want to remove account configuration "${id}"?`)) return
+  
+  savingAccounts.value = true
+  accountsError.value = null
+  accountsSuccess.value = null
+  try {
+    const current = await getBrokerAccounts()
+    const filtered = current
+      .filter(acc => acc.id !== id)
+      .map(acc => ({
+        id: acc.id,
+        provider: acc.provider,
+        token: null,
+        accountId: null,
+        host: null,
+        port: null
+      }))
+    await saveBrokerAccounts(filtered)
+    accountsSuccess.value = `Account "${id}" removed.`
+    await fetchAccounts()
+  } catch (err: any) {
+    accountsError.value = err.message
+  } finally {
+    savingAccounts.value = false
   }
 }
 
@@ -104,9 +297,27 @@ async function triggerKill(runRecord: any) {
   }
 }
 
-onMounted(() => {
-  fetchSummary()
+function formatSeconds(seconds?: number): string {
+  if (seconds === undefined || seconds === null || seconds <= 0) return '00:00:00'
+  const h = Math.floor(seconds / 3600).toString().padStart(2, '0')
+  const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0')
+  const s = Math.floor(seconds % 60).toString().padStart(2, '0')
+  return `${h}:${m}:${s}`
+}
+
+onMounted(async () => {
+  await fetchSummary()
+  const runId = route.query.runId
+  if (typeof runId === 'string') {
+    inspectRun(runId)
+  }
   pollTimer = setInterval(fetchSummary, 10000)
+})
+
+watch(() => route.query.runId, (newRunId) => {
+  if (typeof newRunId === 'string') {
+    inspectRun(newRunId)
+  }
 })
 
 onUnmounted(() => {
@@ -121,9 +332,136 @@ onUnmounted(() => {
         <h2>Live Room 📡</h2>
         <p class="subtitle">Prop-shop real-time operations board</p>
       </div>
-      <button class="btn btn-secondary" @click="fetchSummary" :disabled="loading">
-        Refresh Telemetry
-      </button>
+      <div style="display: flex; gap: 0.5rem;">
+        <button class="btn btn-secondary" @click="toggleAccountsConfig">
+          🔑 {{ showAccountsConfig ? 'Close Keys Panel' : 'Broker Accounts' }}
+        </button>
+        <button class="btn btn-secondary" @click="fetchSummary" :disabled="loading">
+          Refresh Telemetry
+        </button>
+      </div>
+    </div>
+
+    <!-- Broker Accounts panel -->
+    <div v-if="showAccountsConfig" class="accounts-panel mb-6">
+      <div class="panel-header">
+        <h3>Broker Accounts & Credentials Manager</h3>
+        <button class="btn btn-accent btn-sm" @click="startEditAccount()">+ Add Account</button>
+      </div>
+
+      <div v-if="accountsError" class="banner error mb-4">{{ accountsError }}</div>
+      <div v-if="accountsSuccess" class="banner success mb-4">{{ accountsSuccess }}</div>
+
+      <div v-if="loadingAccounts" class="loading-state py-4">
+        <div class="spinner-small"></div>
+        <p>Loading accounts configuration...</p>
+      </div>
+
+      <div v-else class="accounts-list-container">
+        <table class="accounts-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Provider</th>
+              <th>Account Details</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="acc in accounts" :key="acc.id">
+              <td><strong>{{ acc.id }}</strong></td>
+              <td><span class="provider-badge">{{ acc.provider }}</span></td>
+              <td>{{ acc.maskedAccountId }}</td>
+              <td>
+                <span :class="['status-badge', acc.configured ? 'configured' : 'missing']">
+                  {{ acc.configured ? 'Active Credentials' : 'Credentials Missing' }}
+                </span>
+              </td>
+              <td>
+                <div style="display: flex; gap: 0.5rem;">
+                  <button class="btn btn-secondary btn-sm" @click="startEditAccount(acc)">Edit</button>
+                  <button v-if="acc.id !== 'default'" class="btn btn-danger btn-sm" @click="deleteAccount(acc.id)">Delete</button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Editing account section -->
+      <div v-if="editingAccount" class="editing-modal-overlay" @click.self="editingAccount = null">
+        <div class="editing-modal-card">
+          <div class="panel-header">
+            <h4>{{ editingAccount.isNew ? 'Add Broker Account' : 'Edit Broker Account: ' + editingAccount.id }}</h4>
+            <button class="btn-close" @click="editingAccount = null">×</button>
+          </div>
+          <div class="editing-form py-4">
+            <div class="field mb-3">
+              <label>Account name/ID</label>
+              <input v-model="editingAccount.id" type="text" :disabled="!editingAccount.isNew" placeholder="e.g. oanda_practice" />
+            </div>
+            <div class="field mb-3">
+              <label>Provider</label>
+              <select v-model="editingAccount.provider" :disabled="!editingAccount.isNew">
+                <option value="OANDA">OANDA</option>
+                <option value="IBKR">IBKR</option>
+              </select>
+            </div>
+            
+            <!-- OANDA specific -->
+            <div v-if="editingAccount.provider === 'OANDA'">
+              <div class="field mb-3">
+                <label>API Key / Token</label>
+                <input v-model="editingAccount.token" type="password" placeholder="•••••••••••••••• (Leave blank to keep existing)" />
+              </div>
+              <div class="field mb-3">
+                <label>OANDA Account ID</label>
+                <input v-model="editingAccount.accountId" type="text" placeholder="e.g. 101-002-1234567-001" />
+              </div>
+            </div>
+
+            <!-- IBKR specific -->
+            <div v-if="editingAccount.provider === 'IBKR'">
+              <div class="field mb-3">
+                <label>TWS / Gateway Host</label>
+                <input v-model="editingAccount.host" type="text" placeholder="127.0.0.1" />
+              </div>
+              <div class="field mb-3">
+                <label>TWS / Gateway Port</label>
+                <input v-model.number="editingAccount.port" type="number" placeholder="7497" />
+              </div>
+            </div>
+
+            <!-- Connection test feedback card -->
+            <div v-if="testResult" :class="['banner my-3', testResult.success ? 'success' : 'error']">
+              <div v-if="testResult.success">
+                <strong>Connection Successful!</strong><br />
+                Account balance: {{ testResult.balance }} {{ testResult.currency }}
+              </div>
+              <div v-else>
+                <strong>Connection Failed:</strong> {{ testResult.message }}
+              </div>
+            </div>
+
+            <div class="form-actions pt-4" style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+              <button class="btn btn-secondary btn-sm" @click="editingAccount = null">Cancel</button>
+              <button 
+                class="btn btn-secondary btn-sm" 
+                :disabled="testingConnection || savingAccounts" 
+                @click="testAccountConnection"
+              >
+                <span v-if="testingConnection" class="spinner-small" style="margin-right: 0.25rem;"></span>
+                <span>Test Connection</span>
+              </button>
+              <button class="btn btn-accent btn-sm" :disabled="savingAccounts || testingConnection" @click="saveAccountChanges">
+                <span v-if="savingAccounts" class="spinner-small"></span>
+                <span v-else>Save Configuration</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div v-if="error" class="banner error mb-4">{{ error }}</div>
@@ -190,6 +528,10 @@ onUnmounted(() => {
             <span :class="['status-val', run.status.toLowerCase(), { stale: run.isStale }]">
               {{ run.isStale ? 'STALE' : run.status }}
             </span>
+          </div>
+          <div v-if="run.status === 'COOLDOWN'" class="metric-row">
+            <span>Cooldown Timer</span>
+            <span class="status-val cooldown">{{ formatSeconds(run.cooldownSecondsRemaining) }}</span>
           </div>
           <div class="metric-row">
             <span>Daily Drawdown</span>
@@ -465,6 +807,9 @@ onUnmounted(() => {
 .status-val.running { color: var(--success); }
 .status-val.paused { color: var(--warning); }
 .status-val.stale { color: var(--danger); }
+.status-val.suspended_daily { color: #f97316; }
+.status-val.suspended_weekly { color: #ef4444; }
+.status-val.cooldown { color: #3b82f6; }
 
 .card-footer {
   margin-top: auto;
@@ -698,6 +1043,157 @@ onUnmounted(() => {
   border: 1px solid rgba(245, 158, 11, 0.2);
   color: var(--warning);
 }
+
+.accounts-panel {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.75rem;
+}
+
+.panel-header h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.accounts-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1rem;
+}
+
+.accounts-table th {
+  text-align: left;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 0.6rem 0.85rem;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  border-bottom: 1px solid var(--border);
+  text-transform: uppercase;
+}
+
+.accounts-table td {
+  padding: 0.75rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+
+.provider-badge {
+  background: rgba(99, 102, 241, 0.15);
+  color: #818cf8;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.status-badge {
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.status-badge.configured {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--success);
+}
+
+.status-badge.missing {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--danger);
+}
+
+/* Editing overlays */
+.editing-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  backdrop-filter: blur(5px);
+}
+
+.editing-modal-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: 90%;
+  max-width: 450px;
+  padding: 1.5rem;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+.field label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  margin-bottom: 0.35rem;
+  display: block;
+}
+
+.field input[type="text"],
+.field input[type="password"],
+.field input[type="number"],
+.field select {
+  width: 100%;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.55rem 0.75rem;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.field input:focus, .field select:focus {
+  border-color: var(--accent);
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  border-top: 1px solid var(--border);
+  margin-top: 1rem;
+}
+
+.spinner-small {
+  display: inline-block;
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+.banner.success {
+  background: rgba(34, 197, 94, 0.15);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  color: var(--success);
+}
+
+.mb-3 { margin-bottom: 0.75rem; }
+.pt-4 { padding-top: 1rem; }
+.py-4 { padding-top: 1rem; padding-bottom: 1rem; }
 
 @keyframes spin {
   to { transform: rotate(360deg); }

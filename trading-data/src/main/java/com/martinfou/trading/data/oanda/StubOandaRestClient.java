@@ -41,6 +41,34 @@ public final class StubOandaRestClient implements OandaRestClient {
     }
 
     @Override
+    public OandaMarketOrderResult placeOrder(String type, String instrument, long units, double price, double stopLoss, double takeProfit, String clientTag) {
+        if (!scriptedResults.isEmpty()) {
+            return scriptedResults.removeFirst();
+        }
+        double fillPrice = price > 0 ? price : (instrument.contains("JPY") ? 150.0 : 1.10);
+        String orderId = String.valueOf(nextOrderId++);
+        String tradeId = type.equalsIgnoreCase("MARKET") ? "T-" + orderId : null;
+        if (type.equalsIgnoreCase("MARKET")) {
+            positions.add(new OandaPositionSnapshot(
+                instrument,
+                units >= 0 ? Order.Side.BUY : Order.Side.SELL,
+                Math.abs(units),
+                fillPrice));
+        }
+        return new OandaMarketOrderResult(201, orderId, tradeId, type.equalsIgnoreCase("MARKET") ? fillPrice : null, null);
+    }
+
+    @Override
+    public boolean cancelOrder(String orderId) {
+        return true;
+    }
+
+    @Override
+    public List<java.util.Map<String, Object>> fetchTransactions(int limit) {
+        return List.of();
+    }
+
+    @Override
     public OandaAccountSnapshot fetchAccountSummary() {
         return account;
     }

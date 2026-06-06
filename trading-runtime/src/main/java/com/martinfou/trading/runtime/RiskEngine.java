@@ -89,4 +89,40 @@ public final class RiskEngine {
         }
         return RiskCheckResult.pass();
     }
+
+    public RiskCheckResult checkDailyLossLimit(
+        double startingEquity,
+        double currentEquity
+    ) {
+        if (startingEquity <= 0) return RiskCheckResult.pass();
+        double limitPct = limits.dailyLossLimitPct();
+        if (limitPct <= 0) return RiskCheckResult.pass();
+        double lossPct = (startingEquity - currentEquity) / startingEquity * 100.0;
+        if (lossPct >= limitPct) {
+            return RiskCheckResult.fail(
+                "daily_loss_limit",
+                "DAILY_LOSS_LIMIT_BREACH: loss " + lossPct + "% exceeds " + limitPct + "%",
+                limitPct,
+                lossPct);
+        }
+        return RiskCheckResult.pass();
+    }
+
+    public RiskCheckResult checkWeeklyLossLimit(
+        double startingEquity,
+        double currentEquity
+    ) {
+        if (startingEquity <= 0) return RiskCheckResult.pass();
+        double limitPct = limits.weeklyLossLimitPct();
+        if (limitPct <= 0) return RiskCheckResult.pass();
+        double lossPct = (startingEquity - currentEquity) / startingEquity * 100.0;
+        if (lossPct >= limitPct) {
+            return RiskCheckResult.fail(
+                "weekly_loss_limit",
+                "WEEKLY_LOSS_LIMIT_BREACH: loss " + lossPct + "% exceeds " + limitPct + "%",
+                limitPct,
+                lossPct);
+        }
+        return RiskCheckResult.pass();
+    }
 }

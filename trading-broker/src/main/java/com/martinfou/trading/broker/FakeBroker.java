@@ -84,6 +84,11 @@ public final class FakeBroker implements Broker {
     }
 
     @Override
+    public OrderSubmitResult cancelOrder(String brokerOrderId) {
+        return OrderSubmitResult.filled(brokerOrderId);
+    }
+
+    @Override
     public List<Position> getPositions() {
         return List.copyOf(positions.values());
     }

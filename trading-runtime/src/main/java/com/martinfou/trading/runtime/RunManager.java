@@ -1,5 +1,6 @@
 package com.martinfou.trading.runtime;
 
+import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.BacktestResultPayload;
 import com.martinfou.trading.backtest.events.RunEvent;
 import com.martinfou.trading.backtest.events.RunEventType;
@@ -43,7 +44,10 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
         String executionLabel,
         String brokerAccountId,
         String dataTimeframe,
-        String strategyTimeframe
+        String strategyTimeframe,
+        Double maxDailyDrawdownPct,
+        Double dailyLossLimitPct,
+        Double weeklyLossLimitPct
     ) {
         public StartRunRequest(
             String strategyId,
@@ -58,7 +62,7 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
             String brokerAccountId
         ) {
             this(strategyId, symbol, mode, barsSource, capital, lotSize, commissionPerTrade, slippagePct,
-                executionLabel, brokerAccountId, null, null);
+                executionLabel, brokerAccountId, null, null, null, null, null);
         }
 
         public StartRunRequest(
@@ -73,7 +77,7 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
             String executionLabel
         ) {
             this(strategyId, symbol, mode, barsSource, capital, lotSize, commissionPerTrade, slippagePct,
-                executionLabel, null, null, null);
+                executionLabel, null, null, null, null, null, null);
         }
 
         public StartRunRequest(
@@ -87,7 +91,7 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
             String executionLabel
         ) {
             this(strategyId, symbol, mode, barsSource, capital, null, commissionPerTrade, slippagePct,
-                executionLabel, null, null, null);
+                executionLabel, null, null, null, null, null, null);
         }
     }
 
@@ -100,6 +104,7 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
     private final Map<String, DailyDrawdownMetrics> dailyDrawdownByRun = new ConcurrentHashMap<>();
     private final Map<String, RunRecord> runs = new ConcurrentHashMap<>();
     private final Map<String, RunConfigSnapshot> snapshots = new ConcurrentHashMap<>();
+    private final Map<String, AutoCloseable> activeExecutors = new ConcurrentHashMap<>();
     private final CopyOnWriteArrayList<RunTransitionListener> listeners = new CopyOnWriteArrayList<>();
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
@@ -165,8 +170,16 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
         return killSwitchRegistry;
     }
 
+    public BrokerAccountRegistry brokerAccountRegistry() {
+        return brokerAccountRegistry;
+    }
+
     public Optional<DailyDrawdownMetrics> dailyDrawdownMetrics(String runId) {
         return Optional.ofNullable(dailyDrawdownByRun.get(runId));
+    }
+
+    public Optional<AutoCloseable> getActiveExecutor(String runId) {
+        return Optional.ofNullable(activeExecutors.get(runId));
     }
 
     @Override
@@ -220,6 +233,10 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
 
     @Override
     public RunRecord stop(String runId) {
+        return stop(runId, false);
+    }
+
+    public RunRecord stop(String runId, boolean liquidate) {
         RunRecord record = requireRun(runId);
         RunRecord before = record;
         return switch (record.status()) {
@@ -228,8 +245,23 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
                 notifyTransition(before, record, RunTransition.STOP);
                 yield record;
             }
-            case RUNNING -> throw new IllegalStateException(
-                "Cannot stop run " + runId + " while execution is in progress (Epic 16)");
+            case RUNNING -> {
+                record.markCompleted(Map.of("message", "stopped by operator"));
+                AutoCloseable exec = activeExecutors.get(runId);
+                if (exec != null) {
+                    try {
+                        if (liquidate && exec instanceof OandaStreamingExecutor poe) {
+                            poe.liquidateAndStop();
+                        } else {
+                            exec.close();
+                        }
+                    } catch (Exception e) {
+                        log.error("Failed to stop executor for run {}", runId, e);
+                    }
+                }
+                notifyTransition(before, record, RunTransition.STOP);
+                yield record;
+            }
             case PAUSED -> {
                 record.markFailed("stopped while paused");
                 notifyTransition(before, record, RunTransition.STOP);
@@ -300,6 +332,15 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
             : StrategyCatalog.defaultSymbol(request.strategyId());
         RunConfigSnapshot configSnapshot = RunConfigSnapshot.fromRequest(request, symbol);
         RunConfigSnapshot resolved = resolveBrokerAccount(request.strategyId(), request.brokerAccountId(), configSnapshot);
+        if (isBrokerBackedRun(resolved)) {
+            try {
+                Broker broker = brokerFactory.create(resolved);
+                double equity = broker.getAccountState().equity();
+                resolved = resolved.withCapital(equity);
+            } catch (Exception e) {
+                log.warn("Failed to retrieve broker account equity for run: {}. Falling back to default or requested capital.", e.getMessage());
+            }
+        }
         validate(request, resolved);
         RunRecord record = register(resolved);
         start(record.runId());
@@ -339,7 +380,72 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
         try {
             RunMode runMode = RunMode.valueOf(configSnapshot.mode().toUpperCase());
             com.martinfou.trading.backtest.BacktestResult result;
-            if (isBrokerBackedRun(configSnapshot)) {
+            if (configSnapshot.resolvedExecutionLabel().isOandaBroker() && System.getProperty("trading.bridge.test") == null) {
+                Broker broker = brokerFactory.create(configSnapshot);
+                Strategy strategy = StrategyCatalog.create(
+                    configSnapshot.strategyId(), configSnapshot.symbol(), configSnapshot.quantity());
+                RunRiskContext riskContext = new RunRiskContext(
+                    new RiskEngine(),
+                    (run, cfg, m, check) -> {
+                        if (record.status() == RunRecord.Status.RUNNING) {
+                            RunRecord pausedBefore = snapshotRecord(record);
+                            record.markPaused();
+                            notifyTransition(pausedBefore, record, RunTransition.PAUSE);
+                        }
+                    },
+                    metrics -> dailyDrawdownByRun.put(runId, metrics));
+
+                String accountId = configSnapshot.brokerAccountId();
+                com.martinfou.trading.data.oanda.OandaRestClient restClient = null;
+                var oandaCreds = brokerAccountRegistry.credentials(accountId);
+                if (oandaCreds.isPresent()) {
+                    var creds = oandaCreds.get();
+                    restClient = new com.martinfou.trading.data.oanda.HttpOandaRestClient(
+                        creds.apiToken(), creds.accountId(), creds.restUrl());
+                } else {
+                    restClient = new com.martinfou.trading.data.oanda.StubOandaRestClient();
+                }
+
+                var creds = oandaCreds.orElse(null);
+                var streamClient = new com.martinfou.trading.data.oanda.OandaStreamingClient(
+                    creds != null ? creds.apiToken() : "",
+                    creds != null ? creds.accountId() : "",
+                    creds == null || creds.restUrl().contains("practice")
+                );
+
+                OandaStreamingExecutor oandaExecutor = new OandaStreamingExecutor(
+                    runId,
+                    configSnapshot,
+                    strategy,
+                    broker,
+                    restClient,
+                    eventStore,
+                    killSwitchRegistry,
+                    streamClient,
+                    riskContext
+                );
+
+                activeExecutors.put(runId, oandaExecutor);
+                oandaExecutor.start();
+
+                while (record.status() == RunRecord.Status.RUNNING) {
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException e) {
+                        break;
+                    }
+                }
+                oandaExecutor.stop();
+                activeExecutors.remove(runId);
+
+                double finalEquity = broker.getAccountState().equity();
+                result = BacktestResult.builder()
+                    .initialCapital(capital)
+                    .finalEquity(finalEquity)
+                    .totalTrades(0)
+                    .totalReturnPct(capital > 0 ? (finalEquity - capital) / capital * 100.0 : 0.0)
+                    .build();
+            } else if (isBrokerBackedRun(configSnapshot)) {
                 Broker broker = brokerFactory.create(configSnapshot);
                 Strategy strategy = StrategyCatalog.create(
                     configSnapshot.strategyId(), configSnapshot.symbol(), configSnapshot.quantity());
@@ -407,6 +513,30 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
     }
 
     static List<Bar> loadBars(RunConfigSnapshot config) throws IOException {
+        String mode = config.mode();
+        if (mode != null && (mode.equalsIgnoreCase("PAPER") || mode.equalsIgnoreCase("LIVE"))) {
+            try {
+                String accountId = config.brokerAccountId();
+                var registry = BrokerAccountRegistry.loadDefault();
+                var oandaCreds = registry.credentials(accountId);
+                if (oandaCreds.isPresent()) {
+                    var creds = oandaCreds.get();
+                    String tf = config.strategyTimeframe();
+                    if (tf == null || tf.isBlank()) {
+                        tf = "H1";
+                    } else {
+                        tf = tf.toUpperCase();
+                    }
+                    com.martinfou.trading.data.OandaPriceClient priceClient = new com.martinfou.trading.data.OandaPriceClient(
+                        creds.apiToken(), creds.accountId(), creds.restUrl().contains("practice")
+                    );
+                    log.info("Fetching last 500 live {} bars from OANDA for symbol {}...", tf, config.symbol());
+                    return priceClient.getCandles(config.symbol(), tf, 500);
+                }
+            } catch (Exception e) {
+                log.warn("Failed to fetch live candles from OANDA: {}. Falling back to default bars.", e.getMessage());
+            }
+        }
         if (config.barsSourceType() == null) {
             throw new IllegalArgumentException("barsSourceType is required in config snapshot");
         }

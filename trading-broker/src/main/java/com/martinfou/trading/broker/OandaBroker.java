@@ -62,29 +62,49 @@ public final class OandaBroker implements Broker {
             emit(BrokerEvent.reject(order, "Broker not connected"));
             return OrderSubmitResult.rejected("Broker not connected");
         }
-        if (order.type() != Order.Type.MARKET) {
-            emit(BrokerEvent.reject(order, "OandaBroker supports MARKET orders only"));
-            return OrderSubmitResult.rejected("OandaBroker supports MARKET orders only");
-        }
 
         long units = Math.round(order.quantity());
         if (order.side() == Order.Side.SELL) {
             units = -units;
         }
         String instrument = toOandaInstrument(order.symbol());
-        OandaMarketOrderResult result = client.placeMarketOrder(instrument, units, order.id());
+        OandaMarketOrderResult result;
+
+        if (order.type() == Order.Type.MARKET) {
+            if (order.stopLoss() > 0 || order.takeProfit() > 0) {
+                result = client.placeOrder("MARKET", instrument, units, 0.0, order.stopLoss(), order.takeProfit(), order.id());
+            } else {
+                result = client.placeMarketOrder(instrument, units, order.id());
+            }
+        } else {
+            result = client.placeOrder(order.type().name(), instrument, units, order.price(), order.stopLoss(), order.takeProfit(), order.id());
+        }
 
         if (!result.success()) {
             String reason = result.errorMessage() != null ? result.errorMessage() : "OANDA order rejected";
-            log.warn("OANDA reject {} {}: {}", instrument, units, reason);
+            log.warn("OANDA reject {} {} type={}: {}", instrument, units, order.type(), reason);
             emit(BrokerEvent.reject(order, reason));
             return OrderSubmitResult.rejected(reason);
         }
 
-        order.fill();
-        double fillPrice = result.fillPrice() != null ? result.fillPrice() : order.price();
-        emit(BrokerEvent.fill(order, fillPrice));
+        if (order.type() == Order.Type.MARKET) {
+            order.fill();
+            double fillPrice = result.fillPrice() != null ? result.fillPrice() : order.price();
+            emit(BrokerEvent.fill(order, fillPrice));
+        }
         return OrderSubmitResult.filled(result.orderId());
+    }
+
+    @Override
+    public OrderSubmitResult cancelOrder(String brokerOrderId) {
+        if (!connected) {
+            return OrderSubmitResult.rejected("Broker not connected");
+        }
+        boolean ok = client.cancelOrder(brokerOrderId);
+        if (ok) {
+            return OrderSubmitResult.filled(brokerOrderId);
+        }
+        return OrderSubmitResult.rejected("Failed to cancel order on OANDA");
     }
 
     @Override

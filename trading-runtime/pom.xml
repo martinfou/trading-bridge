@@ -103,6 +103,9 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <workingDirectory>${project.parent.basedir}</workingDirectory>
+                    <systemPropertyVariables>
+                        <trading.bridge.test>true</trading.bridge.test>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
         </plugins>

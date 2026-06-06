@@ -25,7 +25,7 @@ public final class BrokerAccountRegistry {
     public static final String DEFAULT_ID = "default";
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    record AccountEntry(
+    public record AccountEntry(
         String id,
         String provider,
         String tokenEnv,
@@ -36,9 +36,13 @@ public final class BrokerAccountRegistry {
         String portEnv,
         String clientIdEnv,
         Integer defaultPortPaper,
-        Integer defaultPortLive
+        Integer defaultPortLive,
+        String token,
+        String accountId,
+        String host,
+        Integer port
     ) {
-        AccountEntry {
+        public AccountEntry {
             if (provider == null || provider.isBlank()) {
                 provider = "OANDA";
             }
@@ -71,6 +75,24 @@ public final class BrokerAccountRegistry {
             }
         }
 
+        public AccountEntry(
+            String id,
+            String provider,
+            String tokenEnv,
+            String accountIdEnv,
+            String restUrlEnv,
+            String defaultRestUrl,
+            String hostEnv,
+            String portEnv,
+            String clientIdEnv,
+            Integer defaultPortPaper,
+            Integer defaultPortLive
+        ) {
+            this(id, provider, tokenEnv, accountIdEnv, restUrlEnv, defaultRestUrl,
+                 hostEnv, portEnv, clientIdEnv, defaultPortPaper, defaultPortLive,
+                 null, null, null, null);
+        }
+
         boolean isIbkr() {
             return "IBKR".equalsIgnoreCase(provider);
         }
@@ -84,7 +106,17 @@ public final class BrokerAccountRegistry {
     private final Map<String, AccountEntry> accountsById;
 
     BrokerAccountRegistry(Map<String, AccountEntry> accountsById) {
-        this.accountsById = Map.copyOf(accountsById);
+        this.accountsById = new java.util.concurrent.ConcurrentHashMap<>(accountsById);
+    }
+
+    public void updateAccounts(List<AccountEntry> entries) {
+        accountsById.clear();
+        for (AccountEntry entry : entries) {
+            if (entry.id() == null || entry.id().isBlank()) {
+                throw new IllegalArgumentException("Broker account id is required");
+            }
+            accountsById.put(entry.id(), entry);
+        }
     }
 
     public static BrokerAccountRegistry loadDefault() {
@@ -148,6 +180,10 @@ public final class BrokerAccountRegistry {
                 null)));
     }
 
+    public AccountEntry getRawAccount(String id) {
+        return accountsById.get(resolveId(id));
+    }
+
     public List<BrokerAccount> listMasked() {
         return accountsById.values().stream()
             .map(this::toMaskedView)
@@ -175,15 +211,20 @@ public final class BrokerAccountRegistry {
         if (entry == null || !entry.isIbkr()) {
             return Optional.empty();
         }
-        String account = System.getenv(entry.accountIdEnv());
+        String account = entry.accountId() != null && !entry.accountId().isBlank()
+            ? entry.accountId()
+            : System.getenv(entry.accountIdEnv());
         if (account == null || account.isBlank()) {
             return Optional.empty();
         }
-        String host = System.getenv(entry.hostEnv());
+        String host = entry.host() != null && !entry.host().isBlank()
+            ? entry.host()
+            : System.getenv(entry.hostEnv());
         if (host == null || host.isBlank()) {
             host = "127.0.0.1";
         }
-        int port = parsePort(System.getenv(entry.portEnv()), entry.defaultPortPaper());
+        int defaultPort = entry.port() != null ? entry.port() : entry.defaultPortPaper();
+        int port = parsePort(System.getenv(entry.portEnv()), defaultPort);
         int clientId = parseClientId(System.getenv(entry.clientIdEnv()));
         return Optional.of(new IbkrConnectionConfig(host, port, clientId, account));
     }
@@ -191,8 +232,11 @@ public final class BrokerAccountRegistry {
     public Optional<IbkrConnectionConfig> ibkrConnection(String accountId, boolean paper) {
         return ibkrConnection(accountId).map(cfg -> {
             AccountEntry entry = accountsById.get(resolveId(accountId));
-            int port = parsePort(System.getenv(entry.portEnv()),
-                paper ? entry.defaultPortPaper() : entry.defaultPortLive());
+            int defaultPort = paper ? entry.defaultPortPaper() : entry.defaultPortLive();
+            if (entry.port() != null) {
+                defaultPort = entry.port();
+            }
+            int port = parsePort(System.getenv(entry.portEnv()), defaultPort);
             return new IbkrConnectionConfig(cfg.host(), port, cfg.clientId(), cfg.accountId());
         });
     }
@@ -203,8 +247,12 @@ public final class BrokerAccountRegistry {
         if (entry == null || entry.isIbkr()) {
             return Optional.empty();
         }
-        String token = firstNonBlank(System.getenv(entry.tokenEnv()), System.getenv(BrokerCredentials.ENV_OANDA_API_KEY));
-        String account = System.getenv(entry.accountIdEnv());
+        String token = entry.token() != null && !entry.token().isBlank()
+            ? entry.token()
+            : firstNonBlank(System.getenv(entry.tokenEnv()), System.getenv(BrokerCredentials.ENV_OANDA_API_KEY));
+        String account = entry.accountId() != null && !entry.accountId().isBlank()
+            ? entry.accountId()
+            : System.getenv(entry.accountIdEnv());
         if (token == null || account == null) {
             return Optional.empty();
         }
@@ -271,11 +319,13 @@ public final class BrokerAccountRegistry {
         if (entry.isIbkr()) {
             Optional<IbkrConnectionConfig> cfg = ibkrConnection(entry.id());
             String masked = cfg.map(c -> maskAccountId(c.accountId())).orElse("****");
-            return new BrokerAccount(entry.id(), entry.provider(), masked, cfg.isPresent());
+            String host = entry.host() != null && !entry.host().isBlank() ? entry.host() : "127.0.0.1";
+            Integer port = entry.port() != null ? entry.port() : entry.defaultPortPaper();
+            return new BrokerAccount(entry.id(), entry.provider(), masked, cfg.isPresent(), host, port);
         }
         Optional<BrokerCredentials> creds = credentials(entry.id());
         String masked = creds.map(c -> maskAccountId(c.accountId())).orElse("****");
-        return new BrokerAccount(entry.id(), entry.provider(), masked, creds.isPresent());
+        return new BrokerAccount(entry.id(), entry.provider(), masked, creds.isPresent(), null, null);
     }
 
     private static int parsePort(String value, int defaultPort) {

@@ -84,7 +84,21 @@ public final class ControlSummaryService {
             item.put("mode", record.mode().name());
             item.put("executionLabel", label.name());
             item.put("executionLabelMeta", ExecutionLabelCatalog.of(label).toMap());
-            item.put("status", record.status().name());
+            String displayStatus = record.status().name();
+            Optional<AutoCloseable> execOpt = runManager.getActiveExecutor(record.runId());
+            if (execOpt.isPresent() && execOpt.get() instanceof OandaStreamingExecutor exec) {
+                if (exec.isSuspendedDaily()) {
+                    displayStatus = "SUSPENDED_DAILY";
+                } else if (exec.isSuspendedWeekly()) {
+                    displayStatus = "SUSPENDED_WEEKLY";
+                } else if (exec.getCooldownUntil() != null && now.isBefore(exec.getCooldownUntil())) {
+                    displayStatus = "COOLDOWN";
+                    item.put("cooldownUntil", exec.getCooldownUntil().toString());
+                    long secondsLeft = java.time.Duration.between(now, exec.getCooldownUntil()).getSeconds();
+                    item.put("cooldownSecondsRemaining", Math.max(0, secondsLeft));
+                }
+            }
+            item.put("status", displayStatus);
             item.put("isStale", isStale);
             lastEventAt.ifPresent(t -> item.put("lastEventAt", t.toString()));
             item.put("configSnapshot", record.configSnapshot());

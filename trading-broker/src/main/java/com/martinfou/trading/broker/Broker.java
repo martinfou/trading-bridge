@@ -22,6 +22,7 @@ public interface Broker extends AutoCloseable {
     void reconnect();
 
     OrderSubmitResult submitOrder(Order order);
+    OrderSubmitResult cancelOrder(String brokerOrderId);
 
     List<Position> getPositions();
 

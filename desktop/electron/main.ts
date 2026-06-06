@@ -1,8 +1,9 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
-import { spawn, type ChildProcess } from 'child_process'
+import { spawn, execSync, type ChildProcess } from 'child_process'
 import http from 'http'
 import path from 'path'
 import fs from 'fs'
+import net from 'net'
 
 let mainWindow: BrowserWindow | null = null
 let loadingWindow: BrowserWindow | null = null
@@ -232,10 +233,124 @@ function createMainWindow(): void {
   }
 }
 
+function isPortTaken(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = net.createServer()
+      .once('error', (err: any) => {
+        if (err.code === 'EADDRINUSE') {
+          resolve(true)
+        } else {
+          resolve(false)
+        }
+      })
+      .once('listening', () => {
+        server.close()
+        resolve(false)
+      })
+      .listen(port)
+  })
+}
+
+function isTradingBridgeInstance(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const req = http.get(`http://localhost:${port}/api/strategies`, (res) => {
+      if (res.statusCode === 200) {
+        resolve(true)
+      } else {
+        resolve(false)
+      }
+    })
+    req.on('error', () => {
+      resolve(false)
+    })
+    req.setTimeout(2000, () => {
+      req.destroy()
+      resolve(false)
+    })
+    req.end()
+  })
+}
+
+function killProcessOnPort(port: number): void {
+  const platform = process.platform
+  if (platform === 'win32') {
+    try {
+      const output = execSync(`netstat -ano | findstr :${port}`).toString()
+      const lines = output.split('\n')
+      const pids = new Set<string>()
+      for (const line of lines) {
+        if (line.includes('LISTENING')) {
+          const parts = line.trim().split(/\s+/)
+          const pid = parts[parts.length - 1]
+          if (pid && /^\d+$/.test(pid)) {
+            pids.add(pid)
+          }
+        }
+      }
+      for (const pid of pids) {
+        console.log(`[main] Killing Windows process ${pid} on port ${port}`)
+        execSync(`taskkill /F /PID ${pid}`)
+      }
+    } catch (err) {
+      console.error('[main] Failed to kill process on Windows:', err)
+    }
+  } else {
+    try {
+      const output = execSync(`lsof -t -i :${port}`).toString().trim()
+      if (output) {
+        const pids = output.split('\n').map(p => p.trim()).filter(p => /^\d+$/.test(p))
+        for (const pid of pids) {
+          console.log(`[main] Killing process ${pid} on port ${port}`)
+          execSync(`kill -9 ${pid}`)
+        }
+      }
+    } catch (err) {
+      console.error('[main] Failed to kill process on macOS/Linux:', err)
+    }
+  }
+}
+
 // ── App lifecycle ────────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
   const cfg = resolveConfig()
+
+  // Check if port is taken
+  const portTaken = await isPortTaken(CONTROL_PLANE_PORT)
+  if (portTaken) {
+    console.log(`[main] Port ${CONTROL_PLANE_PORT} is taken, checking if it is a Trading Bridge copy...`)
+    const isBridge = await isTradingBridgeInstance(CONTROL_PLANE_PORT)
+    if (isBridge) {
+      const choice = dialog.showMessageBoxSync({
+        type: 'question',
+        buttons: ['Oui, arrêter', 'Non, quitter'],
+        defaultId: 0,
+        title: 'Trading Bridge',
+        message: `Une autre instance de Trading Bridge utilise déjà le port ${CONTROL_PLANE_PORT}.`,
+        detail: 'Voulez-vous arrêter cette instance pour démarrer la nouvelle ?',
+        cancelId: 1
+      })
+      if (choice === 0) {
+        console.log(`[main] Stopping process on port ${CONTROL_PLANE_PORT}...`)
+        killProcessOnPort(CONTROL_PLANE_PORT)
+        // Verify port is now free (give it a moment)
+        await new Promise(r => setTimeout(r, 1000))
+        const stillTaken = await isPortTaken(CONTROL_PLANE_PORT)
+        if (stillTaken) {
+          showError(`Impossible de libérer le port ${CONTROL_PLANE_PORT}. Veuillez le fermer manuellement.`)
+          app.quit()
+          return
+        }
+      } else {
+        app.quit()
+        return
+      }
+    } else {
+      showError(`Le port ${CONTROL_PLANE_PORT} est déjà utilisé par une autre application.\n\nVeuillez libérer ce port et relancer Trading Bridge.`)
+      app.quit()
+      return
+    }
+  }
 
   // Show loading while JVM starts
   createLoadingWindow()
