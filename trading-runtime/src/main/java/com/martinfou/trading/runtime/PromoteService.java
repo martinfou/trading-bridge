@@ -49,7 +49,7 @@ public final class PromoteService {
 
     private final RunManager runManager;
     private final DeploymentStore deploymentStore;
-    private final PromoteGateThresholds thresholds;
+    private PromoteGateThresholds thresholds;
     private final Clock clock;
     private final List<ValidationModule> validationModules;
     private final BrokerAccountRegistry brokerAccountRegistry;
@@ -261,6 +261,13 @@ public final class PromoteService {
 
     public PromoteGateThresholds thresholds() {
         return thresholds;
+    }
+
+    public synchronized void setThresholds(PromoteGateThresholds thresholds) {
+        if (thresholds == null) {
+            throw new IllegalArgumentException("thresholds must not be null");
+        }
+        this.thresholds = thresholds;
     }
 
     public DeploymentStore deploymentStore() {

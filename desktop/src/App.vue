@@ -7,8 +7,18 @@ const route = useRoute()
 const nav = [
   { path: '/dashboard', label: 'Dashboard', icon: '📊' },
   { path: '/strategies', label: 'Strategies', icon: '📋' },
+  { path: '/live-trading', label: 'Live Room', icon: '📡' },
   { path: '/compare', label: 'Compare', icon: '⇄' },
 ]
+
+function quitApp() {
+  const api = (window as any).electronAPI
+  if (api && typeof api.quitApp === 'function') {
+    api.quitApp()
+  } else {
+    console.log('Quit App requested (not in Electron)')
+  }
+}
 </script>
 
 <template>
@@ -29,7 +39,11 @@ const nav = [
           <span class="nav-label">{{ item.label }}</span>
         </a>
       </nav>
-      <div class="sidebar-footer">
+      <div class="sidebar-footer" style="display: flex; flex-direction: column; gap: 0.5rem;">
+        <a class="nav-item quit-item" @click="quitApp" style="padding: 0.4rem 0.5rem; border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 6px; color: #fca5a5;">
+          <span class="nav-icon">❌</span>
+          <span class="nav-label">Quit App</span>
+        </a>
         <span class="version">v0.1.0</span>
       </div>
     </aside>
@@ -105,6 +119,7 @@ body {
 
 .nav-item:hover { background: var(--bg-card); color: var(--text-primary); }
 .nav-item.active { background: var(--accent); color: #fff; }
+.quit-item:hover { background: rgba(239, 68, 68, 0.1) !important; color: #f87171 !important; border-color: rgba(239, 68, 68, 0.4) !important; }
 
 .nav-icon { font-size: 1rem; width: 1.25rem; text-align: center; }
 .nav-label { font-size: 0.875rem; }

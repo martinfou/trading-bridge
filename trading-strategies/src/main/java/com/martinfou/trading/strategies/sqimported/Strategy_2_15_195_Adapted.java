@@ -95,7 +95,7 @@ public class Strategy_2_15_195_Adapted implements Strategy {
 
     private void manageOpenPosition(Bar bar, String symbol, double pip) {
         if (barsInPosition >= exitAfterBars) {
-            closePosition(symbol);
+            closePosition(symbol, bar.close(), Order.Type.LIMIT);
             return;
         }
 
@@ -114,13 +114,18 @@ public class Strategy_2_15_195_Adapted implements Strategy {
             }
         }
 
-        if (bar.low() <= positionSl || bar.high() >= positionTp) {
-            closePosition(symbol);
+        if (bar.low() <= positionSl) {
+            closePosition(symbol, positionSl, Order.Type.STOP);
+            return;
+        }
+        if (bar.high() >= positionTp) {
+            closePosition(symbol, positionTp, Order.Type.LIMIT);
+            return;
         }
     }
 
-    private void closePosition(String symbol) {
-        pendingOrders.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, positionQty, 0).closeOnly());
+    private void closePosition(String symbol, double price, Order.Type type) {
+        pendingOrders.add(new Order(symbol, Order.Side.SELL, type, positionQty, price).closeOnly());
         resetPositionState();
     }
 

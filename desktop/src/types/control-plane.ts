@@ -16,6 +16,8 @@ export interface RunConfig {
   lotSize?: number
   commissionPerTrade?: number
   slippagePct?: number
+  dataTimeframe?: string
+  strategyTimeframe?: string
 }
 
 export interface RunSummary {
@@ -77,4 +79,20 @@ export interface Bar {
   low: number
   close: number
   volume: number
+}
+
+export interface BrokerAccount {
+  id: string
+  provider: string
+  maskedAccountId: string
+  configured: boolean
+}
+
+export interface PromoteGateThresholds {
+  minTrades: number
+  maxDrawdownPct: number
+  minReturnPct: number
+  goldenReturnTolerancePct: number
+  paperDaysBeforeLive: number
+  validationModuleEnabled: boolean
 }

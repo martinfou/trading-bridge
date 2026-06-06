@@ -46,7 +46,9 @@ final class RunLauncher {
             bars,
             capital,
             listener,
-            configSnapshot.executionCost());
+            configSnapshot.executionCost(),
+            configSnapshot.dataTimeframe(),
+            configSnapshot.strategyTimeframe());
     }
 
     private static RunEvent enrichStartedEvent(

@@ -1,6 +1,6 @@
 import { ref, reactive } from 'vue'
 import { useControlPlaneConfig } from './controlPlaneConfig'
-import type { Strategy, RunConfig, RunResult, Trade, RunSummary, Bar } from '@/types/control-plane'
+import type { Strategy, RunConfig, RunResult, Trade, RunSummary, Bar, BrokerAccount, PromoteGateThresholds } from '@/types/control-plane'
 
 interface StartRunResponse {
   runId: string
@@ -79,6 +79,8 @@ export function useControlPlane() {
         capital: config.capital,
         commissionPerTrade: config.commissionPerTrade,
         slippagePct: config.slippagePct,
+        dataTimeframe: config.dataTimeframe,
+        strategyTimeframe: config.strategyTimeframe,
       },
       controlPlaneUrl.value,
     )
@@ -116,6 +118,68 @@ export function useControlPlane() {
     return data.runs
   }
 
+  async function getControlSummary(): Promise<any> {
+    return apiGet<any>('/api/control/summary', controlPlaneUrl.value)
+  }
+
+  async function killStrategy(strategyId: string): Promise<any> {
+    return apiPost<any>(`/api/strategies/${strategyId}/kill`, {}, controlPlaneUrl.value)
+  }
+
+  async function getBrokerAccounts(): Promise<BrokerAccount[]> {
+    const data = await apiGet<{ accounts: BrokerAccount[] }>('/api/broker-accounts', controlPlaneUrl.value)
+    return data.accounts
+  }
+
+  async function promoteStrategy(
+    strategyId: string,
+    targetMode: 'PAPER' | 'LIVE',
+    runId?: string,
+    executionLabel?: string,
+    brokerAccountId?: string
+  ): Promise<any> {
+    const path = `/api/strategies/${strategyId}/promote`
+    const resp = await fetch(`${controlPlaneUrl.value}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ targetMode, runId, executionLabel, brokerAccountId }),
+    })
+    if (resp.status === 422 || resp.ok) {
+      return resp.json()
+    }
+    const text = await resp.text().catch(() => '')
+    throw new Error(`POST ${path} ${resp.status}: ${text.slice(0, 200)}`)
+  }
+
+  async function getPromoteGates(): Promise<PromoteGateThresholds> {
+    return apiGet<PromoteGateThresholds>('/api/promote-gates/thresholds', controlPlaneUrl.value)
+  }
+
+  async function updatePromoteGates(thresholds: PromoteGateThresholds): Promise<PromoteGateThresholds> {
+    return apiPost<PromoteGateThresholds>('/api/promote-gates/thresholds', thresholds, controlPlaneUrl.value)
+  }
+
+  async function getHistoricalDataStatus(tf: string): Promise<any> {
+    return apiGet<any>(`/api/historical-data/status?tf=${tf}`, controlPlaneUrl.value)
+  }
+
+  async function downloadHistoricalData(params: {
+    pair?: string
+    year?: number
+    tf?: string
+    syncMode?: boolean
+  }): Promise<any> {
+    return apiPost<any>('/api/historical-data/download', params, controlPlaneUrl.value)
+  }
+
+  async function deleteHistoricalData(params: {
+    pair: string
+    year: number
+    tf: string
+  }): Promise<any> {
+    return apiPost<any>('/api/historical-data/delete', params, controlPlaneUrl.value)
+  }
+
   return {
     startRun,
     getRun,
@@ -124,6 +188,15 @@ export function useControlPlane() {
     getEquityCurve,
     getBars,
     listRuns,
+    getControlSummary,
+    killStrategy,
+    getBrokerAccounts,
+    promoteStrategy,
+    getPromoteGates,
+    updatePromoteGates,
+    getHistoricalDataStatus,
+    downloadHistoricalData,
+    deleteHistoricalData,
     error,
     loading,
     controlPlaneUrl,

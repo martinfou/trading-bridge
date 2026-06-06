@@ -41,8 +41,26 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
         Double commissionPerTrade,
         Double slippagePct,
         String executionLabel,
-        String brokerAccountId
+        String brokerAccountId,
+        String dataTimeframe,
+        String strategyTimeframe
     ) {
+        public StartRunRequest(
+            String strategyId,
+            String symbol,
+            String mode,
+            BarSourceResolver.BarsSource barsSource,
+            Double capital,
+            Double lotSize,
+            Double commissionPerTrade,
+            Double slippagePct,
+            String executionLabel,
+            String brokerAccountId
+        ) {
+            this(strategyId, symbol, mode, barsSource, capital, lotSize, commissionPerTrade, slippagePct,
+                executionLabel, brokerAccountId, null, null);
+        }
+
         public StartRunRequest(
             String strategyId,
             String symbol,
@@ -55,7 +73,7 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
             String executionLabel
         ) {
             this(strategyId, symbol, mode, barsSource, capital, lotSize, commissionPerTrade, slippagePct,
-                executionLabel, null);
+                executionLabel, null, null, null);
         }
 
         public StartRunRequest(
@@ -69,7 +87,7 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
             String executionLabel
         ) {
             this(strategyId, symbol, mode, barsSource, capital, null, commissionPerTrade, slippagePct,
-                executionLabel, null);
+                executionLabel, null, null, null);
         }
     }
 

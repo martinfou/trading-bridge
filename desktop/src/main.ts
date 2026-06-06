@@ -5,12 +5,14 @@ import DashboardView from './views/DashboardView.vue'
 import ResultsView from './views/ResultsView.vue'
 import StrategiesView from './views/StrategiesView.vue'
 import CompareView from './views/CompareView.vue'
+import LiveTradingView from './views/LiveTradingView.vue'
 
 const routes = [
   { path: '/', redirect: '/dashboard' },
   { path: '/dashboard', name: 'dashboard', component: DashboardView },
   { path: '/results/:runId?', name: 'results', component: ResultsView },
   { path: '/strategies', name: 'strategies', component: StrategiesView },
+  { path: '/live-trading', name: 'live-trading', component: LiveTradingView },
   { path: '/compare', name: 'compare', component: CompareView },
 ]
 

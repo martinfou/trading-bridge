@@ -171,8 +171,8 @@ class PlatformRobustnessTest {
                     {1.1010, 1.1020, 1.1000, 1.1015},
                     {1.1000, 1.1005, 1.0980, 1.0995}
                 }), 1,
-                r -> assertEquals(1.0995, r.trades().getFirst().entryPrice(), 1e-9,
-                    "STOP SELL fill uses max(bar.close(), stop) per BacktestEngine")),
+                r -> assertEquals(1.0990, r.trades().getFirst().entryPrice(), 1e-9,
+                    "STOP SELL fill uses trigger level")),
             new PlatformCase("doubleMarketBuySameBar_addsQty", TestStrategies.doubleMarketBuySameBar(),
                 TestBars.flat(2, 1.1000), 1,
                 r -> assertEquals(10_000, r.trades().getFirst().quantity(), 1e-9)),
@@ -210,8 +210,8 @@ class PlatformRobustnessTest {
 
     private static void assertAccountingInvariants(BacktestResult result) {
         double tradePnlSum = result.trades().stream().mapToDouble(Trade::pnl).sum();
-        double expectedTotalPnl = tradePnlSum - result.totalCommission() - result.totalSlippage();
-        assertEquals(expectedTotalPnl, result.totalPnl(), 1e-6, "totalPnl = sum(trade pnl) - costs");
+        double expectedTotalPnl = tradePnlSum - result.totalCommission();
+        assertEquals(expectedTotalPnl, result.totalPnl(), 1e-6, "totalPnl = sum(trade pnl) - commission");
         assertEquals(CAPITAL + result.totalPnl(), result.finalEquity(), 1e-6,
             "finalEquity = initialCapital + totalPnl");
         assertEquals(result.totalPnl() / CAPITAL * 100.0, result.totalReturnPct(), 1e-6,

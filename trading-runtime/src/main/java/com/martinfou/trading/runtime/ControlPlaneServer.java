@@ -8,12 +8,15 @@ import io.javalin.websocket.WsCloseContext;
 import io.javalin.websocket.WsConnectContext;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.time.Instant;
 import java.util.function.Consumer;
+import com.martinfou.trading.backtest.events.RunEvent;
+import com.martinfou.trading.backtest.events.RunEventType;
 
 /**
  * Javalin HTTP control plane — health, strategies, runs, event replay, and WebSocket stream.
@@ -29,6 +32,7 @@ public final class ControlPlaneServer implements AutoCloseable {
     private final ControlSummaryService summaryService;
     private final SqBridgeService sqBridgeService;
     private final WeeklyBuilderService weeklyBuilderService;
+    private final HistoricalDataService historicalDataService;
     private final Javalin app;
 
     public ControlPlaneServer(
@@ -53,6 +57,21 @@ public final class ControlPlaneServer implements AutoCloseable {
         ControlSummaryService summaryService,
         SqBridgeService sqBridgeService,
         WeeklyBuilderService weeklyBuilderService,
+        int port
+    ) {
+        this(runManager, eventHub, promoteService, killSwitchService, summaryService,
+            sqBridgeService, weeklyBuilderService, new HistoricalDataService(), port);
+    }
+
+    ControlPlaneServer(
+        RunManager runManager,
+        RunEventHub eventHub,
+        PromoteService promoteService,
+        KillSwitchService killSwitchService,
+        ControlSummaryService summaryService,
+        SqBridgeService sqBridgeService,
+        WeeklyBuilderService weeklyBuilderService,
+        HistoricalDataService historicalDataService,
         int port
     ) {
         if (runManager == null) {
@@ -83,8 +102,9 @@ public final class ControlPlaneServer implements AutoCloseable {
         this.summaryService = summaryService;
         this.sqBridgeService = sqBridgeService;
         this.weeklyBuilderService = weeklyBuilderService;
+        this.historicalDataService = historicalDataService != null ? historicalDataService : new HistoricalDataService();
         this.app = createApp(runManager, eventHub, promoteService, killSwitchService, summaryService,
-            sqBridgeService, weeklyBuilderService);
+            sqBridgeService, weeklyBuilderService, this.historicalDataService);
         app.start(port);
     }
 
@@ -154,7 +174,8 @@ public final class ControlPlaneServer implements AutoCloseable {
         KillSwitchService killSwitchService,
         ControlSummaryService summaryService,
         SqBridgeService sqBridgeService,
-        WeeklyBuilderService weeklyBuilderService
+        WeeklyBuilderService weeklyBuilderService,
+        HistoricalDataService historicalDataService
     ) {
         DataAvailabilityService dataAvailability = new DataAvailabilityService();
         return Javalin.create(config -> {
@@ -183,6 +204,33 @@ public final class ControlPlaneServer implements AutoCloseable {
                     "message", response.message()));
             })
             .get("/api/weekly-builder/status", ctx -> ctx.json(weeklyBuilderService.status()))
+            .get("/api/historical-data/status", ctx -> {
+                String tf = ctx.queryParam("tf") != null ? ctx.queryParam("tf") : "h1";
+                ctx.json(Map.of(
+                    "status", historicalDataService.getStatus(tf),
+                    "activeDownloads", historicalDataService.getActiveDownloads(),
+                    "activeTasks", historicalDataService.getActiveTasks().values()
+                ));
+            })
+            .post("/api/historical-data/download", ctx -> {
+                Map<String, Object> body = ctx.bodyAsClass(Map.class);
+                String pair = (String) body.get("pair");
+                Integer year = body.get("year") != null ? ((Number) body.get("year")).intValue() : null;
+                String tf = (String) body.getOrDefault("tf", "h1");
+                Boolean syncMode = (Boolean) body.getOrDefault("syncMode", false);
+                boolean accepted = historicalDataService.triggerDownload(pair, year, tf, syncMode);
+                ctx.status(accepted ? HttpStatus.ACCEPTED : HttpStatus.CONFLICT);
+                ctx.json(Map.of("accepted", accepted));
+            })
+            .post("/api/historical-data/delete", ctx -> {
+                Map<String, Object> body = ctx.bodyAsClass(Map.class);
+                String pair = (String) body.get("pair");
+                int year = ((Number) body.get("year")).intValue();
+                String tf = (String) body.getOrDefault("tf", "h1");
+                historicalDataService.deleteDataset(pair, year, tf);
+                ctx.status(HttpStatus.OK);
+                ctx.json(Map.of("success", true));
+            })
             .post("/api/weekly-builder/plan", ctx -> respondWeeklyTrigger(ctx, weeklyBuilderService.triggerPlanAsync()))
             .post("/api/weekly-builder/compile", ctx -> respondWeeklyTrigger(ctx, weeklyBuilderService.triggerCompileAsync()))
             .post("/api/weekly-builder/deploy", ctx -> respondWeeklyTrigger(ctx, weeklyBuilderService.triggerDeployAsync()))
@@ -247,6 +295,16 @@ public final class ControlPlaneServer implements AutoCloseable {
                     ctx.json(response);
                 }
             })
+            .get("/api/promote-gates/thresholds", ctx -> {
+                ctx.json(promoteService.thresholds());
+            })
+            .post("/api/promote-gates/thresholds", ctx -> {
+                PromoteGateThresholds request = ctx.bodyAsClass(PromoteGateThresholds.class);
+                PromoteGateThresholds.saveDefault(request);
+                promoteService.setThresholds(request);
+                ctx.status(HttpStatus.ACCEPTED);
+                ctx.json(promoteService.thresholds());
+            })
             .post("/api/strategies/{id}/kill", ctx -> {
                 String strategyId = ctx.pathParam("id");
                 KillSwitchService.KillRequest request = ctx.bodyAsClass(KillSwitchService.KillRequest.class);
@@ -300,19 +358,35 @@ public final class ControlPlaneServer implements AutoCloseable {
                 String runId = ctx.pathParam("runId");
                 RunRecord record = runManager.getRun(runId)
                     .orElseThrow(() -> new NotFoundException("Run not found: " + runId));
-                List<?> trades = record.endedPayload()
-                    .map(p -> (List<?>) p.get("trades"))
-                    .orElse(List.of());
-                ctx.json(Map.of("runId", runId, "trades", trades));
+                List<?> trades;
+                if (record.endedPayload().isPresent()) {
+                    trades = (List<?>) record.endedPayload().get().get("trades");
+                } else {
+                    trades = reconstructTradesFromFills(runManager.eventStore().replayAll(runId));
+                }
+                ctx.json(Map.of("runId", runId, "trades", trades != null ? trades : List.of()));
             })
             .get("/api/runs/{runId}/equity-curve", ctx -> {
                 String runId = ctx.pathParam("runId");
                 RunRecord record = runManager.getRun(runId)
                     .orElseThrow(() -> new NotFoundException("Run not found: " + runId));
-                List<?> curve = record.endedPayload()
-                    .map(p -> (List<?>) p.get("equityCurveSample"))
-                    .orElse(List.of());
-                ctx.json(Map.of("runId", runId, "equityCurve", curve));
+                List<?> curve;
+                if (record.endedPayload().isPresent()) {
+                    curve = (List<?>) record.endedPayload().get().get("equityCurveSample");
+                } else {
+                    List<Map<String, Object>> recTrades = reconstructTradesFromFills(runManager.eventStore().replayAll(runId));
+                    double eq = record.configSnapshot().containsKey("capital")
+                        ? ((Number) record.configSnapshot().get("capital")).doubleValue()
+                        : 1000.0;
+                    List<Double> sample = new ArrayList<>();
+                    sample.add(eq);
+                    for (var t : recTrades) {
+                        eq += ((Number) t.get("pnl")).doubleValue();
+                        sample.add(eq);
+                    }
+                    curve = sample;
+                }
+                ctx.json(Map.of("runId", runId, "equityCurve", curve != null ? curve : List.of()));
             })
             .get("/api/runs/{runId}/bars", ctx -> {
                 String runId = ctx.pathParam("runId");
@@ -440,7 +514,83 @@ public final class ControlPlaneServer implements AutoCloseable {
                 .map(g -> Map.of("from", g.fromSequence(), "to", g.toSequence()))
                 .toList());
         }
+
+        var positions = JournalPositions.fromFills(runManager.eventStore().replayAll(record.runId())).values().stream()
+            .map(pos -> Map.of(
+                "symbol", pos.symbol(),
+                "side", pos.side().name(),
+                "quantity", pos.quantity()
+            ))
+            .toList();
+        json.put("positions", positions);
+
         return json;
+    }
+
+    private static List<Map<String, Object>> reconstructTradesFromFills(List<RunEvent> events) {
+        List<Map<String, Object>> trades = new ArrayList<>();
+        Map<String, List<Map<String, Object>>> openFills = new HashMap<>();
+
+        for (RunEvent event : events) {
+            if (event.type() != RunEventType.FILL) {
+                continue;
+            }
+            Map<String, Object> payload = event.payload();
+            String symbol = String.valueOf(payload.get("symbol"));
+            String side = String.valueOf(payload.get("side"));
+            double qty = ((Number) payload.get("quantity")).doubleValue();
+            double price = ((Number) payload.get("price")).doubleValue();
+            Instant timestamp = event.timestamp();
+
+            List<Map<String, Object>> list = openFills.computeIfAbsent(symbol, k -> new ArrayList<>());
+
+            double remainingQty = qty;
+            while (remainingQty > 0 && !list.isEmpty() && !list.get(0).get("side").equals(side)) {
+                Map<String, Object> first = list.get(0);
+                double firstQty = ((Number) first.get("quantity")).doubleValue();
+                double matchQty = Math.min(remainingQty, firstQty);
+
+                double entryPrice = ((Number) first.get("price")).doubleValue();
+                double exitPrice = price;
+                String entrySide = String.valueOf(first.get("side"));
+
+                double pnl;
+                if (entrySide.equals("BUY")) {
+                    pnl = (exitPrice - entryPrice) * matchQty;
+                } else {
+                    pnl = (entryPrice - exitPrice) * matchQty;
+                }
+
+                Map<String, Object> trade = new LinkedHashMap<>();
+                trade.put("symbol", symbol);
+                trade.put("side", entrySide);
+                trade.put("entryPrice", entryPrice);
+                trade.put("exitPrice", exitPrice);
+                trade.put("quantity", matchQty);
+                trade.put("entryTime", ((Instant) first.get("timestamp")).toString());
+                trade.put("exitTime", timestamp.toString());
+                trade.put("pnl", pnl);
+                trades.add(trade);
+
+                remainingQty -= matchQty;
+                double newFirstQty = firstQty - matchQty;
+                if (newFirstQty <= 0) {
+                    list.remove(0);
+                } else {
+                    first.put("quantity", newFirstQty);
+                }
+            }
+
+            if (remainingQty > 0) {
+                Map<String, Object> newFill = new LinkedHashMap<>();
+                newFill.put("side", side);
+                newFill.put("price", price);
+                newFill.put("quantity", remainingQty);
+                newFill.put("timestamp", timestamp);
+                list.add(newFill);
+            }
+        }
+        return trades;
     }
 
     private static Map<String, Object> toEventItem(StoredRunEvent stored) {

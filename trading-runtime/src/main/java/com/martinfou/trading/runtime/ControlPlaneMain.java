@@ -25,13 +25,26 @@ public final class ControlPlaneMain {
             stores.deploymentStore(),
             runManager.killSwitchRegistry());
 
+        HistoricalDataService historicalDataService = new HistoricalDataService();
+        historicalDataService.startWeeklyScheduler();
+
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             runManager.close();
+            historicalDataService.close();
             stores.close();
         }));
 
         ControlPlaneServer server = new ControlPlaneServer(
-            runManager, stores.hub(), promoteService, killSwitchService, port);
+            runManager,
+            stores.hub(),
+            promoteService,
+            killSwitchService,
+            new ControlSummaryService(runManager, stores.deploymentStore()),
+            new SqBridgeService(stores.eventStore()),
+            new WeeklyBuilderService(stores.eventStore()),
+            historicalDataService,
+            port
+        );
         System.out.println("Control plane listening on http://localhost:" + server.port());
         System.out.println("Event store: " + config.dbPath());
         System.out.println("WebSocket runs: ws://localhost:" + server.port() + "/ws/runs/{runId}");

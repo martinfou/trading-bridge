@@ -91,14 +91,28 @@ public class BarStore {
                     try {
                         ts = Instant.parse(p[0]);
                     } catch (Exception e) {
-                        ts = Instant.ofEpochSecond(Long.parseLong(p[0]));
+                        try {
+                            long val = Long.parseLong(p[0]);
+                            if (val > 1_000_000_000_000L) {
+                                ts = Instant.ofEpochMilli(val);
+                            } else {
+                                ts = Instant.ofEpochSecond(val);
+                            }
+                        } catch (Exception ex) {
+                            continue;
+                        }
                     }
-                    bars.add(new Bar(symbol, ts,
-                        Double.parseDouble(p[1]), // open
-                        Double.parseDouble(p[2]), // high
-                        Double.parseDouble(p[3]), // low
-                        Double.parseDouble(p[4]), // close
-                        p.length >= 6 ? Long.parseLong(p[5]) : 0));
+                    double o = Double.parseDouble(p[1]);
+                    double h = Double.parseDouble(p[2]);
+                    double l = Double.parseDouble(p[3]);
+                    double c = Double.parseDouble(p[4]);
+                    long v = 0;
+                    if (p.length >= 6) {
+                        try {
+                            v = (long) Double.parseDouble(p[5]);
+                        } catch (Exception ignored) {}
+                    }
+                    bars.add(new Bar(symbol, ts, o, h, l, c, v));
                 }
             }
         }
@@ -106,7 +120,6 @@ public class BarStore {
     }
 
     // ──────── Lecture (memory-mapped, zero-copy) ────────
-
     public void open() throws IOException {
         if (!Files.exists(filePath)) {
             throw new IOException("BarStore file not found: " + filePath);
@@ -208,11 +221,20 @@ public class BarStore {
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length >= 2 && args[0].equals("--convert")) {
+        if (args.length >= 5 && args[0].equals("--convert-file")) {
+            Path csvPath = Path.of(args[1]);
+            Path outDir = Path.of(args[2]);
+            String symbol = args[3];
+            String timeframe = args[4];
+            System.out.printf("Converting file %s to %s for %s %s... ", csvPath, outDir, symbol, timeframe);
+            var store = new BarStore(symbol, timeframe, outDir);
+            store.writeFromCSV(csvPath);
+            System.out.printf("%d bars ✅\n", store.count());
+        } else if (args.length >= 2 && args[0].equals("--convert")) {
             convertAllFromCSV(Path.of(args[1]), Path.of(args.length > 2 ? args[2] : "data/historical/bars"));
         } else {
-            System.out.println("Usage: BarStore --convert <csv_dir> [output_dir]");
-            System.out.println("Convertit les CSV en format binaire pour backtest rapide");
+            System.out.println("Usage: BarStore --convert-file <csv_path> <output_dir> <symbol> <timeframe>");
+            System.out.println("       BarStore --convert <csv_dir> [output_dir]");
         }
     }
 }

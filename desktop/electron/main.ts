@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { spawn, type ChildProcess } from 'child_process'
 import http from 'http'
 import path from 'path'
@@ -203,9 +203,9 @@ function createLoadingWindow(): void {
 function createMainWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1400,
-    height: 900,
+    height: 1000,
     minWidth: 1024,
-    minHeight: 700,
+    minHeight: 800,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -255,14 +255,16 @@ app.whenReady().then(async () => {
   }
 })
 
+ipcMain.on('quit-app', () => {
+  app.quit()
+})
+
 app.on('will-quit', () => {
   stopJavaProcess()
 })
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
+  app.quit()
 })
 
 app.on('activate', () => {
