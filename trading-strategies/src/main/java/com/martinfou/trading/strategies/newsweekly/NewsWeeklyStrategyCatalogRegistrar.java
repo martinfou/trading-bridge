@@ -6,39 +6,39 @@ public final class NewsWeeklyStrategyCatalogRegistrar {
     private NewsWeeklyStrategyCatalogRegistrar() {}
 
     public static void registerAll() {
-        // === Week 8-12 June 2026 ===
+        // === Week 8-12 June 2026 — News-driven strategies ===
 
-        // 1a — CPI Momentum SELL EUR/USD (Wed Jun 10, 08:30 ET)
+        // 1a — CPI Momentum bidirectionnel AUD/USD (Très haute, 1.0%)
         NewsWeeklyStrategyCatalog.register(
-            "NewsWeek8Jun_CpiMomentumSellUsd_EUR_USD",
-            sym -> new NewsWeek8Jun_CpiMomentumSellUsd.EurUsd()
-        );
-
-        // 1b — CPI Momentum SELL AUD/USD (best pair)
-        NewsWeeklyStrategyCatalog.register(
-            "NewsWeek8Jun_CpiMomentumSellUsd_AUD_USD",
+            "NewsWeek8Jun_CpiMomentum_AUD_USD",
             sym -> new NewsWeek8Jun_CpiMomentumSellUsd.AudUsd()
         );
 
-        // 1c — CPI Momentum SELL NZD/USD
+        // 1b — CPI Momentum bidirectionnel NZD/USD (Très haute, 1.0%)
         NewsWeeklyStrategyCatalog.register(
-            "NewsWeek8Jun_CpiMomentumSellUsd_NZD_USD",
+            "NewsWeek8Jun_CpiMomentum_NZD_USD",
             sym -> new NewsWeek8Jun_CpiMomentumSellUsd.NzdUsd()
         );
 
-        // 2 — ECB Dovish SELL EUR/USD (Thu Jun 11, 08:15 ET)
+        // 1c — CPI Momentum bidirectionnel EUR/USD (Haute, 0.7%)
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek8Jun_CpiMomentum_EUR_USD",
+            sym -> new NewsWeek8Jun_CpiMomentumSellUsd.EurUsd()
+        );
+
+        // 2 — ECB Dovish SELL EUR/USD (Haute, 0.7%)
         NewsWeeklyStrategyCatalog.register(
             "NewsWeek8Jun_EcbDovishSellEur",
             sym -> new NewsWeek8Jun_EcbDovishSellEur()
         );
 
-        // 3 — BoJ Intervention SHORT USD/JPY (all week)
+        // 3 — BoJ Intervention SHORT USD/JPY (Risquée, 0.3%)
         NewsWeeklyStrategyCatalog.register(
             "NewsWeek8Jun_BojInterventionShortJpy",
             sym -> new NewsWeek8Jun_BojInterventionShortJpy()
         );
 
-        // 4 — NZD Recovery Fade SELL NZD/USD (all week)
+        // 4 — NZD Recovery Fade SELL NZD/USD (Moyenne, 0.5%, trail 40)
         NewsWeeklyStrategyCatalog.register(
             "NewsWeek8Jun_NzdRecoveryFadeSell",
             sym -> new NewsWeek8Jun_NzdRecoveryFadeSell()

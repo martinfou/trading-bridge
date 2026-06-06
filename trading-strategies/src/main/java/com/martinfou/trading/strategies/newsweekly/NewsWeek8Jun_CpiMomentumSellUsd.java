@@ -3,44 +3,42 @@ package com.martinfou.trading.strategies.newsweekly;
 import com.martinfou.trading.core.Order;
 
 /**
- * 🟢 Wk 8-12 Jun — CPI Momentum Sell USD
+ * 🟢 Wk 8-12 Jun — CPI Momentum (bidirectionnel)
  *
- * Enters SELL on EUR/USD, AUD/USD, NZD/USD at CPI release (Wed Jun 10, 08:30 ET).
- * Thesis: NFP beat (172K vs 85K) + Core CPI expected 0.5% = USD continues rally.
+ * Lit la 1ère barre après CPI (Wed Jun 10, 08:30 ET) pour déterminer la direction :
+ *   Barre baissière (close < open) → CPI beat → SELL USD (AUD, NZD, EUR)
+ *   Barre haussière (close > open) → CPI miss → BUY USD (mean reversion NFP rally)
  *
- * SL/TP rationale:
- *   AUD/USD (Très haute) : SL 50 — CPI miss gives +50-80 pips, we exit before that.
- *                           TP 80 — CPI beat historically moves 80-120 pips.
- *   NZD/USD (Très haute) : SL 50, TP 80 — same reasoning, NZD most vulnerable.
- *   EUR/USD (Haute)      : SL 50, TP 100 — more room because ECB next day adds uncertainty.
+ * Sizing par risque : très haute 1.0%, haute 0.7%.
+ * Capital: $1,000.
  *
  * This strategy is valid for the week of June 8-12, 2026 ONLY.
  */
 public class NewsWeek8Jun_CpiMomentumSellUsd extends NewsWeeklyStrategy {
 
-    /** SELL AUD_USD — best pair (Chine + matières premières + -1.26% vendredi). Très haute confiance. */
+    /** AUD/USD — Très haute confiance (1.0% risque, SL 50, TP 80). */
     public static class AudUsd extends NewsWeek8Jun_CpiMomentumSellUsd {
-        public AudUsd() { super("AUD_USD", 50, 80); }
+        public AudUsd() { super("AUD_USD", 50, 80, 0.01); }
     }
 
-    /** SELL NZD_USD — -3% sur la semaine, bas 2 mois. Très haute confiance. */
+    /** NZD/USD — Très haute confiance (1.0% risque, SL 50, TP 80). */
     public static class NzdUsd extends NewsWeek8Jun_CpiMomentumSellUsd {
-        public NzdUsd() { super("NZD_USD", 50, 80); }
+        public NzdUsd() { super("NZD_USD", 50, 80, 0.01); }
     }
 
-    /** SELL EUR_USD — bonne paire mais ECB jeudi ajoute de l'incertitude. Haute confiance. */
+    /** EUR/USD — Haute confiance (0.7% risque, SL 50, TP 100). */
     public static class EurUsd extends NewsWeek8Jun_CpiMomentumSellUsd {
-        public EurUsd() { super("EUR_USD", 50, 100); }
+        public EurUsd() { super("EUR_USD", 50, 100, 0.007); }
     }
 
-    protected NewsWeek8Jun_CpiMomentumSellUsd(String symbol, int slPips, int tpPips) {
+    protected NewsWeek8Jun_CpiMomentumSellUsd(String symbol, int slPips, int tpPips, double riskPct) {
         super(
-            "NewsWeek8Jun_CpiMomentumSellUsd_" + symbol,
+            "NewsWeek8Jun_CpiMomentum_" + symbol,
             symbol,
             nyEvent(2026, 6, 10, 8, 30),   // Wed Jun 10, 08:30 ET — CPI release
-            weekEndAfter(2026, 6, 12),       // End Sunday after Friday June 12
+            weekEndAfter(2026, 6, 12),
             slPips, tpPips,
-            Order.Side.SELL
+            riskPct    // bidirectionnel
         );
     }
 }
