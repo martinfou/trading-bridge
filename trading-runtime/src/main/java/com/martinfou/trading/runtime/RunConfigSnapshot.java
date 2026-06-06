@@ -29,7 +29,10 @@ public record RunConfigSnapshot(
     String executionLabel,
     String brokerAccountId,
     String dataTimeframe,
-    String strategyTimeframe
+    String strategyTimeframe,
+    Double maxDailyDrawdownPct,
+    Double dailyLossLimitPct,
+    Double weeklyLossLimitPct
 ) {
 
     public RunConfigSnapshot(
@@ -48,7 +51,7 @@ public record RunConfigSnapshot(
         String brokerAccountId
     ) {
         this(strategyId, symbol, mode, barsSourceType, barsSourceCount, barsSourceYear, barsSourcePath,
-            capital, quantity, commissionPerTrade, slippagePct, executionLabel, brokerAccountId, null, null);
+            capital, quantity, commissionPerTrade, slippagePct, executionLabel, brokerAccountId, null, null, null, null, null);
     }
 
     public RunConfigSnapshot(
@@ -64,7 +67,7 @@ public record RunConfigSnapshot(
         String executionLabel
     ) {
         this(strategyId, symbol, mode, barsSourceType, barsSourceCount, barsSourceYear, null,
-            capital, null, commissionPerTrade, slippagePct, executionLabel, null, null, null);
+            capital, null, commissionPerTrade, slippagePct, executionLabel, null, null, null, null, null, null);
     }
 
     public RunConfigSnapshot(
@@ -81,7 +84,7 @@ public record RunConfigSnapshot(
         String brokerAccountId
     ) {
         this(strategyId, symbol, mode, barsSourceType, barsSourceCount, barsSourceYear, null,
-            capital, null, commissionPerTrade, slippagePct, executionLabel, brokerAccountId, null, null);
+            capital, null, commissionPerTrade, slippagePct, executionLabel, brokerAccountId, null, null, null, null, null);
     }
 
     public RunConfigSnapshot {
@@ -96,6 +99,15 @@ public record RunConfigSnapshot(
         }
         if (strategyTimeframe == null) {
             strategyTimeframe = "H1";
+        }
+        if (maxDailyDrawdownPct == null) {
+            maxDailyDrawdownPct = 5.0;
+        }
+        if (dailyLossLimitPct == null) {
+            dailyLossLimitPct = 5.0;
+        }
+        if (weeklyLossLimitPct == null) {
+            weeklyLossLimitPct = 10.0;
         }
     }
 
@@ -141,6 +153,12 @@ public record RunConfigSnapshot(
         Double slippageValue = slippage instanceof Number n ? n.doubleValue() : null;
         String dataTf = map.get("dataTimeframe") != null ? String.valueOf(map.get("dataTimeframe")) : null;
         String stratTf = map.get("strategyTimeframe") != null ? String.valueOf(map.get("strategyTimeframe")) : null;
+        Object maxDd = map.get("maxDailyDrawdownPct");
+        Double maxDdVal = maxDd instanceof Number n ? n.doubleValue() : null;
+        Object dailyLoss = map.get("dailyLossLimitPct");
+        Double dailyLossVal = dailyLoss instanceof Number n ? n.doubleValue() : null;
+        Object weeklyLoss = map.get("weeklyLossLimitPct");
+        Double weeklyLossVal = weeklyLoss instanceof Number n ? n.doubleValue() : null;
         return new RunConfigSnapshot(
             String.valueOf(map.getOrDefault("strategyId", record.strategyId())),
             String.valueOf(map.getOrDefault("symbol", record.symbol())),
@@ -156,7 +174,10 @@ public record RunConfigSnapshot(
             map.get("executionLabel") != null ? String.valueOf(map.get("executionLabel")) : null,
             map.get("brokerAccountId") != null ? String.valueOf(map.get("brokerAccountId")) : null,
             dataTf,
-            stratTf);
+            stratTf,
+            maxDdVal,
+            dailyLossVal,
+            weeklyLossVal);
     }
 
     public static RunConfigSnapshot fromRequest(RunManager.StartRunRequest request, String resolvedSymbol) {
@@ -179,13 +200,24 @@ public record RunConfigSnapshot(
             request.executionLabel(),
             request.brokerAccountId(),
             request.dataTimeframe(),
-            request.strategyTimeframe());
+            request.strategyTimeframe(),
+            request.maxDailyDrawdownPct(),
+            request.dailyLossLimitPct(),
+            request.weeklyLossLimitPct());
     }
 
     public RunConfigSnapshot withBrokerAccountId(String accountId) {
         return new RunConfigSnapshot(
             strategyId, symbol, mode, barsSourceType, barsSourceCount, barsSourceYear, barsSourcePath,
-            capital, quantity, commissionPerTrade, slippagePct, executionLabel, accountId, dataTimeframe, strategyTimeframe);
+            capital, quantity, commissionPerTrade, slippagePct, executionLabel, accountId, dataTimeframe, strategyTimeframe,
+            maxDailyDrawdownPct, dailyLossLimitPct, weeklyLossLimitPct);
+    }
+
+    public RunConfigSnapshot withCapital(Double newCapital) {
+        return new RunConfigSnapshot(
+            strategyId, symbol, mode, barsSourceType, barsSourceCount, barsSourceYear, barsSourcePath,
+            newCapital, quantity, commissionPerTrade, slippagePct, executionLabel, brokerAccountId, dataTimeframe, strategyTimeframe,
+            maxDailyDrawdownPct, dailyLossLimitPct, weeklyLossLimitPct);
     }
 
     public String resolvedBrokerAccountId() {
@@ -229,6 +261,15 @@ public record RunConfigSnapshot(
         }
         if (strategyTimeframe != null) {
             map.put("strategyTimeframe", strategyTimeframe);
+        }
+        if (maxDailyDrawdownPct != null) {
+            map.put("maxDailyDrawdownPct", maxDailyDrawdownPct);
+        }
+        if (dailyLossLimitPct != null) {
+            map.put("dailyLossLimitPct", dailyLossLimitPct);
+        }
+        if (weeklyLossLimitPct != null) {
+            map.put("weeklyLossLimitPct", weeklyLossLimitPct);
         }
         map.put("resolvedExecutionLabel", resolvedExecutionLabel().name());
         return Map.copyOf(map);

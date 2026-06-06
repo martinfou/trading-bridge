@@ -15,6 +15,7 @@ interface ActiveRun {
   runId: string
   symbol: string
   status: string
+  mode?: string
   result: RunResult | null
   equityCurve: number[]
   error: string | null
@@ -73,6 +74,9 @@ function pollRun(runId: string) {
         return
       }
       active.status = r.status
+      if (r.mode) {
+        active.mode = r.mode
+      }
       if (r.status === 'COMPLETED' || r.status === 'FAILED') {
         clearInterval(timer)
         
@@ -108,7 +112,20 @@ function onFormError(msg: string) {
 
 function viewFullResults() {
   if (selectedRunId.value) {
-    router.push(`/results/${selectedRunId.value}`)
+    const active = activeRuns.value.find(item => item.runId === selectedRunId.value)
+    if (active && (active.mode === 'PAPER' || active.mode === 'LIVE')) {
+      router.push({ path: '/live-trading', query: { runId: selectedRunId.value } })
+    } else {
+      router.push(`/results/${selectedRunId.value}`)
+    }
+  }
+}
+
+function handleRunCardClick(run: ActiveRun) {
+  if (run.mode === 'PAPER' || run.mode === 'LIVE') {
+    router.push({ path: '/live-trading', query: { runId: run.runId } })
+  } else {
+    selectedRunId.value = run.runId
   }
 }
 
@@ -120,6 +137,13 @@ function formatDate(isoStr?: string) {
   } catch {
     return isoStr
   }
+}
+
+function getRunModeLabel(run: ActiveRun): string {
+  const mode = run.result?.mode || (run.result as any)?.configSnapshot?.mode || 'BACKTEST'
+  if (mode === 'PAPER') return 'Paper trading'
+  if (mode === 'LIVE') return 'Live trading'
+  return 'Backtest'
 }
 
 // Historical Data Manager state and methods
@@ -243,13 +267,13 @@ onUnmounted(() => {
 
     <!-- Active Runs Grid -->
     <div v-if="activeRuns.length > 0" class="runs-container">
-      <h3>Active Backtests</h3>
+      <h3>Active Runs</h3>
       <div class="runs-grid">
         <div
           v-for="r in activeRuns"
           :key="r.runId"
           :class="['run-card', { selected: r.runId === selectedRunId }]"
-          @click="selectedRunId = r.runId"
+          @click="handleRunCardClick(r)"
         >
           <div class="run-card-header">
             <span class="run-card-symbol">{{ r.symbol }}</span>
@@ -269,7 +293,7 @@ onUnmounted(() => {
     <!-- Detailed Run Results -->
     <template v-if="selectedRun">
       <div v-if="selectedRun.status === 'FAILED'" class="banner error">
-        Backtest failed for {{ selectedRun.symbol }}: {{ selectedRun.error || 'Unknown error' }}
+        {{ getRunModeLabel(selectedRun) }} failed for {{ selectedRun.symbol }}: {{ selectedRun.error || 'Unknown error' }}
       </div>
 
       <template v-if="selectedRun.result && selectedRun.result.result">

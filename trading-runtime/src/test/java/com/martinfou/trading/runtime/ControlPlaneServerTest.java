@@ -343,6 +343,30 @@ class ControlPlaneServerTest {
     }
 
     @Test
+    void testBrokerAccount_missingFields_returns400() throws Exception {
+        HttpResponse<String> response = post("/api/broker-accounts/test", "{\"provider\":\"OANDA\"}");
+        assertEquals(400, response.statusCode());
+        assertTrue(response.body().contains("OANDA token and Account ID are required"));
+    }
+
+    @Test
+    void testBrokerAccount_oandaStub_succeeds() throws Exception {
+        String jsonPayload = """
+            {
+              "id": "test-account",
+              "provider": "OANDA",
+              "token": "mock-token",
+              "accountId": "mock-account-id",
+              "defaultRestUrl": "https://api-fxpractice.oanda.com"
+            }
+            """;
+        HttpResponse<String> response = post("/api/broker-accounts/test", jsonPayload);
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("\"success\":true"));
+        assertTrue(response.body().contains("\"balance\":100000.0"));
+    }
+
+    @Test
     void promoteReadiness_returnsStructuredAssessment() throws Exception {
         String runId = startSampleBacktest();
         waitForCompletion(runId, Duration.ofSeconds(10));

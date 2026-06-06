@@ -175,6 +175,11 @@ class ReconciliationServiceTest {
         }
 
         @Override
+        public OrderSubmitResult cancelOrder(String brokerOrderId) {
+            return delegate.cancelOrder(brokerOrderId);
+        }
+
+        @Override
         public List<Position> getPositions() {
             if (!inflate) {
                 return delegate.getPositions();
@@ -213,6 +218,11 @@ class ReconciliationServiceTest {
 
         @Override
         public OrderSubmitResult submitOrder(Order order) {
+            return OrderSubmitResult.rejected("not used");
+        }
+
+        @Override
+        public OrderSubmitResult cancelOrder(String brokerOrderId) {
             return OrderSubmitResult.rejected("not used");
         }
 

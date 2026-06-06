@@ -26,13 +26,18 @@ public final class KillSwitchService {
         Instant timestamp
     ) {}
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(KillSwitchService.class);
+
     private final RunManager runManager;
     private final DeploymentStore deploymentStore;
     private final KillSwitchRegistry registry;
     private final Clock clock;
 
     public KillSwitchService(RunManager runManager, DeploymentStore deploymentStore, KillSwitchRegistry registry) {
-        this(runManager, deploymentStore, registry, Clock.systemUTC());
+        this.runManager = runManager;
+        this.deploymentStore = deploymentStore;
+        this.registry = registry;
+        this.clock = Clock.systemUTC();
     }
 
     KillSwitchService(
@@ -64,12 +69,19 @@ public final class KillSwitchService {
         String actor = requireNonBlank(request.actor(), "actor");
         String reason = requireNonBlank(request.reason(), "reason");
 
-        DeploymentRecord deployment = deploymentStore.get(strategyId)
-            .orElseThrow(() -> new IllegalArgumentException("Strategy not deployed: " + strategyId));
-        if (!isKillEligible(deployment.executionLabel())) {
-            throw new IllegalArgumentException(
-                "Kill switch applies to PAPER_OANDA or LIVE deployments only (actual: "
-                    + deployment.executionLabel().name() + ")");
+        java.util.Optional<DeploymentRecord> deployment = deploymentStore.get(strategyId);
+        List<RunRecord> runningBrokerRuns = findRunningBrokerRuns(strategyId);
+
+        if (deployment.isEmpty() && runningBrokerRuns.isEmpty()) {
+            throw new IllegalArgumentException("Strategy not deployed and has no running broker runs: " + strategyId);
+        }
+
+        if (deployment.isPresent()) {
+            if (!isKillEligible(deployment.get().executionLabel())) {
+                throw new IllegalArgumentException(
+                    "Kill switch applies to PAPER_OANDA or LIVE deployments only (actual: "
+                        + deployment.get().executionLabel().name() + ")");
+            }
         }
 
         registry.kill(strategyId);
@@ -78,6 +90,11 @@ public final class KillSwitchService {
         List<String> affectedRunIds = new ArrayList<>();
         for (RunRecord run : findRunningBrokerRuns(strategyId)) {
             appendOperatorAction(run, actor, reason, timestamp);
+            try {
+                runManager.stop(run.runId(), true);
+            } catch (Exception e) {
+                log.error("Failed to stop and liquidate run {}", run.runId(), e);
+            }
             affectedRunIds.add(run.runId());
         }
 

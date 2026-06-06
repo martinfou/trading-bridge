@@ -18,6 +18,10 @@ export interface RunConfig {
   slippagePct?: number
   dataTimeframe?: string
   strategyTimeframe?: string
+  executionLabel?: string
+  brokerAccountId?: string
+  dailyLossLimitPct?: number
+  weeklyLossLimitPct?: number
 }
 
 export interface RunSummary {
@@ -34,6 +38,7 @@ export interface RunResult {
   strategyId: string
   symbol: string
   status: string
+  mode?: string
   error?: string
   startedAt?: string
   completedAt?: string

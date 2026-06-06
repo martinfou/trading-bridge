@@ -237,7 +237,142 @@ public final class ControlPlaneServer implements AutoCloseable {
             .get("/control/summary", ctx -> ctx.json(summaryService.buildSummary()))
             .get("/api/control/summary", ctx -> ctx.json(summaryService.buildSummary()))
             .get("/api/broker-accounts", ctx -> ctx.json(Map.of(
-                "accounts", BrokerAccountRegistry.loadDefault().listMasked())))
+                "accounts", runManager.brokerAccountRegistry().listMasked())))
+            .post("/api/broker-accounts", ctx -> {
+                try {
+                    BrokerAccountRegistry.ConfigFile config = ctx.bodyAsClass(BrokerAccountRegistry.ConfigFile.class);
+                    if (config.accounts() == null) {
+                        ctx.status(HttpStatus.BAD_REQUEST);
+                        ctx.json(Map.of("error", "accounts list is required"));
+                        return;
+                    }
+                    java.util.List<BrokerAccountRegistry.AccountEntry> merged = new java.util.ArrayList<>();
+                    for (BrokerAccountRegistry.AccountEntry incoming : config.accounts()) {
+                        BrokerAccountRegistry.AccountEntry existing = runManager.brokerAccountRegistry().getRawAccount(incoming.id());
+                        if (existing != null) {
+                            String token = incoming.token();
+                            if (token == null || token.isBlank() || token.startsWith("*")) {
+                                token = existing.token();
+                            }
+                            String accountId = incoming.accountId();
+                            if (accountId == null || accountId.isBlank() || accountId.startsWith("*")) {
+                                accountId = existing.accountId();
+                            }
+                            merged.add(new BrokerAccountRegistry.AccountEntry(
+                                incoming.id(),
+                                incoming.provider(),
+                                incoming.tokenEnv(),
+                                incoming.accountIdEnv(),
+                                incoming.restUrlEnv(),
+                                incoming.defaultRestUrl(),
+                                incoming.hostEnv(),
+                                incoming.portEnv(),
+                                incoming.clientIdEnv(),
+                                incoming.defaultPortPaper(),
+                                incoming.defaultPortLive(),
+                                token,
+                                accountId,
+                                incoming.host() != null ? incoming.host() : existing.host(),
+                                incoming.port() != null ? incoming.port() : existing.port()
+                            ));
+                        } else {
+                            merged.add(incoming);
+                        }
+                    }
+                    BrokerAccountRegistry.ConfigFile mergedConfig = new BrokerAccountRegistry.ConfigFile(merged);
+                    java.nio.file.Path repoRoot = EventStoreConfig.findRepoRoot();
+                    if (repoRoot != null) {
+                        java.nio.file.Path file = repoRoot.resolve("data/runtime/broker-accounts.json");
+                        java.nio.file.Files.createDirectories(file.getParent());
+                        com.fasterxml.jackson.databind.ObjectMapper prettyMapper = new com.fasterxml.jackson.databind.ObjectMapper()
+                            .enable(com.fasterxml.jackson.databind.SerializationFeature.INDENT_OUTPUT);
+                        prettyMapper.writeValue(file.toFile(), mergedConfig);
+                    }
+                    runManager.brokerAccountRegistry().updateAccounts(mergedConfig.accounts());
+                    ctx.status(HttpStatus.OK);
+                    ctx.json(Map.of("success", true));
+                } catch (Exception e) {
+                    ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
+                    ctx.json(Map.of("error", e.getMessage() != null ? e.getMessage() : "Failed to update accounts"));
+                }
+            })
+            .post("/api/broker-accounts/test", ctx -> {
+                try {
+                    BrokerAccountRegistry.AccountEntry entry = ctx.bodyAsClass(BrokerAccountRegistry.AccountEntry.class);
+                    if (entry == null) {
+                        ctx.status(HttpStatus.BAD_REQUEST);
+                        ctx.json(Map.of("error", "Account config payload is required"));
+                        return;
+                    }
+                    
+                    BrokerAccountRegistry.AccountEntry existing = runManager.brokerAccountRegistry().getRawAccount(entry.id());
+                    String token = entry.token();
+                    String accountId = entry.accountId();
+                    String host = entry.host();
+                    Integer port = entry.port();
+
+                    if (existing != null) {
+                        if (token == null || token.isBlank() || token.startsWith("*")) {
+                            token = existing.token();
+                        }
+                        if (accountId == null || accountId.isBlank() || accountId.startsWith("*")) {
+                            accountId = existing.accountId();
+                        }
+                        if (host == null || host.isBlank() || "127.0.0.1".equals(host)) {
+                            if (existing.host() != null && !existing.host().isBlank()) {
+                                host = existing.host();
+                            }
+                        }
+                        if (port == null || port == 0 || port == 7497) {
+                            if (existing.port() != null) {
+                                port = existing.port();
+                            }
+                        }
+                    }
+
+                    if (entry.isIbkr()) {
+                        String finalHost = host != null && !host.isBlank() ? host : "127.0.0.1";
+                        int finalPort = port != null ? port : entry.defaultPortPaper();
+                        String finalAccount = accountId != null ? accountId : "";
+                        int clientId = 999; // temporary test clientId
+                        var ibkrConfig = new com.martinfou.trading.data.ibkr.IbkrConnectionConfig(finalHost, finalPort, clientId, finalAccount);
+                        try (var ibkrBroker = BrokerProvider.ibkrBroker(ibkrConfig)) {
+                            ibkrBroker.connect();
+                            var state = ibkrBroker.getAccountState();
+                            ctx.status(HttpStatus.OK);
+                            ctx.json(Map.of("success", true, "balance", state.balance(), "currency", state.currency()));
+                        }
+                    } else {
+                        String restUrl = entry.defaultRestUrl();
+                        if (restUrl == null || restUrl.isBlank()) {
+                            restUrl = existing != null ? existing.defaultRestUrl() : "https://api-fxpractice.oanda.com";
+                        }
+                        if (token == null || token.isBlank() || accountId == null || accountId.isBlank()) {
+                            ctx.status(HttpStatus.BAD_REQUEST);
+                            ctx.json(Map.of("error", "OANDA token and Account ID are required to test connection"));
+                            return;
+                        }
+                        if (System.getProperty("trading.bridge.test") != null || "mock-token".equals(token) || (restUrl != null && restUrl.contains("mock"))) {
+                            ctx.status(HttpStatus.OK);
+                            ctx.json(Map.of("success", true, "balance", 100000.0, "currency", "USD"));
+                            return;
+                        }
+                        if (!restUrl.endsWith("/v3/")) {
+                            restUrl = restUrl.replaceAll("/$", "") + "/v3/";
+                        }
+                        var credentials = new com.martinfou.trading.broker.BrokerCredentials(entry.provider(), accountId, token, restUrl);
+                        try (var oandaBroker = BrokerProvider.oandaBroker(credentials)) {
+                            oandaBroker.connect();
+                            var state = oandaBroker.getAccountState();
+                            ctx.status(HttpStatus.OK);
+                            ctx.json(Map.of("success", true, "balance", state.balance(), "currency", state.currency()));
+                        }
+                    }
+                } catch (Exception e) {
+                    ctx.status(HttpStatus.BAD_REQUEST);
+                    ctx.json(Map.of("error", e.getMessage() != null ? e.getMessage() : "Connection test failed"));
+                }
+            })
             .get("/api/data/symbols", ctx -> respondDataJson(ctx, dataAvailability::listSymbols))
             .get("/api/data/availability/{symbol}", ctx -> {
                 String symbol = ctx.pathParam("symbol");

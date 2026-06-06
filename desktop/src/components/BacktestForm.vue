@@ -13,7 +13,7 @@ const emit = defineEmits<{
   error: [message: string]
 }>()
 
-const { getStrategies, startRun, loading, error } = useControlPlane()
+const { getStrategies, startRun, loading, error, getBrokerAccounts } = useControlPlane()
 
 const strategies = ref<Strategy[]>([])
 const selectedStrategy = ref('')
@@ -26,6 +26,14 @@ const slippage = ref(0.0001)
 
 const dataTimeframe = ref('H1')
 const strategyTimeframe = ref('H1')
+
+// Run mode & Broker Account credentials state
+const runMode = ref<'BACKTEST' | 'PAPER_OANDA' | 'LIVE_OANDA'>('BACKTEST')
+const selectedAccountId = ref('default')
+const maxDrawdownLimit = ref(10.0)
+const dailyLossLimitPct = ref(5.0)
+const weeklyLossLimitPct = ref(10.0)
+const accounts = ref<any[]>([])
 
 const timeframeScale: Record<string, number> = {
   'M1': 1,
@@ -52,9 +60,14 @@ function handleClickOutside(event: MouseEvent) {
 onMounted(async () => {
   document.addEventListener('click', handleClickOutside)
   try {
-    strategies.value = await getStrategies()
+    const [strats, accs] = await Promise.all([
+      getStrategies(),
+      getBrokerAccounts().catch(() => [])
+    ])
+    strategies.value = strats
+    accounts.value = accs
   } catch (e: any) {
-    emit('error', `Failed to load strategies: ${e.message}`)
+    emit('error', `Failed to load initialization data: ${e.message}`)
   }
 })
 
@@ -106,10 +119,10 @@ async function run() {
 
   try {
     const runPromises = selectedSymbols.value.map(async (sym) => {
-      const config: RunConfig = {
+      const config: any = {
         strategyId: selectedStrategy.value,
         symbol: sym.replace('/', '_'),
-        mode: 'BACKTEST',
+        mode: runMode.value === 'BACKTEST' ? 'BACKTEST' : (runMode.value === 'PAPER_OANDA' ? 'PAPER' : 'LIVE'),
         barsSource: { type: 'year', year: selectedYear.value },
         capital: capital.value,
         lotSize: lotSize.value,
@@ -118,6 +131,12 @@ async function run() {
         dataTimeframe: dataTimeframe.value,
         strategyTimeframe: strategyTimeframe.value,
       }
+      if (runMode.value !== 'BACKTEST') {
+        config.executionLabel = runMode.value === 'PAPER_OANDA' ? 'PAPER_OANDA' : 'LIVE_OANDA'
+        config.brokerAccountId = selectedAccountId.value
+        config.dailyLossLimitPct = dailyLossLimitPct.value
+        config.weeklyLossLimitPct = weeklyLossLimitPct.value
+      }
       const res = await startRun(config)
       return { symbol: sym, runId: res.runId }
     })
@@ -125,13 +144,48 @@ async function run() {
     const started = await Promise.all(runPromises)
     emit('runsStart', started)
   } catch (e: any) {
-    emit('error', `Backtest failed: ${e.message}`)
+    emit('error', `Execution launch failed: ${e.message}`)
   }
 }
 </script>
 
 <template>
   <div class="backtest-form">
+    <div class="form-row">
+      <div class="field">
+        <label>Execution Mode</label>
+        <select v-model="runMode">
+          <option value="BACKTEST">Backtest</option>
+          <option value="PAPER_OANDA">OANDA Paper Trading</option>
+          <option value="LIVE_OANDA">OANDA Live Trading</option>
+        </select>
+      </div>
+      <div v-if="runMode !== 'BACKTEST'" class="field">
+        <label>Broker Account</label>
+        <select v-model="selectedAccountId">
+          <option v-for="acc in accounts" :key="acc.id" :value="acc.id">
+            {{ acc.id }} ({{ acc.provider }} - {{ acc.maskedAccountId }})
+          </option>
+        </select>
+      </div>
+      <div v-if="runMode !== 'BACKTEST'" class="field">
+        <label>Max Drawdown Kill Switch (%)</label>
+        <input v-model.number="maxDrawdownLimit" type="number" min="1" max="50" step="0.5" disabled />
+        <span style="font-size: 0.65rem; color: var(--accent); margin-top: 0.15rem; display: block;">⚠️ 10.0% default limit active</span>
+      </div>
+    </div>
+
+    <div v-if="runMode !== 'BACKTEST'" class="form-row">
+      <div class="field">
+        <label>Daily Loss Limit (%)</label>
+        <input v-model.number="dailyLossLimitPct" type="number" min="0.1" max="50" step="0.1" />
+      </div>
+      <div class="field">
+        <label>Weekly Loss Limit (%)</label>
+        <input v-model.number="weeklyLossLimitPct" type="number" min="0.1" max="50" step="0.1" />
+      </div>
+    </div>
+
     <div class="form-row">
       <div class="field">
         <label>Strategy</label>
@@ -163,7 +217,7 @@ async function run() {
           </div>
         </div>
       </div>
-      <div class="field">
+      <div v-if="runMode === 'BACKTEST'" class="field">
         <label>Year</label>
         <select v-model="selectedYear">
           <option value="all">All Years</option>
@@ -173,7 +227,7 @@ async function run() {
     </div>
 
     <div class="form-row inputs-row">
-      <div class="field">
+      <div v-if="runMode === 'BACKTEST'" class="field">
         <label>Capital ($)</label>
         <input v-model.number="capital" type="number" min="1000" step="1000" />
       </div>
@@ -181,18 +235,18 @@ async function run() {
         <label>Lot Size</label>
         <input v-model.number="lotSize" type="number" min="0.001" step="0.01" />
       </div>
-      <div class="field">
+      <div v-if="runMode === 'BACKTEST'" class="field">
         <label>Commission ($)</label>
         <input v-model.number="commission" type="number" min="0" step="0.01" />
       </div>
-      <div class="field">
+      <div v-if="runMode === 'BACKTEST'" class="field">
         <label>Slippage (%)</label>
         <input v-model.number="slippage" type="number" min="0" step="0.0001" />
       </div>
     </div>
 
     <div class="form-row">
-      <div class="field">
+      <div v-if="runMode === 'BACKTEST'" class="field">
         <label>Data Timeframe</label>
         <select v-model="dataTimeframe">
           <option value="M1">M1 (1 Minute)</option>
@@ -208,7 +262,7 @@ async function run() {
           <option value="D1">D1 (1 Day)</option>
         </select>
       </div>
-      <div class="field explanation-field">
+      <div v-if="runMode === 'BACKTEST'" class="field explanation-field">
         <label>Data vs Strategy Timeframe</label>
         <div class="timeframe-warning-info">
           H1 data runs faster; M1 data is more realistic but takes longer.
@@ -216,7 +270,7 @@ async function run() {
       </div>
     </div>
 
-    <div v-if="!isValidTimeframe" class="form-error">
+    <div v-if="runMode === 'BACKTEST' && !isValidTimeframe" class="form-error">
       Validation Error: Data Timeframe cannot be higher than Strategy Timeframe.
     </div>
 
@@ -224,7 +278,9 @@ async function run() {
 
     <button class="run-btn" :disabled="loading || !selectedStrategy || selectedSymbols.length === 0 || !isValidTimeframe" @click="run">
       <span v-if="loading" class="spinner"></span>
-      <span v-else>▶ Run Backtest</span>
+      <span v-else>
+        {{ runMode === 'BACKTEST' ? '▶ Run Backtest' : (runMode === 'PAPER_OANDA' ? '▶ Start Paper Trading' : '▶ Start Live Trading') }}
+      </span>
     </button>
   </div>
 </template>

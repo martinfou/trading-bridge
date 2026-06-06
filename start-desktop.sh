@@ -7,7 +7,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-echo "=== 1. Compiling Java Backend ==="
+echo "=== 1. Compiling & Testing Java Backend ==="
+mvn clean test
 mvn package -pl trading-runtime -am -DskipTests
 
 echo "=== 2. Setting up Java Environment ==="

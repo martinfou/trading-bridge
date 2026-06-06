@@ -132,6 +132,12 @@ FR16: Parameter retune workflow — Martin peut forker nouvelle version config, 
 
 FR17: Genetics integration — Martin peut exporter gagnants recherche génétique vers StrategyCatalog candidats soumis aux gates FR-7. Tag `origin: GENETICS` dans snapshot. Realise UJ-1.
 
+FR18: Monte Carlo validation gates — Martin can run Monte Carlo simulations (block bootstrap, trade shuffle) on backtest runs and apply automated VaR and probability of loss gates to promote strategies.
+
+FR19: Walk-Forward Analysis (WFA) and Optimization — The system supports Walk-Forward optimization with rolling in-sample/out-sample data splitting (e.g. 12m IS, 4w OOS), purged boundaries to prevent data leakage, and a merged out-of-sample equity curve generation.
+
+FR20: Walk-Forward recalibration signals — System tracks calibration freshness (DAILY/WEEKLY/MONTHLY/etc.) based on calendar time, bar count, or trade count, signaling "WF due!" or "WF overdue" in the control plane.
+
 ### NonFunctional Requirements
 
 NFR1: Temps — UTC (`Instant`) partout en logique trading ; affichage Toronto optionnel UI.
@@ -154,6 +160,10 @@ NFR9: Compatibilité — RunEvent v1 schéma versionné ; breaking change = `sch
 
 NFR10: Déploiement — Chemins DB configurables (`RuntimeDataPaths`, env `TRADING_BRIDGE_EVENT_STORE`, `TRADING_BRIDGE_DATA_DIR`).
 
+NFR11: Monte Carlo performance — Running a 1000-run Monte Carlo simulation must execute in parallel using virtual threads or ForkJoinPool, completing in under 5 seconds for a 500-trade backtest.
+
+NFR12: WFA purging discipline — Boundary purging must clear overlap trades with a gap margin proportional to maximum strategy position duration to completely prevent out-of-sample look-ahead bias.
+
 ### Additional Requirements
 
 - **Brownfield** — Extension modules Maven existants (`trading-runtime`, `trading-backtest`, etc.).
@@ -163,6 +173,8 @@ NFR10: Déploiement — Chemins DB configurables (`RuntimeDataPaths`, env `TRADI
 - **RunLifecycle interface** — `RunManager` lifecycle-only ; promote/gap via collaborateurs.
 - **Evidence pack (S14)** — `GET /api/runs/{runId}/export` JSONL.
 - **Module `trading-node` (S15)** — Epic 18.
+- **WFA Boundary Purging** — Purge overlapping stateful trades near the boundary to avoid look-ahead leakage.
+- **WFO Calibration Settings** — Support defining WFO frequency, IS months, and OOS weeks inside strategy metadata.
 
 ### UX Design Requirements
 
@@ -183,6 +195,12 @@ UX-DR7: Signaux drift — HOLD / REVIEW_PARAMS / PAUSE / RETIRE avec métriques.
 UX-DR8: TUI optionnel — slash commands + stream RunEvents.
 
 UX-DR9: Hub ouvert en < 3 s — état visible sans navigation profonde.
+
+UX-DR10: Monte Carlo chart overlay — Display the distribution of paths (e.g., 5th, 25th, 50th, 75th, 95th percentiles) as an overlay on the main equity curve.
+
+UX-DR11: Walk-Forward timeline visualization — Display the IS/OOS sliding windows as a timeline chart, color-coded by performance (Sharpe, Profit Factor).
+
+UX-DR12: Calibration health indicator — Display battery icons/badges (🔋 WF ok, 🔔 WF due!, ⚠️ WF overdue) next to strategy status.
 
 ### Prop-Shop Gap Requirements (PS-GR)
 
@@ -308,6 +326,9 @@ FR14: Epic 17 Phase B — Audit immuable
 FR15: Epic 17 Phase B — Signaux drift
 FR16: Epic 17 Phase B — Retune workflow
 FR17: Epic 14 — Genetics → catalog
+FR18: Epic 23 — Monte Carlo validation gates
+FR19: Epic 24 — Walk-Forward Analysis (WFA) and Optimization
+FR20: Epic 24 — Walk-Forward recalibration signals
 FR-SQ1: Epic 21 — Hot folder ingest automatique (21.1–21.3)
 FR-SQ2: Epic 21 — Pilotage sqcli Mac (21.4–21.5)
 FR-SQ3: Epic 21 — Pipeline nightly (21.6)
@@ -364,6 +385,16 @@ Martin peut faire communiquer StrategyQuant X et Trading Bridge sur Mac : hot fo
 
 Martin peut lancer **trois jobs découplées** (hot folder, modèle Epic 21) : (1) cron vendredi ingest + DeepSeek → JSON plan dans `pending/` ; (2) watcher compile → `compiled/` ; (3) watcher deploy PAPER_OANDA → `deployed/` — ou **NoTradeWeek** si la semaine ne le permet pas.
 **FRs covered:** FR3 (étendu), Sprint 15 news/calendar (partiel) | **Prérequis:** Epic 13, 16, 12 | **Module:** `trading-intelligence` | **Source:** brainstorming 2026-06-01, hot-folder 2026-06-02
+
+### Epic 23: Simulations Monte Carlo et robustesse des backtests
+
+Martin peut lancer des simulations Monte Carlo (trade shuffle / block bootstrap) sur tout backtest, voir la distribution des runs et le Value-at-Risk (VaR 95%) sur le dashboard, et imposer un seuil VaR comme gate de promotion.
+**FRs covered:** FR18 | **NFRs:** NFR11 | **UX-DRs:** UX-DR10 | **Sprint:** S6
+
+### Epic 24: Optimisation et Analyse Walk-Forward (WFA)
+
+Martin peut effectuer des analyses Walk-Forward en divisant l'historique en fenêtres glissantes In-Sample (IS) et Out-of-Sample (OOS), optimiser les paramètres, purger les frontières pour éviter les fuites de données, générer la courbe OOS combinée et suivre la fraîcheur de calibration dans le dashboard.
+**FRs covered:** FR19, FR20 | **NFRs:** NFR12 | **UX-DRs:** UX-DR11, UX-DR12 | **Sprint:** S6
 
 ### Synthèse prop-shop (enrichissement Epic 13–20)
 
@@ -1611,4 +1642,124 @@ So that I can force a plan run or see pending/compiled/deployed counts.
 - Analogie : Epic 21 `data/sq-inbox/` — même pattern mutex `compiling/` que `SqJobMutex`
 - NLP RSS enrichissement post-MVP dans `trading-data`
 - Epic 20 = AI codegen générique ; Epic 22 = hebdo news/calendar/sentiment via fichiers
+
+---
+
+## Epic 23: Simulations Monte Carlo et robustesse des backtests
+
+Martin peut lancer des simulations Monte Carlo (trade shuffle / block bootstrap) sur tout backtest, voir la distribution des runs et le Value-at-Risk (VaR 95%) sur le dashboard, et imposer un seuil VaR comme gate de promotion.
+
+### Story 23.1: Intégration de MonteCarloSimulation et Endpoint API
+
+As a developer,
+I want to expose the existing MonteCarloSimulation functionality via the Control Plane HTTP API,
+So that frontend components can retrieve Monte Carlo distribution results.
+
+**Acceptance Criteria:**
+
+**Given** a finished backtest run record with trades
+**When** `GET /api/runs/{runId}/monte-carlo?runs=1000&blockSize=3` is called
+**Then** the system computes the Monte Carlo shuffles in parallel using ForkJoinPool
+**And** returns a JSON response containing percentile arrays (5th, 25th, 50th, 75th, 95th) for P&L, drawdown, Sharpe ratio, worst/best P&L, VaR 95%, and probability of loss
+**And** the operation completes in under 2 seconds
+
+### Story 23.2: Graphique et Statistiques Monte Carlo sur la GUI
+
+As a Martin,
+I want to see the Monte Carlo path distribution overlay and summary statistics in the Desktop GUI,
+So that I can visually verify strategy robustness.
+
+**Acceptance Criteria:**
+
+**Given** a strategy run detail view in the Desktop app
+**When** I click the "Monte Carlo" tab or section
+**Then** the app requests the Monte Carlo API endpoint
+**And** renders an interactive chart showing the median (50th), 5th, and 95th percentile paths overlaying the baseline equity curve
+**And** displays statistics: VaR 95% P&L, Mean/Median DD, Best/Worst P&L, and Loss Probability
+
+### Story 23.3: Gate de promotion Monte Carlo VaR
+
+As a Martin,
+I want strategy promotions to require passing a Monte Carlo VaR gate,
+So that fragile strategies are blocked before paper/live.
+
+**Acceptance Criteria:**
+
+**Given** `POST /api/strategies/{id}/promote` is requested
+**When** the Monte Carlo validation gate is active
+**Then** it checks if Monte Carlo VaR (95% confidence P&L) is positive (P&L > 0) and probability of loss is below a limit (e.g. <= 5.0%)
+**And** failure blocks promotion returning 422 with the Monte Carlo failure metrics
+
+---
+
+## Epic 24: Optimisation et Analyse Walk-Forward (WFA)
+
+Martin peut effectuer des analyses Walk-Forward en divisant l'historique en fenêtres glissantes In-Sample (IS) et Out-of-Sample (OOS), optimiser les paramètres, purger les frontières pour éviter les fuites de données, générer la courbe OOS combinée et suivre la fraîcheur de calibration dans le dashboard.
+
+### Story 24.1: Moteur de découpe de données IS/OOS et Boucle d'optimisation WFA
+
+As a developer,
+I want a WalkForwardEngine to split historical data into rolling In-Sample (IS) and Out-of-Sample (OOS) windows and run the optimization loop,
+So that parameter sets can be trained and tested without leakage.
+
+**Acceptance Criteria:**
+
+**Given** historical data, strategy class, parameter ranges, and window config (e.g. 12m IS, 4w OOS)
+**When** WFA runs
+**Then** the engine divides data chronologically into N windows
+**And** optimizes parameters in each IS window (e.g., using grid search or genetic search to maximize Sharpe)
+**And** runs the optimized strategy on the corresponding OOS window
+
+### Story 24.2: Purge des frontières WFA et Reconstruction de courbe OOS
+
+As a quantitative researcher,
+I want boundary purging to clear overlapping trades between IS and OOS boundaries,
+So that look-ahead leakage is prevented.
+
+**Acceptance Criteria:**
+
+**Given** the transition point between IS and OOS windows
+**When** purging is applied
+**Then** any trade starting in IS and ending in OOS (or near the border by a gap margin proportional to maximum strategy position duration) is purged from training/evaluation metrics
+**And** the engine merges all out-of-sample trades to form a single continuous WFA OOS equity curve
+
+### Story 24.3: API WFA et Lanceur CLI
+
+As a Martin,
+I want to trigger Walk-Forward Analysis via a CLI or HTTP endpoint and retrieve the combined metrics,
+So that I can integrate WFA in my automated pipeline.
+
+**Acceptance Criteria:**
+
+**Given** a strategy configuration and data path
+**When** I call `POST /api/runs/walk-forward` or execute the CLI launcher
+**Then** the WFA run starts asynchronously
+**And** `GET /api/runs/{wfaRunId}` returns progress, final OOS Sharpe, profit factor, Walk-Forward Efficiency (OOS metric / IS metric), and the trade list
+
+### Story 24.4: Vue Timeline IS/OOS et Calibration dans la GUI
+
+As a Martin,
+I want to see the Walk-Forward sliding windows timeline and parameter stability in the Desktop GUI,
+So that I can choose robust parameter regions.
+
+**Acceptance Criteria:**
+
+**Given** a Walk-Forward run result page in the UI
+**When** I view the details
+**Then** the page displays a horizontal timeline showing the IS and OOS blocks, color-coded by performance (e.g. green for profitable OOS, red for loss)
+**And** shows a table of the optimized parameters for each fold
+
+### Story 24.5: Suivi de fraîcheur et Alertes de recalibration (WF due!)
+
+As a Martin,
+I want the system to track strategy calibration age and display alerts in the dashboard,
+So that I know when a strategy needs to be recalibrated.
+
+**Acceptance Criteria:**
+
+**Given** strategy metadata with calibration rules (e.g., weekly, after 20 trades)
+**When** strategy has active live/paper runs
+**Then** the control plane calculates if calibration is due or overdue based on trades/bars/time since `lastWalkForwardDate`
+**And** displays status icons (🔋, 🔔, ⚠️) next to the strategy in the dashboard and TUI
+
 

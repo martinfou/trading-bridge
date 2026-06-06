@@ -77,10 +77,15 @@ export function useControlPlane() {
         mode: config.mode,
         barsSource,
         capital: config.capital,
+        lotSize: config.lotSize,
         commissionPerTrade: config.commissionPerTrade,
         slippagePct: config.slippagePct,
         dataTimeframe: config.dataTimeframe,
         strategyTimeframe: config.strategyTimeframe,
+        executionLabel: config.executionLabel,
+        brokerAccountId: config.brokerAccountId,
+        dailyLossLimitPct: config.dailyLossLimitPct,
+        weeklyLossLimitPct: config.weeklyLossLimitPct,
       },
       controlPlaneUrl.value,
     )
@@ -122,8 +127,12 @@ export function useControlPlane() {
     return apiGet<any>('/api/control/summary', controlPlaneUrl.value)
   }
 
-  async function killStrategy(strategyId: string): Promise<any> {
-    return apiPost<any>(`/api/strategies/${strategyId}/kill`, {}, controlPlaneUrl.value)
+  async function killStrategy(
+    strategyId: string,
+    actor: string = 'operator',
+    reason: string = 'Deactivated via control room'
+  ): Promise<any> {
+    return apiPost<any>(`/api/strategies/${strategyId}/kill`, { actor, reason }, controlPlaneUrl.value)
   }
 
   async function getBrokerAccounts(): Promise<BrokerAccount[]> {
@@ -180,6 +189,14 @@ export function useControlPlane() {
     return apiPost<any>('/api/historical-data/delete', params, controlPlaneUrl.value)
   }
 
+  async function saveBrokerAccounts(accounts: any[]): Promise<any> {
+    return apiPost<any>('/api/broker-accounts', { accounts }, controlPlaneUrl.value)
+  }
+
+  async function testBrokerAccount(account: any): Promise<any> {
+    return apiPost<any>('/api/broker-accounts/test', account, controlPlaneUrl.value)
+  }
+
   return {
     startRun,
     getRun,
@@ -191,6 +208,8 @@ export function useControlPlane() {
     getControlSummary,
     killStrategy,
     getBrokerAccounts,
+    saveBrokerAccounts,
+    testBrokerAccount,
     promoteStrategy,
     getPromoteGates,
     updatePromoteGates,

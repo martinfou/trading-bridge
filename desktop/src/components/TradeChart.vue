@@ -10,8 +10,35 @@ const props = defineProps<{
 }>()
 
 const container = ref<HTMLDivElement>()
+const timezone = ref<'local' | 'utc'>('local')
 let chart: IChartApi | null = null
 let candlestickSeries: ISeriesApi<'Candlestick'> | null = null
+
+function formatUTC(timestamp: number, showTime = true): string {
+  const date = new Date(timestamp * 1000)
+  const day = date.getUTCDate().toString().padStart(2, '0')
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  const month = months[date.getUTCMonth()]
+  if (!showTime) {
+    return `${day} ${month}`
+  }
+  const hour = date.getUTCHours().toString().padStart(2, '0')
+  const min = date.getUTCMinutes().toString().padStart(2, '0')
+  return `${day} ${month} ${hour}:${min}`
+}
+
+function formatLocal(timestamp: number, showTime = true): string {
+  const date = new Date(timestamp * 1000)
+  const day = date.getDate().toString().padStart(2, '0')
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  const month = months[date.getMonth()]
+  if (!showTime) {
+    return `${day} ${month}`
+  }
+  const hour = date.getHours().toString().padStart(2, '0')
+  const min = date.getMinutes().toString().padStart(2, '0')
+  return `${day} ${month} ${hour}:${min}`
+}
 
 function render() {
   if (!container.value || !props.bars.length) return
@@ -34,11 +61,38 @@ function render() {
       vertLines: { color: '#1F2937' },
       horzLines: { color: '#1F2937' },
     },
+    localization: {
+      timeFormatter: (timestamp: number) => {
+        const isUtc = timezone.value === 'utc'
+        return isUtc ? formatUTC(timestamp) : formatLocal(timestamp)
+      },
+    },
     timeScale: {
       visible: true,
       borderColor: '#374151',
       timeVisible: true,
       secondsVisible: false,
+      tickMarkFormatter: (time: any, tickMarkType: number, locale: string) => {
+        const timestamp = typeof time === 'number' ? time : time.timestamp || 0
+        const date = new Date(timestamp * 1000)
+        
+        const isUtc = timezone.value === 'utc'
+        const hour = isUtc ? date.getUTCHours().toString().padStart(2, '0') : date.getHours().toString().padStart(2, '0')
+        const min = isUtc ? date.getUTCMinutes().toString().padStart(2, '0') : date.getMinutes().toString().padStart(2, '0')
+        
+        if (tickMarkType >= 3) {
+          return `${hour}:${min}`
+        }
+        
+        const day = isUtc ? date.getUTCDate().toString().padStart(2, '0') : date.getDate().toString().padStart(2, '0')
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+        const month = months[isUtc ? date.getUTCMonth() : date.getMonth()]
+        
+        if (tickMarkType === 2) {
+          return `${day} ${month}`
+        }
+        return `${month} ${isUtc ? date.getUTCFullYear() : date.getFullYear()}`
+      },
     },
     rightPriceScale: {
       borderColor: '#374151',
@@ -190,6 +244,10 @@ watch(() => props.trades, async () => {
   await nextTick()
   render()
 }, { deep: true })
+
+watch(timezone, () => {
+  render()
+})
 </script>
 
 <template>
@@ -198,6 +256,14 @@ watch(() => props.trades, async () => {
     <div class="legend">
       <div class="legend-item"><span class="dot buy"></span>Buy Entry</div>
       <div class="legend-item"><span class="dot sell"></span>Sell Entry</div>
+      <div style="flex-grow: 1;"></div>
+      <div class="timezone-select-container">
+        <label for="tz-select" class="tz-label">Axe temporel :</label>
+        <select id="tz-select" v-model="timezone" class="tz-select">
+          <option value="local">Heure locale</option>
+          <option value="utc">UTC</option>
+        </select>
+      </div>
     </div>
   </div>
 </template>
@@ -217,6 +283,7 @@ watch(() => props.trades, async () => {
 
 .legend {
   display: flex;
+  align-items: center;
   gap: 1.5rem;
   padding: 0.5rem 1rem;
   background: #15181f;
@@ -243,5 +310,36 @@ watch(() => props.trades, async () => {
 
 .dot.sell {
   background: #EF4444;
+}
+
+.timezone-select-container {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tz-label {
+  font-size: 0.75rem;
+  color: #9CA3AF;
+}
+
+.tz-select {
+  background: #111317;
+  border: 1px solid #374151;
+  border-radius: 4px;
+  color: #E5E7EB;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.tz-select:hover {
+  border-color: #4B5563;
+}
+
+.tz-select:focus {
+  border-color: #d97706;
 }
 </style>

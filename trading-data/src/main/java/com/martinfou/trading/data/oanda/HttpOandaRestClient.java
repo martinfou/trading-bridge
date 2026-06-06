@@ -1,5 +1,6 @@
 package com.martinfou.trading.data.oanda;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.martinfou.trading.core.Order;
@@ -80,6 +81,115 @@ public final class HttpOandaRestClient implements OandaRestClient {
         } catch (Exception e) {
             log.warn("OANDA market order failed: {}", e.getMessage());
             return OandaMarketOrderResult.failure(0, e.getMessage());
+        }
+    }
+
+    @Override
+    public OandaMarketOrderResult placeOrder(String type, String instrument, long units, double price, double stopLoss, double takeProfit, String clientTag) {
+        try {
+            Map<String, Object> order = new LinkedHashMap<>();
+            order.put("type", type.toUpperCase());
+            order.put("instrument", instrument);
+            order.put("units", String.valueOf(units));
+            if (type.equalsIgnoreCase("MARKET")) {
+                order.put("timeInForce", "FOK");
+            } else {
+                order.put("timeInForce", "GTC");
+                String fmt = instrument.contains("JPY") ? "%.3f" : "%.5f";
+                order.put("price", String.format(java.util.Locale.US, fmt, price));
+            }
+            String fmt = instrument.contains("JPY") ? "%.3f" : "%.5f";
+            if (stopLoss > 0) {
+                Map<String, Object> sl = new LinkedHashMap<>();
+                sl.put("price", String.format(java.util.Locale.US, fmt, stopLoss));
+                sl.put("timeInForce", "GTC");
+                order.put("stopLossOnFill", sl);
+            }
+            if (takeProfit > 0) {
+                Map<String, Object> tp = new LinkedHashMap<>();
+                tp.put("price", String.format(java.util.Locale.US, fmt, takeProfit));
+                tp.put("timeInForce", "GTC");
+                order.put("takeProfitOnFill", tp);
+            }
+            if (clientTag != null && !clientTag.isBlank()) {
+                order.put("clientExtensions", Map.of("tag", clientTag, "comment", clientTag));
+            }
+            String body = mapper.writeValueAsString(Map.of("order", order));
+
+            HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + "accounts/" + accountId + "/orders"))
+                .header("Authorization", "Bearer " + apiToken)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .timeout(Duration.ofSeconds(15))
+                .build();
+
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            JsonNode json = mapper.readTree(response.body());
+            if (response.statusCode() != 201) {
+                String err = json.has("errorMessage") ? json.get("errorMessage").asText() : response.body();
+                return OandaMarketOrderResult.failure(response.statusCode(), err);
+            }
+            String orderId = json.get("orderCreateTransaction").get("id").asText();
+            String tradeId = null;
+            Double fillPriceObj = null;
+            if (json.has("orderFillTransaction")) {
+                JsonNode fill = json.get("orderFillTransaction");
+                if (fill != null && !fill.isNull()) {
+                    tradeId = fill.has("tradeOpened")
+                        ? fill.get("tradeOpened").get("tradeID").asText()
+                        : null;
+                    fillPriceObj = Double.parseDouble(fill.get("price").asText());
+                }
+            }
+            return new OandaMarketOrderResult(response.statusCode(), orderId, tradeId, fillPriceObj, null);
+        } catch (Exception e) {
+            log.warn("OANDA order placement failed: {}", e.getMessage());
+            return OandaMarketOrderResult.failure(0, e.getMessage());
+        }
+    }
+
+    @Override
+    public boolean cancelOrder(String orderId) {
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + "accounts/" + accountId + "/orders/" + orderId + "/cancel"))
+                .header("Authorization", "Bearer " + apiToken)
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.noBody())
+                .timeout(Duration.ofSeconds(15))
+                .build();
+
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 200) {
+                return true;
+            }
+            log.warn("Failed to cancel OANDA order {}. HTTP status: {}, Response: {}", orderId, response.statusCode(), response.body());
+            return false;
+        } catch (Exception e) {
+            log.warn("OANDA order cancellation failed for order {}: {}", orderId, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public List<Map<String, Object>> fetchTransactions(int limit) {
+        try {
+            JsonNode json = get("/accounts/" + accountId + "/transactions");
+            List<Map<String, Object>> list = new ArrayList<>();
+            if (json.has("transactions")) {
+                for (JsonNode txNode : json.get("transactions")) {
+                    Map<String, Object> tx = mapper.convertValue(txNode, new TypeReference<Map<String, Object>>() {});
+                    list.add(tx);
+                    if (list.size() >= limit) {
+                        break;
+                    }
+                }
+            }
+            return list;
+        } catch (Exception e) {
+            log.warn("Failed to fetch OANDA transactions: {}", e.getMessage());
+            return List.of();
         }
     }
 

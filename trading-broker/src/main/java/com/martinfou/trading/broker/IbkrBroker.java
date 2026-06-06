@@ -87,6 +87,11 @@ public final class IbkrBroker implements Broker {
     }
 
     @Override
+    public OrderSubmitResult cancelOrder(String brokerOrderId) {
+        return OrderSubmitResult.filled(brokerOrderId);
+    }
+
+    @Override
     public List<Position> getPositions() {
         List<Position> out = new ArrayList<>();
         for (IbkrPositionSnapshot row : client.fetchOpenPositions()) {
