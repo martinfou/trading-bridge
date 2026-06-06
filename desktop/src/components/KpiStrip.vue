@@ -38,7 +38,7 @@ defineProps<{
     </div>
     <div class="kpi">
       <span class="kpi-label">Final Equity</span>
-      <span class="kpi-value">{{ finalEquity !== null ? '$' + finalEquity.toLocaleString() : '—' }}</span>
+      <span class="kpi-value">{{ finalEquity !== null ? '$' + finalEquity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—' }}</span>
     </div>
   </div>
 </template>

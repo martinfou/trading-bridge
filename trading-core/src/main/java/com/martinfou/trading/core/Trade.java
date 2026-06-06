@@ -15,6 +15,11 @@ public class Trade {
 
     public Trade(String symbol, Order.Side side, double entryPrice, double exitPrice,
                  double quantity, Instant entryTime, Instant exitTime) {
+        this(symbol, side, entryPrice, exitPrice, quantity, entryTime, exitTime, ForexPnL.DEFAULT_USD_JPY);
+    }
+
+    public Trade(String symbol, Order.Side side, double entryPrice, double exitPrice,
+                 double quantity, Instant entryTime, Instant exitTime, double usdJpyRate) {
         this.symbol = symbol;
         this.side = side;
         this.entryPrice = entryPrice;
@@ -22,9 +27,7 @@ public class Trade {
         this.quantity = quantity;
         this.entryTime = entryTime;
         this.exitTime = exitTime;
-        this.pnl = side == Order.Side.BUY
-            ? (exitPrice - entryPrice) * quantity
-            : (entryPrice - exitPrice) * quantity;
+        this.pnl = ForexPnL.pnlUsd(symbol, side, entryPrice, exitPrice, quantity, usdJpyRate);
     }
 
     public double pnl() { return pnl; }

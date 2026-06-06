@@ -1,6 +1,7 @@
 package com.martinfou.trading.runtime;
 
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.core.GoldenBacktestBaseline;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -84,12 +85,10 @@ final class PromoteGates {
         GoldenBaselineProfiles.Profile golden = profile.get();
         BacktestRunMetrics metrics = BacktestRunMetrics.fromRun(run);
         boolean tradesOk = metrics.totalTrades() == golden.expectedTrades();
-        boolean returnOk = golden.expectedReturnPct() == 0.0
-            ? Math.abs(metrics.totalReturnPct()) <= golden.returnTolerancePct()
-            : Math.abs(metrics.totalReturnPct() - golden.expectedReturnPct())
-                <= golden.expectedReturnPct() * golden.returnTolerancePct();
-        boolean ddOk = Math.abs(metrics.maxDrawdownPct() - golden.expectedMaxDrawdownPct())
-            <= golden.maxDrawdownTolerancePct();
+        boolean returnOk = GoldenBacktestBaseline.withinRelativeTolerance(
+            metrics.totalReturnPct(), golden.expectedReturnPct(), golden.returnTolerancePct());
+        boolean ddOk = GoldenBacktestBaseline.amountWithinRelativeTolerance(
+            metrics.maxDrawdownPct(), golden.expectedMaxDrawdownPct(), golden.maxDrawdownTolerancePct());
         boolean passed = tradesOk && returnOk && ddOk;
         return GateCheckResult.numeric(
             "golden_baseline",

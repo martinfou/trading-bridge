@@ -44,6 +44,12 @@ public class Order {
 
     public Order withStopLoss(double sl) { this.stopLoss = sl; return this; }
     public Order withTakeProfit(double tp) { this.takeProfit = tp; return this; }
+
+    /** Updates quantity in place so strategy and engine share the same order instance. */
+    public Order rescaleQuantity(double quantity) {
+        this.quantity = quantity;
+        return this;
+    }
     /** Mark this order as close-only: reduces existing position instead of opening new one (avoids hedging on OANDA). */
     public Order closeOnly() { this.closeOnly = true; return this; }
 

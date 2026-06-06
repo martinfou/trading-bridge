@@ -14,5 +14,7 @@ public enum RunEventType {
     OPERATOR_ACTION,
     RECONCILIATION_ALERT,
     HEARTBEAT,
-    SQ_EXPORT_RECEIVED
+    SQ_EXPORT_RECEIVED,
+    /** Weekly strategy builder pipeline step (Epic 22). */
+    WEEKLY_BUILDER_EVENT
 }

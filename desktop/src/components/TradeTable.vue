@@ -88,7 +88,10 @@ function next() { if (canNext()) page.value++ }
       <thead>
         <tr>
           <th class="sortable" @click="toggleSort('entryTime')">
-            Entry {{ sortColumn === 'entryTime' ? (sortDir === 'asc' ? '▲' : '▼') : '' }}
+            Entry Time {{ sortColumn === 'entryTime' ? (sortDir === 'asc' ? '▲' : '▼') : '' }}
+          </th>
+          <th class="sortable" @click="toggleSort('exitTime')">
+            Exit Time {{ sortColumn === 'exitTime' ? (sortDir === 'asc' ? '▲' : '▼') : '' }}
           </th>
           <th class="sortable" @click="toggleSort('side')">
             Side {{ sortColumn === 'side' ? (sortDir === 'asc' ? '▲' : '▼') : '' }}
@@ -110,6 +113,7 @@ function next() { if (canNext()) page.value++ }
       <tbody>
         <tr v-for="(t, i) in pagedTrades" :key="i">
           <td class="cell-time">{{ formatTime(t.entryTime) }}</td>
+          <td class="cell-time">{{ formatTime(t.exitTime) }}</td>
           <td>
             <span :class="['side-badge', t.side === 'BUY' ? 'buy' : 'sell']">
               {{ t.side }}

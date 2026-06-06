@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useControlPlane } from '@/composables/useControlPlane'
 import { createChart, type IChartApi, type ISeriesApi, type LineData, ColorType, LineSeries } from 'lightweight-charts'
@@ -57,9 +57,27 @@ watch(selectedIds, async (ids) => {
   }
 
   // Rebuild chart
+  await nextTick()
   renderChart()
   loadingCompare.value = false
 }, { deep: true })
+
+// Clean up chart when container is unmounted (e.g. selectedIds becomes empty)
+watch(chartContainer, (newEl) => {
+  if (!newEl && chart) {
+    chart.remove()
+    chart = null
+    seriesMap.clear()
+  }
+})
+
+onUnmounted(() => {
+  if (chart) {
+    chart.remove()
+    chart = null
+    seriesMap.clear()
+  }
+})
 
 function toggleRun(id: string) {
   const idx = selectedIds.value.indexOf(id)
@@ -213,12 +231,17 @@ function viewRun(runId: string) {
 
     <!-- Compare section -->
     <div v-if="selectedIds.length > 0" class="compare-section">
-      <div v-if="loadingCompare" class="loading-state">
+      <div v-if="loadingCompare && compareData.size === 0" class="loading-state">
         <div class="spinner"></div>
         <p>Loading comparison data…</p>
       </div>
 
-      <template v-if="!loadingCompare && compareData.size > 0">
+      <div v-show="compareData.size > 0" class="compare-content-wrapper" :class="{ 'is-loading-overlay': loadingCompare }">
+        <div v-if="loadingCompare && compareData.size > 0" class="updating-overlay">
+          <div class="spinner"></div>
+          <p>Updating comparison…</p>
+        </div>
+
         <!-- KPI comparison table -->
         <div class="kpi-comparison">
           <table class="compare-table">
@@ -249,13 +272,13 @@ function viewRun(runId: string) {
                 <td class="metric-label">Total Return</td>
                 <td v-for="([id]) in Array.from(compareData.entries())" :key="id"
                   :class="(compareData.get(id)?.run.result?.totalReturnPct ?? 0) >= 0 ? 'profit' : 'loss'">
-                  {{ compareData.get(id)?.run.result?.totalReturnPct.toFixed(2) || '—' }}%
+                  {{ compareData.get(id)?.run.result?.totalReturnPct?.toFixed(2) ?? '—' }}%
                 </td>
               </tr>
               <tr>
                 <td class="metric-label">Final Equity</td>
                 <td v-for="([id]) in Array.from(compareData.entries())" :key="id">
-                  ${{ compareData.get(id)?.run.result?.finalEquity?.toLocaleString() || '—' }}
+                  ${{ compareData.get(id)?.run.result?.finalEquity?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '—' }}
                 </td>
               </tr>
               <tr>
@@ -325,7 +348,7 @@ function viewRun(runId: string) {
             View {{ compareData.get(id)?.run.strategyId }} →
           </button>
         </div>
-      </template>
+      </div>
     </div>
   </div>
 </template>
@@ -585,5 +608,34 @@ h3 { font-size: 0.9rem; margin-bottom: 0.75rem; color: var(--text-secondary); }
 .action-btn:hover {
   background: var(--accent);
   color: #000;
+}
+
+.compare-content-wrapper {
+  position: relative;
+  transition: opacity 0.2s;
+}
+
+.compare-content-wrapper.is-loading-overlay {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.updating-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(26, 26, 46, 0.4);
+  backdrop-filter: blur(1px);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  border-radius: 10px;
 }
 </style>

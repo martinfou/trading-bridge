@@ -2,10 +2,12 @@ package com.martinfou.trading.runtime;
 
 import com.martinfou.trading.strategies.StrategyCatalog;
 import io.javalin.Javalin;
+import io.javalin.http.Context;
 import io.javalin.http.HttpStatus;
 import io.javalin.websocket.WsCloseContext;
 import io.javalin.websocket.WsConnectContext;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -26,6 +28,7 @@ public final class ControlPlaneServer implements AutoCloseable {
     private final KillSwitchService killSwitchService;
     private final ControlSummaryService summaryService;
     private final SqBridgeService sqBridgeService;
+    private final WeeklyBuilderService weeklyBuilderService;
     private final Javalin app;
 
     public ControlPlaneServer(
@@ -38,6 +41,7 @@ public final class ControlPlaneServer implements AutoCloseable {
         this(runManager, eventHub, promoteService, killSwitchService,
             new ControlSummaryService(runManager, promoteService.deploymentStore()),
             new SqBridgeService(runManager.eventStore()),
+            new WeeklyBuilderService(runManager.eventStore()),
             port);
     }
 
@@ -48,6 +52,7 @@ public final class ControlPlaneServer implements AutoCloseable {
         KillSwitchService killSwitchService,
         ControlSummaryService summaryService,
         SqBridgeService sqBridgeService,
+        WeeklyBuilderService weeklyBuilderService,
         int port
     ) {
         if (runManager == null) {
@@ -68,13 +73,18 @@ public final class ControlPlaneServer implements AutoCloseable {
         if (sqBridgeService == null) {
             throw new IllegalArgumentException("sqBridgeService must not be null");
         }
+        if (weeklyBuilderService == null) {
+            throw new IllegalArgumentException("weeklyBuilderService must not be null");
+        }
         this.runManager = runManager;
         this.eventHub = eventHub;
         this.promoteService = promoteService;
         this.killSwitchService = killSwitchService;
         this.summaryService = summaryService;
         this.sqBridgeService = sqBridgeService;
-        this.app = createApp(runManager, eventHub, promoteService, killSwitchService, summaryService, sqBridgeService);
+        this.weeklyBuilderService = weeklyBuilderService;
+        this.app = createApp(runManager, eventHub, promoteService, killSwitchService, summaryService,
+            sqBridgeService, weeklyBuilderService);
         app.start(port);
     }
 
@@ -88,7 +98,9 @@ public final class ControlPlaneServer implements AutoCloseable {
         int port
     ) {
         this(runManager, eventHub, promoteService, killSwitchService, summaryService,
-            new SqBridgeService(runManager.eventStore()), port);
+            new SqBridgeService(runManager.eventStore()),
+            new WeeklyBuilderService(runManager.eventStore()),
+            port);
     }
 
     /** Package-private for tests that inject a custom {@link SqBridgeService}. */
@@ -102,7 +114,26 @@ public final class ControlPlaneServer implements AutoCloseable {
     ) {
         this(runManager, eventHub, promoteService, killSwitchService,
             new ControlSummaryService(runManager, promoteService.deploymentStore()),
-            sqBridgeService, port);
+            sqBridgeService,
+            new WeeklyBuilderService(runManager.eventStore()),
+            port);
+    }
+
+    /** Package-private for tests that inject custom bridge / builder services. */
+    ControlPlaneServer(
+        RunManager runManager,
+        RunEventHub eventHub,
+        PromoteService promoteService,
+        KillSwitchService killSwitchService,
+        int port,
+        SqBridgeService sqBridgeService,
+        WeeklyBuilderService weeklyBuilderService
+    ) {
+        this(runManager, eventHub, promoteService, killSwitchService,
+            new ControlSummaryService(runManager, promoteService.deploymentStore()),
+            sqBridgeService,
+            weeklyBuilderService,
+            port);
     }
 
     public int port() {
@@ -113,6 +144,7 @@ public final class ControlPlaneServer implements AutoCloseable {
     public void close() {
         app.stop();
         sqBridgeService.close();
+        weeklyBuilderService.close();
     }
 
     private static Javalin createApp(
@@ -121,15 +153,23 @@ public final class ControlPlaneServer implements AutoCloseable {
         PromoteService promoteService,
         KillSwitchService killSwitchService,
         ControlSummaryService summaryService,
-        SqBridgeService sqBridgeService
+        SqBridgeService sqBridgeService,
+        WeeklyBuilderService weeklyBuilderService
     ) {
+        DataAvailabilityService dataAvailability = new DataAvailabilityService();
         return Javalin.create(config -> {
             config.showJavalinBanner = false;
-            config.bundledPlugins.enableCors(cors -> cors.addRule(it -> it.anyHost()));
+            config.bundledPlugins.enableCors(cors -> cors.addRule(rule -> rule.anyHost()));
         })
+            .before(ctx -> {
+                ctx.header("Access-Control-Allow-Origin", "*");
+                ctx.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+                ctx.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+            })
             .get("/api/health", ctx -> ctx.json(Map.of(
                 "status", "ok",
-                "version", VERSION)))
+                "version", VERSION,
+                "dataCatalog", true)))
             .get("/api/sq-bridge/status", ctx -> ctx.json(sqBridgeService.status()))
             .post("/api/sq-bridge/process-inbox", ctx -> {
                 SqBridgeService.ProcessInboxResponse response = sqBridgeService.processInboxAsync();
@@ -142,10 +182,19 @@ public final class ControlPlaneServer implements AutoCloseable {
                     "accepted", response.accepted(),
                     "message", response.message()));
             })
+            .get("/api/weekly-builder/status", ctx -> ctx.json(weeklyBuilderService.status()))
+            .post("/api/weekly-builder/plan", ctx -> respondWeeklyTrigger(ctx, weeklyBuilderService.triggerPlanAsync()))
+            .post("/api/weekly-builder/compile", ctx -> respondWeeklyTrigger(ctx, weeklyBuilderService.triggerCompileAsync()))
+            .post("/api/weekly-builder/deploy", ctx -> respondWeeklyTrigger(ctx, weeklyBuilderService.triggerDeployAsync()))
             .get("/control/summary", ctx -> ctx.json(summaryService.buildSummary()))
             .get("/api/control/summary", ctx -> ctx.json(summaryService.buildSummary()))
             .get("/api/broker-accounts", ctx -> ctx.json(Map.of(
                 "accounts", BrokerAccountRegistry.loadDefault().listMasked())))
+            .get("/api/data/symbols", ctx -> respondDataJson(ctx, dataAvailability::listSymbols))
+            .get("/api/data/availability/{symbol}", ctx -> {
+                String symbol = ctx.pathParam("symbol");
+                respondDataJson(ctx, () -> dataAvailability.availability(symbol));
+            })
             .get("/api/strategies", ctx -> {
                 List<Map<String, Object>> items = StrategyCatalog.entries().stream()
                     .map(e -> {
@@ -265,6 +314,26 @@ public final class ControlPlaneServer implements AutoCloseable {
                     .orElse(List.of());
                 ctx.json(Map.of("runId", runId, "equityCurve", curve));
             })
+            .get("/api/runs/{runId}/bars", ctx -> {
+                String runId = ctx.pathParam("runId");
+                RunRecord record = runManager.getRun(runId)
+                    .orElseThrow(() -> new NotFoundException("Run not found: " + runId));
+                RunConfigSnapshot config = RunConfigSnapshot.fromRecord(record);
+                List<com.martinfou.trading.core.Bar> bars = RunManager.loadBars(config);
+                List<Map<String, Object>> serializedBars = bars.stream()
+                    .map(b -> {
+                        Map<String, Object> bm = new LinkedHashMap<>();
+                        bm.put("time", b.timestamp().toString());
+                        bm.put("open", b.open());
+                        bm.put("high", b.high());
+                        bm.put("low", b.low());
+                        bm.put("close", b.close());
+                        bm.put("volume", b.volume());
+                        return bm;
+                    })
+                    .toList();
+                ctx.json(Map.of("runId", runId, "bars", serializedBars));
+            })
             .get("/api/runs/{runId}/events", ctx -> {
                 String runId = ctx.pathParam("runId");
                 runManager.getRun(runId)
@@ -379,6 +448,37 @@ public final class ControlPlaneServer implements AutoCloseable {
         item.put("sequence", stored.sequence());
         item.put("event", stored.event());
         return item;
+    }
+
+    private static void respondWeeklyTrigger(Context ctx, WeeklyBuilderService.TriggerResponse response) {
+        if (response.accepted()) {
+            ctx.status(HttpStatus.ACCEPTED);
+        } else {
+            ctx.status(HttpStatus.CONFLICT);
+        }
+        ctx.json(Map.of(
+            "accepted", response.accepted(),
+            "message", response.message()));
+    }
+
+    private static void respondDataJson(Context ctx, DataJsonSupplier supplier) {
+        try {
+            ctx.json(supplier.get());
+        } catch (IOException e) {
+            ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
+            ctx.json(Map.of("error", e.getMessage() != null ? e.getMessage() : "IO error"));
+        } catch (LinkageError e) {
+            ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
+            ctx.json(Map.of(
+                "error", e.getClass().getSimpleName() + ": "
+                    + (e.getMessage() != null ? e.getMessage() : "classpath issue"),
+                "hint", "Rebuild: mvn install -pl trading-runtime -am && restart ControlPlaneMain"));
+        }
+    }
+
+    @FunctionalInterface
+    private interface DataJsonSupplier {
+        Map<String, Object> get() throws IOException;
     }
 
     private static long parseLongParam(String value, long defaultValue) {

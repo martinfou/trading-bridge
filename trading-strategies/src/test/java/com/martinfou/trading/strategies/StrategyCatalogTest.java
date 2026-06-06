@@ -34,6 +34,11 @@ class StrategyCatalogTest {
         assertEquals(Family.GENERATED, StrategyCatalog.family("MyStrategy"));
         assertEquals("EUR_USD", StrategyCatalog.defaultSymbol("MyStrategy"));
 
+        Strategy harness = StrategyCatalog.create("Harness_NeverTrade", "EUR_USD");
+        assertNotNull(harness);
+        assertEquals(Family.HARNESS, StrategyCatalog.family("Harness_NeverTrade"));
+        assertEquals("EUR_USD", StrategyCatalog.defaultSymbol("Harness_NeverTrade"));
+
         StrategyCatalog.register("SmaCrossover", Family.EXAMPLE,
             sym -> StrategyCatalog.create("MyStrategy", sym), "EUR_USD");
         Strategy example = StrategyCatalog.create("SmaCrossover", "EUR_USD");
@@ -48,6 +53,7 @@ class StrategyCatalogTest {
         assertTrue(StrategyCatalog.ids().contains("LondonOpenRangeBreakout"));
         assertTrue(StrategyCatalog.ids().contains("Strategy_2_14_147_Adapted"));
         assertTrue(StrategyCatalog.ids().contains("MyStrategy"));
+        assertTrue(StrategyCatalog.ids().contains("Harness_DailyRoundTrip"));
     }
 
     @Test
@@ -57,6 +63,11 @@ class StrategyCatalogTest {
         assertThrows(IllegalStateException.class, () ->
             StrategyCatalog.register("DupExample", Family.EXAMPLE,
                 sym -> StrategyCatalog.create("MyStrategy", sym), "EUR_USD"));
+    }
+
+    @Test
+    void llmWeeklyFamilyExists() {
+        assertNotNull(Family.valueOf("LLM_WEEKLY"));
     }
 
     @Test

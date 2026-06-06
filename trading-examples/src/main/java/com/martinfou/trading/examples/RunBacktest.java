@@ -5,6 +5,7 @@ import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
 import com.martinfou.trading.backtest.events.RunEventJson;
 import com.martinfou.trading.core.Bar;
+import com.martinfou.trading.core.LotSizing;
 import com.martinfou.trading.core.Strategy;
 import com.martinfou.trading.data.HistoricalDataLoader;
 import com.martinfou.trading.strategies.StrategyCatalog;
@@ -32,7 +33,6 @@ import java.util.Random;
  */
 public class RunBacktest {
 
-    private static final double DEFAULT_CAPITAL = 100_000.0;
     private static final int SAMPLE_BARS = 3000;
 
     static {
@@ -122,7 +122,7 @@ public class RunBacktest {
             System.exit(1);
         }
 
-        double capital = DEFAULT_CAPITAL;
+        double capital = LotSizing.DEFAULT_STARTING_CAPITAL;
         List<Bar> bars;
         String symbol;
 

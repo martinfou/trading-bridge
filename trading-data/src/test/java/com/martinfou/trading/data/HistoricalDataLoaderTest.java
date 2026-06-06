@@ -51,4 +51,32 @@ class HistoricalDataLoaderTest {
         Path path = Path.of("data/historical/bars/EUR_USD_H1_2012.bars");
         assertEquals("EUR_USD", HistoricalDataLoader.inferSymbol(path, "FALLBACK"));
     }
-}
+
+    @Test
+    void loadAllAvailable_mergesIndexedYears(@TempDir Path dir) throws Exception {
+        Path barsDir = dir.resolve("bars");
+        Files.createDirectories(barsDir);
+        Instant t0 = Instant.parse("2011-01-01T00:00:00Z");
+        Instant t1 = Instant.parse("2012-01-01T00:00:00Z");
+        new BarStore("EUR_USD", "H1_2011", barsDir).write(List.of(new Bar("EUR_USD", t0, 1.1, 1.2, 1.0, 1.15, 100)));
+        new BarStore("EUR_USD", "H1_2012", barsDir).write(List.of(new Bar("EUR_USD", t1, 1.2, 1.3, 1.1, 1.25, 100)));
+
+        var loaded = HistoricalDataLoader.loadAllAvailable("EUR_USD", barsDir, dir.resolve("csv"));
+ 
+         assertEquals(2, loaded.bars().size());
+         assertEquals("2011-2012 (2 year(s))", loaded.source());
+     }
+ 
+     @Test
+     void loadYearSpec_allLoadsAllAvailable(@TempDir Path dir) throws Exception {
+         Path barsDir = dir.resolve("bars");
+         Files.createDirectories(barsDir);
+         Instant t0 = Instant.parse("2011-01-01T00:00:00Z");
+         Instant t1 = Instant.parse("2012-01-01T00:00:00Z");
+         new BarStore("EUR_USD", "H1_2011", barsDir).write(List.of(new Bar("EUR_USD", t0, 1.1, 1.2, 1.0, 1.15, 100)));
+         new BarStore("EUR_USD", "H1_2012", barsDir).write(List.of(new Bar("EUR_USD", t1, 1.2, 1.3, 1.1, 1.25, 100)));
+ 
+         var bars = HistoricalDataLoader.loadYearSpec("EUR_USD", "all", barsDir);
+         assertEquals(2, bars.size());
+     }
+ }

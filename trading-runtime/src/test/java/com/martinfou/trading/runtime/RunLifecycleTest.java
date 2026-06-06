@@ -24,6 +24,7 @@ class RunLifecycleTest {
                 100_000.0,
                 null,
                 null,
+                null,
                 null));
 
             RunRecord record = waitForCompletion(manager, runId);

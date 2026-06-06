@@ -1,24 +1,47 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useControlPlane } from '@/composables/useControlPlane'
 import { useRunWebSocket } from '@/composables/useRunWebSocket'
-import type { RunResult, Trade } from '@/types/control-plane'
+import type { RunResult, Trade, Bar } from '@/types/control-plane'
 import KpiStrip from '@/components/KpiStrip.vue'
 import EquityChart from '@/components/EquityChart.vue'
 import TradeTable from '@/components/TradeTable.vue'
+import TradeChart from '@/components/TradeChart.vue'
 
 const route = useRoute()
 const router = useRouter()
-const { getRun, getTrades, getEquityCurve } = useControlPlane()
+const { getRun, getTrades, getEquityCurve, getBars } = useControlPlane()
 const ws = useRunWebSocket()
 
 const run = ref<RunResult | null>(null)
 const trades = ref<Trade[]>([])
 const equityCurve = ref<number[]>([])
+const bars = ref<Bar[]>([])
+const loadingBars = ref(false)
+const barsError = ref<string | null>(null)
 const loading = ref(true)
 const viewError = ref<string | null>(null)
-const activeTab = ref<'overview' | 'trades'>('overview')
+const activeTab = ref<'overview' | 'chart' | 'trades'>('overview')
+
+async function loadBarsData() {
+  if (bars.value.length > 0 || !runId) return
+  loadingBars.value = true
+  barsError.value = null
+  try {
+    bars.value = await getBars(runId)
+  } catch (e: any) {
+    barsError.value = `Failed to load price bars: ${e.message}`
+  } finally {
+    loadingBars.value = false
+  }
+}
+
+watch(activeTab, (tab) => {
+  if (tab === 'chart') {
+    loadBarsData()
+  }
+})
 
 const runId = typeof route.params.runId === 'string' ? route.params.runId : null
 
@@ -82,6 +105,15 @@ function formatDate(iso?: string): string {
   })
 }
 
+function formatDateOnly(iso?: string): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString('fr-CA', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
 onMounted(loadRun)
 
 onUnmounted(() => {
@@ -138,6 +170,10 @@ onUnmounted(() => {
           <span class="info-label">Duration</span>
           <span class="info-value">{{ formatDuration(run.startedAt, run.completedAt) }}</span>
         </div>
+        <div v-if="run.result && run.result.periodStart && run.result.periodEnd" class="info-item">
+          <span class="info-label">Backtest Period</span>
+          <span class="info-value">{{ formatDateOnly(run.result.periodStart) }} – {{ formatDateOnly(run.result.periodEnd) }}</span>
+        </div>
         <div v-if="run.result" class="info-item">
           <span class="info-label">Commission</span>
           <span class="info-value">${{ run.result.totalCommission?.toFixed(2) || '0.00' }}</span>
@@ -152,6 +188,9 @@ onUnmounted(() => {
       <div class="tabs">
         <button :class="['tab', { active: activeTab === 'overview' }]" @click="activeTab = 'overview'">
           Overview
+        </button>
+        <button :class="['tab', { active: activeTab === 'chart' }]" @click="activeTab = 'chart'">
+          Price Chart
         </button>
         <button :class="['tab', { active: activeTab === 'trades' }]" @click="activeTab = 'trades'">
           Trades
@@ -186,6 +225,18 @@ onUnmounted(() => {
           <p v-else class="no-data">Equity curve not available.</p>
         </div>
       </template>
+
+      <!-- Price Chart tab -->
+      <div v-if="activeTab === 'chart'" class="section">
+        <div v-if="loadingBars" class="loading-state">
+          <div class="spinner"></div>
+          <p>Loading price bars…</p>
+        </div>
+        <div v-else-if="barsError" class="banner error">{{ barsError }}</div>
+        <template v-else>
+          <TradeChart :bars="bars" :trades="trades" :height="450" />
+        </template>
+      </div>
 
       <!-- Trades tab -->
       <div v-if="activeTab === 'trades'" class="section">

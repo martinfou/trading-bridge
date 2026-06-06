@@ -114,10 +114,12 @@ mvn exec:java -pl trading-parser \
 curl -s http://localhost:8080/api/sq-bridge/status
 # TUI: /sq  or  /inbox process
 
-# List all strategies (prop, sqimported, generated, examples)
+# List all strategies (prop, sqimported, generated, harness, examples)
 mvn exec:java -pl trading-examples \
   -Dexec.mainClass="com.martinfou.trading.examples.RunBacktest" \
   -Dexec.args="--list"
+
+# Harness probes: Harness_WeekendProbe (Mon–Sun series → weekday trades only), Harness_WeekendOnlyTrade, Harness_OpenCloseSameBar, …
 
 # Sample backtest (SmaCrossover demo)
 mvn exec:java -pl trading-examples \

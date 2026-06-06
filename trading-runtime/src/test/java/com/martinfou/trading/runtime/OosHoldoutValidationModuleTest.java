@@ -125,6 +125,7 @@ class OosHoldoutValidationModuleTest {
             RunMode.BACKTEST.name(),
             new BarSourceResolver.BarsSource("sample", 500, null),
             100_000.0,
+                null,
             null,
             null,
             null));

@@ -41,6 +41,7 @@ class BrokerAccountRoutingTest {
                     "PAPER",
                     new BarSourceResolver.BarsSource("sample", 10, null),
                     100_000.0,
+                null,
                     null,
                     null,
                     ExecutionLabel.PAPER_OANDA.name(),

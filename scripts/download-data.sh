@@ -11,17 +11,19 @@
 # - Download M1 le weekend uniquement
 #
 # Calendrier:
-#   H1 (20 ans × 7 paires = ~15 min total):
-#     1 an/soir × 7 paires × 30s = 3.5 min/nuit, 20 nuits
+#   H1 (20 ans × 8 paires = ~17 min total):
+#     1 an/soir × 8 paires × 30s = 4 min/nuit, 20 nuits
 #
-#   M1 (20 ans × 7 paires = ~5h total):
-#     1 an/semaine × 7 paires × 6 min = ~42 min/session
+#   M1 (20 ans × 8 paires = ~6h total):
+#     1 an/semaine × 8 paires × 6 min = ~48 min/session
 #     M1: un mois à la fois (pause 5s entre mois)
 #
 # Usage:
-#   ./scripts/download-data.sh --gentle          # 1 pair × 1 an (très doux)
-#   ./scripts/download-data.sh --year 2015       # 7 pairs × 1 an (doux)
-#   ./scripts/download-data.sh --monthly 2020    # 1 mois × 7 pairs (ultra doux)
+#   ./scripts/download-data.sh                   # 1 missing pair × 1 year (auto)
+#   ./scripts/download-data.sh --gentle          # same as auto
+#   ./scripts/download-data.sh --year 2015       # 8 pairs × 1 an (doux)
+#   ./scripts/download-data.sh --monthly 2020    # 1 mois × 8 pairs (ultra doux)
+#   ./scripts/download-data.sh --sync --tf h1    # all pairs, up to date
 #   ./scripts/download-data.sh --list            # état des lieux
 # ============================================================================
 
@@ -37,9 +39,10 @@ NC='\033[0m'
 DATA_DIR="./data/historical/dukascopy"
 BARS_DIR="./data/historical/bars"
 START_YEAR=2006
-END_YEAR=2025
-PAIRS=("eurusd" "gbpusd" "usdcad" "usdjpy" "audusd" "nzdusd" "usdchf")
+END_YEAR=$(date +%Y)
+PAIRS=("eurusd" "gbpusd" "gbpjpy" "usdcad" "usdjpy" "audusd" "nzdusd" "usdchf")
 TIMEFRAME="h1"
+CURRENT_YEAR=$(date +%Y)
 
 # Rate limiting (seconds)
 DELAY_BETWEEN_PAIRS=3
@@ -63,6 +66,7 @@ while [[ $# -gt 0 ]]; do
         --gentle)     ACTION="gentle" ;;
         --monthly)    ACTION="monthly"; YEAR="$2"; shift ;;
         --all)        ACTION="all" ;;
+        --sync)       ACTION="sync" ;;
         --tf)         TIMEFRAME="$2"; shift ;;
         --pair)       PAIR="$2"; shift ;;
         -h|--help)    ACTION="help" ;;
@@ -76,17 +80,18 @@ ${CYAN}Data Download Manager — Gentle${NC}
 
 ${YELLOW}Small batches (recommandé):${NC}
   --gentle          1 paire × 1 an (le plus doux, ~5s)
-  --year YYYY       7 paires × 1 an (~30s)
-  --monthly YYYY    1 mois × 7 paires M1 (~10s)
+  --year YYYY       8 paires × 1 an (~35s)
+  --monthly YYYY    1 mois × 8 paires M1 (~12s)
 
-${YELLOW}Batch complet (occasionnel):${NC}
-  --range YYYY-YYYY Plage d'années
-  --all             2006-2025 complet
+${YELLOW}Batch complet:${NC}
+  --sync            Tout compléter + rafraîchir l'année en cours (recommandé)
+  --range YYYY-YYYY Plage d'années (8 paires par année)
+  --all             Sauter les années déjà 8/8 (ne rafraîchit pas l'année courante)
 
 ${YELLOW}Info:${NC}
   --list            État des téléchargements
   --tf h1|m1        Timeframe (défaut: h1)
-  --pair eurusd     Télécharger une paire spécifique
+  --pair eurusd     Télécharger une paire (ex. gbpjpy, eurusd)
 
 ${YELLOW}Rate limiting intégré:${NC}
   Pause entre paires:    ${DELAY_BETWEEN_PAIRS}s
@@ -107,6 +112,7 @@ pair_to_sym() {
         audusd) echo "AUD_USD" ;;
         nzdusd) echo "NZD_USD" ;;
         usdchf) echo "USD_CHF" ;;
+        gbpjpy) echo "GBP_JPY" ;;
         *)      echo "$1" | tr '[:lower:]' '[:upper:]' ;;
     esac
 }
@@ -143,6 +149,26 @@ download_one() {
         echo -e "  ${pair}: ${RED}❌ ${err}${NC}"
         return 1
     fi
+}
+
+csv_for_year() {
+    local pair=$1 tf=$2 year=$3
+    find "$DATA_DIR" -name "${pair}-${tf}*${year}*" 2>/dev/null | head -1
+}
+
+bars_for_year() {
+    local pair=$1 tf=$2 year=$3
+    local sym
+    sym=$(pair_to_sym "$pair")
+    echo "${BARS_DIR}/${sym}_$(upper "$tf")_${year}.bars"
+}
+
+remove_year_artifacts() {
+    local pair=$1 tf=$2 year=$3
+    while IFS= read -r f; do
+        [ -n "$f" ] && rm -f "$f"
+    done < <(find "$DATA_DIR" -name "${pair}-${tf}*${year}*" 2>/dev/null)
+    rm -f "$(bars_for_year "$pair" "$tf" "$year")"
 }
 
 convert_to_barstore() {
@@ -244,50 +270,84 @@ if [ "$ACTION" = "list" ]; then
     echo -e "${CYAN}📊 Data Status — $(upper "$TIMEFRAME")${NC}"
     echo "═══════════════════════════════════════"
     local_count=0
+    total="${#PAIRS[@]}"
+    total_years=$((END_YEAR - START_YEAR + 1))
     for year in $(seq $START_YEAR $END_YEAR); do
         dl=0
+        missing_pairs=()
         for pair in "${PAIRS[@]}"; do
             f=$(find "$DATA_DIR" -name "${pair}-${TIMEFRAME}*${year}*" 2>/dev/null | head -1)
-            [ -n "$f" ] && dl=$((dl + 1))
+            if [ -n "$f" ]; then
+                dl=$((dl + 1))
+            else
+                missing_pairs+=("$pair")
+            fi
         done
-        total="${#PAIRS[@]}"
         pct=$((dl * 100 / total))
+        missing_label=""
+        if [ "${#missing_pairs[@]}" -gt 0 ] && [ "${#missing_pairs[@]}" -le 3 ]; then
+            missing_label=" — missing: $(IFS=,; echo "${missing_pairs[*]}")"
+        fi
         if [ "$pct" = "100" ]; then
             echo -e "  ${GREEN}✅${NC} ${year}: ${dl}/${total} (${pct}%)"
             local_count=$((local_count + 1))
         elif [ "$dl" -gt 0 ]; then
-            echo -e "  ${YELLOW}⚠️${NC} ${year}: ${dl}/${total} (${pct}%)"
+            echo -e "  ${YELLOW}⚠️${NC} ${year}: ${dl}/${total} (${pct}%)${missing_label}"
         else
-            echo -e "  ${RED}❌${NC} ${year}: 0/${total}"
+            echo -e "  ${RED}❌${NC} ${year}: 0/${total}${missing_label}"
         fi
     done
     echo "═══════════════════════════════════════"
-    total_years=$((END_YEAR - START_YEAR + 1))
     echo -e "  ${GREEN}${local_count}/${total_years} years complete${NC}"
+    echo ""
+    echo -e "${CYAN}Missing CSV by pair (dukascopy):${NC}"
+    any_missing=0
+    for pair in "${PAIRS[@]}"; do
+        missing_count=0
+        for year in $(seq $START_YEAR $END_YEAR); do
+            f=$(find "$DATA_DIR" -name "${pair}-${TIMEFRAME}*${year}*" 2>/dev/null | head -1)
+            [ -z "$f" ] && missing_count=$((missing_count + 1))
+        done
+        if [ "$missing_count" -gt 0 ]; then
+            any_missing=1
+            sym=$(pair_to_sym "$pair")
+            echo -e "  ${YELLOW}${sym}${NC} (${pair}): ${missing_count}/${total_years} years"
+            echo -e "    → ./scripts/download-data.sh --pair ${pair} --range ${START_YEAR}-${END_YEAR} --tf ${TIMEFRAME}"
+        fi
+    done
+    [ "$any_missing" -eq 0 ] && echo -e "  ${GREEN}All pairs complete for every year.${NC}"
     exit 0
 fi
 
 # ─── Actions ─────────────────────────────────────────────────────────────
 
+find_next_missing_pair_year() {
+    for y in $(seq $END_YEAR -1 $START_YEAR); do
+        for pair in "${PAIRS[@]}"; do
+            f=$(find "$DATA_DIR" -name "${pair}-${TIMEFRAME}*${y}*" 2>/dev/null | head -1)
+            if [ -z "$f" ]; then
+                YEAR=$y
+                PAIR=$pair
+                return 0
+            fi
+        done
+    done
+    YEAR=""
+    return 1
+}
+
 case "$ACTION" in
-    gentle)
-        # Find first missing pair for the most recent missing year
+    gentle|auto)
+        # One missing pair×year per run (default with no args = auto)
         if [ -z "$YEAR" ]; then
-            for y in $(seq $END_YEAR -1 $START_YEAR); do
-                for pair in "${PAIRS[@]}"; do
-                    f=$(find "$DATA_DIR" -name "${pair}-${TIMEFRAME}*${y}*" 2>/dev/null | head -1)
-                    if [ -z "$f" ]; then
-                        YEAR=$y; PAIR=$pair
-                        break 2
-                    fi
-                done
-            done
+            find_next_missing_pair_year || true
         fi
         if [ -z "$YEAR" ]; then
-            echo -e "${GREEN}✅ All years downloaded!${NC}"
+            echo -e "${GREEN}✅ All pairs complete for all years!${NC}"
             exit 0
         fi
-        echo -e "${YELLOW}Gentle download: ${PAIR} ${TIMEFRAME} ${YEAR}${NC}"
+        sym=$(pair_to_sym "$PAIR")
+        echo -e "${YELLOW}📋 Next missing: ${sym} (${PAIR}) ${TIMEFRAME} ${YEAR}${NC}"
         download_year "$YEAR" "$TIMEFRAME"
         ;;
 
@@ -317,13 +377,12 @@ case "$ACTION" in
 
     all)
         for y in $(seq $START_YEAR $END_YEAR); do
-            # Check if already fully downloaded
             dl=0
             for pair in "${PAIRS[@]}"; do
-                f=$(find "$DATA_DIR" -name "${pair}-${TIMEFRAME}*${y}*" 2>/dev/null | head -1)
+                f=$(csv_for_year "$pair" "$TIMEFRAME" "$y")
                 [ -n "$f" ] && dl=$((dl + 1))
             done
-            [ "$dl" = "${#PAIRS[@]}" ] && echo -e "  ${year}: ${GREEN}✅ déjà complet${NC}" && continue
+            [ "$dl" = "${#PAIRS[@]}" ] && echo -e "  ${y}: ${GREEN}✅ déjà complet${NC}" && continue
 
             download_year "$y" "$TIMEFRAME"
             echo -e "  ${YELLOW}⏳ Fin année ${y} — pause ${DELAY_BETWEEN_YEARS}s...${NC}"
@@ -331,23 +390,46 @@ case "$ACTION" in
         done
         ;;
 
-    auto)
-        # Auto-detect next missing year (from oldest upward to backfill quickly)
+    sync)
+        echo -e "${CYAN}🔄 Sync ${START_YEAR}–${END_YEAR} — ${#PAIRS[@]} pairs, $(upper "$TIMEFRAME")${NC}"
+        echo -e "   Missing years are downloaded; ${CURRENT_YEAR} is re-fetched for every pair."
+        echo ""
+        synced=0
         for y in $(seq $START_YEAR $END_YEAR); do
-            dl=0
+            from="${y}-01-01"
+            to="${y}-12-31"
+            [ "$y" = "$CURRENT_YEAR" ] && to="$(date +%Y-%m-%d)"
+            year_downloaded=0
             for pair in "${PAIRS[@]}"; do
-                f=$(find "$DATA_DIR" -name "${pair}-${TIMEFRAME}*${y}*" 2>/dev/null | head -1)
-                [ -n "$f" ] && dl=$((dl + 1))
+                csv=$(csv_for_year "$pair" "$TIMEFRAME" "$y")
+                bars=$(bars_for_year "$pair" "$TIMEFRAME" "$y")
+                dl_csv=false
+                dl_bars=false
+                if [ -z "$csv" ]; then
+                    dl_csv=true
+                elif [ "$y" = "$CURRENT_YEAR" ]; then
+                    echo -e "  ${pair} ${y}: ${YELLOW}refresh → ${to}${NC}"
+                    remove_year_artifacts "$pair" "$TIMEFRAME" "$y"
+                    dl_csv=true
+                    dl_bars=true
+                fi
+                [ -f "$csv" ] && [ ! -f "$bars" ] && dl_bars=true
+                if [ "$dl_csv" = true ] || [ "$dl_bars" = true ]; then
+                    [ "$dl_csv" = true ] && download_one "$pair" "$TIMEFRAME" "$from" "$to" "$y"
+                    convert_to_barstore "$pair" "$TIMEFRAME" "$from" "$to" "$y"
+                    year_downloaded=1
+                    synced=$((synced + 1))
+                    sleep "$DELAY_BETWEEN_PAIRS"
+                fi
             done
-            if [ "$dl" = "0" ]; then
-                echo -e "${YELLOW}📋 Next missing: ${y}${NC}"
-                download_year "$y" "$TIMEFRAME"
-                echo -e "${GREEN}✅ ${y} done${NC}"
-                exit 0
+            if [ "$year_downloaded" -eq 1 ]; then
+                echo -e "${YELLOW}⏳ pause ${DELAY_BETWEEN_YEARS}s after ${y}…${NC}"
+                sleep "$DELAY_BETWEEN_YEARS"
             fi
         done
-        echo -e "${GREEN}✅ All years downloaded!${NC}"
+        echo -e "${GREEN}✅ Sync finished (${synced} pair-year downloads/refreshes).${NC}"
         ;;
+
 esac
 
 # ─── Summary ─────────────────────────────────────────────────────────────

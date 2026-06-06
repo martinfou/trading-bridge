@@ -16,4 +16,4 @@ mkdir -p "$ROOT/data/ci"
   tail -n +2 "$SRC" | head -744 | sed 's/$/,0/'
 } > "$OUT"
 echo "Wrote $(wc -l < "$OUT" | tr -d ' ') lines to $OUT"
-echo "Re-capture baseline: mvn exec:java -pl trading-examples -Dexec.mainClass=com.martinfou.trading.examples.RunBacktest -Dexec.args='LondonOpenRangeBreakout data/ci/EUR_USD_H1_subset.csv EUR_USD --json'"
+echo "Re-capture baseline: mvn -q test-compile exec:java -pl trading-examples -Dexec.classpathScope=test -Dexec.mainClass=com.martinfou.trading.examples.GoldenBaselineCapture"

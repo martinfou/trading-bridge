@@ -1,5 +1,6 @@
 package com.martinfou.trading.runtime;
 
+import com.martinfou.trading.backtest.BacktestResultPayload;
 import com.martinfou.trading.backtest.events.RunEvent;
 import com.martinfou.trading.backtest.events.RunEventType;
 import com.martinfou.trading.backtest.RunMode;
@@ -28,12 +29,15 @@ import java.util.concurrent.Executors;
  */
 public final class RunManager implements RunLifecycle, AutoCloseable {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(RunManager.class);
+
     public record StartRunRequest(
         String strategyId,
         String symbol,
         String mode,
         BarSourceResolver.BarsSource barsSource,
         Double capital,
+        Double lotSize,
         Double commissionPerTrade,
         Double slippagePct,
         String executionLabel,
@@ -45,15 +49,29 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
             String mode,
             BarSourceResolver.BarsSource barsSource,
             Double capital,
+            Double lotSize,
             Double commissionPerTrade,
             Double slippagePct,
             String executionLabel
         ) {
-            this(strategyId, symbol, mode, barsSource, capital, commissionPerTrade, slippagePct, executionLabel, null);
+            this(strategyId, symbol, mode, barsSource, capital, lotSize, commissionPerTrade, slippagePct,
+                executionLabel, null);
+        }
+
+        public StartRunRequest(
+            String strategyId,
+            String symbol,
+            String mode,
+            BarSourceResolver.BarsSource barsSource,
+            Double capital,
+            Double commissionPerTrade,
+            Double slippagePct,
+            String executionLabel
+        ) {
+            this(strategyId, symbol, mode, barsSource, capital, null, commissionPerTrade, slippagePct,
+                executionLabel, null);
         }
     }
-
-    private static final double DEFAULT_CAPITAL = 100_000.0;
 
     private final EventStore eventStore;
     private final BrokerFactory brokerFactory;
@@ -170,7 +188,7 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
             if (bars.isEmpty()) {
                 throw new IllegalArgumentException("No bars loaded for run");
             }
-            double capital = config.capital() != null ? config.capital() : DEFAULT_CAPITAL;
+            double capital = config.resolvedCapital();
             record.markRunning();
             notifyTransition(before, record, RunTransition.START);
             RunConfigSnapshot snapshot = config;
@@ -305,7 +323,8 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
             com.martinfou.trading.backtest.BacktestResult result;
             if (isBrokerBackedRun(configSnapshot)) {
                 Broker broker = brokerFactory.create(configSnapshot);
-                Strategy strategy = StrategyCatalog.create(configSnapshot.strategyId(), configSnapshot.symbol());
+                Strategy strategy = StrategyCatalog.create(
+                    configSnapshot.strategyId(), configSnapshot.symbol(), configSnapshot.quantity());
                 RunRiskContext riskContext = new RunRiskContext(
                     new RiskEngine(),
                     (run, cfg, mode, check) -> {
@@ -333,37 +352,13 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
             requireTerminalEvent(runId, RunEventType.RUN_ENDED);
             if (record.status() == RunRecord.Status.RUNNING) {
                 record.noteEventAt(latestEventTimestamp(runId).orElse(Instant.now()));
-                Map<String, Object> payload = new LinkedHashMap<>();
-                payload.put("totalTrades", result.totalTrades());
-                payload.put("totalReturnPct", result.totalReturnPct());
-                payload.put("finalEquity", result.finalEquity());
-                payload.put("maxDrawdownPct", result.maxDrawdownPct());
-                payload.put("sharpeRatio", result.sharpeRatio());
-                payload.put("profitFactor", result.profitFactor());
-                payload.put("winRatePct", result.winRatePct());
-                payload.put("totalCommission", result.totalCommission());
-                payload.put("totalSlippage", result.totalSlippage());
-                payload.put("equityCurveSample", sampleEquityCurve(result.equityCurve(), 500));
-                payload.put("trades", result.trades().stream()
-                    .map(t -> {
-                        Map<String, Object> tm = new LinkedHashMap<>();
-                        tm.put("symbol", t.symbol());
-                        tm.put("side", t.side().name());
-                        tm.put("entryPrice", t.entryPrice());
-                        tm.put("exitPrice", t.exitPrice());
-                        tm.put("quantity", t.quantity());
-                        tm.put("entryTime", t.entryTime().toString());
-                        tm.put("exitTime", t.exitTime().toString());
-                        tm.put("pnl", t.pnl());
-                        return tm;
-                    })
-                    .toList());
-                record.markCompleted(payload);
+                record.markCompleted(BacktestResultPayload.toEndedPayload(result));
                 notifyTransition(before, record, RunTransition.COMPLETE);
             } else if (record.status() == RunRecord.Status.PAUSED) {
                 record.noteEventAt(latestEventTimestamp(runId).orElse(Instant.now()));
             }
         } catch (RuntimeException e) {
+            log.error("Run {} failed with runtime exception", runId, e);
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             if (hasTerminalEvent(runId, RunEventType.ERROR)) {
                 latestEventTimestamp(runId).ifPresent(record::noteEventAt);
@@ -393,18 +388,15 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
         return record;
     }
 
-    private static List<Bar> loadBars(RunConfigSnapshot config) throws IOException {
+    static List<Bar> loadBars(RunConfigSnapshot config) throws IOException {
         if (config.barsSourceType() == null) {
             throw new IllegalArgumentException("barsSourceType is required in config snapshot");
-        }
-        Integer year = null;
-        if (config.barsSourceYear() != null && !config.barsSourceYear().isBlank()) {
-            year = Integer.parseInt(config.barsSourceYear());
         }
         var source = new BarSourceResolver.BarsSource(
             config.barsSourceType(),
             config.barsSourceCount(),
-            year);
+            config.barsSourceYear(),
+            config.barsSourcePath());
         return BarSourceResolver.load(source, config.symbol());
     }
 
@@ -506,6 +498,12 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
         }
         if (request.mode() == null || request.mode().isBlank()) {
             throw new IllegalArgumentException("mode is required");
+        }
+        if (request.capital() != null && request.capital() <= 0) {
+            throw new IllegalArgumentException("capital must be positive");
+        }
+        if (request.lotSize() != null && request.lotSize() <= 0) {
+            throw new IllegalArgumentException("lotSize must be positive");
         }
         try {
             RunMode.valueOf(request.mode().toUpperCase());

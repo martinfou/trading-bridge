@@ -2,6 +2,7 @@ package com.martinfou.trading.runtime;
 
 import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.core.LotSizing;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -20,7 +21,9 @@ public record RunConfigSnapshot(
     String barsSourceType,
     Integer barsSourceCount,
     String barsSourceYear,
+    String barsSourcePath,
     Double capital,
+    Double quantity,
     Double commissionPerTrade,
     Double slippagePct,
     String executionLabel,
@@ -39,8 +42,25 @@ public record RunConfigSnapshot(
         Double slippagePct,
         String executionLabel
     ) {
-        this(strategyId, symbol, mode, barsSourceType, barsSourceCount, barsSourceYear,
-            capital, commissionPerTrade, slippagePct, executionLabel, null);
+        this(strategyId, symbol, mode, barsSourceType, barsSourceCount, barsSourceYear, null,
+            capital, null, commissionPerTrade, slippagePct, executionLabel, null);
+    }
+
+    public RunConfigSnapshot(
+        String strategyId,
+        String symbol,
+        String mode,
+        String barsSourceType,
+        Integer barsSourceCount,
+        String barsSourceYear,
+        Double capital,
+        Double commissionPerTrade,
+        Double slippagePct,
+        String executionLabel,
+        String brokerAccountId
+    ) {
+        this(strategyId, symbol, mode, barsSourceType, barsSourceCount, barsSourceYear, null,
+            capital, null, commissionPerTrade, slippagePct, executionLabel, brokerAccountId);
     }
 
     public RunConfigSnapshot {
@@ -50,6 +70,18 @@ public record RunConfigSnapshot(
         if (slippagePct == null) {
             slippagePct = 0.0;
         }
+    }
+
+    public double resolvedCapital() {
+        return LotSizing.resolveCapital(capital);
+    }
+
+    public double resolvedQuantityUnits() {
+        return LotSizing.resolveQuantityUnits(quantity);
+    }
+
+    public double resolvedLotSize() {
+        return LotSizing.unitsToLots(resolvedQuantityUnits());
     }
 
     public BacktestExecutionCost executionCost() {
@@ -70,8 +102,12 @@ public record RunConfigSnapshot(
         Integer barsCount = count instanceof Number n ? n.intValue() : null;
         Object year = map.get("barsSourceYear");
         String barsYear = year != null ? String.valueOf(year) : null;
+        Object path = map.get("barsSourcePath");
+        String barsPath = path != null ? String.valueOf(path) : null;
         Object capital = map.get("capital");
         Double capitalValue = capital instanceof Number n ? n.doubleValue() : null;
+        Object quantityValue = map.get("quantity");
+        Double quantity = quantityValue instanceof Number n ? n.doubleValue() : null;
         Object commission = map.get("commissionPerTrade");
         Double commissionValue = commission instanceof Number n ? n.doubleValue() : null;
         Object slippage = map.get("slippagePct");
@@ -83,7 +119,9 @@ public record RunConfigSnapshot(
             map.get("barsSourceType") != null ? String.valueOf(map.get("barsSourceType")) : null,
             barsCount,
             barsYear,
+            barsPath,
             capitalValue,
+            quantity,
             commissionValue,
             slippageValue,
             map.get("executionLabel") != null ? String.valueOf(map.get("executionLabel")) : null,
@@ -92,14 +130,19 @@ public record RunConfigSnapshot(
 
     public static RunConfigSnapshot fromRequest(RunManager.StartRunRequest request, String resolvedSymbol) {
         BarSourceResolver.BarsSource source = request.barsSource();
+        Double quantityUnits = request.lotSize() != null
+            ? LotSizing.lotsToUnits(request.lotSize())
+            : null;
         return new RunConfigSnapshot(
             request.strategyId(),
             resolvedSymbol,
             request.mode().toUpperCase(),
             source != null ? source.type() : null,
             source != null ? source.count() : null,
-            source != null && source.year() != null ? String.valueOf(source.year()) : null,
+            source != null && source.yearSpec() != null ? source.yearSpec() : null,
+            source != null ? source.path() : null,
             request.capital(),
+            quantityUnits,
             request.commissionPerTrade(),
             request.slippagePct(),
             request.executionLabel(),
@@ -108,8 +151,8 @@ public record RunConfigSnapshot(
 
     public RunConfigSnapshot withBrokerAccountId(String accountId) {
         return new RunConfigSnapshot(
-            strategyId, symbol, mode, barsSourceType, barsSourceCount, barsSourceYear,
-            capital, commissionPerTrade, slippagePct, executionLabel, accountId);
+            strategyId, symbol, mode, barsSourceType, barsSourceCount, barsSourceYear, barsSourcePath,
+            capital, quantity, commissionPerTrade, slippagePct, executionLabel, accountId);
     }
 
     public String resolvedBrokerAccountId() {
@@ -128,9 +171,14 @@ public record RunConfigSnapshot(
         if (barsSourceYear != null) {
             map.put("barsSourceYear", barsSourceYear);
         }
+        if (barsSourcePath != null && !barsSourcePath.isBlank()) {
+            map.put("barsSourcePath", barsSourcePath);
+        }
         if (capital != null) {
             map.put("capital", capital);
         }
+        map.put("quantity", resolvedQuantityUnits());
+        map.put("lotSize", resolvedLotSize());
         if (commissionPerTrade != null && commissionPerTrade != 0.0) {
             map.put("commissionPerTrade", commissionPerTrade);
         }

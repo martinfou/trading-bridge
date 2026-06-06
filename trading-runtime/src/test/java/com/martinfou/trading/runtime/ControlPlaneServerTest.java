@@ -150,6 +150,38 @@ class ControlPlaneServerTest {
     }
 
     @Test
+    void weeklyBuilderStatus_returnsFolderCounts(@TempDir Path repo) throws Exception {
+        server.close();
+        java.nio.file.Files.createDirectories(
+            com.martinfou.trading.intelligence.paths.WeeklyBuilderPaths.pending(repo));
+        java.nio.file.Files.writeString(
+            com.martinfou.trading.intelligence.paths.WeeklyBuilderPaths.pending(repo)
+                .resolve("weekly-plan-2026-W23.json"),
+            "{}");
+        WeeklyBuilderService builder = new WeeklyBuilderService(stores.eventStore(), repo);
+        server = new ControlPlaneServer(
+            runManager, stores.hub(), promoteService, killSwitchService, 0,
+            new SqBridgeService(stores.eventStore()), builder);
+        HttpResponse<String> response = get("/api/weekly-builder/status");
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("\"pendingCount\":1"));
+        builder.close();
+    }
+
+    @Test
+    void weeklyBuilderDeploy_returnsAccepted(@TempDir Path repo) throws Exception {
+        server.close();
+        WeeklyBuilderService builder = new WeeklyBuilderService(stores.eventStore(), repo);
+        server = new ControlPlaneServer(
+            runManager, stores.hub(), promoteService, killSwitchService, 0,
+            new SqBridgeService(stores.eventStore()), builder);
+        HttpResponse<String> response = post("/api/weekly-builder/deploy", "{}");
+        assertEquals(202, response.statusCode());
+        assertTrue(response.body().contains("\"accepted\":true"));
+        builder.close();
+    }
+
+    @Test
     void strategies_listsCatalog() throws Exception {
         HttpResponse<String> response = get("/api/strategies");
         assertEquals(200, response.statusCode());
@@ -405,6 +437,7 @@ class ControlPlaneServerTest {
                 "LIVE",
                 new BarSourceResolver.BarsSource("sample", 300, null),
                 100_000.0,
+                null,
                 null,
                 null,
                 ExecutionLabel.LIVE_OANDA.name()));

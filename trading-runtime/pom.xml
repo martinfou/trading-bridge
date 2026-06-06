@@ -32,6 +32,11 @@
         </dependency>
         <dependency>
             <groupId>com.martinfou.trading</groupId>
+            <artifactId>trading-intelligence</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.martinfou.trading</groupId>
             <artifactId>trading-parser</artifactId>
             <version>${project.version}</version>
         </dependency>

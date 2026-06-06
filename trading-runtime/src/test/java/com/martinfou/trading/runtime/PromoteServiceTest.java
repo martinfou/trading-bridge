@@ -45,6 +45,7 @@ class PromoteServiceTest {
                 100_000.0,
                 null,
                 null,
+                null,
                 null));
             waitForCompletion(manager, runId);
 
@@ -92,6 +93,7 @@ class PromoteServiceTest {
                 100_000.0,
                 null,
                 null,
+                null,
                 null));
             waitForCompletion(manager, runId);
 
@@ -122,6 +124,7 @@ class PromoteServiceTest {
                 "BACKTEST",
                 new BarSourceResolver.BarsSource("sample", 500, null),
                 100_000.0,
+                null,
                 null,
                 null,
                 null));
@@ -172,6 +175,7 @@ class PromoteServiceTest {
                 100_000.0,
                 null,
                 null,
+                null,
                 null));
             waitForCompletion(manager, runId);
 
@@ -197,6 +201,7 @@ class PromoteServiceTest {
                 "BACKTEST",
                 new BarSourceResolver.BarsSource("sample", 500, null),
                 100_000.0,
+                null,
                 null,
                 null,
                 null));
@@ -298,6 +303,7 @@ class PromoteServiceTest {
                 100_000.0,
                 null,
                 null,
+                null,
                 null));
             waitForCompletion(manager, runId);
 
@@ -344,6 +350,7 @@ class PromoteServiceTest {
                 "BACKTEST",
                 new BarSourceResolver.BarsSource("sample", 500, null),
                 100_000.0,
+                null,
                 null,
                 null,
                 null));

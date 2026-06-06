@@ -1,11 +1,14 @@
 package com.martinfou.trading.tui;
 
+import org.jline.reader.LineReader;
+
 import com.fasterxml.jackson.databind.JsonNode;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /** Parses slash commands and dispatches to {@link ControlPlaneClient} (Story 13.6). */
 public final class TuiCommandHandler {
@@ -22,6 +25,14 @@ public final class TuiCommandHandler {
     }
 
     public List<String> handle(String line) {
+        return handle(line, null, null);
+    }
+
+    public List<String> handle(String line, LineReader reader) {
+        return handle(line, reader, null);
+    }
+
+    public List<String> handle(String line, LineReader reader, java.util.function.Consumer<String> liveOutput) {
         if (line == null || line.isBlank()) {
             return List.of();
         }
@@ -39,17 +50,21 @@ public final class TuiCommandHandler {
                 case "help", "h", "?" -> help();
                 case "list", "ls" -> listStrategies();
                 case "status" -> status(parts);
-                case "backtest", "bt" -> backtest(parts);
+                case "backtest", "bt" -> backtest(parts, reader, liveOutput);
                 case "promote" -> promote(parts);
                 case "run" -> showRun(parts);
                 case "events" -> showEvents(parts);
                 case "kill" -> kill(parts);
                 case "inbox", "sq" -> sqBridge(parts);
+                case "weekly-build", "weekly" -> weeklyBuild(parts);
+                case "weekly-status", "wb-status" -> weeklyStatus();
                 case "quit", "exit", "q" -> List.of("__QUIT__");
                 default -> List.of("Unknown command: /" + command + ". Type /help");
             };
         } catch (ControlPlaneClient.ControlPlaneException e) {
             return List.of("API error " + e.statusCode() + ": " + e.getMessage());
+        } catch (IllegalArgumentException e) {
+            return List.of("Invalid input: " + e.getMessage());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return List.of("Request failed: interrupted");
@@ -63,12 +78,16 @@ public final class TuiCommandHandler {
             "Trading Bridge TUI — control plane client",
             "  /list              List strategies + deployment mode",
             "  /status [id]       Control summary or promote-readiness",
-            "  /backtest <id> [symbol] [bars]   Start BACKTEST (default EUR_USD sample 500)",
+            "  /backtest [args]   Start BACKTEST (no args = interactive wizard)",
+            "      args: <id> [SYMBOL YEAR | SYMBOL 2006-2012 | --sample | --ci | file.csv]",
+            "            [--capital 1000] [--lots 0.01]",
             "  /promote <id> PAPER|LIVE [runId]",
-            "  /run <runId>       Run status + metrics",
+            "  /run <runId>       Run status + full backtest report",
             "  /events <runId>    Last 20 run events",
             "  /kill <id> [reason]",
             "  /sq | /inbox [process]   SQ bridge status or trigger inbox drain",
+            "  /weekly-status           Weekly builder hot-folder counts",
+            "  /weekly-build [--plan|--compile|--deploy]   Trigger Job 1/2/3",
             "  /quit              Exit",
             "Env: CONTROL_PLANE_URL (default http://localhost:8080)");
     }
@@ -106,18 +125,51 @@ public final class TuiCommandHandler {
         return lines;
     }
 
-    private List<String> backtest(List<String> parts) throws IOException, InterruptedException {
+    private List<String> backtest(List<String> parts, LineReader reader, java.util.function.Consumer<String> liveOutput)
+        throws IOException, InterruptedException {
         if (parts.size() < 2) {
-            return List.of("Usage: /backtest <strategyId> [symbol] [bars]");
+            if (reader == null) {
+                return List.of("Usage: /backtest (interactive) requires a terminal — use /backtest <strategyId> …");
+            }
+            return TuiInteractiveBacktest.run(this, client, reader, liveOutput);
         }
         String strategyId = parts.get(1);
-        String symbol = parts.size() >= 3 ? parts.get(2) : "EUR_USD";
-        int bars = parts.size() >= 4 ? Integer.parseInt(parts.get(3)) : 500;
+        BacktestRequestParser.ParsedBacktest parsed;
+        try {
+            parsed = BacktestRequestParser.parse(parts);
+        } catch (IllegalArgumentException e) {
+            return List.of("Backtest data: " + e.getMessage());
+        }
+        return runBacktest(
+            strategyId,
+            parsed.symbol(),
+            parsed.barsSource(),
+            parsed.dataLabel(),
+            parsed.capital(),
+            parsed.lotSize());
+    }
 
-        JsonNode started = client.startBacktest(strategyId, symbol, bars);
+    List<String> runBacktest(
+        String strategyId,
+        String symbol,
+        Map<String, Object> barsSource,
+        String dataLabel
+    ) throws IOException, InterruptedException {
+        return runBacktest(strategyId, symbol, barsSource, dataLabel, null, null);
+    }
+
+    List<String> runBacktest(
+        String strategyId,
+        String symbol,
+        Map<String, Object> barsSource,
+        String dataLabel,
+        Double capital,
+        Double lotSize
+    ) throws IOException, InterruptedException {
+        JsonNode started = client.startBacktest(strategyId, symbol, barsSource, capital, lotSize);
         lastRunId = started.get("runId").asText();
         List<String> lines = new ArrayList<>();
-        lines.add("Started run " + lastRunId + " (" + strategyId + " " + symbol + " sample " + bars + ")");
+        lines.add("Started run " + lastRunId + " (" + strategyId + " " + dataLabel + ")");
 
         for (int i = 0; i < 120; i++) {
             Thread.sleep(100);
@@ -125,8 +177,10 @@ public final class TuiCommandHandler {
             String status = run.get("status").asText();
             if (!"RUNNING".equals(status)) {
                 lines.add("Run " + status);
-                appendMetrics(lines, run);
-                lines.addAll(tailEvents(lastRunId, 5));
+                lines.addAll(TuiBacktestReport.format(run));
+                if (lines.stream().noneMatch(l -> l.contains("BACKTEST RESULT"))) {
+                    appendMetrics(lines, run);
+                }
                 return lines;
             }
         }
@@ -164,7 +218,12 @@ public final class TuiCommandHandler {
         List<String> lines = new ArrayList<>();
         lines.add("Run " + runId + "  status=" + run.get("status").asText()
             + "  strategy=" + run.get("strategyId").asText());
-        appendMetrics(lines, run);
+        List<String> report = TuiBacktestReport.format(run);
+        if (report.isEmpty()) {
+            appendMetrics(lines, run);
+        } else {
+            lines.addAll(report);
+        }
         return lines;
     }
 
@@ -205,6 +264,76 @@ public final class TuiCommandHandler {
         return lines;
     }
 
+    private List<String> weeklyStatus() throws IOException, InterruptedException {
+        JsonNode status = client.weeklyBuilderStatus();
+        List<String> lines = new ArrayList<>();
+        lines.add("Weekly builder:");
+        lines.add("  pending=" + status.path("pendingCount").asInt(0)
+            + "  compiling=" + status.path("compilingCount").asInt(0)
+            + "  compiled=" + status.path("compiledCount").asInt(0)
+            + "  deployed=" + status.path("deployedBundleCount").asInt(0)
+            + "  failed=" + status.path("failedBundleCount").asInt(0));
+        if (status.hasNonNull("lastWeekId")) {
+            lines.add("  lastWeekId=" + status.get("lastWeekId").asText());
+        }
+        if (status.has("templates")) {
+            lines.add("  templates=" + status.get("templates").toString());
+        }
+        if (status.hasNonNull("validUntil")) {
+            lines.add("  validUntil=" + status.get("validUntil").asText());
+        }
+        if (status.hasNonNull("lastFailureReason")) {
+            lines.add("  lastFailure=" + status.get("lastFailureReason").asText());
+        }
+        appendLastJobRun(lines, "plan", status.get("lastPlanRun"));
+        appendLastJobRun(lines, "compile", status.get("lastCompileRun"));
+        appendLastJobRun(lines, "deploy", status.get("lastDeployRun"));
+        lines.add("  planProcessing=" + status.path("planProcessing").asBoolean(false)
+            + "  compileProcessing=" + status.path("compileProcessing").asBoolean(false)
+            + "  deployProcessing=" + status.path("deployProcessing").asBoolean(false));
+        return lines;
+    }
+
+    private List<String> weeklyBuild(List<String> parts) throws IOException, InterruptedException {
+        String step = "deploy";
+        if (parts.size() >= 2) {
+            String flag = parts.get(1).toLowerCase(Locale.ROOT);
+            if (flag.startsWith("--")) {
+                flag = flag.substring(2);
+            }
+            step = switch (flag) {
+                case "plan" -> "plan";
+                case "compile" -> "compile";
+                case "deploy" -> "deploy";
+                default -> throw new IllegalArgumentException("Use --plan, --compile, or --deploy");
+            };
+        }
+        JsonNode response = switch (step) {
+            case "plan" -> client.triggerWeeklyPlan();
+            case "compile" -> client.triggerWeeklyCompile();
+            default -> client.triggerWeeklyDeploy();
+        };
+        return List.of(response.get("message").asText());
+    }
+
+    private static void appendLastJobRun(List<String> lines, String label, JsonNode run) {
+        if (run == null || run.isNull() || run.isMissingNode()) {
+            return;
+        }
+        String status = run.path("status").asText("unknown");
+        String message = run.path("message").asText("");
+        StringBuilder line = new StringBuilder("  last").append(capitalize(label))
+            .append("=").append(status);
+        if (!message.isBlank()) {
+            line.append(" — ").append(message);
+        }
+        lines.add(line.toString());
+    }
+
+    private static String capitalize(String step) {
+        return step.substring(0, 1).toUpperCase(Locale.ROOT) + step.substring(1);
+    }
+
     private List<String> kill(List<String> parts) throws IOException, InterruptedException {
         if (parts.size() < 2) {
             return List.of("Usage: /kill <strategyId> [reason]");
@@ -226,11 +355,25 @@ public final class TuiCommandHandler {
         return lines;
     }
 
-    private static void appendMetrics(List<String> lines, JsonNode run) {
-        if (run.has("totalTrades")) {
-            lines.add("  trades=" + run.get("totalTrades").asInt()
-                + "  return=" + fmt(run.get("totalReturnPct").asDouble()) + "%"
-                + "  maxDD=" + fmt(run.get("maxDrawdownPct").asDouble()) + "%");
+    static void appendMetrics(List<String> lines, JsonNode run) {
+        JsonNode metrics = run.has("result") ? run.get("result") : run;
+        if (metrics.has("totalTrades")) {
+            lines.add("  trades=" + metrics.get("totalTrades").asInt()
+                + "  return=" + fmt(metrics.get("totalReturnPct").asDouble()) + "%"
+                + "  maxDD=" + fmt(metrics.get("maxDrawdownPct").asDouble()) + "%");
+        }
+        JsonNode config = run.get("configSnapshot");
+        if (config != null && config.has("barsSourceType")) {
+            String source = config.get("barsSourceType").asText();
+            String detail = source;
+            if (config.has("barsSourceYear")) {
+                detail = source + " " + config.get("barsSourceYear").asText();
+            } else if (config.has("barsSourceCount")) {
+                detail = source + " " + config.get("barsSourceCount").asInt() + " bars";
+            } else if (config.has("barsSourcePath")) {
+                detail = source + " " + config.get("barsSourcePath").asText();
+            }
+            lines.add("  data=" + detail);
         }
     }
 

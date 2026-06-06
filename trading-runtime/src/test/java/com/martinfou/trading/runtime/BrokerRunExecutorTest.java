@@ -190,6 +190,7 @@ class BrokerRunExecutorTest {
                     "LIVE",
                     new BarSourceResolver.BarsSource("sample", 50, null),
                     100_000.0,
+                null,
                     null,
                     null,
                     ExecutionLabel.LIVE_OANDA.name())));
@@ -210,6 +211,7 @@ class BrokerRunExecutorTest {
                     "PAPER",
                     new BarSourceResolver.BarsSource("sample", 50, null),
                     100_000.0,
+                null,
                     null,
                     null,
                     ExecutionLabel.PAPER_OANDA.name())));

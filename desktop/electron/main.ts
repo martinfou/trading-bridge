@@ -5,6 +5,7 @@ import path from 'path'
 import fs from 'fs'
 
 let mainWindow: BrowserWindow | null = null
+let loadingWindow: BrowserWindow | null = null
 let javaProcess: ChildProcess | null = null
 
 const CONTROL_PLANE_PORT = 8080
@@ -17,6 +18,7 @@ interface JvmConfig {
   javaBin: string
   jarPath: string
   dataDir: string
+  cwd: string
 }
 
 function resolveDevPaths(): JvmConfig {
@@ -30,7 +32,7 @@ function resolveDevPaths(): JvmConfig {
     if (fs.existsSync(candidate)) javaBin = candidate
   }
 
-  return { javaBin, jarPath, dataDir: path.join(projectRoot, 'data/runtime') }
+  return { javaBin, jarPath, dataDir: path.join(projectRoot, 'data/runtime'), cwd: projectRoot }
 }
 
 function resolvePackagedPaths(): JvmConfig {
@@ -38,7 +40,7 @@ function resolvePackagedPaths(): JvmConfig {
   const jarPath = path.join(resourcesDir, 'jar/control-plane.jar')
   const javaBin = path.join(resourcesDir, 'jre/bin/java')
   const dataDir = path.join(app.getPath('userData'), 'data')
-  return { javaBin, jarPath, dataDir }
+  return { javaBin, jarPath, dataDir, cwd: dataDir }
 }
 
 function resolveConfig(): JvmConfig {
@@ -61,7 +63,8 @@ function startJavaProcess(cfg: JvmConfig): void {
     return
   }
 
-  if (!fs.existsSync(cfg.javaBin)) {
+  const isPath = cfg.javaBin.includes('/') || cfg.javaBin.includes('\\') || cfg.javaBin.includes(path.sep);
+  if (isPath && !fs.existsSync(cfg.javaBin)) {
     console.error('[main] Java binary not found at', cfg.javaBin)
     showError(`Java introuvable : ${cfg.javaBin}\n\nEn dev, vérifie que JAVA_HOME pointe vers un JDK 21+.\nEn production, le JRE devrait être embarqué.`)
     return
@@ -74,7 +77,7 @@ function startJavaProcess(cfg: JvmConfig): void {
     '--enable-native-access=ALL-UNNAMED',
     '-jar', cfg.jarPath,
   ], {
-    cwd: cfg.dataDir,
+    cwd: cfg.cwd,
     env: {
       ...process.env,
       CONTROL_PLANE_PORT: String(CONTROL_PLANE_PORT),
@@ -169,7 +172,7 @@ function showError(message: string): void {
 // ── Loading window ───────────────────────────────────────────────────────────
 
 function createLoadingWindow(): void {
-  mainWindow = new BrowserWindow({
+  loadingWindow = new BrowserWindow({
     width: 600,
     height: 400,
     resizable: false,
@@ -182,7 +185,7 @@ function createLoadingWindow(): void {
     },
   })
 
-  mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(`
+  loadingWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(`
     <!DOCTYPE html>
     <html><body style="display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#1a1a2e;color:#e0e0e0;font-family:sans-serif;flex-direction:column">
       <h2 style="margin-bottom:8px">Trading Bridge</h2>
@@ -192,7 +195,9 @@ function createLoadingWindow(): void {
     </body></html>
   `)}`)
 
-  mainWindow.once('ready-to-show', () => mainWindow?.show())
+  loadingWindow.once('ready-to-show', () => {
+    loadingWindow?.show()
+  })
 }
 
 function createMainWindow(): void {
@@ -210,7 +215,14 @@ function createMainWindow(): void {
     show: false,
   })
 
-  mainWindow.on('ready-to-show', () => mainWindow?.show())
+  mainWindow.once('ready-to-show', () => {
+    console.log('[main] Main window ready to show, closing loading window')
+    if (loadingWindow) {
+      loadingWindow.close()
+      loadingWindow = null
+    }
+    mainWindow?.show()
+  })
 
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
@@ -236,7 +248,6 @@ app.whenReady().then(async () => {
     await waitForControlPlane()
     console.log('[main] Control plane is ready, creating main window')
     createMainWindow()
-    if (mainWindow) mainWindow.show()
   } catch (err) {
     console.error('[main] Failed to start control plane:', err)
     showError(`Le backend Java n'a pas démarré correctement.\n\n${err instanceof Error ? err.message : String(err)}`)

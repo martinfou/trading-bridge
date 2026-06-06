@@ -138,6 +138,36 @@ public record RunEvent(
             Map.copyOf(payload));
     }
 
+    /** Weekly builder pipeline step (Epic 22). */
+    public static RunEvent weeklyBuilderEvent(
+        String correlationId,
+        String step,
+        String status,
+        String weekId,
+        Map<String, Object> extras,
+        Instant timestamp
+    ) {
+        var payload = new java.util.LinkedHashMap<String, Object>();
+        payload.put("correlationId", correlationId);
+        payload.put("step", step);
+        payload.put("status", status);
+        if (weekId != null && !weekId.isBlank()) {
+            payload.put("weekId", weekId);
+        }
+        if (extras != null && !extras.isEmpty()) {
+            payload.putAll(extras);
+        }
+        return new RunEvent(
+            SCHEMA_VERSION,
+            RunEventType.WEEKLY_BUILDER_EVENT,
+            timestamp,
+            "weekly-builder",
+            "weekly-builder",
+            "",
+            "BRIDGE",
+            Map.copyOf(payload));
+    }
+
     /** SQ hot-folder file processed by the bridge (story 21-7). */
     public static RunEvent sqExportReceived(
         String fileName,

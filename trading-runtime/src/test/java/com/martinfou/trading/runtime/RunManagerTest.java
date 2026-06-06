@@ -24,6 +24,7 @@ class RunManagerTest {
                 100_000.0,
                 null,
                 null,
+                null,
                 null));
 
             RunRecord record = waitForCompletion(manager, runId);
@@ -80,6 +81,7 @@ class RunManagerTest {
                 "LIVE",
                 new BarSourceResolver.BarsSource("sample", 300, null),
                 100_000.0,
+                null,
                 null,
                 null,
                 ExecutionLabel.LIVE_OANDA.name()));

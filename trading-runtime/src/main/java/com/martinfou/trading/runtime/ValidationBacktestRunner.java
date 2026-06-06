@@ -15,12 +15,12 @@ final class ValidationBacktestRunner {
     private ValidationBacktestRunner() {}
 
     static BacktestResult run(RunConfigSnapshot snapshot, List<Bar> bars, BacktestExecutionCost cost) {
-        double capital = snapshot.capital() != null ? snapshot.capital() : 100_000.0;
+        double capital = snapshot.resolvedCapital();
         BacktestExecutionCost profile = cost != null ? cost : snapshot.executionCost();
         RunContext context = RunContext.forStrategy(
             null,
             snapshot.strategyId(),
-            StrategyCatalog.create(snapshot.strategyId(), snapshot.symbol()),
+            StrategyCatalog.create(snapshot.strategyId(), snapshot.symbol(), snapshot.quantity()),
             snapshot.symbol(),
             RunMode.BACKTEST,
             bars,

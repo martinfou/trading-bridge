@@ -42,6 +42,19 @@ class PromoteGatesTest {
     }
 
     @Test
+    void goldenBaseline_passesForCiSubsetMetrics() {
+        var golden = com.martinfou.trading.core.GoldenBacktestBaseline.CI_SUBSET;
+        RunRecord run = completedRun(Map.of("barsSourceType", "ci"));
+        run.markCompleted(Map.of(
+            "totalTrades", golden.trades(),
+            "totalReturnPct", golden.returnPct(),
+            "maxDrawdownPct", golden.maxDrawdownPct()));
+
+        GateCheckResult result = PromoteGates.goldenBaseline(run, THRESHOLDS);
+        assertTrue(result.passed(), result.message());
+    }
+
+    @Test
     void goldenBaseline_passesForSampleBarsConfig() {
         RunRecord run = completedRun(Map.of("barsSourceType", "sample", "barsSourceCount", 500));
         run.markCompleted(Map.of(
