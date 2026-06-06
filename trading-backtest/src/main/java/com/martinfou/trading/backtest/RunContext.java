@@ -22,13 +22,21 @@ public record RunContext(
     Strategy strategy,
     Consumer<RunEvent> eventListener,
     String assignedRunId,
-    BacktestExecutionCost executionCost
+    BacktestExecutionCost executionCost,
+    String dataTimeframe,
+    String strategyTimeframe
 ) {
 
     public RunContext {
         bars = List.copyOf(bars);
         if (executionCost == null) {
             executionCost = BacktestExecutionCost.ZERO;
+        }
+        if (dataTimeframe == null) {
+            dataTimeframe = "H1";
+        }
+        if (strategyTimeframe == null) {
+            strategyTimeframe = "H1";
         }
     }
 
@@ -93,7 +101,9 @@ public record RunContext(
             strategy,
             eventListener,
             assignedRunId,
-            BacktestExecutionCost.ZERO);
+            BacktestExecutionCost.ZERO,
+            null,
+            null);
     }
 
     public static RunContext forStrategy(
@@ -116,12 +126,41 @@ public record RunContext(
             strategy,
             eventListener,
             assignedRunId,
-            executionCost);
+            executionCost,
+            null,
+            null);
+    }
+
+    public static RunContext forStrategy(
+        String assignedRunId,
+        String strategyId,
+        Strategy strategy,
+        String symbol,
+        RunMode mode,
+        List<Bar> bars,
+        double initialCapital,
+        Consumer<RunEvent> eventListener,
+        BacktestExecutionCost executionCost,
+        String dataTimeframe,
+        String strategyTimeframe
+    ) {
+        return new RunContext(
+            strategyId,
+            symbol,
+            mode,
+            bars,
+            initialCapital,
+            strategy,
+            eventListener,
+            assignedRunId,
+            executionCost,
+            dataTimeframe,
+            strategyTimeframe);
     }
 
     /** Returns a copy wired to the given event listener. */
     public RunContext withEventListener(Consumer<RunEvent> listener) {
-        return new RunContext(strategyId, symbol, mode, bars, initialCapital, strategy, listener, assignedRunId, executionCost);
+        return new RunContext(strategyId, symbol, mode, bars, initialCapital, strategy, listener, assignedRunId, executionCost, dataTimeframe, strategyTimeframe);
     }
 
     /**
@@ -140,8 +179,16 @@ public record RunContext(
 
         try {
             BacktestResult result = switch (mode) {
-                case BACKTEST -> executionCost.configure(new BacktestEngine(strategy, bars, initialCapital)).run();
-                case PAPER -> executionCost.configure(new BacktestEngine(strategy, bars, initialCapital)).run();
+                case BACKTEST -> executionCost.configure(
+                    new BacktestEngine(strategy, bars, initialCapital)
+                        .withDataTimeframe(dataTimeframe)
+                        .withStrategyTimeframe(strategyTimeframe)
+                ).run();
+                case PAPER -> executionCost.configure(
+                    new BacktestEngine(strategy, bars, initialCapital)
+                        .withDataTimeframe(dataTimeframe)
+                        .withStrategyTimeframe(strategyTimeframe)
+                ).run();
                 case LIVE -> throw new UnsupportedOperationException(mode + " not implemented");
             };
             var endedPayload = new java.util.LinkedHashMap<>(BacktestResultPayload.toEndedPayload(result));

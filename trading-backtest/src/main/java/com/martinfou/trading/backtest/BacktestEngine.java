@@ -63,6 +63,8 @@ public class BacktestEngine {
     private double totalSlippage = 0.0;
     private double riskFreeRate = PerformanceMetrics.DEFAULT_RISK_FREE_RATE;
     private double usdJpyRate = ForexPnL.DEFAULT_USD_JPY;
+    private String dataTimeframe = "h1";
+    private String strategyTimeframe = "h1";
 
     // ---------------------------------------------------------------
     //  Constructors
@@ -136,6 +138,20 @@ public class BacktestEngine {
         return this;
     }
 
+    public BacktestEngine withDataTimeframe(String dataTimeframe) {
+        if (dataTimeframe != null) {
+            this.dataTimeframe = dataTimeframe;
+        }
+        return this;
+    }
+
+    public BacktestEngine withStrategyTimeframe(String strategyTimeframe) {
+        if (strategyTimeframe != null) {
+            this.strategyTimeframe = strategyTimeframe;
+        }
+        return this;
+    }
+
     // ---------------------------------------------------------------
     //  Main execution
     // ---------------------------------------------------------------
@@ -151,12 +167,39 @@ public class BacktestEngine {
         strategy.reset();
 
         // Parse all bars (spot FX: skip Saturday/Sunday UTC — market closed)
-        for (Bar bar : bars) {
+        boolean isMultiTimeframe = !strategyTimeframe.equalsIgnoreCase(dataTimeframe);
+        Map<String, BarAggregator> aggregators = new HashMap<>();
+
+        for (int i = 0; i < bars.size(); i++) {
+            Bar bar = bars.get(i);
             if (!ForexMarketCalendar.isTradingBar(bar)) {
                 continue;
             }
-            // Let the strategy analyse this bar first
-            strategy.onBar(bar);
+
+            if (isMultiTimeframe) {
+                BarAggregator aggregator = aggregators.computeIfAbsent(bar.symbol(), s -> new BarAggregator(s, strategyTimeframe));
+                boolean isNew = aggregator.isNewPeriod(bar);
+                boolean hasInProgress = aggregator.getInProgressBar() != null;
+
+                aggregator.add(bar);
+
+                if (isNew && hasInProgress) {
+                    Bar completedBar = aggregator.getLastCompletedBar();
+                    if (completedBar != null) {
+                        strategy.onBar(completedBar);
+                    }
+                }
+
+                if (i == bars.size() - 1) {
+                    aggregator.completePeriod();
+                    Bar completedBar = aggregator.getLastCompletedBar();
+                    if (completedBar != null) {
+                        strategy.onBar(completedBar);
+                    }
+                }
+            } else {
+                strategy.onBar(bar);
+            }
 
             // Check SL/TP on open positions before processing new orders
             checkStopLossesTakeProfits(bar);
@@ -244,17 +287,17 @@ public class BacktestEngine {
                 case STOP -> {
                     if (order.side() == Order.Side.BUY && bar.high() >= order.price()) {
                         filled = true;
-                        fillPrice = Math.min(bar.close(), order.price());
+                        fillPrice = Math.max(bar.open(), order.price());
                     } else if (order.side() == Order.Side.SELL && bar.low() <= order.price()) {
                         filled = true;
-                        fillPrice = Math.max(bar.close(), order.price());
+                        fillPrice = Math.min(bar.open(), order.price());
                     }
                 }
             }
 
             if (filled) {
                 // Apply slippage to fill price
-                double adjustedPrice = applySlippage(fillPrice, order.side());
+                double adjustedPrice = applySlippage(fillPrice, order.side(), order.quantity());
 
                 // Calculate commission
                 double commission = calcCommission(adjustedPrice, order.quantity());
@@ -443,16 +486,16 @@ public class BacktestEngine {
                 floatingPnl += pos.currentPnl(bar.close());
             }
         }
-        equity = initialCapital - totalCommission - totalSlippage + realizedPnl + floatingPnl;
+        equity = initialCapital - totalCommission + realizedPnl + floatingPnl;
     }
 
     // ---------------------------------------------------------------
     //  Cost helpers
     // ---------------------------------------------------------------
 
-    private double applySlippage(double price, Order.Side side) {
+    private double applySlippage(double price, Order.Side side, double quantity) {
         double slipAmount = slippageFixed > 0 ? slippageFixed : price * slippagePct;
-        totalSlippage += slipAmount;
+        totalSlippage += slipAmount * quantity;
         // Slippage always works against the trader
         return side == Order.Side.BUY ? price + slipAmount : price - slipAmount;
     }
@@ -467,7 +510,7 @@ public class BacktestEngine {
     // ---------------------------------------------------------------
 
     private BacktestResult buildResult() {
-        double totalPnl = trades.stream().mapToDouble(Trade::pnl).sum() - totalCommission - totalSlippage;
+        double totalPnl = trades.stream().mapToDouble(Trade::pnl).sum() - totalCommission;
         double totalReturnPct = initialCapital > 0 ? (totalPnl / initialCapital) * 100 : 0;
         double maxDd = calcMaxDrawdown();
         double winRate = totalTrades > 0 ? (double) winningTrades / totalTrades * 100 : 0;

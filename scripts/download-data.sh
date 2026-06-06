@@ -180,24 +180,14 @@ convert_to_barstore() {
         return 0
     fi
 
-    local out_file="${BARS_DIR}/${sym}_$(upper "$tf")_${year}.bars"
+    local cp="trading-data/target/classes:trading-core/target/classes"
+    if [ -f "desktop-resources/jar/control-plane.jar" ]; then
+        cp="desktop-resources/jar/control-plane.jar"
+    elif [ -f "trading-runtime/target/trading-runtime-1.0.0-SNAPSHOT-shaded.jar" ]; then
+        cp="trading-runtime/target/trading-runtime-1.0.0-SNAPSHOT-shaded.jar"
+    fi
 
-    python3 -c "
-import csv, struct, sys, os
-count = 0
-with open('${csv_file}') as f:
-    reader = csv.DictReader(f)
-    rows = list(reader)
-with open('${out_file}', 'wb') as f:
-    for r in rows:
-        ts = int(r['timestamp'])
-        o = float(r['open']); h = float(r['high'])
-        l = float(r['low']);  c = float(r['close'])
-        v = int(float(r.get('volume', 0))) if r.get('volume', '').strip() else 0
-        f.write(struct.pack('<qddddi', ts, o, h, l, c, v))
-        count += 1
-    print(f'  Converted {count} bars')
-"
+    java -cp "$cp" com.martinfou.trading.data.BarStore --convert-file "${csv_file}" "${BARS_DIR}" "${sym}" "$(upper "${tf}")_${year}"
 }
 
 # ─── Download a year, pair-by-pair, with delays ─────────────────────────
@@ -216,8 +206,47 @@ download_year() {
 
     local i=0
     for pair in "${pairs_to_dl[@]}"; do
-        download_one "$pair" "$tf" "$from" "$to" "$year"
-        convert_to_barstore "$pair" "$tf" "$from" "$to" "$year"
+        if [ "$tf" = "m1" ]; then
+            local current_year=$(date +%Y)
+            local end_month=12
+            if [ "$year" = "$current_year" ]; then
+                end_month=$(date +%m | sed 's/^0//')
+            fi
+            
+            local first=true
+            local yearly_csv="${DATA_DIR}/${pair}-${tf}-bid-${from}-${to}.csv"
+            rm -f "$yearly_csv"
+            
+            for m in $(seq 1 "$end_month"); do
+                local m_from=$(printf "%04d-%02d-01" "$year" "$m")
+                local m_to=$(printf "%04d-%02d-01" "$year" $((m + 1)))
+                if [ "$m" -eq 12 ]; then
+                    m_to="$((year + 1))-01-01"
+                fi
+                if [ "$year" = "$current_year" ] && [ "$m" -eq "$end_month" ]; then
+                    m_to="$(date +%Y-%m-%d)"
+                fi
+                
+                echo -e "  ${pair}: Ingesting Month ${m}/${end_month}..."
+                download_one "$pair" "$tf" "$m_from" "$m_to" "${year}-${m}"
+                
+                local monthly_csv="${DATA_DIR}/${pair}-${tf}-bid-${m_from}-${m_to}.csv"
+                if [ -f "$monthly_csv" ]; then
+                    if [ "$first" = true ]; then
+                        cat "$monthly_csv" > "$yearly_csv"
+                        first=false
+                    else
+                        tail -n +2 "$monthly_csv" >> "$yearly_csv"
+                    fi
+                    rm -f "$monthly_csv"
+                fi
+                sleep "$DELAY_BETWEEN_MONTHS"
+            done
+            convert_to_barstore "$pair" "$tf" "$from" "$to" "$year"
+        else
+            download_one "$pair" "$tf" "$from" "$to" "$year"
+            convert_to_barstore "$pair" "$tf" "$from" "$to" "$year"
+        fi
 
         # Gentle delay between pairs (not after last)
         i=$((i + 1))

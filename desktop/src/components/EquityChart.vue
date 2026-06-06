@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import { createChart, type IChartApi, type ISeriesApi, type LineData, ColorType, LineSeries } from 'lightweight-charts'
+import { createChart, type IChartApi, type ISeriesApi, type LineData, ColorType, LineSeries, HistogramSeries } from 'lightweight-charts'
 
 const props = defineProps<{
   data: number[]
@@ -11,6 +11,7 @@ const props = defineProps<{
 const container = ref<HTMLDivElement>()
 let chart: IChartApi | null = null
 let lineSeries: ISeriesApi<'Line'> | null = null
+let drawdownSeries: ISeriesApi<'Histogram'> | null = null
 
 async function render() {
   await nextTick()
@@ -20,6 +21,7 @@ async function render() {
     chart.remove()
     chart = null
     lineSeries = null
+    drawdownSeries = null
   }
 
   chart = createChart(container.value, {
@@ -39,6 +41,10 @@ async function render() {
     },
     rightPriceScale: {
       borderColor: '#333',
+      scaleMargins: {
+        top: 0.1,
+        bottom: 0.25,
+      },
     },
     crosshair: {
       vertLine: { color: '#555', labelBackgroundColor: '#333' },
@@ -59,13 +65,43 @@ async function render() {
     priceLineColor: '#444',
   })
 
+  drawdownSeries = chart.addSeries(HistogramSeries, {
+    color: '#ef4444',
+    priceFormat: { type: 'percent', precision: 2 },
+    priceScaleId: 'drawdown-scale',
+  })
+
+  chart.priceScale('drawdown-scale').applyOptions({
+    scaleMargins: {
+      top: 0.8,
+      bottom: 0,
+    },
+    visible: false,
+  })
+
   const lineData: LineData[] = props.data.map((v, i) => ({
     time: i as any,
     value: v,
   }))
 
+  let peak = props.data[0] || 0
+  const drawdownData = props.data.map((v, i) => {
+    if (v > peak) {
+      peak = v
+    }
+    const dd = peak === 0 ? 0 : ((v - peak) / peak) * 100
+    return {
+      time: i as any,
+      value: dd,
+      color: '#ef4444',
+    }
+  })
+
   if (lineSeries) {
     lineSeries.setData(lineData)
+  }
+  if (drawdownSeries) {
+    drawdownSeries.setData(drawdownData)
   }
   if (chart) {
     chart.timeScale().fitContent()
@@ -87,6 +123,7 @@ onUnmounted(() => {
   chart?.remove()
   chart = null
   lineSeries = null
+  drawdownSeries = null
 })
 </script>
 

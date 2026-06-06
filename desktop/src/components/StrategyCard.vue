@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import type { Strategy } from '@/types/control-plane'
 import { useRouter } from 'vue-router'
+import PromoteModal from './PromoteModal.vue'
 
 const props = defineProps<{
   strategy: Strategy
@@ -12,6 +14,7 @@ const emit = defineEmits<{
 }>()
 
 const router = useRouter()
+const showPromoteModal = ref(false)
 
 const familyColors: Record<string, string> = {
   PROP: '#6366f1',
@@ -27,6 +30,10 @@ function familyColor(family: string): string {
 function runBacktest() {
   const symbol = props.strategy.defaultSymbol?.replace(/_/g, '/') || 'EUR/USD'
   router.push(`/dashboard?strategyId=${props.strategy.id}&symbol=${symbol}`)
+}
+
+function onPromoted() {
+  router.push('/live-trading')
 }
 </script>
 
@@ -87,9 +94,21 @@ function runBacktest() {
         </div>
       </div>
 
-      <button class="run-btn" @click="runBacktest">
-        ▶ Run Backtest
-      </button>
+      <div class="actions-row">
+        <button class="run-btn" @click="runBacktest">
+          ▶ Run Backtest
+        </button>
+        <button class="promote-btn" @click="showPromoteModal = true">
+          🚀 Promote Strategy
+        </button>
+      </div>
+
+      <PromoteModal
+        :strategyId="strategy.id"
+        :show="showPromoteModal"
+        @close="showPromoteModal = false"
+        @promoted="onPromoted"
+      />
     </div>
   </div>
 </template>
@@ -241,5 +260,26 @@ code.detail-value {
 
 .run-btn:hover {
   background: var(--accent-hover);
+}
+
+.actions-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.promote-btn {
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  border-radius: 6px;
+  padding: 0.5rem 1.25rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.promote-btn:hover {
+  background: rgba(217, 119, 6, 0.08);
 }
 </style>

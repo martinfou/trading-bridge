@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import { useControlPlane } from '@/composables/useControlPlane'
 import type { Strategy, RunConfig } from '@/types/control-plane'
 
@@ -19,10 +19,26 @@ const strategies = ref<Strategy[]>([])
 const selectedStrategy = ref('')
 const selectedSymbols = ref<string[]>([])
 const selectedYear = ref<number | string>(2025)
-const capital = ref(100000)
+const capital = ref(1000)
 const lotSize = ref(0.01)
 const commission = ref(0.07)
 const slippage = ref(0.0001)
+
+const dataTimeframe = ref('H1')
+const strategyTimeframe = ref('H1')
+
+const timeframeScale: Record<string, number> = {
+  'M1': 1,
+  'M30': 30,
+  'H1': 60,
+  'D1': 1440
+}
+
+const isValidTimeframe = computed(() => {
+  const dVal = timeframeScale[dataTimeframe.value] || 0
+  const sVal = timeframeScale[strategyTimeframe.value] || 0
+  return dVal <= sVal
+})
 
 const dropdownRef = ref<HTMLElement | null>(null)
 const dropdownOpen = ref(false)
@@ -99,6 +115,8 @@ async function run() {
         lotSize: lotSize.value,
         commissionPerTrade: commission.value,
         slippagePct: slippage.value,
+        dataTimeframe: dataTimeframe.value,
+        strategyTimeframe: strategyTimeframe.value,
       }
       const res = await startRun(config)
       return { symbol: sym, runId: res.runId }
@@ -173,9 +191,38 @@ async function run() {
       </div>
     </div>
 
+    <div class="form-row">
+      <div class="field">
+        <label>Data Timeframe</label>
+        <select v-model="dataTimeframe">
+          <option value="M1">M1 (1 Minute)</option>
+          <option value="H1">H1 (1 Hour)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Strategy Timeframe</label>
+        <select v-model="strategyTimeframe">
+          <option value="M1">M1 (1 Minute)</option>
+          <option value="M30">M30 (30 Minutes)</option>
+          <option value="H1">H1 (1 Hour)</option>
+          <option value="D1">D1 (1 Day)</option>
+        </select>
+      </div>
+      <div class="field explanation-field">
+        <label>Data vs Strategy Timeframe</label>
+        <div class="timeframe-warning-info">
+          H1 data runs faster; M1 data is more realistic but takes longer.
+        </div>
+      </div>
+    </div>
+
+    <div v-if="!isValidTimeframe" class="form-error">
+      Validation Error: Data Timeframe cannot be higher than Strategy Timeframe.
+    </div>
+
     <div v-if="error" class="form-error">{{ error }}</div>
 
-    <button class="run-btn" :disabled="loading || !selectedStrategy || selectedSymbols.length === 0" @click="run">
+    <button class="run-btn" :disabled="loading || !selectedStrategy || selectedSymbols.length === 0 || !isValidTimeframe" @click="run">
       <span v-if="loading" class="spinner"></span>
       <span v-else>▶ Run Backtest</span>
     </button>
@@ -359,5 +406,15 @@ select option {
 
 .item-label {
   font-size: 0.85rem;
+}
+
+.timeframe-warning-info {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.3;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding-top: 0.25rem;
 }
 </style>

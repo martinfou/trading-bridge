@@ -27,8 +27,29 @@ public record RunConfigSnapshot(
     Double commissionPerTrade,
     Double slippagePct,
     String executionLabel,
-    String brokerAccountId
+    String brokerAccountId,
+    String dataTimeframe,
+    String strategyTimeframe
 ) {
+
+    public RunConfigSnapshot(
+        String strategyId,
+        String symbol,
+        String mode,
+        String barsSourceType,
+        Integer barsSourceCount,
+        String barsSourceYear,
+        String barsSourcePath,
+        Double capital,
+        Double quantity,
+        Double commissionPerTrade,
+        Double slippagePct,
+        String executionLabel,
+        String brokerAccountId
+    ) {
+        this(strategyId, symbol, mode, barsSourceType, barsSourceCount, barsSourceYear, barsSourcePath,
+            capital, quantity, commissionPerTrade, slippagePct, executionLabel, brokerAccountId, null, null);
+    }
 
     public RunConfigSnapshot(
         String strategyId,
@@ -43,7 +64,7 @@ public record RunConfigSnapshot(
         String executionLabel
     ) {
         this(strategyId, symbol, mode, barsSourceType, barsSourceCount, barsSourceYear, null,
-            capital, null, commissionPerTrade, slippagePct, executionLabel, null);
+            capital, null, commissionPerTrade, slippagePct, executionLabel, null, null, null);
     }
 
     public RunConfigSnapshot(
@@ -60,7 +81,7 @@ public record RunConfigSnapshot(
         String brokerAccountId
     ) {
         this(strategyId, symbol, mode, barsSourceType, barsSourceCount, barsSourceYear, null,
-            capital, null, commissionPerTrade, slippagePct, executionLabel, brokerAccountId);
+            capital, null, commissionPerTrade, slippagePct, executionLabel, brokerAccountId, null, null);
     }
 
     public RunConfigSnapshot {
@@ -69,6 +90,12 @@ public record RunConfigSnapshot(
         }
         if (slippagePct == null) {
             slippagePct = 0.0;
+        }
+        if (dataTimeframe == null) {
+            dataTimeframe = "H1";
+        }
+        if (strategyTimeframe == null) {
+            strategyTimeframe = "H1";
         }
     }
 
@@ -112,6 +139,8 @@ public record RunConfigSnapshot(
         Double commissionValue = commission instanceof Number n ? n.doubleValue() : null;
         Object slippage = map.get("slippagePct");
         Double slippageValue = slippage instanceof Number n ? n.doubleValue() : null;
+        String dataTf = map.get("dataTimeframe") != null ? String.valueOf(map.get("dataTimeframe")) : null;
+        String stratTf = map.get("strategyTimeframe") != null ? String.valueOf(map.get("strategyTimeframe")) : null;
         return new RunConfigSnapshot(
             String.valueOf(map.getOrDefault("strategyId", record.strategyId())),
             String.valueOf(map.getOrDefault("symbol", record.symbol())),
@@ -125,7 +154,9 @@ public record RunConfigSnapshot(
             commissionValue,
             slippageValue,
             map.get("executionLabel") != null ? String.valueOf(map.get("executionLabel")) : null,
-            map.get("brokerAccountId") != null ? String.valueOf(map.get("brokerAccountId")) : null);
+            map.get("brokerAccountId") != null ? String.valueOf(map.get("brokerAccountId")) : null,
+            dataTf,
+            stratTf);
     }
 
     public static RunConfigSnapshot fromRequest(RunManager.StartRunRequest request, String resolvedSymbol) {
@@ -146,13 +177,15 @@ public record RunConfigSnapshot(
             request.commissionPerTrade(),
             request.slippagePct(),
             request.executionLabel(),
-            request.brokerAccountId());
+            request.brokerAccountId(),
+            request.dataTimeframe(),
+            request.strategyTimeframe());
     }
 
     public RunConfigSnapshot withBrokerAccountId(String accountId) {
         return new RunConfigSnapshot(
             strategyId, symbol, mode, barsSourceType, barsSourceCount, barsSourceYear, barsSourcePath,
-            capital, quantity, commissionPerTrade, slippagePct, executionLabel, accountId);
+            capital, quantity, commissionPerTrade, slippagePct, executionLabel, accountId, dataTimeframe, strategyTimeframe);
     }
 
     public String resolvedBrokerAccountId() {
@@ -190,6 +223,12 @@ public record RunConfigSnapshot(
         }
         if (brokerAccountId != null && !brokerAccountId.isBlank()) {
             map.put("brokerAccountId", brokerAccountId);
+        }
+        if (dataTimeframe != null) {
+            map.put("dataTimeframe", dataTimeframe);
+        }
+        if (strategyTimeframe != null) {
+            map.put("strategyTimeframe", strategyTimeframe);
         }
         map.put("resolvedExecutionLabel", resolvedExecutionLabel().name());
         return Map.copyOf(map);

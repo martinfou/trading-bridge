@@ -32,6 +32,10 @@ public final class BarSourceResolver {
     private BarSourceResolver() {}
 
     public static List<Bar> load(BarsSource source, String symbol) throws IOException {
+        return load(source, symbol, "H1");
+    }
+
+    public static List<Bar> load(BarsSource source, String symbol, String timeframe) throws IOException {
         if (source == null || source.type() == null) {
             throw new IllegalArgumentException("barsSource.type is required");
         }
@@ -43,7 +47,7 @@ public final class BarSourceResolver {
                     throw new IllegalArgumentException("barsSource.year is required for type=year");
                 }
                 yield HistoricalDataLoader.loadYearSpec(
-                    symbol, source.yearSpec(), HistoricalDataLoader.DEFAULT_BARS_DIR);
+                    symbol, source.yearSpec(), timeframe, HistoricalDataLoader.DEFAULT_BARS_DIR);
             }
             case "file" -> loadFileBars(source, symbol);
             default -> throw new IllegalArgumentException("Unknown barsSource.type: " + source.type());

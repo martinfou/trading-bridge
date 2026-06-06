@@ -55,4 +55,25 @@ public record PromoteGateThresholds(
             throw new IllegalStateException("Failed to load promote gate thresholds from " + path, e);
         }
     }
+
+    public static void saveDefault(PromoteGateThresholds thresholds) {
+        String env = System.getenv("TRADING_BRIDGE_PROMOTE_GATES");
+        Path path = null;
+        if (env != null && !env.isBlank()) {
+            path = Path.of(env);
+        } else {
+            Path repoRoot = EventStoreConfig.findRepoRoot();
+            if (repoRoot != null) {
+                path = repoRoot.resolve("data/runtime/promote-gates.json");
+            }
+        }
+        if (path != null) {
+            try {
+                Files.createDirectories(path.getParent());
+                MAPPER.writerWithDefaultPrettyPrinter().writeValue(path.toFile(), thresholds);
+            } catch (IOException e) {
+                throw new IllegalStateException("Failed to save promote gate thresholds to " + path, e);
+            }
+        }
+    }
 }
