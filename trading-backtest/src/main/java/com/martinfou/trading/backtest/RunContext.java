@@ -144,18 +144,7 @@ public record RunContext(
                 case PAPER -> executionCost.configure(new BacktestEngine(strategy, bars, initialCapital)).run();
                 case LIVE -> throw new UnsupportedOperationException(mode + " not implemented");
             };
-            var endedPayload = new java.util.LinkedHashMap<String, Object>();
-            endedPayload.put("totalTrades", result.totalTrades());
-            endedPayload.put("totalReturnPct", result.totalReturnPct());
-            endedPayload.put("finalEquity", result.finalEquity());
-            if (result.totalCommission() > 0.0 || result.totalSlippage() > 0.0) {
-                endedPayload.put("totalCommission", result.totalCommission());
-                endedPayload.put("totalSlippage", result.totalSlippage());
-            }
-            endedPayload.put("maxDrawdownPct", result.maxDrawdownPct());
-            endedPayload.put("sharpeRatio", result.sharpeRatio());
-            endedPayload.put("profitFactor", result.profitFactor());
-            endedPayload.put("winRatePct", result.winRatePct());
+            var endedPayload = new java.util.LinkedHashMap<>(BacktestResultPayload.toEndedPayload(result));
             emit(RunEvent.ended(runId, eventStrategyId, symbol, mode, Map.copyOf(endedPayload)));
             return result;
         } catch (RuntimeException e) {

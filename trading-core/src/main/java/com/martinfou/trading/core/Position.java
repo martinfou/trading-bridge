@@ -8,15 +8,24 @@ public class Position {
     private double stopLoss;
     private double takeProfit;
 
-    public Position(String symbol, Order.Side side, double quantity, double entryPrice) {
+    private final java.time.Instant entryTime;
+
+    public Position(String symbol, Order.Side side, double quantity, double entryPrice, java.time.Instant entryTime) {
         this.symbol = symbol; this.side = side;
         this.quantity = quantity; this.entryPrice = entryPrice;
+        this.entryTime = entryTime;
+    }
+
+    public Position(String symbol, Order.Side side, double quantity, double entryPrice) {
+        this(symbol, side, quantity, entryPrice, java.time.Instant.EPOCH);
     }
 
     public double currentPnl(double currentPrice) {
-        return side == Order.Side.BUY 
-            ? (currentPrice - entryPrice) * quantity 
-            : (entryPrice - currentPrice) * quantity;
+        return currentPnl(currentPrice, ForexPnL.DEFAULT_USD_JPY);
+    }
+
+    public double currentPnl(double currentPrice, double usdJpyRate) {
+        return ForexPnL.pnlUsd(symbol, side, entryPrice, currentPrice, quantity, usdJpyRate);
     }
 
     public double pnlPercent(double currentPrice) {
@@ -32,6 +41,7 @@ public class Position {
     public double entryPrice() { return entryPrice; }
     public double stopLoss() { return stopLoss; }
     public double takeProfit() { return takeProfit; }
+    public java.time.Instant entryTime() { return entryTime; }
     public Position withStopLoss(double sl) { this.stopLoss = sl; return this; }
     public Position withTakeProfit(double tp) { this.takeProfit = tp; return this; }
 

@@ -21,6 +21,9 @@ import java.util.*;
  * to <em>reduce</em> an existing opposite-side position — the backtest equivalent
  * of OANDA's {@code positionFill: REDUCE_ONLY}.</p>
  *
+ * <p>For OANDA-style symbols ({@code EUR_USD}), Saturday and Sunday UTC bars are
+ * skipped (spot FX closed); see {@link ForexMarketCalendar}.</p>
+ *
  * <h3>Configuration</h3>
  * <ul>
  *   <li>Commission: per-trade fixed cost and/or percentage of notional</li>
@@ -59,6 +62,7 @@ public class BacktestEngine {
     private double totalCommission = 0.0;
     private double totalSlippage = 0.0;
     private double riskFreeRate = PerformanceMetrics.DEFAULT_RISK_FREE_RATE;
+    private double usdJpyRate = ForexPnL.DEFAULT_USD_JPY;
 
     // ---------------------------------------------------------------
     //  Constructors
@@ -124,6 +128,14 @@ public class BacktestEngine {
         return this;
     }
 
+    /** USD/JPY rate used to convert JPY-quoted pair P&amp;L into USD (default 150). */
+    public BacktestEngine withUsdJpyRate(double usdJpyRate) {
+        if (usdJpyRate > 0) {
+            this.usdJpyRate = usdJpyRate;
+        }
+        return this;
+    }
+
     // ---------------------------------------------------------------
     //  Main execution
     // ---------------------------------------------------------------
@@ -138,8 +150,11 @@ public class BacktestEngine {
             strategy.name(), bars.size(), String.format("%,.2f", initialCapital));
         strategy.reset();
 
-        // Parse all bars
+        // Parse all bars (spot FX: skip Saturday/Sunday UTC — market closed)
         for (Bar bar : bars) {
+            if (!ForexMarketCalendar.isTradingBar(bar)) {
+                continue;
+            }
             // Let the strategy analyse this bar first
             strategy.onBar(bar);
 
@@ -157,14 +172,24 @@ public class BacktestEngine {
             if (equity > peakEquity) peakEquity = equity;
         }
 
-        // Close any remaining open positions at last bar's close
-        if (!bars.isEmpty()) {
-            closeRemainingPositions(bars.getLast());
-            // Final equity recompute (no floating P&L — all positions closed)
-            recomputeEquity(bars.getLast());
+        // Close any remaining open positions at last trading bar's close
+        Bar lastTradingBar = lastTradingBar(bars);
+        if (lastTradingBar != null) {
+            closeRemainingPositions(lastTradingBar);
+            recomputeEquity(lastTradingBar);
         }
 
         return buildResult();
+    }
+
+    private static Bar lastTradingBar(List<Bar> bars) {
+        Bar last = null;
+        for (Bar bar : bars) {
+            if (ForexMarketCalendar.isTradingBar(bar)) {
+                last = bar;
+            }
+        }
+        return last;
     }
 
     // ---------------------------------------------------------------
@@ -247,7 +272,7 @@ public class BacktestEngine {
                     //   same-side → scale in
                     //   opposite-side → create new hedge position
                     //   no position → create new
-                    handleEntryOrder(order, adjustedPrice);
+                    handleEntryOrder(order, adjustedPrice, bar.timestamp());
                 }
 
                 log.debug("FILLED: {} {} @ {:.5f} (cost: ${:.2f})",
@@ -278,7 +303,7 @@ public class BacktestEngine {
         else if (pnl < 0) losingTrades++;
 
         trades.add(new Trade(order.symbol(), opposite.side(), opposite.entryPrice(), exitPrice,
-            qty, timestamp, timestamp));
+            qty, opposite.entryTime(), timestamp));
 
         opposite.reduceQuantity(qty);
 
@@ -297,7 +322,7 @@ public class BacktestEngine {
      *   <li>No same-side position → create a new independent position (hedge if opposite already exists)</li>
      * </ul>
      */
-    private void handleEntryOrder(Order order, double adjustedPrice) {
+    private void handleEntryOrder(Order order, double adjustedPrice, Instant timestamp) {
         Position sameSide = findSameSide(order.symbol(), order.side());
         if (sameSide != null) {
             // Same-side exists — scale in (SL/TP from the first entry remain)
@@ -305,7 +330,7 @@ public class BacktestEngine {
         } else {
             // No same-side position — create new position (may be a hedge)
             Position pos = new Position(order.symbol(), order.side(),
-                order.quantity(), adjustedPrice);
+                order.quantity(), adjustedPrice, timestamp);
             if (order.stopLoss() != 0) pos.withStopLoss(order.stopLoss());
             if (order.takeProfit() != 0) pos.withTakeProfit(order.takeProfit());
             positions(order.symbol()).add(pos);
@@ -381,7 +406,7 @@ public class BacktestEngine {
         else if (pnl < 0) losingTrades++;
 
         trades.add(new Trade(pos.symbol(), pos.side(), pos.entryPrice(), exitPrice,
-            pos.quantity(), timestamp, timestamp));
+            pos.quantity(), pos.entryTime(), timestamp));
 
         // Remove from the symbol's position list
         List<Position> posList = openPositionsBySymbol.get(pos.symbol());

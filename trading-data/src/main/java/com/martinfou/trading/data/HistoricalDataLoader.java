@@ -98,11 +98,34 @@ public final class HistoricalDataLoader {
     }
 
     public static List<Bar> loadYearSpec(String symbol, String spec, Path barsDir) throws IOException {
+        if (spec.equalsIgnoreCase("all")) {
+            return loadAllAvailable(symbol, barsDir, DEFAULT_CSV_DIR).bars();
+        }
         if (spec.contains("-") && spec.matches("\\d{4}-\\d{4}")) {
             String[] parts = spec.split("-");
             return loadYearRange(symbol, Integer.parseInt(parts[0]), Integer.parseInt(parts[1]), barsDir);
         }
         return loadYear(symbol, Integer.parseInt(spec), barsDir);
+    }
+
+    /** Loads every year indexed for {@code symbol} under bars/ and dukascopy CSV dirs. */
+    public static LoadResult loadAllAvailable(String symbol) throws IOException {
+        return loadAllAvailable(symbol, DEFAULT_BARS_DIR, DEFAULT_CSV_DIR);
+    }
+
+    public static LoadResult loadAllAvailable(String symbol, Path barsDir, Path csvDir) throws IOException {
+        HistoricalDataCatalog.SymbolAvailability availability =
+            HistoricalDataCatalog.availability(symbol, barsDir, csvDir);
+        if (availability.years().isEmpty()) {
+            throw new IOException("No historical data for " + symbol);
+        }
+        var merged = new ArrayList<Bar>();
+        for (int year : availability.years()) {
+            merged.addAll(loadYear(symbol, year, barsDir));
+        }
+        String source = availability.minYear() + "-" + availability.maxYear()
+            + " (" + availability.years().size() + " year(s))";
+        return new LoadResult(merged, symbol, source);
     }
 
     public static String inferSymbol(Path path, String fallback) {
@@ -166,6 +189,9 @@ public final class HistoricalDataLoader {
     }
 
     private static String describeYearSpecSource(String symbol, String spec, Path barsDir) throws IOException {
+        if (spec.equalsIgnoreCase("all")) {
+            return "All available years";
+        }
         if (spec.contains("-") && spec.matches("\\d{4}-\\d{4}")) {
             String[] parts = spec.split("-");
             int start = Integer.parseInt(parts[0]);

@@ -26,12 +26,15 @@ public final class TradingTuiMain {
             try {
                 var health = client.health();
                 terminal.writer().println("Connected: " + health.get("status").asText()
-                    + " v" + health.get("version").asText());
+                    + " v" + health.get("version").asText()
+                    + (health.path("dataCatalog").asBoolean(false)
+                        ? "  (data catalog OK)"
+                        : "  (data catalog MISSING — restart control plane)"));
             } catch (Exception e) {
                 terminal.writer().println("Warning: control plane unreachable — " + e.getMessage());
                 terminal.writer().println("Start ControlPlaneMain then retry commands.");
             }
-            terminal.writer().println("Type /help for slash commands.");
+            terminal.writer().println("Type /help for slash commands. Use /backtest for interactive wizard.");
             terminal.flush();
 
             LineReader reader = LineReaderBuilder.builder()
@@ -47,7 +50,10 @@ public final class TradingTuiMain {
                 } catch (EndOfFileException e) {
                     break;
                 }
-                for (String output : handler.handle(line)) {
+                for (String output : handler.handle(line, reader, msg -> {
+                    terminal.writer().println(msg);
+                    terminal.flush();
+                })) {
                     if ("__QUIT__".equals(output)) {
                         terminal.writer().println("Bye.");
                         terminal.flush();

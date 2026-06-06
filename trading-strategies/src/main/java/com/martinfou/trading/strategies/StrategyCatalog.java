@@ -2,6 +2,8 @@ package com.martinfou.trading.strategies;
 
 import com.martinfou.trading.core.Strategy;
 import com.martinfou.trading.strategies.generated.GeneratedStrategyCatalog;
+import com.martinfou.trading.strategies.harness.HarnessStrategyCatalog;
+import com.martinfou.trading.strategies.llmweekly.LlmWeeklyStrategyCatalog;
 import com.martinfou.trading.strategies.prop.PropStrategyCatalog;
 import com.martinfou.trading.strategies.sqimported.SqImportedStrategyCatalog;
 
@@ -18,7 +20,7 @@ import java.util.function.Function;
 public final class StrategyCatalog {
 
     public enum Family {
-        PROP, SQ_IMPORTED, GENERATED, EXAMPLE
+        PROP, SQ_IMPORTED, GENERATED, LLM_WEEKLY, HARNESS, EXAMPLE
     }
 
     public record Entry(String id, Family family, String defaultSymbol) {}
@@ -43,6 +45,12 @@ public final class StrategyCatalog {
         GeneratedStrategyCatalog.all().keySet().forEach(id ->
             put(id, Family.GENERATED, GeneratedStrategyCatalog.defaultSymbol(id),
                 sym -> GeneratedStrategyCatalog.create(id, sym)));
+        LlmWeeklyStrategyCatalog.all().keySet().forEach(id ->
+            put(id, Family.LLM_WEEKLY, LlmWeeklyStrategyCatalog.defaultSymbol(id),
+                sym -> LlmWeeklyStrategyCatalog.create(id, sym)));
+        HarnessStrategyCatalog.all().keySet().forEach(id ->
+            put(id, Family.HARNESS, HarnessStrategyCatalog.defaultSymbol(id),
+                sym -> HarnessStrategyCatalog.create(id, sym)));
     }
 
     /** Runtime registration for example strategies (called from RunBacktest). */
@@ -54,11 +62,16 @@ public final class StrategyCatalog {
     }
 
     public static Strategy create(String id, String symbol) {
+        return create(id, symbol, null);
+    }
+
+    public static Strategy create(String id, String symbol, Double quantityUnits) {
         Registration reg = ENTRIES.get(id);
         if (reg == null) {
             throw new IllegalArgumentException("Unknown strategy: " + id);
         }
-        return reg.factory().apply(symbol);
+        Strategy strategy = reg.factory().apply(symbol);
+        return new FixedQuantityStrategy(strategy, com.martinfou.trading.core.LotSizing.resolveQuantityUnits(quantityUnits));
     }
 
     public static String defaultSymbol(String id) {

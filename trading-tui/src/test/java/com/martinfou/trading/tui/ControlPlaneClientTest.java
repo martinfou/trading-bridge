@@ -35,4 +35,30 @@ class ControlPlaneClientTest {
             server.stop(0);
         }
     }
+
+    @Test
+    void getJson_plainText404_reportsBody() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/api/data/symbols", exchange -> {
+            byte[] body = "Endpoint GET /api/data/symbols not found".getBytes();
+            exchange.sendResponseHeaders(404, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.start();
+        try {
+            int port = server.getAddress().getPort();
+            ControlPlaneClient client = new ControlPlaneClient("http://127.0.0.1:" + port);
+            try {
+                client.listDataSymbols();
+                org.junit.jupiter.api.Assertions.fail("expected exception");
+            } catch (ControlPlaneClient.ControlPlaneException e) {
+                assertEquals(404, e.statusCode());
+                org.junit.jupiter.api.Assertions.assertTrue(e.getMessage().contains("not found"));
+            }
+        } finally {
+            server.stop(0);
+        }
+    }
 }

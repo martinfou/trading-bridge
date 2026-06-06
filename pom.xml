@@ -17,6 +17,7 @@
         <module>trading-broker</module>
         <module>trading-parser</module>
         <module>trading-data</module>
+        <module>trading-intelligence</module>
         <module>trading-strategies</module>
         <module>trading-examples</module>
         <module>trading-genetics</module>

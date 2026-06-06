@@ -6,7 +6,11 @@ import java.util.List;
 /**
  * Non-interactive runner for weekly prop shop analysis.
  * Calls all connectors and outputs structured data.
- * Usage: mvn exec:java -pl trading-data -Dexec.mainClass=com.martinfou.trading.data.WeeklyAnalysisRunner
+ *
+ * <p>For structured JSON brief + hot-folder pipeline, see
+ * {@code com.martinfou.trading.intelligence.WeeklyIntelIngestMain} (Epic 22).
+ *
+ * <p>Usage: mvn exec:java -pl trading-data -Dexec.mainClass=com.martinfou.trading.data.WeeklyAnalysisRunner
  */
 public class WeeklyAnalysisRunner {
 

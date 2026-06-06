@@ -40,7 +40,7 @@ final class RunLauncher {
         return RunContext.forStrategy(
             runId,
             strategyId,
-            StrategyCatalog.create(strategyId, symbol),
+            StrategyCatalog.create(strategyId, symbol, configSnapshot.quantity()),
             symbol,
             mode,
             bars,

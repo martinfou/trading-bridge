@@ -65,6 +65,7 @@ class ControlSummaryServiceTest {
                 100_000.0,
                 null,
                 null,
+                null,
                 null));
             waitForCompletion(manager, runId);
 

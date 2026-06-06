@@ -25,31 +25,31 @@ propShopEnrichment:
     - "Must-ship ~10 stories ; Phase 2 : HTML, multi-compte, IBKR"
     - "Matrice §8d → story ; RiskEngine + ExecutionCostModel partagés"
 propShopMustShip:
-  - "13.8"
-  - "13.9"
-  - "15.5"
-  - "15.6"
-  - "15.8"
-  - "16.2"
-  - "16.3"
-  - "16.4"
-  - "16.5"
-  - "16.6"
-  - "16.7"
-  - "16.8"
-  - "17.9"
-  - "17.10"
-propShopPhase2:
-  - "15.7"
-  - "16.9"
-  - "16.10"
-  - "17.9b"
-  - "17.11"
-  - "17.12"
-  - "19.4"
-  - "19.5"
-inputDocuments:
 
+- "13.8"
+- "13.9"
+- "15.5"
+- "15.6"
+- "15.8"
+- "16.2"
+- "16.3"
+- "16.4"
+- "16.5"
+- "16.6"
+- "16.7"
+- "16.8"
+- "17.9"
+- "17.10"
+propShopPhase2:
+- "15.7"
+- "16.9"
+- "16.10"
+- "17.9b"
+- "17.11"
+- "17.12"
+- "19.4"
+- "19.5"
+inputDocuments:
 - _bmad-output/planning-artifacts/prds/prd-Trading Bridge-2026-05-24/prd.md
 - _bmad-output/planning-artifacts/prds/prd-Trading Bridge-2026-05-24/addendum.md
 - _bmad-output/planning-artifacts/prds/prd-Trading Bridge-2026-05-24/validation-report.md
@@ -274,18 +274,20 @@ PS-GR17: Epic 16 — Connecteur IBKR post-OANDA (**Phase 2**)
 
 ### Matrice §8d → stories prop-shop (due diligence)
 
-| Critère §8d | Statut cible | Stories | Test / preuve |
-|-------------|---------------|---------|---------------|
-| Backtest reproductible | ✅ fermé | 13.3–13.5, **13.8**, 13.9 | `GoldenBacktestTest`, `BacktestEngineContractTest`, config hash |
-| Audit trail | ✅ fermé | 13.3, 15.2, 15.4, 16.6 | JSONL export, `DeploymentRecord` |
-| Gates research → production | ⚠️ → ✅ | **15.5**, 15.6, 16.4 | `PromoteServiceTest`, 422 reasons |
-| Modèle exécution réaliste | ❌ → ⚠️ | **13.9**, 19.5 (Phase 2) | Commission/slippage AC numériques |
-| Walk-forward / OOS | ❌ → ⚠️ | 19.2, **19.4** (Phase 2) | Holdout RunEvents |
-| Risk limits temps réel | ❌ → ⚠️ | **16.8**, **17.10** | `RiskEngineTest`, ORDER_REJECTED |
-| Paper / live broker | ❌ → ⚠️ | **16.2–16.5**, 16.7 | OANDA integration gated ; stub exclu gate LIVE |
-| CI non-régression | ⚠️ → ✅ | **13.8**, 12-10, 12-11 | Mini-dataset always-on CI |
-| Runbook opérationnel | ⚠️ nouveau | **15.8** | Checklist documentée + API status |
-| SM-2 stub vs broker | ⚠️ → ✅ | **15.6**, 16.1 | `executionLabel` ; stub 422 vers LIVE |
+
+| Critère §8d                 | Statut cible | Stories                   | Test / preuve                                                   |
+| --------------------------- | ------------ | ------------------------- | --------------------------------------------------------------- |
+| Backtest reproductible      | ✅ fermé      | 13.3–13.5, **13.8**, 13.9 | `GoldenBacktestTest`, `BacktestEngineContractTest`, config hash |
+| Audit trail                 | ✅ fermé      | 13.3, 15.2, 15.4, 16.6    | JSONL export, `DeploymentRecord`                                |
+| Gates research → production | ⚠️ → ✅       | **15.5**, 15.6, 16.4      | `PromoteServiceTest`, 422 reasons                               |
+| Modèle exécution réaliste   | ❌ → ⚠️       | **13.9**, 19.5 (Phase 2)  | Commission/slippage AC numériques                               |
+| Walk-forward / OOS          | ❌ → ⚠️       | 19.2, **19.4** (Phase 2)  | Holdout RunEvents                                               |
+| Risk limits temps réel      | ❌ → ⚠️       | **16.8**, **17.10**       | `RiskEngineTest`, ORDER_REJECTED                                |
+| Paper / live broker         | ❌ → ⚠️       | **16.2–16.5**, 16.7       | OANDA integration gated ; stub exclu gate LIVE                  |
+| CI non-régression           | ⚠️ → ✅       | **13.8**, 12-10, 12-11    | Mini-dataset always-on CI                                       |
+| Runbook opérationnel        | ⚠️ nouveau   | **15.8**                  | Checklist documentée + API status                               |
+| SM-2 stub vs broker         | ⚠️ → ✅       | **15.6**, 16.1            | `executionLabel` ; stub 422 vers LIVE                           |
+
 
 ### FR Coverage Map
 
@@ -358,16 +360,21 @@ Martin peut générer des ébauches Java via DeepSeek soumises aux mêmes gates.
 Martin peut faire communiquer StrategyQuant X et Trading Bridge sur Mac : hot folder XML, pilotage sqcli, pipeline nightly et boucle fitness TB→SQ via indicateurs externes.
 **FRs covered:** FR-SQ1–FR-SQ4, FR1 (automatisé) | **Prérequis:** Epic 2 (parser 2-1…2-8), Epic 12/13 (RunBacktest, runtime optionnel) | **Sprint:** post Epic 2 codegen (2-9) ou parallèle inbox | **Source:** brainstorming 2026-05-31
 
+### Epic 22: Weekly Strategy Builder (intelligence hebdomadaire LLM)
+
+Martin peut lancer **trois jobs découplées** (hot folder, modèle Epic 21) : (1) cron vendredi ingest + DeepSeek → JSON plan dans `pending/` ; (2) watcher compile → `compiled/` ; (3) watcher deploy PAPER_OANDA → `deployed/` — ou **NoTradeWeek** si la semaine ne le permet pas.
+**FRs covered:** FR3 (étendu), Sprint 15 news/calendar (partiel) | **Prérequis:** Epic 13, 16, 12 | **Module:** `trading-intelligence` | **Source:** brainstorming 2026-06-01, hot-folder 2026-06-02
+
 ### Synthèse prop-shop (enrichissement Epic 13–20)
 
 
-| Epic   | Must-ship | Phase 2 |
-| ------ | --------- | ------- |
-| 13     | 13.8, 13.9 | — |
-| 15     | 15.5, 15.6, 15.8 runbook | 15.7 HTML |
-| 16     | 16.2–16.8 (ordre : 16.2 skeleton avant 16.3 OANDA) | 16.9 multi-compte, 16.10 IBKR |
-| 17     | 17.9, 17.10 | 17.11 labels UI, 17.12 drift post-broker |
-| 19     | — | 19.4 OOS holdout, 19.5 stress |
+| Epic | Must-ship                                          | Phase 2                                  |
+| ---- | -------------------------------------------------- | ---------------------------------------- |
+| 13   | 13.8, 13.9                                         | —                                        |
+| 15   | 15.5, 15.6, 15.8 runbook                           | 15.7 HTML                                |
+| 16   | 16.2–16.8 (ordre : 16.2 skeleton avant 16.3 OANDA) | 16.9 multi-compte, 16.10 IBKR            |
+| 17   | 17.9, 17.10                                        | 17.11 labels UI, 17.12 drift post-broker |
+| 19   | —                                                  | 19.4 OOS holdout, 19.5 stress            |
 
 
 ---
@@ -1281,7 +1288,7 @@ Martin peut orchestrer StrategyQuant X depuis Trading Bridge sur **Mac** : dépo
 
 **Prérequis :** Epic 2 stories 2-1…2-8 ; `RunBacktest` / `StrategyCatalog` (Epic 12) ; runtime (Epic 13) optionnel pour 21.7.
 
-**Module cible :** `trading-parser` (`com.martinfou.trading.parser.sq.bridge.*`) ; scripts `scripts/sq/` ; data `data/sq-inbox/`.
+**Module cible :** `trading-parser` (`com.martinfou.trading.parser.sq.bridge.`*) ; scripts `scripts/sq/` ; data `data/sq-inbox/`.
 
 **Ordre recommandé :** 21.1 → 21.2 → 21.3 → 21.4 → 21.5 → 21.6 → 21.7 → 21.8
 
@@ -1421,3 +1428,187 @@ So that StrategyQuant Retester can filter candidates using TB validation.
 - Epic 14 = onboarding manuel ; Epic 21 = flux automatisé SQ↔TB.
 - Story 2-9 (codegen) indépendante ; inbox évalue via interpréteur parser.
 - Dedup hash (brainstorm #67) : optionnel post-21.2 si retraitement bruyant.
+
+---
+
+## Epic 22: Weekly Strategy Builder (intelligence hebdomadaire LLM)
+
+Martin peut produire jusqu'à **3 stratégies Java compilables** pour la semaine suivante via **trois jobs découplées** sur hot folder (pattern Epic 21 `sq-inbox`) :
+
+
+| Job                 | Déclencheur                               | Entrée → Sortie                                                             |
+| ------------------- | ----------------------------------------- | --------------------------------------------------------------------------- |
+| **Job 1 — Plan**    | Cron vendredi 17h UTC (+ fallback samedi) | Ingest → DeepSeek → `data/weekly-builder/pending/weekly-plan-YYYY-Www.json` |
+| **Job 2 — Compile** | Watcher / cron poll `pending/`            | JSON → codegen → `mvn compile` → `compiled/` ou `failed/`                   |
+| **Job 3 — Deploy**  | Watcher / cron poll `compiled/`           | PAPER_OANDA batch atomique → `deployed/`                                    |
+
+
+**Prérequis :** Epic 13 (control plane, event store), Epic 16 (`PAPER_OANDA`), Epic 12 (`StrategyCatalog`). Epic 20.1 (client DeepSeek) recommandé ; 22.2 peut inclure un client minimal.
+
+**Module cible :** `trading-intelligence` (`com.martinfou.trading.intelligence.`*)
+
+**Hot folder layout** (`data/weekly-builder/`, gitignored sauf `.gitkeep`) :
+
+```
+pending/     ← plan JSON approuvé par Reviewer (reviewerStatus=APPROVED)
+compiling/   ← lock pendant codegen + mvn (évite double traitement)
+compiled/    ← compile OK + sidecar manifest + référence sources Java
+deployed/    ← PAPER_OANDA OK
+failed/      ← LLM reject, compile error (+ reason.json)
+dlq/         ← JSON schema invalide
+archive/     ← semaines passées
+```
+
+**Intel brief séparé :** `data/weekly-intel/brief-YYYY-MM-DD.json` (sortie Job 1 avant LLM, audit).
+
+**Artefacts additionnels :** `deploy/weekly-plans/YYYY-MM-DD.md`, event store, `StrategyCatalog` tag `llm-generated`.
+
+**Contraintes hard :**
+
+- LLM produit **JSON + templateId (T1–T8) + params** — jamais de Java libre
+- Paires whitelist : `EUR_USD`, `GBP_USD`, `USD_JPY`, `GBP_JPY`, `AUD_USD`, `USD_CAD`
+- Max 3 stratégies ; deploy **atomique** (N ou 0)
+- Calendrier scrape KO → Job 1 refuse, rien dans `pending/`
+- Recompile possible sans rappeler DeepSeek (JSON persisté)
+- `WeeklyAnalysisRunner` = CLI debug conservé
+
+**Ordre recommandé :** 22.1 → 22.2 → 22.3 → 22.4 → 22.5 → 22.6 → 22.7 → 22.8
+
+### Story 22.1: Module trading-intelligence, ingest brief et hot-folder layout
+
+As a Martin,
+I want weekly intel ingest and a standard hot-folder directory layout,
+So that plan and compile jobs communicate only via files on disk.
+
+**Acceptance Criteria:**
+
+**Given** the repo with `trading-data` scrapers
+**When** setup or first weekly-builder use runs
+**Then** Maven module `trading-intelligence` exists (deps: `trading-core`, `trading-data`; no `trading-runtime` on ingest path)
+**And** directories exist: `data/weekly-intel/`, `data/weekly-builder/{pending,compiling,compiled,deployed,failed,dlq,archive}` with `.gitkeep` ; contents gitignored
+**And** `WeeklyBuilderPaths` (like `SqInboxPaths`) resolves paths from repo root
+**And** `WeeklyIntelBrief` record (Jackson): `generatedAt`, `weekStart`, `calendarEvents[]`, `newsItems[]`, `cotSnapshots[]`, `sentiment`, `contradictions[]`, `ingestStatus`
+**And** `IngestPipeline` reuses `ForexFactoryScraper`, `COTDataFetcher`, `OandaPositionAnalyzer` (OANDA missing → `PARTIAL`, not FAILED)
+**And** calendar scrape failure → `FAILED`, no brief handoff to LLM
+**And** CLI writes `data/weekly-intel/brief-YYYY-MM-DD.json`
+**And** unit tests with fixtures; `WeeklyAnalysisRunner` unchanged
+
+### Story 22.2: Job 1 — Cron ingest + DeepSeek → pending/
+
+As a Martin,
+I want a scheduled job that ingests intel and writes an approved weekly plan JSON to pending/,
+So that DeepSeek runs once per week and output is persisted before compile.
+
+**Acceptance Criteria:**
+
+**Given** valid ingest and `DEEPSEEK_API_KEY`
+**When** `WeeklyPlanJob` runs (cron vendredi 17h UTC or CLI)
+**Then** brief written to `data/weekly-intel/` then Planner (T~~0.7) + Reviewer (T~~0.2) produce `WeeklyPlan` JSON
+**And** on reviewer approval, atomically write `data/weekly-builder/pending/weekly-plan-YYYY-Www.json` + optional sidecar manifest (`briefRef`, `reviewedAt`, `briefSha256`)
+**And** schema includes: `weekId`, `picks[]` with `{templateId, pair, params, sources[], rationale}`, `reviewerStatus` (`APPROVED`|`REJECTED`), `riskEnvelopeSnapshot`
+**And** rejected plans or total failure → `failed/` with `reason.json` ; T8 NoTradeWeek may land in `pending/` as valid pick
+**And** calendar ingest FAILED → no file in `pending/`, alert + log
+**And** prompts under `trading-intelligence/src/main/resources/prompts/` ; stub LLM in tests
+
+### Story 22.3: Template Registry et Risk Budget Envelope
+
+As a Martin,
+I want a fixed template catalogue and risk envelope enforced before and after LLM output,
+So that pending/ never contains invalid template IDs or pairs.
+
+**Acceptance Criteria:**
+
+**Given** `template-registry.json` (T1–T8) and `RiskBudgetEnvelope`
+**When** Job 1 validates planner output before write to `pending/`
+**Then** only T1–T8 and whitelist pairs accepted ; max 3 picks ; no duplicate pair+direction
+**And** JSON schema validation rejects malformed plans → `dlq/`
+**And** registry maps templateId → Java target / codegen handler
+**And** unit tests for gate rejection and schema failures
+
+### Story 22.4: Job 2 — Watcher pending/ → codegen + compile → compiled/
+
+As a Martin,
+I want a watcher that picks up new pending plans and compiles strategies without calling DeepSeek again,
+So that compile retries are cheap and decoupled from LLM.
+
+**Acceptance Criteria:**
+
+**Given** `weekly-plan-*.json` in `pending/` with `reviewerStatus=APPROVED`
+**When** `WeeklyCompileWatcher` runs (cron poll or `WatchService` / CLI)
+**Then** file moved atomically to `compiling/` (mutex — second watcher skips or fails busy)
+**And** `WeeklyStrategyCodeGenerator` reads JSON picks (T1+T8 MVP ; T2–T7 after 22.5)
+**And** `CompileGate` runs `mvn compile -pl trading-strategies`
+**And** success → `compiled/` with plan JSON + `manifest.json` (strategyIds, class names, compile timestamp)
+**And** failure → `failed/` + `reason.json` (Maven stderr excerpt) ; nothing left in `compiling/`
+**And** strategies registered in `StrategyCatalog` with `llm-generated` / `origin: AI`
+**And** markdown summary in `deploy/weekly-plans/YYYY-MM-DD.md`
+**And** integration test: fixture plan in `pending/` → `compiled/` without network
+
+### Story 22.5: Codegen templates T2–T7
+
+As a Martin,
+I want the full expert template catalogue in the compile watcher,
+So that any approved templateId in pending/ compiles successfully.
+
+**Acceptance Criteria:**
+
+**Given** registry entries T2–T7
+**When** compile watcher processes picks T2–T7
+**Then** codegen delegates to existing prop classes where applicable (`LondonOpenRangeBreakoutStrategy`, `WeeklyOpenGapFadeStrategy`, etc.)
+**And** each template documents required params in registry
+**And** one integration test per template category: pending fixture → compiled
+
+### Story 22.6: Job 3 — Watcher compiled/ → deploy PAPER_OANDA atomique
+
+As a Martin,
+I want a deploy watcher that promotes compiled weekly strategies to OANDA paper atomically,
+So that broker execution is decoupled from compile and never partial.
+
+**Acceptance Criteria:**
+
+**Given** manifest in `compiled/` and control plane running
+**When** `WeeklyDeployWatcher` runs
+**Then** all N strategies (N≤3) promoted with `executionLabel: PAPER_OANDA` or none on failure (rollback)
+**And** success → move artifact bundle to `deployed/` ; failure → `failed/` with reason
+**And** T8 / empty picks → no broker orders, log NoTradeWeek
+**And** event store records weekly correlation id
+**And** tests use stub control plane client
+
+### Story 22.7: Crons Job 1/2/3, fallback samedi et Strategy TTL
+
+As a Martin,
+I want documented cron entries for each job plus strategy expiry,
+So that the hot-folder pipeline runs unattended with OANDA-friendly timing.
+
+**Acceptance Criteria:**
+
+**Given** scripts `scripts/weekly-plan.sh`, `scripts/weekly-compile.sh`, `scripts/weekly-deploy.sh` (or documented equivalents)
+**When** configured in crontab
+**Then** Job 1: vendredi 17:00 UTC ; retry ingest samedi 10:00 UTC if Friday ingest incomplete
+**And** Job 2: poll `pending/` every 1–5 min (or continuous watcher daemon documented)
+**And** Job 3: poll `compiled/` after successful compile (or lundi 00:05 UTC configurable)
+**And** deployed strategies carry `validFrom` / `validUntil` ; expiry stops paper after week end
+**And** `caffeinate` / Mac notes optional for long runs
+
+### Story 22.8: TUI weekly-build et weekly-status
+
+As a Martin,
+I want TUI commands to trigger jobs and inspect hot-folder state,
+So that I can force a plan run or see pending/compiled/deployed counts.
+
+**Acceptance Criteria:**
+
+**Given** control plane + TUI connected
+**When** I run `/weekly-build [--plan|--compile|--deploy|--force]` or `/weekly-status`
+**Then** triggers Job 1/2/3 or reports: counts per folder, last `weekId`, templates, failure reasons
+**And** optional `GET /api/weekly-builder/status` mirrors SQ bridge 21.7 pattern
+**And** TUI tests extend `TuiCommandHandlerTest`
+
+**Notes Epic 22 :**
+
+- Architecture hot-folder validée 2026-06-02 (découplage LLM / compile / deploy)
+- Brainstorm : `_bmad-output/brainstorming/brainstorming-session-2026-06-01-2324.md`
+- Analogie : Epic 21 `data/sq-inbox/` — même pattern mutex `compiling/` que `SqJobMutex`
+- NLP RSS enrichissement post-MVP dans `trading-data`
+- Epic 20 = AI codegen générique ; Epic 22 = hebdo news/calendar/sentiment via fichiers
+

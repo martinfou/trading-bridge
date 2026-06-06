@@ -13,7 +13,9 @@ A passing `mvn test` at root with only skips on full-year golden is **not** the 
 
 ## Golden backtest
 
-Integration test `GoldenBacktestTest` validates end-to-end behaviour: historical data load, `BacktestEngine`, and the `LondonOpenRangeBreakout` prop strategy.
+Integration test `GoldenBacktestTest` validates end-to-end behaviour: historical data load, `StrategyCatalog` (including lot wrapper), `BacktestEngine`, and the `LondonOpenRangeBreakout` prop strategy.
+
+Shared comparison logic lives in `GoldenBacktestBaseline.metricMismatches()` (also used by promote `golden_baseline` gate for return/drawdown tolerance).
 
 ### CI mini-dataset (always-on)
 
@@ -47,7 +49,7 @@ Committed under `data/ci/` so CI runs without `data/historical/`.
 - **Initial capital:** $100,000
 - **Data:** `data/historical/bars/EUR_USD_H1_2012.bars` or Dukascopy CSV equivalent
 
-The full-year test skips (does not fail) when local historical data is missing.
+The full-year test is disabled via `@EnabledIf` when local historical data is missing (not a silent pass inside the test body).
 
 ### Re-capture baseline
 

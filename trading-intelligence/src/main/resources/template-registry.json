@@ -1,0 +1,76 @@
+{
+  "whitelistPairs": [
+    "EUR_USD",
+    "GBP_USD",
+    "USD_JPY",
+    "GBP_JPY",
+    "AUD_USD",
+    "USD_CAD"
+  ],
+  "templates": {
+    "T1": {
+      "name": "HighImpactNewsBreakout",
+      "description": "Event-driven FX breakout around HIGH impact calendar events",
+      "codegenHandler": "THIN_PROP",
+      "requiredParams": ["direction", "eventId", "eventTimeUtc"],
+      "optionalParams": ["slPips", "tpRatio"],
+      "allowedDirections": ["LONG", "SHORT"]
+    },
+    "T2": {
+      "name": "COTContrarianFade",
+      "description": "Fade extreme speculator positioning from COT data",
+      "codegenHandler": "THIN_PROP",
+      "requiredParams": ["direction", "cotInstrument", "percentile52w"],
+      "optionalParams": ["holdBars"],
+      "allowedDirections": ["LONG", "SHORT"]
+    },
+    "T3": {
+      "name": "RetailSentimentFade",
+      "description": "Contrarian fade when retail positioning is one-sided",
+      "codegenHandler": "THIN_PROP",
+      "requiredParams": ["direction", "retailLongPct"],
+      "optionalParams": ["thresholdPct"],
+      "allowedDirections": ["LONG", "SHORT"]
+    },
+    "T4": {
+      "name": "LondonOpenRangeBreakout",
+      "description": "London session first-hour range breakout",
+      "codegenHandler": "DELEGATE_LORB",
+      "requiredParams": [],
+      "optionalParams": [],
+      "allowedDirections": ["LONG", "SHORT"]
+    },
+    "T5": {
+      "name": "WeeklyOpenGapFade",
+      "description": "Monday gap fill toward weekend close",
+      "codegenHandler": "DELEGATE_GAP_FADE",
+      "requiredParams": [],
+      "optionalParams": ["minGapPips", "maxGapPips"],
+      "allowedDirections": ["LONG", "SHORT"]
+    },
+    "T6": {
+      "name": "CentralBankWeekBias",
+      "description": "Directional bias during central-bank decision week",
+      "codegenHandler": "THIN_PROP",
+      "requiredParams": ["direction", "centralBank", "decisionDayUtc"],
+      "optionalParams": ["biasStrength"],
+      "allowedDirections": ["LONG", "SHORT"]
+    },
+    "T7": {
+      "name": "PreEventRangeBreakout",
+      "description": "Volatility expansion breakout before CPI/NFP",
+      "codegenHandler": "THIN_PROP",
+      "requiredParams": ["direction", "eventId", "eventTimeUtc"],
+      "optionalParams": ["rangeHours"],
+      "allowedDirections": ["LONG", "SHORT"]
+    },
+    "T8": {
+      "name": "NoTradeWeek",
+      "description": "Risk manager — no trades when inputs are contradictory or week is untradeable",
+      "codegenHandler": "NO_TRADE",
+      "requiredParams": [],
+      "optionalParams": ["reason"],
+      "allowedDirections": []
+    }
+  }
+}

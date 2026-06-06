@@ -5,7 +5,7 @@ const router = useRouter()
 const route = useRoute()
 
 const nav = [
-  { path: '/dashboard', label: 'Dashboard', icon: '▶' },
+  { path: '/dashboard', label: 'Dashboard', icon: '📊' },
   { path: '/strategies', label: 'Strategies', icon: '📋' },
   { path: '/compare', label: 'Compare', icon: '⇄' },
 ]

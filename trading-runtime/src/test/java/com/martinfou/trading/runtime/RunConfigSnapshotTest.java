@@ -32,6 +32,27 @@ class RunConfigSnapshotTest {
         assertNotEquals(zero.hash(), withCost.hash());
     }
 
+    @Test
+    void toMap_includesLotSizeAndQuantity() {
+        RunConfigSnapshot snapshot = new RunConfigSnapshot(
+            "LondonOpenRangeBreakout",
+            "EUR_USD",
+            "BACKTEST",
+            "sample",
+            100,
+            null,
+            null,
+            50_000.0,
+            5_000.0,
+            null,
+            null,
+            null,
+            null);
+        assertEquals(50_000.0, snapshot.toMap().get("capital"));
+        assertEquals(5_000.0, snapshot.toMap().get("quantity"));
+        assertEquals(0.05, snapshot.toMap().get("lotSize"));
+    }
+
     private static RunConfigSnapshot baseSnapshot(Double commission, Double slippage) {
         return new RunConfigSnapshot(
             "LondonOpenRangeBreakout",

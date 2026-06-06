@@ -11,8 +11,9 @@ export interface RunConfig {
   strategyId: string
   symbol: string
   mode: 'BACKTEST' | 'PAPER' | 'LIVE'
-  barsSource: { type: 'year', year?: number } | { type: 'ci' }
+  barsSource: { type: 'year', year?: number | string } | { type: 'ci' }
   capital: number
+  lotSize?: number
   commissionPerTrade?: number
   slippagePct?: number
 }
@@ -31,6 +32,7 @@ export interface RunResult {
   strategyId: string
   symbol: string
   status: string
+  error?: string
   startedAt?: string
   completedAt?: string
   configSnapshot?: {
@@ -50,6 +52,8 @@ export interface RunResult {
     winRatePct: number
     totalCommission: number
     totalSlippage: number
+    periodStart?: string
+    periodEnd?: string
   }
   trades?: Trade[]
   equityCurve?: number[]

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useControlPlane } from '@/composables/useControlPlane'
 import type { Strategy, RunConfig } from '@/types/control-plane'
 
@@ -9,7 +9,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  runStart: [runId: string]
+  runsStart: [runs: { symbol: string, runId: string }[]]
   error: [message: string]
 }>()
 
@@ -17,11 +17,34 @@ const { getStrategies, startRun, loading, error } = useControlPlane()
 
 const strategies = ref<Strategy[]>([])
 const selectedStrategy = ref('')
-const selectedSymbol = ref('')
-const selectedYear = ref(2025)
+const selectedSymbols = ref<string[]>([])
+const selectedYear = ref<number | string>(2025)
 const capital = ref(100000)
+const lotSize = ref(0.01)
 const commission = ref(0.07)
 const slippage = ref(0.0001)
+
+const dropdownRef = ref<HTMLElement | null>(null)
+const dropdownOpen = ref(false)
+
+function handleClickOutside(event: MouseEvent) {
+  if (dropdownRef.value && !dropdownRef.value.contains(event.target as Node)) {
+    dropdownOpen.value = false
+  }
+}
+
+onMounted(async () => {
+  document.addEventListener('click', handleClickOutside)
+  try {
+    strategies.value = await getStrategies()
+  } catch (e: any) {
+    emit('error', `Failed to load strategies: ${e.message}`)
+  }
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside)
+})
 
 watch(() => props.preselectedStrategy, (val) => {
   if (val && strategies.value.some((s) => s.id === val)) {
@@ -32,7 +55,7 @@ watch(() => props.preselectedStrategy, (val) => {
 
 watch(() => props.preselectedSymbol, (val) => {
   if (val && symbolOptions.includes(val)) {
-    selectedSymbol.value = val
+    selectedSymbols.value = [val]
   }
 }, { immediate: true })
 
@@ -43,40 +66,46 @@ const symbolOptions = [
   'GBP/JPY', 'XAU/USD',
 ]
 
-onMounted(async () => {
-  try {
-    strategies.value = await getStrategies()
-  } catch (e: any) {
-    emit('error', `Failed to load strategies: ${e.message}`)
+function toggleSymbol(sym: string) {
+  const idx = selectedSymbols.value.indexOf(sym)
+  if (idx >= 0) {
+    selectedSymbols.value.splice(idx, 1)
+  } else {
+    selectedSymbols.value.push(sym)
   }
-})
+}
 
 function onStrategyChange() {
   const s = strategies.value.find((st) => st.id === selectedStrategy.value)
   if (s?.defaultSymbol) {
     const formatted = s.defaultSymbol.replace(/_/g, '/')
     if (symbolOptions.includes(formatted)) {
-      selectedSymbol.value = formatted
+      selectedSymbols.value = [formatted]
     }
   }
 }
 
 async function run() {
-  if (!selectedStrategy.value || !selectedSymbol.value) return
-
-  const config: RunConfig = {
-    strategyId: selectedStrategy.value,
-    symbol: selectedSymbol.value.replace('/', '_'),
-    mode: 'BACKTEST',
-    barsSource: { type: 'year', year: selectedYear.value },
-    capital: capital.value,
-    commissionPerTrade: commission.value,
-    slippagePct: slippage.value,
-  }
+  if (!selectedStrategy.value || selectedSymbols.value.length === 0) return
 
   try {
-    const result = await startRun(config)
-    emit('runStart', result.runId)
+    const runPromises = selectedSymbols.value.map(async (sym) => {
+      const config: RunConfig = {
+        strategyId: selectedStrategy.value,
+        symbol: sym.replace('/', '_'),
+        mode: 'BACKTEST',
+        barsSource: { type: 'year', year: selectedYear.value },
+        capital: capital.value,
+        lotSize: lotSize.value,
+        commissionPerTrade: commission.value,
+        slippagePct: slippage.value,
+      }
+      const res = await startRun(config)
+      return { symbol: sym, runId: res.runId }
+    })
+
+    const started = await Promise.all(runPromises)
+    emit('runsStart', started)
   } catch (e: any) {
     emit('error', `Backtest failed: ${e.message}`)
   }
@@ -95,27 +124,44 @@ async function run() {
           </option>
         </select>
       </div>
-      <div class="field">
-        <label>Pair</label>
-        <select v-model="selectedSymbol">
-          <option value="" disabled>Select pair...</option>
-          <option v-for="sym in symbolOptions" :key="sym" :value="sym">
-            {{ sym }}
-          </option>
-        </select>
+      <div class="field" ref="dropdownRef">
+        <label>Pairs</label>
+        <div class="multiselect-container">
+          <div class="multiselect-trigger" @click="dropdownOpen = !dropdownOpen">
+            <span v-if="selectedSymbols.length === 0" class="placeholder">Select pairs...</span>
+            <span v-else-if="selectedSymbols.length === 1">{{ selectedSymbols[0] }}</span>
+            <span v-else>{{ selectedSymbols.length }} pairs selected</span>
+            <span class="arrow" :class="{ open: dropdownOpen }">▼</span>
+          </div>
+          <div v-if="dropdownOpen" class="multiselect-dropdown">
+            <label v-for="sym in symbolOptions" :key="sym" class="multiselect-item">
+              <input
+                type="checkbox"
+                :checked="selectedSymbols.includes(sym)"
+                @change="toggleSymbol(sym)"
+              />
+              <span class="item-label">{{ sym }}</span>
+            </label>
+          </div>
+        </div>
       </div>
       <div class="field">
         <label>Year</label>
         <select v-model="selectedYear">
+          <option value="all">All Years</option>
           <option v-for="y in years" :key="y" :value="y">{{ y }}</option>
         </select>
       </div>
     </div>
 
-    <div class="form-row">
+    <div class="form-row inputs-row">
       <div class="field">
         <label>Capital ($)</label>
         <input v-model.number="capital" type="number" min="1000" step="1000" />
+      </div>
+      <div class="field">
+        <label>Lot Size</label>
+        <input v-model.number="lotSize" type="number" min="0.001" step="0.01" />
       </div>
       <div class="field">
         <label>Commission ($)</label>
@@ -129,7 +175,7 @@ async function run() {
 
     <div v-if="error" class="form-error">{{ error }}</div>
 
-    <button class="run-btn" :disabled="loading || !selectedStrategy || !selectedSymbol" @click="run">
+    <button class="run-btn" :disabled="loading || !selectedStrategy || selectedSymbols.length === 0" @click="run">
       <span v-if="loading" class="spinner"></span>
       <span v-else>▶ Run Backtest</span>
     </button>
@@ -150,6 +196,10 @@ async function run() {
   grid-template-columns: repeat(3, 1fr);
   gap: 1rem;
   margin-bottom: 1rem;
+}
+
+.inputs-row {
+  grid-template-columns: repeat(4, 1fr);
 }
 
 .field {
@@ -226,4 +276,88 @@ select option {
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Custom Multiselect styles */
+.multiselect-container {
+  position: relative;
+  width: 100%;
+}
+
+.multiselect-trigger {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.65rem;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  user-select: none;
+  min-height: 38px;
+  width: 100%;
+}
+
+.multiselect-trigger:hover {
+  border-color: var(--accent);
+}
+
+.placeholder {
+  color: var(--text-secondary);
+}
+
+.arrow {
+  font-size: 0.65rem;
+  transition: transform 0.15s;
+  color: var(--text-secondary);
+}
+
+.arrow.open {
+  transform: rotate(180deg);
+}
+
+.multiselect-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-top: 4px;
+  max-height: 250px;
+  overflow-y: auto;
+  z-index: 50;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+  padding: 0.25rem;
+}
+
+.multiselect-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  transition: background 0.15s;
+  user-select: none;
+}
+
+.multiselect-item:hover {
+  background: var(--bg-card);
+}
+
+.multiselect-item input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+}
+
+.item-label {
+  font-size: 0.85rem;
+}
 </style>

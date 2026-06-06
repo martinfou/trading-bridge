@@ -1,7 +1,9 @@
 package com.martinfou.trading.strategies.sqimported;
 
 import com.martinfou.trading.core.*;
+import com.martinfou.trading.core.indicators.Indicators;
 import com.martinfou.trading.strategies.StrategyOrderQueues;
+
 import java.util.*;
 
 /**
@@ -13,18 +15,19 @@ import java.util.*;
  */
 public class Strategy_2_38_112_Converted implements Strategy {
 
-    // ---- JForex Conversion Parameters ----
-    private static final double PIP = 0.01; // JPY pair default
-    private static final String SYMBOL = "GBP_JPY";
     private static final double QUANTITY = 1000;
+    private static final double STOP_LOSS_PIPS = 110;
+    private static final double TAKE_PROFIT_PIPS = 320;
+    private static final int PENDING_EXPIRATION_BARS = 133;
 
     private final List<Bar> history = new ArrayList<>();
     private final List<Order> pendingOrders = new ArrayList<>();
-    private Order activeOrder = null;
-    private int barsSinceEntry = 0;
-    private boolean entryTriggered = false;
-    private int expirationBars = 0;
-    private int MIN_BARS = 50;
+    private Order pendingEntry;
+    private int barsSincePending;
+    private boolean inPosition;
+    private double positionSl;
+    private double positionTp;
+    private static final int MIN_BARS = 50;
 
     @Override
     public String name() {
@@ -46,10 +49,11 @@ public class Strategy_2_38_112_Converted implements Strategy {
     public void reset() {
         history.clear();
         pendingOrders.clear();
-        activeOrder = null;
-        barsSinceEntry = 0;
-        entryTriggered = false;
-        expirationBars = 0;
+        pendingEntry = null;
+        barsSincePending = 0;
+        inPosition = false;
+        positionSl = 0;
+        positionTp = 0;
     }
 
     // ---- Indicator helpers ----
@@ -199,53 +203,69 @@ public class Strategy_2_38_112_Converted implements Strategy {
     @Override
     public void onBar(Bar bar) {
         history.add(bar);
-        if (history.size() < MIN_BARS) return;
+        if (history.size() < MIN_BARS) {
+            return;
+        }
 
-        // Manage active order / position
-        if (activeOrder != null) {
-            barsSinceEntry++;
-            if (expirationBars > 0 && barsSinceEntry >= expirationBars) {
-                pendingOrders.remove(activeOrder);
-                activeOrder = null;
+        if (inPosition) {
+            if (bar.low() <= positionSl || bar.high() >= positionTp) {
+                inPosition = false;
             }
             return;
         }
 
-        if (entryTriggered) return;
-
-        // LongEntrySignal:
-                // Vortex(12,0,3) > Vortex(12,1,3) && Vortex(12,0,4) < Vortex(12,1,4)
-                double v3_plus = calcVortexPlus(history, 12, 3); double v3_minus = calcVortexMinus(history, 12, 3);
-                double v4_plus = calcVortexPlus(history, 12, 4); double v4_minus = calcVortexMinus(history, 12, 4);
-        
-                if (Double.isNaN(v3_plus) || Double.isNaN(v3_minus) ||
-                    Double.isNaN(v4_plus) || Double.isNaN(v4_minus)) return;
-        
-                boolean longEntry = (v3_plus > v3_minus) && 
-                                   (v4_plus < v4_minus);
-        
-                if (longEntry && activeOrder == null) {
-                    // Entry: LWMA(40, LOW, 3) + 1.6 * BiggestRange(50, 3)
-                    double lwma = calcLWMA(history, 40, "low", 3);
-                    double biggestRange = calcBiggestRange(history, 50, 3);
-        
-                    if (Double.isNaN(lwma) || Double.isNaN(biggestRange)) return;
-        
-                    double entryPrice = lwma + (1.6 * biggestRange);
-                    {
-                    double ep = entryPrice;
-                    double sl = ep - (110 * PIP);
-                    double tp = ep + (320 * PIP);
-                    Order order = new Order(SYMBOL, Order.Side.BUY, Order.Type.STOP, QUANTITY, ep)
-                        .withStopLoss(sl)
-                        .withTakeProfit(tp);
-                    pendingOrders.add(order);
-                    activeOrder = order;
-                    entryTriggered = true;
-                    barsSinceEntry = 0;
-                    expirationBars = 133;
-                };
+        if (pendingEntry != null) {
+            if (pendingEntry.status() == Order.Status.FILLED) {
+                inPosition = true;
+                positionSl = pendingEntry.stopLoss();
+                positionTp = pendingEntry.takeProfit();
+                pendingEntry = null;
+                return;
+            }
+            if (pendingEntry.status() == Order.Status.PENDING) {
+                barsSincePending++;
+                if (barsSincePending >= PENDING_EXPIRATION_BARS) {
+                    pendingOrders.remove(pendingEntry);
+                    pendingEntry = null;
                 }
+                return;
+            }
+            pendingEntry = null;
+        }
+
+        // LongEntrySignal: Vortex(12) crossover (bar 3 vs bar 4)
+        double v3Plus = calcVortexPlus(history, 12, 3);
+        double v3Minus = calcVortexMinus(history, 12, 3);
+        double v4Plus = calcVortexPlus(history, 12, 4);
+        double v4Minus = calcVortexMinus(history, 12, 4);
+
+        if (Double.isNaN(v3Plus) || Double.isNaN(v3Minus) || Double.isNaN(v4Plus) || Double.isNaN(v4Minus)) {
+            return;
+        }
+
+        boolean longEntry = (v3Plus > v3Minus) && (v4Plus < v4Minus);
+        if (!longEntry) {
+            return;
+        }
+
+        double lwma = calcLWMA(history, 40, "low", 3);
+        double biggestRange = calcBiggestRange(history, 50, 3);
+        if (Double.isNaN(lwma) || Double.isNaN(biggestRange)) {
+            return;
+        }
+
+        String symbol = bar.symbol();
+        double pip = Indicators.pipSize(symbol);
+        double entryPrice = lwma + (1.6 * biggestRange);
+        double sl = entryPrice - (STOP_LOSS_PIPS * pip);
+        double tp = entryPrice + (TAKE_PROFIT_PIPS * pip);
+
+        Order order = new Order(symbol, Order.Side.BUY, Order.Type.STOP, QUANTITY, entryPrice)
+            .withStopLoss(sl)
+            .withTakeProfit(tp);
+        pendingOrders.add(order);
+        pendingEntry = order;
+        barsSincePending = 0;
     }
 
 }

@@ -42,6 +42,7 @@
 # Agent rules → _bmad-output/project-context.md · Module graph → AGENTS.md only
 # Parser story sequence → docs/sq-xml-format.md §6 (may be ahead of story rows below)
 # Epic 21 SQ CLI Bridge — brainstorming 2026-05-31, stories 21.1–21.8
+# Epic 22 Weekly Strategy Builder — brainstorming 2026-06-01; hot-folder jobs 2026-06-02
 
 generated: "2026-05-23"
 last_updated: "2026-06-04T15:10:00Z"
@@ -196,3 +197,14 @@ development_status:
   21-7-runtime-sq-bridge-hooks: done
   21-8-fitness-external-indicators-loop: done
   epic-21-retrospective: optional
+
+  epic-22: in-progress
+  22-1-weekly-intel-brief-ingest: review
+  22-2-weekly-plan-job-deepseek: review
+  22-3-template-registry-risk-envelope: review
+  22-4-weekly-compile-watcher: review
+  22-5-codegen-templates-t2-t7: review
+  22-6-weekly-deploy-watcher: review
+  22-7-cron-scheduler-strategy-ttl: review
+  22-8-tui-weekly-build-status: review
+  epic-22-retrospective: optional

@@ -86,6 +86,25 @@ data/sq-inbox/failed/*
 data/sq-inbox/dlq/*
 !data/sq-inbox/dlq/.gitkeep
 data/sq-cli/.sq-job.lock
+
+# Weekly strategy builder hot folders (Epic 22)
+data/weekly-intel/*
+!data/weekly-intel/.gitkeep
+data/weekly-builder/pending/*
+!data/weekly-builder/pending/.gitkeep
+data/weekly-builder/compiling/*
+!data/weekly-builder/compiling/.gitkeep
+data/weekly-builder/compiled/*
+!data/weekly-builder/compiled/.gitkeep
+data/weekly-builder/deployed/*
+!data/weekly-builder/deployed/.gitkeep
+data/weekly-builder/failed/*
+!data/weekly-builder/failed/.gitkeep
+data/weekly-builder/dlq/*
+!data/weekly-builder/dlq/.gitkeep
+data/weekly-builder/archive/*
+!data/weekly-builder/archive/.gitkeep
+
 deploy/active-strategy.txt
 deployments/deploy-log.json
 deployments/
