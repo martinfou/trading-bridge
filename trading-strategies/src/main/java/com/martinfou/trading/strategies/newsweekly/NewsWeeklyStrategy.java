@@ -1,6 +1,7 @@
 package com.martinfou.trading.strategies.newsweekly;
 
 import com.martinfou.trading.core.Bar;
+import com.martinfou.trading.core.LotSizing;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.core.Strategy;
 
@@ -23,7 +24,7 @@ import java.util.List;
 public abstract class NewsWeeklyStrategy implements Strategy {
 
     private static final ZoneId NY = ZoneId.of("America/New_York");
-    protected static final double DEFAULT_QTY = 10_000;
+    protected static final double DEFAULT_QTY = LotSizing.lotsToUnits(0.01); // 1,000 units = micro lot
 
     protected final String name;
     protected final String symbol;
