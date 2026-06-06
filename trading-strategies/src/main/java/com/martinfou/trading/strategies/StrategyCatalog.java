@@ -4,6 +4,7 @@ import com.martinfou.trading.core.Strategy;
 import com.martinfou.trading.strategies.generated.GeneratedStrategyCatalog;
 import com.martinfou.trading.strategies.harness.HarnessStrategyCatalog;
 import com.martinfou.trading.strategies.llmweekly.LlmWeeklyStrategyCatalog;
+import com.martinfou.trading.strategies.newsweekly.NewsWeeklyStrategyCatalog;
 import com.martinfou.trading.strategies.prop.PropStrategyCatalog;
 import com.martinfou.trading.strategies.sqimported.SqImportedStrategyCatalog;
 
@@ -20,7 +21,7 @@ import java.util.function.Function;
 public final class StrategyCatalog {
 
     public enum Family {
-        PROP, SQ_IMPORTED, GENERATED, LLM_WEEKLY, HARNESS, EXAMPLE
+        PROP, SQ_IMPORTED, GENERATED, LLM_WEEKLY, NEWS_WEEKLY, HARNESS, EXAMPLE
     }
 
     public record Entry(String id, Family family, String defaultSymbol) {}
@@ -48,6 +49,9 @@ public final class StrategyCatalog {
         LlmWeeklyStrategyCatalog.all().keySet().forEach(id ->
             put(id, Family.LLM_WEEKLY, LlmWeeklyStrategyCatalog.defaultSymbol(id),
                 sym -> LlmWeeklyStrategyCatalog.create(id, sym)));
+        NewsWeeklyStrategyCatalog.all().keySet().forEach(id ->
+            put(id, Family.NEWS_WEEKLY, NewsWeeklyStrategyCatalog.defaultSymbol(id),
+                sym -> NewsWeeklyStrategyCatalog.create(id, sym)));
         HarnessStrategyCatalog.all().keySet().forEach(id ->
             put(id, Family.HARNESS, HarnessStrategyCatalog.defaultSymbol(id),
                 sym -> HarnessStrategyCatalog.create(id, sym)));
