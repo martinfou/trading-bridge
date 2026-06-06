@@ -43,11 +43,5 @@ public final class NewsWeeklyStrategyCatalogRegistrar {
             "NewsWeek8Jun_NzdRecoveryFadeSell",
             sym -> new NewsWeek8Jun_NzdRecoveryFadeSell()
         );
-
-        // 5 — UK GDP Bounce Fade SELL GBP/USD (Fri Jun 12, 08:30 ET)
-        NewsWeeklyStrategyCatalog.register(
-            "NewsWeek8Jun_UkGdpFadeSellGbp",
-            sym -> new NewsWeek8Jun_UkGdpFadeSellGbp()
-        );
     }
 }
