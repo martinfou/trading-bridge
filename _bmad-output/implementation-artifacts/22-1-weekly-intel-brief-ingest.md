@@ -128,6 +128,26 @@ data/weekly-builder/archive/.gitkeep
 - [Source: trading-data/.../ForexFactoryScraper.java] — calendar scrape
 - [Source: AGENTS.md] — module dependency policy
 
+### Review Findings
+
+- [ ] [Review][Decision] Contradiction logique de sens pour les paires de devises inverses (USD de base) — Un spéculateur COT long JPY s'attend à une hausse du JPY (soit une baisse de USD_JPY). Un particulier OANDA long USD_JPY s'attend à une hausse du USD (baisse du JPY). S'ils sont tous deux longs, ils sont en réalité opposés. Comparer directement les longs sans inversion pour USD_JPY ou USD_CAD produit de faux signaux.
+- [ ] [Review][Decision] Calcul incorrect de la semaine cible de trading si lancé le lundi — La méthode nextWeekMonday cherche le lundi de la semaine de référence et ajoute 7 jours. Si exécuté un lundi, elle cible la semaine d'après au lieu de la semaine en cours. Quelle règle de ciblage doit s'appliquer en cas d'exécution le lundi ?
+- [ ] [Review][Patch] Bug d'instrumentation dans la détection de contradiction [ContradictionDetector.java:330-348]
+- [ ] [Review][Patch] Accumulation de fichiers temporaires .tmp en cas d'échec d'écriture Jackson/déplacement [WeeklyIntelBriefIO.java:255-261]
+- [x] [Review][Patch] Omission de dépendance SQLite entraînant un échec de compilation dans le workspace [trading-intelligence/pom.xml]
+- [ ] [Review][Patch] Risque de crash NullPointerException avec List.copyOf sur des éléments nuls [IngestPipeline.java:511-515]
+- [ ] [Review][Patch] Risque de NullPointerException si le chemin cible n'a pas de dossier parent [WeeklyIntelBriefIO.java:254]
+- [ ] [Review][Patch] Risque d'UnsupportedOperationException si le chemin appartient à un système de fichiers virtuel [WeeklyIntelBriefIO.java:256]
+- [ ] [Review][Patch] Risque de NullPointerException si les listes cot ou oanda passées au détecteur de contradictions sont nulles [ContradictionDetector.java:338]
+- [ ] [Review][Patch] Risque de NullPointerException si le champ instrument d'une entrée COT est nul [ContradictionDetector.java:344]
+- [ ] [Review][Patch] Risques d'exception lors du traitement des dates et champs d'événements de calendrier [LiveCalendarIngestStep.java:585]
+- [ ] [Review][Patch] Risque de NullPointerException si fetcher.fetchAll() retourne null [LiveCotIngestStep.java:625]
+- [ ] [Review][Patch] Risque de division par zéro ou valeur infinie si le ratio spéculatif COT est de -1 [LiveCotIngestStep.java:628-629]
+- [ ] [Review][Patch] Risques de NullPointerException si les étapes du pipeline d'ingestion retournent des valeurs nulles [IngestPipeline.java:481]
+- [ ] [Review][Patch] Risque de NullPointerException si brief.generatedAt() est nul [WeeklyIntelIngestMain.java:118]
+- [x] [Review][Defer] Notion de Sentiment Retail Oanda limitée au propre compte utilisateur [LiveOandaSentimentIngestStep.java] — deferred, pre-existing
+- [x] [Review][Defer] Mode Oanda Practice configuré en dur à true [LiveOandaSentimentIngestStep.java] — deferred, pre-existing
+
 ## Dev Agent Record
 
 ### Agent Model Used
