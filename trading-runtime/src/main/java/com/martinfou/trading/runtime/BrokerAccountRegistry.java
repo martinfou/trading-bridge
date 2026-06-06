@@ -126,6 +126,10 @@ public final class BrokerAccountRegistry {
         }
         Path repoRoot = EventStoreConfig.findRepoRoot();
         if (repoRoot != null) {
+            Path localFile = repoRoot.resolve("data/runtime/broker-accounts.local.json");
+            if (Files.isRegularFile(localFile)) {
+                return load(localFile);
+            }
             Path file = repoRoot.resolve("data/runtime/broker-accounts.json");
             if (Files.isRegularFile(file)) {
                 return load(file);

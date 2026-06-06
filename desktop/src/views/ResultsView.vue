@@ -8,10 +8,11 @@ import KpiStrip from '@/components/KpiStrip.vue'
 import EquityChart from '@/components/EquityChart.vue'
 import TradeTable from '@/components/TradeTable.vue'
 import TradeChart from '@/components/TradeChart.vue'
+import MonteCarloChart from '@/components/MonteCarloChart.vue'
 
 const route = useRoute()
 const router = useRouter()
-const { getRun, getTrades, getEquityCurve, getBars } = useControlPlane()
+const { getRun, getTrades, getEquityCurve, getBars, getMonteCarlo } = useControlPlane()
 const ws = useRunWebSocket()
 
 const run = ref<RunResult | null>(null)
@@ -22,7 +23,70 @@ const loadingBars = ref(false)
 const barsError = ref<string | null>(null)
 const loading = ref(true)
 const viewError = ref<string | null>(null)
-const activeTab = ref<'overview' | 'chart' | 'trades'>('overview')
+const activeTab = ref<'overview' | 'chart' | 'monte-carlo' | 'trades'>('overview')
+
+const monteCarloStats = ref<any | null>(null)
+const loadingMc = ref(false)
+const mcError = ref<string | null>(null)
+
+const mcPaths = ref<number[][]>([])
+
+function stretchPath(path: number[], targetLength: number): number[] {
+  if (path.length === 0 || targetLength === 0) return []
+  if (path.length === 1) return Array(targetLength).fill(path[0])
+  if (targetLength === 1) return [path[0]]
+
+  const stretched: number[] = []
+  const N = path.length - 1
+  for (let j = 0; j < targetLength; j++) {
+    const idx = Math.min(N, Math.floor(j * N / (targetLength - 1)))
+    stretched.push(path[idx])
+  }
+  return stretched
+}
+
+async function loadMonteCarloData() {
+  if (monteCarloStats.value || !runId) return
+  loadingMc.value = true
+  mcError.value = null
+  try {
+    monteCarloStats.value = await getMonteCarlo(runId, 1000, 3)
+    
+    // Generate Monte Carlo paths client-side for visualization (100 runs)
+    if (trades.value.length > 0) {
+      const initialCap = run.value?.configSnapshot?.capital || 1000.0
+      const tradePnls = trades.value.map(t => t.pnl)
+      const simulatedPaths: number[][] = []
+      
+      for (let r = 0; r < 100; r++) {
+        const shuffled = [...tradePnls]
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+        }
+        
+        const path: number[] = [initialCap]
+        let eq = initialCap
+        for (const pnl of shuffled) {
+          eq += pnl
+          path.push(eq)
+        }
+        simulatedPaths.push(path)
+      }
+      
+      // Sort simulated paths by their final P&L
+      simulatedPaths.sort((a, b) => a[a.length - 1] - b[b.length - 1])
+      
+      // Stretch paths to match the baseline equity curve length (time-line matching)
+      const targetLength = equityCurve.value.length || (trades.value.length + 1)
+      mcPaths.value = simulatedPaths.map(p => stretchPath(p, targetLength))
+    }
+  } catch (e: any) {
+    mcError.value = `Failed to load Monte Carlo simulation: ${e.message}`
+  } finally {
+    loadingMc.value = false
+  }
+}
 
 async function loadBarsData() {
   if (bars.value.length > 0 || !runId) return
@@ -40,6 +104,8 @@ async function loadBarsData() {
 watch(activeTab, (tab) => {
   if (tab === 'chart') {
     loadBarsData()
+  } else if (tab === 'monte-carlo') {
+    loadMonteCarloData()
   }
 })
 
@@ -192,6 +258,9 @@ onUnmounted(() => {
         <button :class="['tab', { active: activeTab === 'chart' }]" @click="activeTab = 'chart'">
           Price Chart
         </button>
+        <button :class="['tab', { active: activeTab === 'monte-carlo' }]" @click="activeTab = 'monte-carlo'">
+          Monte Carlo
+        </button>
         <button :class="['tab', { active: activeTab === 'trades' }]" @click="activeTab = 'trades'">
           Trades
           <span class="tab-count">{{ trades.length }}</span>
@@ -219,6 +288,8 @@ onUnmounted(() => {
           <EquityChart
             v-if="equityCurve.length > 0"
             :data="equityCurve"
+            :period-start="run.result?.periodStart"
+            :period-end="run.result?.periodEnd"
             :height="350"
             :show-time-scale="true"
           />
@@ -235,6 +306,78 @@ onUnmounted(() => {
         <div v-else-if="barsError" class="banner error">{{ barsError }}</div>
         <template v-else>
           <TradeChart :bars="bars" :trades="trades" :height="450" />
+        </template>
+      </div>
+
+      <!-- Monte Carlo tab -->
+      <div v-if="activeTab === 'monte-carlo'" class="section">
+        <div v-if="loadingMc" class="loading-state">
+          <div class="spinner"></div>
+          <p>Running Monte Carlo simulation…</p>
+        </div>
+        <div v-else-if="mcError" class="banner error">{{ mcError }}</div>
+        <template v-else-if="monteCarloStats">
+          <!-- Monte Carlo Stats Grid -->
+          <div class="mc-stats-grid">
+            <div class="mc-stat-card">
+              <span class="mc-stat-label">95% VaR (P&L)</span>
+              <span :class="['mc-stat-value', monteCarloStats.var95 >= 0 ? 'profit' : 'loss']">
+                ${{ monteCarloStats.var95.toFixed(2) }}
+              </span>
+            </div>
+            <div class="mc-stat-card">
+              <span class="mc-stat-label">Loss Probability</span>
+              <span :class="['mc-stat-value', monteCarloStats.probabilityOfLoss > 5.0 ? 'warning' : 'safe']">
+                {{ monteCarloStats.probabilityOfLoss.toFixed(1) }}%
+              </span>
+            </div>
+            <div class="mc-stat-card">
+              <span class="mc-stat-label">Worst P&L</span>
+              <span class="mc-stat-value loss">${{ monteCarloStats.worstPnl.toFixed(2) }}</span>
+            </div>
+            <div class="mc-stat-card">
+              <span class="mc-stat-label">Best P&L</span>
+              <span class="mc-stat-value profit">${{ monteCarloStats.bestPnl.toFixed(2) }}</span>
+            </div>
+          </div>
+
+          <div class="mc-percentiles-grid">
+            <div class="mc-stat-card">
+              <span class="mc-stat-label">Median Drawdown (50th)</span>
+              <span class="mc-stat-value">{{ monteCarloStats.drawdownPercentiles[2]?.toFixed(2) }}%</span>
+            </div>
+            <div class="mc-stat-card">
+              <span class="mc-stat-label">Drawdown 95th</span>
+              <span class="mc-stat-value warning">{{ monteCarloStats.drawdownPercentiles[4]?.toFixed(2) }}%</span>
+            </div>
+            <div class="mc-stat-card">
+              <span class="mc-stat-label">Median Sharpe (50th)</span>
+              <span class="mc-stat-value">{{ monteCarloStats.sharpePercentiles[2]?.toFixed(2) }}</span>
+            </div>
+            <div class="mc-stat-card">
+              <span class="mc-stat-label">Sharpe 5th</span>
+              <span class="mc-stat-value safe">{{ monteCarloStats.sharpePercentiles[0]?.toFixed(2) }}</span>
+            </div>
+          </div>
+
+          <!-- Monte Carlo Chart -->
+          <div class="section chart-section">
+            <h3>Monte Carlo Path Distribution (100 runs)</h3>
+            <MonteCarloChart
+              v-if="equityCurve.length > 0 && mcPaths.length > 0"
+              :baseline="equityCurve"
+              :paths="mcPaths"
+              :period-start="run.result?.periodStart"
+              :period-end="run.result?.periodEnd"
+              :height="400"
+            />
+            <div class="chart-legend">
+              <span class="legend-item"><span class="legend-dot baseline"></span>Baseline</span>
+              <span class="legend-item"><span class="legend-dot p95"></span>95th percentile (Best)</span>
+              <span class="legend-item"><span class="legend-dot p50"></span>50th percentile (Median)</span>
+              <span class="legend-item"><span class="legend-dot p5"></span>5th percentile (Worst)</span>
+            </div>
+          </div>
         </template>
       </div>
 
@@ -443,4 +586,78 @@ h3 { font-size: 0.9rem; margin-bottom: 0.5rem; color: var(--text-secondary); }
   color: var(--text-secondary);
   font-size: 0.85rem;
 }
+
+.mc-stats-grid,
+.mc-percentiles-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.mc-stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.mc-stat-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mc-stat-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.mc-stat-value.profit {
+  color: #10b981;
+}
+
+.mc-stat-value.loss {
+  color: #ef4444;
+}
+
+.mc-stat-value.warning {
+  color: #f59e0b;
+}
+
+.mc-stat-value.safe {
+  color: #3b82f6;
+}
+
+.chart-legend {
+  display: flex;
+  gap: 1.5rem;
+  margin-top: 0.75rem;
+  justify-content: center;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.legend-dot {
+  width: 12px;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.legend-dot.baseline { background: #d97706; }
+.legend-dot.p95 { background: #10b981; }
+.legend-dot.p50 { background: #3b82f6; }
+.legend-dot.p5 { background: #ef4444; }
 </style>

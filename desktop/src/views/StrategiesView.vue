@@ -29,7 +29,9 @@ const filtered = computed(() => {
       (s) =>
         s.id.toLowerCase().includes(q) ||
         s.family.toLowerCase().includes(q) ||
-        (s.defaultSymbol && s.defaultSymbol.toLowerCase().includes(q)),
+        (s.defaultSymbol && s.defaultSymbol.toLowerCase().includes(q)) ||
+        (s.type && s.type.toLowerCase().includes(q)) ||
+        (s.indicators && s.indicators.some((ind) => ind.toLowerCase().includes(q))),
     )
   }
   return list

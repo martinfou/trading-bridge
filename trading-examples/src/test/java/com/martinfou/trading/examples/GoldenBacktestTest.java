@@ -84,9 +84,9 @@ class GoldenBacktestTest {
 
     static boolean fullYearDataAvailable() {
         try {
-            return !HistoricalDataCatalog.availability(
+            return HistoricalDataCatalog.availability(
                 SYMBOL, HistoricalDataLoader.DEFAULT_BARS_DIR, HistoricalDataLoader.DEFAULT_CSV_DIR)
-                .years().isEmpty();
+                .years().contains(FULL_YEAR);
         } catch (IOException e) {
             return false;
         }

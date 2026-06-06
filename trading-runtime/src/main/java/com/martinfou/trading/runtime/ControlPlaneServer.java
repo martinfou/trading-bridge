@@ -17,6 +17,11 @@ import java.time.Instant;
 import java.util.function.Consumer;
 import com.martinfou.trading.backtest.events.RunEvent;
 import com.martinfou.trading.backtest.events.RunEventType;
+import com.martinfou.trading.core.Trade;
+import com.martinfou.trading.core.Order;
+import com.martinfou.trading.backtest.MonteCarloSimulation;
+import com.martinfou.trading.backtest.BacktestResult;
+import java.util.Arrays;
 
 /**
  * Javalin HTTP control plane — health, strategies, runs, event replay, and WebSocket stream.
@@ -290,7 +295,13 @@ public final class ControlPlaneServer implements AutoCloseable {
                     BrokerAccountRegistry.ConfigFile mergedConfig = new BrokerAccountRegistry.ConfigFile(merged);
                     java.nio.file.Path repoRoot = EventStoreConfig.findRepoRoot();
                     if (repoRoot != null) {
-                        java.nio.file.Path file = repoRoot.resolve("data/runtime/broker-accounts.json");
+                        String envPath = System.getenv("TRADING_BRIDGE_BROKER_ACCOUNTS");
+                        java.nio.file.Path file;
+                        if (envPath != null && !envPath.isBlank()) {
+                            file = java.nio.file.Path.of(envPath);
+                        } else {
+                            file = repoRoot.resolve("data/runtime/broker-accounts.local.json");
+                        }
                         java.nio.file.Files.createDirectories(file.getParent());
                         com.fasterxml.jackson.databind.ObjectMapper prettyMapper = new com.fasterxml.jackson.databind.ObjectMapper()
                             .enable(com.fasterxml.jackson.databind.SerializationFeature.INDENT_OUTPUT);
@@ -393,6 +404,9 @@ public final class ControlPlaneServer implements AutoCloseable {
                         item.put("id", e.id());
                         item.put("family", e.family().name());
                         item.put("defaultSymbol", e.defaultSymbol());
+                        item.put("type", e.type());
+                        item.put("indicators", e.indicators());
+                        item.put("description", e.description());
                         promoteService.deploymentStore().get(e.id())
                             .ifPresent(d -> {
                                 item.put("deployedMode", d.mode().name());
@@ -531,12 +545,109 @@ public final class ControlPlaneServer implements AutoCloseable {
                 }
                 ctx.json(Map.of("runId", runId, "equityCurve", curve != null ? curve : List.of()));
             })
+            .get("/api/runs/{runId}/monte-carlo", ctx -> {
+                String runId = ctx.pathParam("runId");
+                RunRecord record = runManager.getRun(runId)
+                    .orElseThrow(() -> new NotFoundException("Run not found: " + runId));
+                
+                int runs = parseIntParam(ctx.queryParam("runs"), 1000);
+                int blockSize = parseIntParam(ctx.queryParam("blockSize"), 3);
+                
+                List<Map<String, Object>> serializedTrades;
+                if (record.endedPayload().isPresent()) {
+                    serializedTrades = (List<Map<String, Object>>) record.endedPayload().get().get("trades");
+                } else {
+                    serializedTrades = reconstructTradesFromFills(runManager.eventStore().replayAll(runId));
+                }
+                
+                if (serializedTrades == null || serializedTrades.isEmpty()) {
+                    ctx.json(Map.of(
+                        "runId", runId,
+                        "runs", runs,
+                        "blockSize", blockSize,
+                        "pnlPercentiles", List.of(0.0, 0.0, 0.0, 0.0, 0.0),
+                        "drawdownPercentiles", List.of(0.0, 0.0, 0.0, 0.0, 0.0),
+                        "sharpePercentiles", List.of(0.0, 0.0, 0.0, 0.0, 0.0),
+                        "worstPnl", 0.0,
+                        "bestPnl", 0.0,
+                        "var95", 0.0,
+                        "probabilityOfLoss", 0.0
+                    ));
+                    return;
+                }
+                
+                List<Trade> trades = new ArrayList<>();
+                for (var map : serializedTrades) {
+                    String symbol = (String) map.get("symbol");
+                    Order.Side side = Order.Side.valueOf((String) map.get("side"));
+                    double entryPrice = ((Number) map.get("entryPrice")).doubleValue();
+                    double exitPrice = ((Number) map.get("exitPrice")).doubleValue();
+                    double quantity = ((Number) map.get("quantity")).doubleValue();
+                    Instant entryTime = Instant.parse((String) map.get("entryTime"));
+                    Instant exitTime = Instant.parse((String) map.get("exitTime"));
+                    double pnlVal = ((Number) map.get("pnl")).doubleValue();
+                    
+                    trades.add(new Trade(symbol, side, entryPrice, exitPrice, quantity, entryTime, exitTime) {
+                        @Override
+                        public double pnl() {
+                            return pnlVal;
+                        }
+                    });
+                }
+                
+                double initialCapital = 1000.0;
+                if (record.endedPayload().isPresent() && record.endedPayload().get().containsKey("initialCapital")) {
+                    initialCapital = ((Number) record.endedPayload().get().get("initialCapital")).doubleValue();
+                } else if (record.configSnapshot().containsKey("capital")) {
+                    initialCapital = ((Number) record.configSnapshot().get("capital")).doubleValue();
+                }
+                
+                BacktestResult baseline = BacktestResult.builder()
+                    .strategyName(record.strategyId())
+                    .initialCapital(initialCapital)
+                    .trades(trades)
+                    .build();
+                
+                MonteCarloSimulation mcSim = new MonteCarloSimulation(baseline, runs, blockSize);
+                MonteCarloSimulation.Result mcResult = mcSim.run();
+                
+                double[] quantiles = {0.05, 0.25, 0.50, 0.75, 0.95};
+                List<Double> pnlPercentiles = Arrays.stream(quantiles)
+                    .map(q -> MonteCarloSimulation.Result.percentile(mcResult.pnlValuesSorted(), q))
+                    .boxed().toList();
+
+                List<Double> drawdownPercentiles = Arrays.stream(quantiles)
+                    .map(q -> MonteCarloSimulation.Result.percentile(mcResult.drawdownValuesSorted(), q))
+                    .boxed().toList();
+
+                List<Double> sharpePercentiles = Arrays.stream(quantiles)
+                    .map(q -> MonteCarloSimulation.Result.percentile(mcResult.sharpeValuesSorted(), q))
+                    .boxed().toList();
+
+                ctx.json(Map.of(
+                    "runId", runId,
+                    "runs", runs,
+                    "blockSize", blockSize,
+                    "pnlPercentiles", pnlPercentiles,
+                    "drawdownPercentiles", drawdownPercentiles,
+                    "sharpePercentiles", sharpePercentiles,
+                    "worstPnl", mcResult.worstPnl(),
+                    "bestPnl", mcResult.bestPnl(),
+                    "var95", mcResult.var95(),
+                    "probabilityOfLoss", mcResult.probabilityOfLoss()
+                ));
+            })
             .get("/api/runs/{runId}/bars", ctx -> {
                 String runId = ctx.pathParam("runId");
                 RunRecord record = runManager.getRun(runId)
                     .orElseThrow(() -> new NotFoundException("Run not found: " + runId));
                 RunConfigSnapshot config = RunConfigSnapshot.fromRecord(record);
-                List<com.martinfou.trading.core.Bar> bars = RunManager.loadBars(config);
+                List<com.martinfou.trading.core.Bar> bars;
+                try {
+                    bars = RunManager.loadBars(config);
+                } catch (IOException e) {
+                    throw new BadRequestException("Failed to load bars: " + e.getMessage());
+                }
                 List<Map<String, Object>> serializedBars = bars.stream()
                     .map(b -> {
                         Map<String, Object> bm = new LinkedHashMap<>();
@@ -780,6 +891,17 @@ public final class ControlPlaneServer implements AutoCloseable {
         }
         try {
             return Long.parseLong(value.trim());
+        } catch (NumberFormatException e) {
+            throw new BadRequestException("Invalid numeric parameter: " + value);
+        }
+    }
+
+    private static int parseIntParam(String value, int defaultValue) {
+        if (value == null || value.isBlank()) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(value.trim());
         } catch (NumberFormatException e) {
             throw new BadRequestException("Invalid numeric parameter: " + value);
         }

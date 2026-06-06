@@ -1,5 +1,5 @@
-# generated: 2026-05-23
-# last_updated: 2026-05-30
+# generated: 2026-06-06
+# last_updated: 2026-06-06T14:24:10Z
 # project: trading-bridge
 # project_key: NOKEY
 # tracking_system: file-system
@@ -33,19 +33,9 @@
 # - Stories can be worked in parallel if team capacity allows
 # - Developer typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
-#
-# SOURCE: _bmad-output/planning-artifacts/epics.md
-# SPRINT 12: Platform Consolidation — see sprint-12-consolidation-plan.md
-# Epic 12 added 2026-05-23; snapshot commit ee871f5
-#
-# DOC SYNC (2026-05-31): Human onboarding → docs/contributing.md
-# Agent rules → _bmad-output/project-context.md · Module graph → AGENTS.md only
-# Parser story sequence → docs/sq-xml-format.md §6 (may be ahead of story rows below)
-# Epic 21 SQ CLI Bridge — brainstorming 2026-05-31, stories 21.1–21.8
-# Epic 22 Weekly Strategy Builder — brainstorming 2026-06-01; hot-folder jobs 2026-06-02
 
-generated: "2026-05-23"
-last_updated: "2026-06-04T15:10:00Z"
+generated: "2026-06-06"
+last_updated: "2026-06-06T19:22:00Z"
 project: trading-bridge
 project_key: NOKEY
 tracking_system: file-system
@@ -77,7 +67,7 @@ development_status:
 
   epic-3: backlog
   3-1-complete-limit-and-stop-order-simulation: backlog
-  3-2-commission-and-slippage: done  # BacktestEngine + BacktestExecutionCost; epic-3 not closed
+  3-2-commission-and-slippage: done
   3-3-trade-exit-lifecycle: backlog
   3-4-multi-timeframe-support: backlog
   3-5-risk-management-rules: backlog
@@ -127,15 +117,24 @@ development_status:
   13-3-control-plane-http: done
   13-4-websocket-run-events: done
   13-5-promote-gates-deployment-store: done
-  13-9-run-lifecycle-interface: done
-  13-9-commission-slippage-backtest: done
-  13-8-mini-dataset-ci-golden: done
   13-6-tui-v1-jline3: done
   13-7-laravel-dashboard-v1: done
-  13-8-heartbeat-stale-detection: done
+  13-8-mini-dataset-ci-golden: done
+  13-9-run-lifecycle-interface: done
   epic-13-retrospective: done
 
+  epic-14: backlog
+  14-1-enregistrement-strategie-java-au-catalog: backlog
+  14-2-import-sq-jforex-strategie-pilote-firstsqjforx: backlog
+  14-3-rapport-de-conversion-partielle: backlog
+  14-4-export-genetics-vers-catalog: backlog
+  epic-14-retrospective: optional
+
   epic-15: done
+  15-1-gate-backtest-mvp-golden-metriques-minimales: backlog
+  15-2-promoteservice-et-deploymentstore: backlog
+  15-3-api-promote-avec-rejet-422: backlog
+  15-4-export-evidence-pack-jsonl: backlog
   15-5-promote-gates-numeric-thresholds: done
   15-6-execution-label-sm2: done
   15-7-html-due-diligence-report: done
@@ -143,6 +142,7 @@ development_status:
   epic-15-retrospective: done
 
   epic-16: done
+  16-1-runner-paper-stub-labellise: backlog
   16-2-broker-interface-skeleton: done
   16-3-paper-oanda-demo: done
   16-4-paper-30-day-gate: done
@@ -155,18 +155,42 @@ development_status:
   epic-16-retrospective: done
 
   epic-17: done
+  17-1-get-control-summary-phase-a-observabilite: backlog
+  17-2-websocket-dashboard-patches: backlog
+  17-3-dashboard-python-vue-lecture-seule-phase-a: backlog
+  17-4-etats-lifecycle-pause-et-retire: backlog
+  17-5-moteur-signaux-drift-fr-15: backlog
+  17-6-workflow-retune-sans-hot-swap-live: backlog
+  17-7-phase-b-actions-ui-kill-pause-drift: backlog
+  17-8-etat-reseau-multi-n-ud-preparation-fr-11: backlog
   17-9-control-summary-dashboard: done
   17-10-daily-drawdown-guard: done
   17-11-execution-label-ui: done
   17-12-drift-post-broker: done
   epic-17-retrospective: done
 
+  epic-18: backlog
+  18-1-module-trading-node-scaffold: backlog
+  18-2-localoutboxstore-et-buffer-hub-down: backlog
+  18-3-ingestion-idempotente-runid-eventid: backlog
+  18-4-noderegistry-et-heartbeat: backlog
+  18-5-replay-complet-apres-recovery-hub: backlog
+  epic-18-retrospective: optional
+
   epic-19: done
+  19-1-interface-modules-de-validation-pluggables: backlog
+  19-2-purged-walk-forward-gate: backlog
+  19-3-cpcv-et-stress-modules: backlog
   19-4-oos-holdout-gate: done
   19-5-execution-stress-gate: done
   epic-19-retrospective: done
 
-# ── Desktop GUI (Electron + Vue 3) ─────────────────────────────────────────
+  epic-20: backlog
+  20-1-client-deepseek-via-deepseek-api-key: backlog
+  20-2-generation-squelette-strategy-java: backlog
+  20-3-tagging-origin-ai-dans-snapshot: backlog
+  epic-20-retrospective: optional
+
   epic-desktop-gui: done
   dg-1-java-endpoints: done
   dg-2-electron-scaffold: done
@@ -208,3 +232,29 @@ development_status:
   22-7-cron-scheduler-strategy-ttl: review
   22-8-tui-weekly-build-status: review
   epic-22-retrospective: optional
+
+  epic-23: in-progress
+  23-1-integration-de-montecarlosimulation-et-endpoint-api: done
+  23-2-graphique-et-statistiques-monte-carlo-sur-la-gui: done
+  23-3-gate-de-promotion-monte-carlo-var: backlog
+  epic-23-retrospective: optional
+
+  epic-24: backlog
+  24-1-moteur-de-decoupe-de-donnees-is-oos-et-boucle-d-optimisation-wfa: backlog
+  24-2-purge-des-frontieres-wfa-et-reconstruction-de-courbe-oos: backlog
+  24-3-api-wfa-et-lanceur-cli: backlog
+  24-4-vue-timeline-is-oos-et-calibration-dans-la-gui: backlog
+  24-5-suivi-de-fraicheur-et-alertes-de-recalibration-wf-due: backlog
+  epic-24-retrospective: optional
+
+  epic-25: in-progress
+  25-1-configuration-des-dependances-maven-et-factory-de-modeles-deepseek-ollama: done
+  25-2-declaration-des-records-cibles-et-dtos-partages: in-progress
+  25-3-implementation-des-outils-d-ingestion-avec-isolation-temporelle: backlog
+  25-4-developpement-du-service-d-orchestration-agenticstrategistservice-et-de-la-boucle-react: backlog
+  25-5-logique-de-comfort-level-validations-financieres-et-deserialisation-jackson: backlog
+  25-6-mecanisme-de-fallback-degrade-bypass-et-telemetrie: backlog
+  25-7-experience-store-boucle-de-feedback-rag: backlog
+  25-8-integration-du-control-plane-http-ecriture-json-et-tests-unitaires: backlog
+  epic-25-retrospective: optional
+

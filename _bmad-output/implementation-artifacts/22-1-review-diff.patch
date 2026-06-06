@@ -1,0 +1,1025 @@
+diff --git a/trading-intelligence/pom.xml b/trading-intelligence/pom.xml
+new file mode 100644
+index 0000000..ccbf3fa
+--- /dev/null
++++ b/trading-intelligence/pom.xml
+@@ -0,0 +1,56 @@
++<project xmlns="http://maven.apache.org/POM/4.0.0"
++         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
++         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
++    <modelVersion>4.0.0</modelVersion>
++    <parent>
++        <groupId>com.martinfou.trading</groupId>
++        <artifactId>trading-bridge</artifactId>
++        <version>1.0.0-SNAPSHOT</version>
++    </parent>
++    <artifactId>trading-intelligence</artifactId>
++    <name>Trading Intelligence</name>
++    <description>Weekly strategy builder — intel ingest and hot-folder pipeline (Epic 22)</description>
++    <dependencies>
++        <dependency>
++            <groupId>com.martinfou.trading</groupId>
++            <artifactId>trading-core</artifactId>
++            <version>${project.version}</version>
++        </dependency>
++        <dependency>
++            <groupId>com.martinfou.trading</groupId>
++            <artifactId>trading-data</artifactId>
++            <version>${project.version}</version>
++        </dependency>
++        <dependency>
++            <groupId>com.fasterxml.jackson.core</groupId>
++            <artifactId>jackson-databind</artifactId>
++        </dependency>
++        <dependency>
++            <groupId>com.fasterxml.jackson.datatype</groupId>
++            <artifactId>jackson-datatype-jsr310</artifactId>
++        </dependency>
++        <dependency>
++            <groupId>org.slf4j</groupId>
++            <artifactId>slf4j-api</artifactId>
++        </dependency>
++        <dependency>
++            <groupId>org.slf4j</groupId>
++            <artifactId>slf4j-simple</artifactId>
++            <scope>runtime</scope>
++        </dependency>
++        <dependency>
++            <groupId>org.junit.jupiter</groupId>
++            <artifactId>junit-jupiter</artifactId>
++            <scope>test</scope>
++        </dependency>
++    </dependencies>
++    <build>
++        <plugins>
++            <plugin>
++                <groupId>org.codehaus.mojo</groupId>
++                <artifactId>exec-maven-plugin</artifactId>
++                <version>3.4.1</version>
++            </plugin>
++        </plugins>
++    </build>
++</project>
+diff --git a/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/WeeklyIntelIngestMain.java b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/WeeklyIntelIngestMain.java
+new file mode 100644
+index 0000000..463939e
+--- /dev/null
++++ b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/WeeklyIntelIngestMain.java
+@@ -0,0 +1,62 @@
++package com.martinfou.trading.intelligence;
++
++import com.martinfou.trading.intelligence.brief.IngestStatus;
++import com.martinfou.trading.intelligence.brief.WeeklyIntelBrief;
++import com.martinfou.trading.intelligence.brief.WeeklyIntelBriefIO;
++import com.martinfou.trading.intelligence.ingest.CalendarIngestException;
++import com.martinfou.trading.intelligence.ingest.IngestPipeline;
++import com.martinfou.trading.intelligence.paths.WeeklyBuilderPaths;
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
++
++import java.nio.file.Path;
++import java.time.LocalDate;
++import java.time.ZoneOffset;
++
++/**
++ * CLI: ingest weekly intel and write {@code data/weekly-intel/brief-YYYY-MM-DD.json}.
++ *
++ * <p>Manual debug aggregate: {@link com.martinfou.trading.data.WeeklyAnalysisRunner}
++ */
++public final class WeeklyIntelIngestMain {
++
++    private static final Logger log = LoggerFactory.getLogger(WeeklyIntelIngestMain.class);
++
++    private WeeklyIntelIngestMain() {}
++
++    public static void main(String[] args) {
++        try {
++            int code = run();
++            System.exit(code);
++        } catch (Exception ex) {
++            log.error("Weekly intel ingest failed", ex);
++            System.exit(1);
++        }
++    }
++
++    public static int run() throws Exception {
++        Path repoRoot = RepoRoots.findRepoRoot();
++        WeeklyBuilderPaths.ensureLayout(repoRoot);
++
++        IngestPipeline pipeline = new IngestPipeline();
++        WeeklyIntelBrief brief;
++        try {
++            brief = pipeline.run();
++        } catch (CalendarIngestException ex) {
++            log.error("Calendar ingest failed — refusing to produce brief: {}", ex.getMessage());
++            return 2;
++        }
++
++        LocalDate ingestDate = brief.generatedAt().atZone(ZoneOffset.UTC).toLocalDate();
++        Path out = WeeklyIntelBriefIO.briefPathForDate(WeeklyBuilderPaths.intelRoot(repoRoot), ingestDate);
++        WeeklyIntelBriefIO.write(brief, out);
++
++        log.info("Wrote {} (status={}, weekStart={}, events={})",
++            out, brief.ingestStatus(), brief.weekStart(), brief.calendarEvents().size());
++
++        if (brief.ingestStatus() == IngestStatus.PARTIAL) {
++            log.warn("Brief is PARTIAL — OANDA or COT data may be missing");
++        }
++        return 0;
++    }
++}
+diff --git a/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/brief/IngestStatus.java b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/brief/IngestStatus.java
+new file mode 100644
+index 0000000..b95e227
+--- /dev/null
++++ b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/brief/IngestStatus.java
+@@ -0,0 +1,8 @@
++package com.martinfou.trading.intelligence.brief;
++
++/** Overall status of a weekly intel ingest run. */
++public enum IngestStatus {
++    OK,
++    PARTIAL,
++    FAILED
++}
+diff --git a/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/brief/WeeklyIntelBrief.java b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/brief/WeeklyIntelBrief.java
+new file mode 100644
+index 0000000..a401399
+--- /dev/null
++++ b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/brief/WeeklyIntelBrief.java
+@@ -0,0 +1,71 @@
++package com.martinfou.trading.intelligence.brief;
++
++import java.time.Instant;
++import java.time.LocalDate;
++import java.util.List;
++
++/**
++ * Structured weekly intelligence brief — deterministic input for LLM planning (Epic 22).
++ */
++public record WeeklyIntelBrief(
++    Instant generatedAt,
++    LocalDate weekStart,
++    List<CalendarEventEntry> calendarEvents,
++    List<NewsItemEntry> newsItems,
++    List<CotSnapshotEntry> cotSnapshots,
++    SentimentBlock sentiment,
++    List<ContradictionEntry> contradictions,
++    IngestStatus ingestStatus
++) {
++    public record CalendarEventEntry(
++        String eventId,
++        String name,
++        String currency,
++        String impact,
++        Instant timeUtc,
++        String source
++    ) {}
++
++    public record NewsItemEntry(
++        String headline,
++        String url,
++        Instant publishedAt,
++        String source
++    ) {}
++
++    public record CotSnapshotEntry(
++        String instrument,
++        double longPct,
++        double shortPct,
++        Double percentile52w,
++        LocalDate asOf
++    ) {}
++
++    public record OandaRetailEntry(
++        String instrument,
++        double longPct,
++        double shortPct,
++        String label
++    ) {}
++
++    public record NlpScoreEntry(
++        String topic,
++        double score,
++        Instant asOf
++    ) {}
++
++    public record SentimentBlock(
++        List<OandaRetailEntry> oandaRetail,
++        List<NlpScoreEntry> nlpScores
++    ) {
++        public static SentimentBlock empty() {
++            return new SentimentBlock(List.of(), List.of());
++        }
++    }
++
++    public record ContradictionEntry(
++        String type,
++        String description,
++        List<String> pairs
++    ) {}
++}
+diff --git a/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/brief/WeeklyIntelBriefIO.java b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/brief/WeeklyIntelBriefIO.java
+new file mode 100644
+index 0000000..07af592
+--- /dev/null
++++ b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/brief/WeeklyIntelBriefIO.java
+@@ -0,0 +1,45 @@
++package com.martinfou.trading.intelligence.brief;
++
++import com.fasterxml.jackson.databind.ObjectMapper;
++import com.fasterxml.jackson.databind.SerializationFeature;
++import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
++
++import java.io.IOException;
++import java.nio.file.Files;
++import java.nio.file.Path;
++import java.nio.file.StandardCopyOption;
++import java.time.LocalDate;
++import java.time.format.DateTimeFormatter;
++
++public final class WeeklyIntelBriefIO {
++
++    private static final ObjectMapper MAPPER = new ObjectMapper()
++        .registerModule(new JavaTimeModule())
++        .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
++
++    private WeeklyIntelBriefIO() {}
++
++    public static ObjectMapper mapper() {
++        return MAPPER;
++    }
++
++    public static void write(WeeklyIntelBrief brief, Path target) throws IOException {
++        Files.createDirectories(target.getParent());
++        Path temp = target.resolveSibling(target.getFileName() + ".tmp");
++        MAPPER.writerWithDefaultPrettyPrinter().writeValue(temp.toFile(), brief);
++        try {
++            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
++        } catch (IOException ex) {
++            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
++        }
++    }
++
++    public static WeeklyIntelBrief read(Path path) throws IOException {
++        return MAPPER.readValue(path.toFile(), WeeklyIntelBrief.class);
++    }
++
++    public static Path briefPathForDate(Path intelRoot, LocalDate ingestDate) {
++        String name = "brief-" + ingestDate.format(DateTimeFormatter.ISO_LOCAL_DATE) + ".json";
++        return intelRoot.resolve(name);
++    }
++}
+diff --git a/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/CalendarIngestException.java b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/CalendarIngestException.java
+new file mode 100644
+index 0000000..29c5460
+--- /dev/null
++++ b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/CalendarIngestException.java
+@@ -0,0 +1,13 @@
++package com.martinfou.trading.intelligence.ingest;
++
++/** Calendar ingest failed — pipeline must not hand off to LLM. */
++public class CalendarIngestException extends Exception {
++
++    public CalendarIngestException(String message) {
++        super(message);
++    }
++
++    public CalendarIngestException(String message, Throwable cause) {
++        super(message, cause);
++    }
++}
+diff --git a/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/CalendarIngestStep.java b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/CalendarIngestStep.java
+new file mode 100644
+index 0000000..67e794d
+--- /dev/null
++++ b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/CalendarIngestStep.java
+@@ -0,0 +1,11 @@
++package com.martinfou.trading.intelligence.ingest;
++
++import com.martinfou.trading.intelligence.brief.WeeklyIntelBrief;
++
++import java.time.LocalDate;
++import java.util.List;
++
++@FunctionalInterface
++public interface CalendarIngestStep {
++    List<WeeklyIntelBrief.CalendarEventEntry> fetch(LocalDate weekStart) throws Exception;
++}
+diff --git a/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/ContradictionDetector.java b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/ContradictionDetector.java
+new file mode 100644
+index 0000000..8dfe1dd
+--- /dev/null
++++ b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/ContradictionDetector.java
+@@ -0,0 +1,61 @@
++package com.martinfou.trading.intelligence.ingest;
++
++import com.martinfou.trading.intelligence.brief.WeeklyIntelBrief;
++
++import java.util.ArrayList;
++import java.util.List;
++import java.util.Locale;
++import java.util.Map;
++
++/** Detects conflicting signals across COT and OANDA retail positioning. */
++public final class ContradictionDetector {
++
++    private static final double EXTREME_COT_LONG = 65.0;
++    private static final double EXTREME_RETAIL_LONG = 70.0;
++
++    private static final Map<String, String> COT_TO_OANDA = Map.of(
++        "EUR", "EUR_USD",
++        "GBP", "GBP_USD",
++        "JPY", "USD_JPY",
++        "AUD", "AUD_USD",
++        "CAD", "USD_CAD"
++    );
++
++    public List<WeeklyIntelBrief.ContradictionEntry> detect(
++        List<WeeklyIntelBrief.CotSnapshotEntry> cot,
++        List<WeeklyIntelBrief.OandaRetailEntry> oanda
++    ) {
++        List<WeeklyIntelBrief.ContradictionEntry> out = new ArrayList<>();
++        for (WeeklyIntelBrief.CotSnapshotEntry cotEntry : cot) {
++            String instrumentKey = cotEntry.instrument().toUpperCase(Locale.ROOT);
++            String oandaSymbol = COT_TO_OANDA.get(instrumentKey);
++            if (oandaSymbol == null) {
++                continue;
++            }
++            WeeklyIntelBrief.OandaRetailEntry retail = oanda.stream()
++                .filter(o -> oandaSymbol.equals(o.instrument()))
++                .findFirst()
++                .orElse(null);
++            if (retail == null) {
++                continue;
++            }
++            if (cotEntry.longPct() >= EXTREME_COT_LONG && retail.longPct() >= EXTREME_RETAIL_LONG) {
++                out.add(new WeeklyIntelBrief.ContradictionEntry(
++                    "COT_RETAIL_CROWDED_LONG",
++                    "Speculators and retail both heavily long on " + oandaSymbol
++                        + " — contrarian fade risk",
++                    List.of(oandaSymbol)
++                ));
++            }
++            if (cotEntry.shortPct() >= EXTREME_COT_LONG && retail.shortPct() >= EXTREME_RETAIL_LONG) {
++                out.add(new WeeklyIntelBrief.ContradictionEntry(
++                    "COT_RETAIL_CROWDED_SHORT",
++                    "Speculators and retail both heavily short on " + oandaSymbol
++                        + " — contrarian fade risk",
++                    List.of(oandaSymbol)
++                ));
++            }
++        }
++        return out;
++    }
++}
+diff --git a/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/CotIngestStep.java b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/CotIngestStep.java
+new file mode 100644
+index 0000000..bd7e97b
+--- /dev/null
++++ b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/CotIngestStep.java
+@@ -0,0 +1,10 @@
++package com.martinfou.trading.intelligence.ingest;
++
++import com.martinfou.trading.intelligence.brief.WeeklyIntelBrief;
++
++import java.util.List;
++
++@FunctionalInterface
++public interface CotIngestStep {
++    List<WeeklyIntelBrief.CotSnapshotEntry> fetch() throws Exception;
++}
+diff --git a/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/IngestPipeline.java b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/IngestPipeline.java
+new file mode 100644
+index 0000000..17c07c3
+--- /dev/null
++++ b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/IngestPipeline.java
+@@ -0,0 +1,122 @@
++package com.martinfou.trading.intelligence.ingest;
++
++import com.martinfou.trading.intelligence.brief.IngestStatus;
++import com.martinfou.trading.intelligence.brief.WeeklyIntelBrief;
++import com.martinfou.trading.intelligence.time.WeekBounds;
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
++
++import java.time.Clock;
++import java.time.Instant;
++import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.List;
++import java.util.Optional;
++
++public final class IngestPipeline {
++
++    private static final Logger log = LoggerFactory.getLogger(IngestPipeline.class);
++
++    private final Clock clock;
++    private final CalendarIngestStep calendarStep;
++    private final CotIngestStep cotStep;
++    private final OandaSentimentIngestStep oandaStep;
++    private final NewsIngestStep newsStep;
++    private final ContradictionDetector contradictionDetector;
++
++    public IngestPipeline() {
++        this(
++            Clock.systemUTC(),
++            new LiveCalendarIngestStep(),
++            new LiveCotIngestStep(),
++            new LiveOandaSentimentIngestStep(),
++            new NewsIngestStep(),
++            new ContradictionDetector()
++        );
++    }
++
++    IngestPipeline(
++        Clock clock,
++        CalendarIngestStep calendarStep,
++        CotIngestStep cotStep,
++        OandaSentimentIngestStep oandaStep,
++        NewsIngestStep newsStep,
++        ContradictionDetector contradictionDetector
++    ) {
++        this.clock = clock;
++        this.calendarStep = calendarStep;
++        this.cotStep = cotStep;
++        this.oandaStep = oandaStep;
++        this.newsStep = newsStep;
++        this.contradictionDetector = contradictionDetector;
++    }
++
++    /** Test and job wiring with injectable ingest steps. */
++    public static IngestPipeline create(
++        Clock clock,
++        CalendarIngestStep calendarStep,
++        CotIngestStep cotStep,
++        OandaSentimentIngestStep oandaStep,
++        NewsIngestStep newsStep,
++        ContradictionDetector contradictionDetector
++    ) {
++        return new IngestPipeline(clock, calendarStep, cotStep, oandaStep, newsStep, contradictionDetector);
++    }
++
++    /**
++     * Runs ingest for the week starting {@link WeekBounds#nextWeekMonday(LocalDate)}.
++     *
++     * @throws CalendarIngestException when calendar scrape fails (no LLM handoff)
++     */
++    public WeeklyIntelBrief run() throws Exception {
++        Instant generatedAt = clock.instant();
++        LocalDate weekStart = WeekBounds.nextWeekMonday(clock);
++        boolean partial = false;
++
++        List<WeeklyIntelBrief.CalendarEventEntry> calendar;
++        try {
++            calendar = calendarStep.fetch(weekStart);
++        } catch (CalendarIngestException ex) {
++            throw ex;
++        } catch (Exception ex) {
++            throw new CalendarIngestException("Calendar ingest failed", ex);
++        }
++        if (calendar.isEmpty()) {
++            throw new CalendarIngestException("Calendar ingest returned no events");
++        }
++
++        List<WeeklyIntelBrief.CotSnapshotEntry> cot;
++        try {
++            cot = cotStep.fetch();
++        } catch (Exception ex) {
++            log.warn("COT ingest failed — continuing: {}", ex.getMessage());
++            cot = List.of();
++            partial = true;
++        }
++
++        Optional<List<WeeklyIntelBrief.OandaRetailEntry>> oandaOptional = oandaStep.fetchOptional();
++        if (oandaOptional.isEmpty()) {
++            partial = true;
++        }
++        List<WeeklyIntelBrief.OandaRetailEntry> oandaRetail =
++            new ArrayList<>(oandaOptional.orElse(List.of()));
++
++        List<WeeklyIntelBrief.NewsItemEntry> news = newsStep.fetch();
++
++        List<WeeklyIntelBrief.ContradictionEntry> contradictions =
++            contradictionDetector.detect(cot, oandaRetail);
++
++        IngestStatus status = partial ? IngestStatus.PARTIAL : IngestStatus.OK;
++
++        return new WeeklyIntelBrief(
++            generatedAt,
++            weekStart,
++            List.copyOf(calendar),
++            List.copyOf(news),
++            List.copyOf(cot),
++            new WeeklyIntelBrief.SentimentBlock(List.copyOf(oandaRetail), List.of()),
++            List.copyOf(contradictions),
++            status
++        );
++    }
++}
+diff --git a/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/LiveCalendarIngestStep.java b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/LiveCalendarIngestStep.java
+new file mode 100644
+index 0000000..747e4a9
+--- /dev/null
++++ b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/LiveCalendarIngestStep.java
+@@ -0,0 +1,66 @@
++package com.martinfou.trading.intelligence.ingest;
++
++import com.martinfou.trading.data.ForexFactoryScraper;
++import com.martinfou.trading.intelligence.brief.WeeklyIntelBrief;
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
++
++import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.List;
++import java.util.Locale;
++
++/** Live calendar ingest via {@link ForexFactoryScraper}. */
++public final class LiveCalendarIngestStep implements CalendarIngestStep {
++
++    private static final Logger log = LoggerFactory.getLogger(LiveCalendarIngestStep.class);
++
++    private final ForexFactoryScraper scraper;
++    private final boolean allowFallback;
++
++    public LiveCalendarIngestStep() {
++        this(new ForexFactoryScraper(), false);
++    }
++
++    LiveCalendarIngestStep(ForexFactoryScraper scraper, boolean allowFallback) {
++        this.scraper = scraper;
++        this.allowFallback = allowFallback;
++    }
++
++    @Override
++    public List<WeeklyIntelBrief.CalendarEventEntry> fetch(LocalDate weekStart) throws Exception {
++        List<ForexFactoryScraper.Event> raw = scraper.fetchWeek(weekStart);
++        if (raw.isEmpty()) {
++            throw new CalendarIngestException("ForexFactory returned no calendar events for week " + weekStart);
++        }
++        if (!allowFallback && raw.stream().allMatch(LiveCalendarIngestStep::looksLikeFallback)) {
++            throw new CalendarIngestException(
++                "ForexFactory scrape unavailable — only hardcoded fallback events returned");
++        }
++        List<WeeklyIntelBrief.CalendarEventEntry> mapped = new ArrayList<>();
++        for (ForexFactoryScraper.Event event : raw) {
++            mapped.add(new WeeklyIntelBrief.CalendarEventEntry(
++                eventId(event),
++                event.event(),
++                event.currency(),
++                event.impact(),
++                event.time(),
++                "forexfactory"
++            ));
++        }
++        log.info("Calendar ingest: {} events for week starting {}", mapped.size(), weekStart);
++        return mapped;
++    }
++
++    static String eventId(ForexFactoryScraper.Event event) {
++        String slug = (event.currency() + "-" + event.event())
++            .toLowerCase(Locale.ROOT)
++            .replaceAll("[^a-z0-9]+", "-")
++            .replaceAll("^-|-$", "");
++        return "ff-" + event.time().toString().substring(0, 10) + "-" + slug;
++    }
++
++    private static boolean looksLikeFallback(ForexFactoryScraper.Event event) {
++        return event.previous().isEmpty() && event.forecast().isEmpty() && event.actual().isEmpty();
++    }
++}
+diff --git a/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/LiveCotIngestStep.java b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/LiveCotIngestStep.java
+new file mode 100644
+index 0000000..2feeadf
+--- /dev/null
++++ b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/LiveCotIngestStep.java
+@@ -0,0 +1,44 @@
++package com.martinfou.trading.intelligence.ingest;
++
++import com.martinfou.trading.data.COTDataFetcher;
++import com.martinfou.trading.intelligence.brief.WeeklyIntelBrief;
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
++
++import java.util.ArrayList;
++import java.util.List;
++
++public final class LiveCotIngestStep implements CotIngestStep {
++
++    private static final Logger log = LoggerFactory.getLogger(LiveCotIngestStep.class);
++
++    private final COTDataFetcher fetcher;
++
++    public LiveCotIngestStep() {
++        this(new COTDataFetcher());
++    }
++
++    LiveCotIngestStep(COTDataFetcher fetcher) {
++        this.fetcher = fetcher;
++    }
++
++    @Override
++    public List<WeeklyIntelBrief.CotSnapshotEntry> fetch() throws Exception {
++        List<COTDataFetcher.COTPosition> positions = fetcher.fetchAll();
++        List<WeeklyIntelBrief.CotSnapshotEntry> out = new ArrayList<>();
++        for (COTDataFetcher.COTPosition pos : positions) {
++            double ratio = pos.speculatorRatio();
++            double longPct = ratio / (1.0 + ratio) * 100.0;
++            double shortPct = 100.0 - longPct;
++            out.add(new WeeklyIntelBrief.CotSnapshotEntry(
++                pos.pair(),
++                longPct,
++                shortPct,
++                null,
++                pos.reportDate()
++            ));
++        }
++        log.info("COT ingest: {} snapshots", out.size());
++        return out;
++    }
++}
+diff --git a/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/LiveOandaSentimentIngestStep.java b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/LiveOandaSentimentIngestStep.java
+new file mode 100644
+index 0000000..4d67628
+--- /dev/null
++++ b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/LiveOandaSentimentIngestStep.java
+@@ -0,0 +1,59 @@
++package com.martinfou.trading.intelligence.ingest;
++
++import com.martinfou.trading.data.OandaPositionAnalyzer;
++import com.martinfou.trading.intelligence.brief.WeeklyIntelBrief;
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
++
++import java.util.ArrayList;
++import java.util.List;
++import java.util.Optional;
++
++public final class LiveOandaSentimentIngestStep implements OandaSentimentIngestStep {
++
++    private static final Logger log = LoggerFactory.getLogger(LiveOandaSentimentIngestStep.class);
++
++    private final String apiKey;
++    private final String accountId;
++    private final boolean practice;
++
++    public LiveOandaSentimentIngestStep() {
++        this(
++            System.getenv("OANDA_API_KEY"),
++            System.getenv("OANDA_ACCOUNT_ID"),
++            true
++        );
++    }
++
++    LiveOandaSentimentIngestStep(String apiKey, String accountId, boolean practice) {
++        this.apiKey = apiKey;
++        this.accountId = accountId;
++        this.practice = practice;
++    }
++
++    @Override
++    public Optional<List<WeeklyIntelBrief.OandaRetailEntry>> fetchOptional() {
++        if (apiKey == null || apiKey.isBlank() || accountId == null || accountId.isBlank()) {
++            log.warn("OANDA credentials not set — sentiment ingest skipped (PARTIAL brief allowed)");
++            return Optional.empty();
++        }
++        try {
++            var analyzer = new OandaPositionAnalyzer(apiKey, accountId, practice);
++            OandaPositionAnalyzer.MarketSentiment sentiment = analyzer.fetchSentiment();
++            List<WeeklyIntelBrief.OandaRetailEntry> entries = new ArrayList<>();
++            for (OandaPositionAnalyzer.PositionSentiment pos : sentiment.positions()) {
++                entries.add(new WeeklyIntelBrief.OandaRetailEntry(
++                    pos.instrument(),
++                    pos.longRatio(),
++                    pos.shortRatio(),
++                    pos.sentimentLabel()
++                ));
++            }
++            log.info("OANDA sentiment ingest: {} instruments", entries.size());
++            return Optional.of(entries);
++        } catch (Exception ex) {
++            log.warn("OANDA sentiment ingest failed — continuing with PARTIAL brief: {}", ex.getMessage());
++            return Optional.empty();
++        }
++    }
++}
+diff --git a/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/NewsIngestStep.java b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/NewsIngestStep.java
+new file mode 100644
+index 0000000..c8c9de6
+--- /dev/null
++++ b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/NewsIngestStep.java
+@@ -0,0 +1,13 @@
++package com.martinfou.trading.intelligence.ingest;
++
++import com.martinfou.trading.intelligence.brief.WeeklyIntelBrief;
++
++import java.util.List;
++
++/** RSS / headline ingest — stub until Sprint 15 pipeline. */
++public final class NewsIngestStep {
++
++    public List<WeeklyIntelBrief.NewsItemEntry> fetch() {
++        return List.of();
++    }
++}
+diff --git a/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/OandaSentimentIngestStep.java b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/OandaSentimentIngestStep.java
+new file mode 100644
+index 0000000..9bb60e6
+--- /dev/null
++++ b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/ingest/OandaSentimentIngestStep.java
+@@ -0,0 +1,11 @@
++package com.martinfou.trading.intelligence.ingest;
++
++import com.martinfou.trading.intelligence.brief.WeeklyIntelBrief;
++
++import java.util.List;
++import java.util.Optional;
++
++public interface OandaSentimentIngestStep {
++    /** Empty if credentials missing or fetch skipped. */
++    Optional<List<WeeklyIntelBrief.OandaRetailEntry>> fetchOptional();
++}
+diff --git a/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/paths/WeeklyBuilderPaths.java b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/paths/WeeklyBuilderPaths.java
+new file mode 100644
+index 0000000..315eb17
+--- /dev/null
++++ b/trading-intelligence/src/main/java/com/martinfou/trading/intelligence/paths/WeeklyBuilderPaths.java
+@@ -0,0 +1,76 @@
++package com.martinfou.trading.intelligence.paths;
++
++import java.io.IOException;
++import java.nio.file.Files;
++import java.nio.file.Path;
++
++/** Hot-folder layout for Epic 22 weekly strategy builder (mirrors {@code SqInboxPaths}). */
++public final class WeeklyBuilderPaths {
++
++    public static final String BUILDER_ROOT = "data/weekly-builder";
++    public static final String INTEL_ROOT = "data/weekly-intel";
++
++    public static final String PENDING = "pending";
++    public static final String COMPILING = "compiling";
++    public static final String COMPILED = "compiled";
++    public static final String DEPLOYED = "deployed";
++    public static final String FAILED = "failed";
++    public static final String DLQ = "dlq";
++    public static final String ARCHIVE = "archive";
++
++    public static final String PLAN_PREFIX = "weekly-plan-";
++    public static final String BRIEF_PREFIX = "brief-";
++    public static final String MANIFEST_FILE = "manifest.json";
++    public static final String REASON_FILE = "reason.json";
++    public static final String NO_TRADE_TEMPLATE = "T8";
++
++    private WeeklyBuilderPaths() {}
++
++    public static Path intelRoot(Path repoRoot) {
++        return repoRoot.resolve(INTEL_ROOT);
++    }
++
++    public static Path builderRoot(Path repoRoot) {
++        return repoRoot.resolve(BUILDER_ROOT);
++    }
++
++    public static Path pending(Path repoRoot) {
++        return builderRoot(repoRoot).resolve(PENDING);
++    }
++
++    public static Path compiling(Path repoRoot) {
++        return builderRoot(repoRoot).resolve(COMPILING);
++    }
++
++    public static Path compiled(Path repoRoot) {
++        return builderRoot(repoRoot).resolve(COMPILED);
++    }
++
++    public static Path deployed(Path repoRoot) {
++        return builderRoot(repoRoot).resolve(DEPLOYED);
++    }
++
++    public static Path failed(Path repoRoot) {
++        return builderRoot(repoRoot).resolve(FAILED);
++    }
++
++    public static Path dlq(Path repoRoot) {
++        return builderRoot(repoRoot).resolve(DLQ);
++    }
++
++    public static Path archive(Path repoRoot) {
++        return builderRoot(repoRoot).resolve(ARCHIVE);
++    }
++
++    /** Creates intel + builder subdirectories if missing. */
++    public static void ensureLayout(Path repoRoot) throws IOException {
++        Files.createDirectories(intelRoot(repoRoot));
++        Files.createDirectories(pending(repoRoot));
++        Files.createDirectories(compiling(repoRoot));
++        Files.createDirectories(compiled(repoRoot));
++        Files.createDirectories(deployed(repoRoot));
++        Files.createDirectories(failed(repoRoot));
++        Files.createDirectories(dlq(repoRoot));
++        Files.createDirectories(archive(repoRoot));
++    }
++}
+diff --git a/trading-intelligence/src/test/java/com/martinfou/trading/intelligence/brief/WeeklyIntelBriefIOTest.java b/trading-intelligence/src/test/java/com/martinfou/trading/intelligence/brief/WeeklyIntelBriefIOTest.java
+new file mode 100644
+index 0000000..85f3c12
+--- /dev/null
++++ b/trading-intelligence/src/test/java/com/martinfou/trading/intelligence/brief/WeeklyIntelBriefIOTest.java
+@@ -0,0 +1,39 @@
++package com.martinfou.trading.intelligence.brief;
++
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.api.io.TempDir;
++
++import java.nio.file.Path;
++import java.time.Instant;
++import java.time.LocalDate;
++import java.util.List;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++
++class WeeklyIntelBriefIOTest {
++
++    @Test
++    void writeAndRead_roundTrips(@TempDir Path tempDir) throws Exception {
++        WeeklyIntelBrief original = new WeeklyIntelBrief(
++            Instant.parse("2026-06-06T17:00:00Z"),
++            LocalDate.of(2026, 6, 9),
++            List.of(new WeeklyIntelBrief.CalendarEventEntry(
++                "ff-2026-06-11-us-cpi",
++                "US CPI",
++                "USD",
++                "HIGH",
++                Instant.parse("2026-06-11T12:30:00Z"),
++                "forexfactory"
++            )),
++            List.of(),
++            List.of(),
++            WeeklyIntelBrief.SentimentBlock.empty(),
++            List.of(),
++            IngestStatus.OK
++        );
++        Path path = tempDir.resolve("brief.json");
++        WeeklyIntelBriefIO.write(original, path);
++        WeeklyIntelBrief loaded = WeeklyIntelBriefIO.read(path);
++        assertEquals(original, loaded);
++    }
++}
+diff --git a/trading-intelligence/src/test/java/com/martinfou/trading/intelligence/ingest/IngestPipelineTest.java b/trading-intelligence/src/test/java/com/martinfou/trading/intelligence/ingest/IngestPipelineTest.java
+new file mode 100644
+index 0000000..d3ca219
+--- /dev/null
++++ b/trading-intelligence/src/test/java/com/martinfou/trading/intelligence/ingest/IngestPipelineTest.java
+@@ -0,0 +1,110 @@
++package com.martinfou.trading.intelligence.ingest;
++
++import com.martinfou.trading.intelligence.brief.IngestStatus;
++import com.martinfou.trading.intelligence.brief.WeeklyIntelBrief;
++import org.junit.jupiter.api.Test;
++
++import java.time.Clock;
++import java.time.Instant;
++import java.time.LocalDate;
++import java.time.ZoneOffset;
++import java.util.List;
++import java.util.Optional;
++
++import static org.junit.jupiter.api.Assertions.*;
++
++class IngestPipelineTest {
++
++    private static final Clock FIXED_CLOCK = Clock.fixed(
++        Instant.parse("2026-06-05T17:00:00Z"),
++        ZoneOffset.UTC
++    );
++
++    @Test
++    void run_okWhenCalendarAndOandaPresent() throws Exception {
++        IngestPipeline pipeline = new IngestPipeline(
++            FIXED_CLOCK,
++            week -> List.of(sampleEvent()),
++            () -> List.of(new WeeklyIntelBrief.CotSnapshotEntry("EUR", 50, 50, null, LocalDate.of(2026, 6, 3))),
++            () -> Optional.of(List.of(new WeeklyIntelBrief.OandaRetailEntry("EUR_USD", 55, 45, "Mixed"))),
++            new NewsIngestStep(),
++            new ContradictionDetector()
++        );
++
++        WeeklyIntelBrief brief = pipeline.run();
++        assertEquals(IngestStatus.OK, brief.ingestStatus());
++        assertEquals(LocalDate.of(2026, 6, 8), brief.weekStart());
++        assertEquals(1, brief.calendarEvents().size());
++    }
++
++    @Test
++    void run_partialWhenOandaMissing() throws Exception {
++        IngestPipeline pipeline = new IngestPipeline(
++            FIXED_CLOCK,
++            week -> List.of(sampleEvent()),
++            () -> List.of(),
++            Optional::empty,
++            new NewsIngestStep(),
++            new ContradictionDetector()
++        );
++
++        WeeklyIntelBrief brief = pipeline.run();
++        assertEquals(IngestStatus.PARTIAL, brief.ingestStatus());
++        assertTrue(brief.sentiment().oandaRetail().isEmpty());
++    }
++
++    @Test
++    void run_failsWhenCalendarThrows() {
++        IngestPipeline pipeline = new IngestPipeline(
++            FIXED_CLOCK,
++            week -> { throw new CalendarIngestException("scrape down"); },
++            List::of,
++            Optional::empty,
++            new NewsIngestStep(),
++            new ContradictionDetector()
++        );
++
++        assertThrows(CalendarIngestException.class, pipeline::run);
++    }
++
++    @Test
++    void run_failsWhenCalendarEmpty() {
++        IngestPipeline pipeline = new IngestPipeline(
++            FIXED_CLOCK,
++            week -> List.of(),
++            List::of,
++            Optional::empty,
++            new NewsIngestStep(),
++            new ContradictionDetector()
++        );
++
++        assertThrows(CalendarIngestException.class, pipeline::run);
++    }
++
++    @Test
++    void run_detectsContradiction() throws Exception {
++        IngestPipeline pipeline = new IngestPipeline(
++            FIXED_CLOCK,
++            week -> List.of(sampleEvent()),
++            () -> List.of(new WeeklyIntelBrief.CotSnapshotEntry("EUR", 70, 30, null, LocalDate.of(2026, 6, 3))),
++            () -> Optional.of(List.of(new WeeklyIntelBrief.OandaRetailEntry("EUR_USD", 75, 25, "Bullish"))),
++            new NewsIngestStep(),
++            new ContradictionDetector()
++        );
++
++        WeeklyIntelBrief brief = pipeline.run();
++        assertFalse(brief.contradictions().isEmpty());
++        assertEquals("EUR_USD", brief.contradictions().getFirst().pairs().getFirst());
++    }
++
++    private static WeeklyIntelBrief.CalendarEventEntry sampleEvent() {
++        return new WeeklyIntelBrief.CalendarEventEntry(
++            "ff-2026-06-11-us-cpi",
++            "US CPI",
++            "USD",
++            "HIGH",
++            Instant.parse("2026-06-11T12:30:00Z"),
++            "forexfactory"
++        );
++    }
++}
+diff --git a/trading-intelligence/src/test/java/com/martinfou/trading/intelligence/paths/WeeklyBuilderPathsTest.java b/trading-intelligence/src/test/java/com/martinfou/trading/intelligence/paths/WeeklyBuilderPathsTest.java
+new file mode 100644
+index 0000000..0be489c
+--- /dev/null
++++ b/trading-intelligence/src/test/java/com/martinfou/trading/intelligence/paths/WeeklyBuilderPathsTest.java
+@@ -0,0 +1,34 @@
++package com.martinfou.trading.intelligence.paths;
++
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.api.io.TempDir;
++
++import java.nio.file.Files;
++import java.nio.file.Path;
++
++import static org.junit.jupiter.api.Assertions.*;
++
++class WeeklyBuilderPathsTest {
++
++    @Test
++    void ensureLayout_createsAllHotFolders(@TempDir Path repoRoot) throws Exception {
++        WeeklyBuilderPaths.ensureLayout(repoRoot);
++
++        assertTrue(Files.isDirectory(WeeklyBuilderPaths.intelRoot(repoRoot)));
++        assertTrue(Files.isDirectory(WeeklyBuilderPaths.pending(repoRoot)));
++        assertTrue(Files.isDirectory(WeeklyBuilderPaths.compiling(repoRoot)));
++        assertTrue(Files.isDirectory(WeeklyBuilderPaths.compiled(repoRoot)));
++        assertTrue(Files.isDirectory(WeeklyBuilderPaths.deployed(repoRoot)));
++        assertTrue(Files.isDirectory(WeeklyBuilderPaths.failed(repoRoot)));
++        assertTrue(Files.isDirectory(WeeklyBuilderPaths.dlq(repoRoot)));
++        assertTrue(Files.isDirectory(WeeklyBuilderPaths.archive(repoRoot)));
++    }
++
++    @Test
++    void builderRoot_resolvesUnderData(@TempDir Path repoRoot) {
++        assertEquals(
++            repoRoot.resolve("data/weekly-builder"),
++            WeeklyBuilderPaths.builderRoot(repoRoot)
++        );
++    }
++}

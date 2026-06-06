@@ -4,6 +4,8 @@ import { createChart, type IChartApi, type ISeriesApi, type LineData, ColorType,
 
 const props = defineProps<{
   data: number[]
+  periodStart?: string
+  periodEnd?: string
   height?: number
   showTimeScale?: boolean
 }>()
@@ -12,6 +14,24 @@ const container = ref<HTMLDivElement>()
 let chart: IChartApi | null = null
 let lineSeries: ISeriesApi<'Line'> | null = null
 let drawdownSeries: ISeriesApi<'Histogram'> | null = null
+
+function generateTimes(length: number, periodStart?: string, periodEnd?: string): number[] {
+  const times: number[] = []
+  
+  let startMs = periodStart ? new Date(periodStart).getTime() : null
+  let endMs = periodEnd ? new Date(periodEnd).getTime() : null
+  
+  if (!startMs || !endMs || isNaN(startMs) || isNaN(endMs)) {
+    endMs = Date.now()
+    startMs = endMs - 365 * 24 * 60 * 60 * 1000
+  }
+  
+  const stepMs = (endMs - startMs) / Math.max(1, length - 1)
+  for (let i = 0; i < length; i++) {
+    times.push(Math.round((startMs + i * stepMs) / 1000))
+  }
+  return times
+}
 
 async function render() {
   await nextTick()
@@ -79,8 +99,10 @@ async function render() {
     visible: false,
   })
 
+  const times = generateTimes(props.data.length, props.periodStart, props.periodEnd)
+
   const lineData: LineData[] = props.data.map((v, i) => ({
-    time: i as any,
+    time: times[i] as any,
     value: v,
   }))
 
@@ -91,7 +113,7 @@ async function render() {
     }
     const dd = peak === 0 ? 0 : ((v - peak) / peak) * 100
     return {
-      time: i as any,
+      time: times[i] as any,
       value: dd,
       color: '#ef4444',
     }
@@ -117,6 +139,8 @@ function resize() {
 onMounted(render)
 
 watch(() => props.data, render, { deep: true })
+watch(() => props.periodStart, render)
+watch(() => props.periodEnd, render)
 watch(() => props.height, resize)
 
 onUnmounted(() => {
