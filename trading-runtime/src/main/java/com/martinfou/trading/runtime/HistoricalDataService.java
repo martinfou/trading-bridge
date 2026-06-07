@@ -12,6 +12,9 @@ import java.time.LocalDate;
 import java.util.*;
 import java.util.concurrent.*;
 
+import com.martinfou.trading.data.DukascopyDownloader;
+import com.martinfou.trading.data.BarStore;
+
 public final class HistoricalDataService implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(HistoricalDataService.class);
@@ -134,143 +137,77 @@ public final class HistoricalDataService implements AutoCloseable {
         String key = syncMode ? "sync-" + tf : (startYear != null && endYear != null && !startYear.equals(endYear))
             ? pair + "-" + startYear + "-" + endYear + "-" + tf
             : pair + "-" + (startYear != null ? startYear : "") + "-" + tf;
-        List<String> command = new ArrayList<>();
-        command.add("./scripts/download-data.sh");
+
+        DukascopyDownloader downloader = new DukascopyDownloader();
+        int startYearVal = startYear != null ? startYear : 2006;
+        int endYearVal = endYear != null ? endYear : LocalDate.now().getYear();
+
+        List<String> pairsToDownload = pair != null ? List.of(pair) : PAIRS;
+
         if (syncMode) {
-            command.add("--sync");
-        } else {
-            command.add("--pair");
-            command.add(pair);
-            if (startYear != null && endYear != null && !startYear.equals(endYear)) {
-                command.add("--range");
-                command.add(startYear + "-" + endYear);
-            } else if (startYear != null) {
-                command.add("--year");
-                command.add(String.valueOf(startYear));
-            }
-        }
-        command.add("--tf");
-        command.add(tf.toLowerCase());
+            log.info("Starting Java-native sync mode download from {} to {} for timeframe: {}", startYearVal, endYearVal, tf);
+            int totalOperations = (endYearVal - startYearVal + 1) * PAIRS.size();
+            int completedOperations = 0;
 
-        log.info("Starting historical data download command: {}", command);
-        ProcessBuilder pb = new ProcessBuilder(command);
-        pb.directory(repoRoot.toFile());
-        pb.redirectErrorStream(true);
+            for (int y = startYearVal; y <= endYearVal; y++) {
+                for (String p : PAIRS) {
+                    completedOperations++;
+                    int pct = (completedOperations * 100) / totalOperations;
+                    activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(pct, 1, 99), "Syncing " + pairToSym(p) + " " + y + "..."));
 
-        try {
-            Process process = pb.start();
-            try (var reader = new java.io.BufferedReader(new java.io.InputStreamReader(process.getInputStream()))) {
-                String line;
-                int startYearVal = 2006;
-                int endYearVal = LocalDate.now().getYear();
-                int currentProcessingYear = (startYear != null) ? startYear : startYearVal;
-                int currentMonth = 1;
-                int totalMonths = 12;
-                while ((line = reader.readLine()) != null) {
-                    log.debug("[download-data.sh] {}", line);
+                    Path csv = findCsvFile(p, tf, y);
+                    Path bars = barsDir.resolve(pairToSym(p) + "_" + tf.toUpperCase() + "_" + y + ".bars");
 
-                    if (syncMode) {
-                        if (line.contains("—")) {
-                            String[] parts = line.split("—");
-                            if (parts.length > 1) {
-                                try {
-                                    String yearStr = parts[1].replaceAll("[^0-9]", "").trim();
-                                    if (yearStr.length() == 4) {
-                                        int y = Integer.parseInt(yearStr);
-                                        int pct = (y - startYearVal) * 100 / (endYearVal - startYearVal + 1);
-                                        activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(pct, 1, 99), "Syncing year " + y + "..."));
-                                    }
-                                } catch (Exception ignored) {}
-                            }
+                    boolean shouldDownload = false;
+                    if (csv == null || !Files.exists(csv)) {
+                        shouldDownload = true;
+                    } else if (y == LocalDate.now().getYear()) {
+                        // Current year: refresh
+                        deleteDataset(p, y, tf);
+                        shouldDownload = true;
+                    }
+
+                    if (shouldDownload) {
+                        try {
+                            Path downloadedCsv = downloader.download(p, y, tf, dukascopyDir);
+                            var store = new BarStore(pairToSym(p), tf.toUpperCase() + "_" + y, barsDir);
+                            store.writeFromCSV(downloadedCsv);
+                        } catch (Exception e) {
+                            log.error("Failed to sync pair {} for year {}", p, y, e);
                         }
-
-                        String detectedPair = null;
-                        for (String p : PAIRS) {
-                            if (line.toLowerCase().contains(p)) {
-                                detectedPair = p;
-                                break;
-                            }
-                        }
-                        if (detectedPair != null) {
-                            var current = activeTasks.get(key);
-                            int basePct = current != null ? current.progress() : 1;
-                            activeTasks.put(key, new DownloadTaskStatus(key, basePct, "Syncing " + pairToSym(detectedPair) + "..."));
-                        }
-                    } else {
-                        if (line.contains("—")) {
-                            String[] parts = line.split("—");
-                            if (parts.length > 1) {
-                                try {
-                                    String yearStr = parts[1].replaceAll("[^0-9]", "").trim();
-                                    if (yearStr.length() == 4) {
-                                        int parsedY = Integer.parseInt(yearStr);
-                                        if (startYear != null && endYear != null && parsedY >= startYear && parsedY <= endYear) {
-                                            currentProcessingYear = parsedY;
-                                        }
-                                    }
-                                } catch (Exception ignored) {}
-                            }
-                        }
-
-                        String detectedPair = null;
-                        for (String p : PAIRS) {
-                            if (line.toLowerCase().contains(p)) {
-                                detectedPair = p;
-                                break;
-                            }
-                        }
-
-                        if (line.contains("Ingesting Month")) {
-                            try {
-                                String parts = line.substring(line.indexOf("Month") + 5).trim();
-                                String[] slash = parts.split("/");
-                                if (slash.length > 0) {
-                                    currentMonth = Integer.parseInt(slash[0].trim());
-                                    totalMonths = slash.length > 1 ? Integer.parseInt(slash[1].replaceAll("[^0-9]", "").trim()) : 12;
-                                    
-                                    int pct;
-                                    if (startYear != null && endYear != null && endYear > startYear) {
-                                        int yearIndex = currentProcessingYear - startYear;
-                                        int totalYears = endYear - startYear + 1;
-                                        int basePct = yearIndex * 100 / totalYears;
-                                        pct = basePct + (currentMonth * 80 / (totalMonths * totalYears));
-                                    } else {
-                                        pct = 5 + (currentMonth * 80 / totalMonths);
-                                    }
-                                    activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(pct, 1, 99), "Ingesting " + pairToSym(detectedPair != null ? detectedPair : pair) + " " + currentProcessingYear + " Month " + currentMonth + "/" + totalMonths + "..."));
-                                }
-                            } catch (Exception ignored) {}
-                        } else {
-                            if (line.contains("downloading...")) {
-                                int pct;
-                                if (startYear != null && endYear != null && endYear > startYear) {
-                                    int yearIndex = currentProcessingYear - startYear;
-                                    int totalYears = endYear - startYear + 1;
-                                    pct = yearIndex * 100 / totalYears + 2;
-                                } else {
-                                    pct = 30;
-                                }
-                                activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(pct, 1, 99), "Downloading " + pairToSym(pair) + " " + currentProcessingYear + "..."));
-                            } else if (line.contains("Converting file") || line.contains("Converted")) {
-                                int pct;
-                                if (startYear != null && endYear != null && endYear > startYear) {
-                                    int yearIndex = currentProcessingYear - startYear;
-                                    int totalYears = endYear - startYear + 1;
-                                    pct = yearIndex * 100 / totalYears + 9;
-                                } else {
-                                    pct = 75;
-                                }
-                                activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(pct, 1, 99), "Converting " + pairToSym(pair) + " " + currentProcessingYear + " to binary `.bars`..."));
-                            }
+                    } else if (!Files.exists(bars) && csv != null) {
+                        try {
+                            var store = new BarStore(pairToSym(p), tf.toUpperCase() + "_" + y, barsDir);
+                            store.writeFromCSV(csv);
+                        } catch (Exception e) {
+                            log.error("Failed to convert existing CSV to bars for pair {} year {}", p, y, e);
                         }
                     }
                 }
             }
-            int exitCode = process.waitFor();
-            log.info("Download process completed with exit code: {}", exitCode);
-        } catch (Exception e) {
-            log.error("Failed to execute download-data.sh script", e);
+        } else {
+            log.info("Starting Java-native download from {} to {} for pair: {} timeframe: {}", startYearVal, endYearVal, pair, tf);
+            int totalYears = endYearVal - startYearVal + 1;
+            int processedYears = 0;
+
+            for (int y = startYearVal; y <= endYearVal; y++) {
+                for (String p : pairsToDownload) {
+                    int pct = (processedYears * 100) / totalYears + 5;
+                    activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(pct, 1, 99), "Downloading " + pairToSym(p) + " " + y + "..."));
+                    
+                    try {
+                        Path downloadedCsv = downloader.download(p, y, tf, dukascopyDir);
+                        activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(pct + 5, 1, 99), "Converting " + pairToSym(p) + " " + y + " to binary..."));
+                        var store = new BarStore(pairToSym(p), tf.toUpperCase() + "_" + y, barsDir);
+                        store.writeFromCSV(downloadedCsv);
+                    } catch (Exception e) {
+                        log.error("Failed to download or convert pair {} for year {}", p, y, e);
+                    }
+                }
+                processedYears++;
+            }
         }
+        log.info("Download process completed for key: {}", key);
     }
 
     public synchronized void deleteDataset(String pair, int year, String tf) {
