@@ -12,7 +12,7 @@ Where compiled strategies live and how the order queue contract works.
 | Creative / experimental | `trading-strategies/.../creative/` | `trading-strategies` | (not in unified catalog) |
 | Examples & demos | `trading-examples/.../` | `trading-examples` | `StrategyCatalog.Family.EXAMPLE` |
 | Genetics templates | `trading-genetics/` | `trading-genetics` | not in runtime catalog |
-| Batch GA results | `batch-results/` (repo root) | **not compiled** | reference only |
+| Batch GA results / Backtests | [docs/batch-backtest-results.md](batch-backtest-results.md) | **not compiled** | reference only |
 
 **Rule:** Only code under `trading-strategies` and registered `trading-examples` entries are reachable via `StrategyCatalog` / `RunBacktest`.
 
