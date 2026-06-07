@@ -32,6 +32,7 @@ Trading Bridge convertit les stratégies de trading générées par **StrategyQu
 | [strategy-home.md](strategy-home.md)                     | Dev               | Placement stratégies, file d’ordres         |
 | [conversion-guide.md](conversion-guide.md)               | Dev               | JForex → Java                               |
 | [sprint-plan.md](sprint-plan.md)                         | PM                | Roadmap                                     |
+| [batch-backtest-results.md](batch-backtest-results.md)   | Dev / Analyst     | Résultats des backtests batch sur les paires |
 | [AGENTS.md](../AGENTS.md)                                | Agent EN          | Entrée rapide, **graphe modules canonique** |
 | [project-context.md](../_bmad-output/project-context.md) | Agent EN          | Règles d’implémentation                     |
 
