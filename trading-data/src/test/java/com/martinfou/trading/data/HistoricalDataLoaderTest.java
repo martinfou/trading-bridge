@@ -14,6 +14,13 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 
 class HistoricalDataLoaderTest {
 
+    @org.junit.jupiter.api.AfterEach
+    void tearDown() {
+        // Force GC to release Memory-Mapped file locks on Windows
+        System.gc();
+        System.runFinalization();
+    }
+
     @Test
     void loadFile_dukascopyCsv(@TempDir Path dir) throws Exception {
         Path csv = dir.resolve("eurusd-h1-bid-2012-01-01-2012-12-31.csv");
