@@ -39,7 +39,7 @@ function resolveDevPaths(): JvmConfig {
 function resolvePackagedPaths(): JvmConfig {
   const resourcesDir = path.join(process.resourcesPath, 'resources')
   const jarPath = path.join(resourcesDir, 'jar/control-plane.jar')
-  const javaBin = path.join(resourcesDir, 'jre/bin/java')
+  const javaBin = path.join(resourcesDir, 'jre/bin/java' + (process.platform === 'win32' ? '.exe' : ''))
   const dataDir = path.join(app.getPath('userData'), 'data')
   return { javaBin, jarPath, dataDir, cwd: dataDir }
 }
