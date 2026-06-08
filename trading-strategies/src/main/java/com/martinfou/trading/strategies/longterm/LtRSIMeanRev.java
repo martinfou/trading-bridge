@@ -1,1 +1,0 @@
-fatal: path 'trading-strategies/src/main/java/com/martinfou/trading/strategies/longterm/LtRSIMeanRev.java' does not exist in 'HEAD'
