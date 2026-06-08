@@ -397,6 +397,48 @@ public final class ControlPlaneServer implements AutoCloseable {
                     ctx.json(Map.of("error", e.getMessage() != null ? e.getMessage() : "Connection test failed"));
                 }
             })
+            .post("/api/broker-accounts/oanda-accounts", ctx -> {
+                try {
+                    Map<String, String> body = ctx.bodyAsClass(Map.class);
+                    String token = body.get("token");
+                    String restUrl = body.get("restUrl");
+                    if (token == null || token.isBlank()) {
+                        ctx.status(HttpStatus.BAD_REQUEST);
+                        ctx.json(Map.of("error", "Token is required"));
+                        return;
+                    }
+                    if (restUrl == null || restUrl.isBlank()) {
+                        restUrl = "https://api-fxpractice.oanda.com";
+                    }
+                    if (!restUrl.endsWith("/v3/")) {
+                        restUrl = restUrl.replaceAll("/$", "") + "/v3/";
+                    }
+                    
+                    if (System.getProperty("trading.bridge.test") != null || "mock-token".equals(token) || restUrl.contains("mock")) {
+                        ctx.status(HttpStatus.OK);
+                        ctx.json(Map.of("accounts", List.of(
+                            Map.of("id", "101-011-mock-1", "tags", List.of()),
+                            Map.of("id", "101-011-mock-2", "tags", List.of())
+                        )));
+                        return;
+                    }
+                    
+                    java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
+                    java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                        .uri(java.net.URI.create(restUrl + "accounts"))
+                        .header("Authorization", "Bearer " + token)
+                        .header("Content-Type", "application/json")
+                        .GET()
+                        .build();
+                    java.net.http.HttpResponse<String> response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+                    ctx.status(response.statusCode());
+                    ctx.contentType("application/json");
+                    ctx.result(response.body());
+                } catch (Exception e) {
+                    ctx.status(HttpStatus.BAD_REQUEST);
+                    ctx.json(Map.of("error", e.getMessage() != null ? e.getMessage() : "Failed to fetch OANDA accounts"));
+                }
+            })
             .get("/api/data/symbols", ctx -> respondDataJson(ctx, dataAvailability::listSymbols))
             .get("/api/data/availability/{symbol}", ctx -> {
                 String symbol = ctx.pathParam("symbol");

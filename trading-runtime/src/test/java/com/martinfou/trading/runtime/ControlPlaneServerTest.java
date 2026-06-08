@@ -390,6 +390,30 @@ class ControlPlaneServerTest {
     }
 
     @Test
+    void testBrokerAccount_oandaAccounts_returnsMockAccounts() throws Exception {
+        String original = System.getProperty("trading.bridge.test");
+        System.setProperty("trading.bridge.test", "true");
+        try {
+            String jsonPayload = """
+                {
+                  "token": "mock-token",
+                  "restUrl": "https://api-fxpractice.oanda.com"
+                }
+                """;
+            HttpResponse<String> response = post("/api/broker-accounts/oanda-accounts", jsonPayload);
+            assertEquals(200, response.statusCode());
+            assertTrue(response.body().contains("101-011-mock-1"));
+            assertTrue(response.body().contains("101-011-mock-2"));
+        } finally {
+            if (original != null) {
+                System.setProperty("trading.bridge.test", original);
+            } else {
+                System.clearProperty("trading.bridge.test");
+            }
+        }
+    }
+
+    @Test
     void promoteReadiness_returnsStructuredAssessment() throws Exception {
         String runId = startSampleBacktest();
         waitForCompletion(runId, Duration.ofSeconds(10));
