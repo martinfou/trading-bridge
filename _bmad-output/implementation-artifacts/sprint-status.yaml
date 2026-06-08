@@ -266,3 +266,27 @@ development_status:
   26-5-desktop-parameter-heatmap-pareto-drift: done
   epic-26-retrospective: optional
 
+  epic-27: done
+  27-1-consolidation-branches: done
+  27-2-structure-package-longterm: done
+  27-3-long-term-strategy-catalog: done
+  27-4-frontend-long-term-color: done
+  27-5-lt-cross-momentum: done
+  27-6-lt-rsi-mean-rev: done
+  27-7-lt-rsi3-momentum: done
+  27-8-lt-range-breakout: done
+  27-9-lt-vol-regime: done
+  27-10-lt-bollinger-squeeze: done
+  27-11-lt-squeeze-momentum: done
+  27-12-lt-pullback-entry: done
+  27-13-lt-double-ma: done
+  27-14-lt-efficiency-ratio: done
+  27-15-calc-risk-position-indicators: done
+  27-16-standardize-position-sizing: done
+  27-17-walkforward-validation: done
+  27-18-validation-reports: done
+  27-19-postmortem-failures: done
+  27-20-lt-strategy-playbook: done
+  27-21-joplin-save: done
+  epic-27-retrospective: optional
+
