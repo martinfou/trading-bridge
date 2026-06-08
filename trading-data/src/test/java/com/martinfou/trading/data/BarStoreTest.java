@@ -14,6 +14,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BarStoreTest {
 
+    @org.junit.jupiter.api.AfterEach
+    void tearDown() {
+        // Force GC to release Memory-Mapped file locks on Windows
+        System.gc();
+        System.runFinalization();
+    }
+
     @Test
     void writeAndRead_preservesEpochMillis(@TempDir Path dir) throws Exception {
         Instant t0 = Instant.parse("2012-01-01T00:00:00Z");

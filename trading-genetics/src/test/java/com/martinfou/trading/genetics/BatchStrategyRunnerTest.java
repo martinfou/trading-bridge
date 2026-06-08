@@ -28,7 +28,7 @@ class BatchStrategyRunnerTest {
         assertEquals("all", config.types());
         assertEquals(250, config.bars());
         assertEquals(100_000.0, config.capital(), 0.001);
-        assertEquals("./batch-results", config.outputDir().toString());
+        assertEquals("./batch-results", config.outputDir().toString().replace('\\', '/'));
         assertTrue(config.threads() >= 1);
         assertFalse(config.selectionCriteria().isEnabled(), "Selection should be disabled by default");
     }
@@ -44,7 +44,7 @@ class BatchStrategyRunnerTest {
         assertEquals("trend,meanrev", config.types());
         assertEquals(100, config.bars());
         assertEquals(50_000.0, config.capital(), 0.001);
-        assertEquals("./my-report", config.outputDir().toString());
+        assertEquals("./my-report", config.outputDir().toString().replace('\\', '/'));
         assertEquals(4, config.threads());
         assertFalse(config.selectionCriteria().isEnabled());
     }

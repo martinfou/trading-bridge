@@ -16,7 +16,7 @@ import java.util.concurrent.TimeUnit;
  *
  * @see <a href="https://strategyquant.com/doc/cli-command-line/introduction-to-cli/">SQ CLI docs</a>
  */
-public final class SqCliRunner {
+public class SqCliRunner {
 
     private static final Logger log = LoggerFactory.getLogger(SqCliRunner.class);
 
