@@ -41,6 +41,23 @@ const dailyLossLimitPct = ref(5.0)
 const weeklyLossLimitPct = ref(10.0)
 const accounts = ref<any[]>([])
 
+const filteredStrategies = computed(() => {
+  if (runMode.value === 'BACKTEST') {
+    return strategies.value
+  }
+  if (runMode.value === 'PAPER_OANDA') {
+    return strategies.value.filter(
+      (s) => s.deployedMode === 'PAPER' && s.executionLabel === 'PAPER_OANDA',
+    )
+  }
+  if (runMode.value === 'LIVE_OANDA') {
+    return strategies.value.filter(
+      (s) => s.deployedMode === 'LIVE' && s.executionLabel === 'LIVE_OANDA',
+    )
+  }
+  return strategies.value
+})
+
 const timeframeScale: Record<string, number> = {
   'M1': 1,
   'M30': 30,
@@ -79,8 +96,11 @@ onMounted(async () => {
     accounts.value = accs
 
     // Restore from localStorage
+    const savedRunMode = localStorage.getItem('bt_runMode')
+    if (savedRunMode) runMode.value = savedRunMode as any
+
     const savedStrategy = localStorage.getItem('bt_selectedStrategy')
-    if (savedStrategy && strats.some(s => s.id === savedStrategy)) {
+    if (savedStrategy && filteredStrategies.value.some(s => s.id === savedStrategy)) {
       selectedStrategy.value = savedStrategy
     }
     const savedSymbols = localStorage.getItem('bt_selectedSymbols')
@@ -117,8 +137,6 @@ onMounted(async () => {
     if (savedDataTf) dataTimeframe.value = savedDataTf
     const savedStratTf = localStorage.getItem('bt_strategyTimeframe')
     if (savedStratTf) strategyTimeframe.value = savedStratTf
-    const savedRunMode = localStorage.getItem('bt_runMode')
-    if (savedRunMode) runMode.value = savedRunMode as any
     const savedAccountId = localStorage.getItem('bt_accountId')
     if (savedAccountId) selectedAccountId.value = savedAccountId
   } catch (e: any) {
@@ -139,7 +157,14 @@ watch(commission, (val) => localStorage.setItem('bt_commission', val.toString())
 watch(slippage, (val) => localStorage.setItem('bt_slippage', val.toString()))
 watch(dataTimeframe, (val) => localStorage.setItem('bt_dataTimeframe', val))
 watch(strategyTimeframe, (val) => localStorage.setItem('bt_strategyTimeframe', val))
-watch(runMode, (val) => localStorage.setItem('bt_runMode', val))
+watch(runMode, (val) => {
+  localStorage.setItem('bt_runMode', val)
+  const isValid = filteredStrategies.value.some(s => s.id === selectedStrategy.value)
+  if (!isValid) {
+    selectedStrategy.value = ''
+    selectedSymbols.value = []
+  }
+})
 watch(selectedAccountId, (val) => localStorage.setItem('bt_accountId', val))
 
 onUnmounted(() => {
@@ -281,7 +306,7 @@ async function run() {
         <label>Strategy</label>
         <select v-model="selectedStrategy" @change="onStrategyChange">
           <option value="" disabled>Select a strategy...</option>
-          <option v-for="s in strategies" :key="s.id" :value="s.id">
+          <option v-for="s in filteredStrategies" :key="s.id" :value="s.id">
             {{ s.id }} ({{ s.family }})
           </option>
         </select>

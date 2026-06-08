@@ -1,6 +1,9 @@
 package com.martinfou.trading.runtime;
 
 import com.martinfou.trading.backtest.events.RunEvent;
+import com.martinfou.trading.backtest.events.RunEventType;
+import com.martinfou.trading.core.ForexPnL;
+import com.martinfou.trading.core.Order;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -114,6 +117,11 @@ public final class ControlSummaryService {
                 item.put("maxDailyDrawdownPct", metrics.maxDailyDrawdownPct());
                 item.put("dailyDdBreached", metrics.breached());
             });
+
+            StrategyPnLMetrics pnlMetrics = calculatePnLMetrics(record);
+            item.put("openTrades", pnlMetrics.openTradesCount);
+            item.put("openPnL", pnlMetrics.openPnL);
+            item.put("totalPnL", pnlMetrics.totalPnL);
 
             runItems.add(item);
 
@@ -230,5 +238,104 @@ public final class ControlSummaryService {
             .comparing((Map<String, Object> r) -> !(Boolean) r.get("isStale"))
             .thenComparing(r -> ((List<?>) r.get("gaps")).isEmpty())
             .thenComparing(r -> (String) r.getOrDefault("lastEventAt", ""), Comparator.reverseOrder());
+    }
+
+    private static class StrategyPnLMetrics {
+        int openTradesCount = 0;
+        double openPnL = 0.0;
+        double totalPnL = 0.0;
+    }
+
+    private StrategyPnLMetrics calculatePnLMetrics(RunRecord record) {
+        StrategyPnLMetrics metrics = new StrategyPnLMetrics();
+        List<RunEvent> events = runManager.eventStore().replayAll(record.runId());
+        
+        List<Map<String, Object>> closedTrades = new ArrayList<>();
+        Map<String, List<Map<String, Object>>> openFills = new java.util.LinkedHashMap<>();
+        
+        for (RunEvent event : events) {
+            if (event.type() != RunEventType.FILL) {
+                continue;
+            }
+            Map<String, Object> payload = event.payload();
+            String symbol = String.valueOf(payload.get("symbol"));
+            String side = String.valueOf(payload.get("side"));
+            double qty = ((Number) payload.get("quantity")).doubleValue();
+            double price = ((Number) payload.get("price")).doubleValue();
+            Instant timestamp = event.timestamp();
+
+            List<Map<String, Object>> list = openFills.computeIfAbsent(symbol, k -> new ArrayList<>());
+
+            double remainingQty = qty;
+            while (remainingQty > 0 && !list.isEmpty() && !list.get(0).get("side").equals(side)) {
+                Map<String, Object> first = list.get(0);
+                double firstQty = ((Number) first.get("quantity")).doubleValue();
+                double matchQty = Math.min(remainingQty, firstQty);
+
+                double entryPrice = ((Number) first.get("price")).doubleValue();
+                double exitPrice = price;
+                String entrySide = String.valueOf(first.get("side"));
+
+                double pnl = ForexPnL.pnlUsd(symbol, Order.Side.valueOf(entrySide), entryPrice, exitPrice, matchQty);
+                closedTrades.add(Map.of("pnl", pnl));
+
+                remainingQty -= matchQty;
+                double newFirstQty = firstQty - matchQty;
+                if (newFirstQty <= 0) {
+                    list.remove(0);
+                } else {
+                    first.put("quantity", newFirstQty);
+                }
+            }
+
+            if (remainingQty > 0) {
+                Map<String, Object> newFill = new java.util.LinkedHashMap<>();
+                newFill.put("side", side);
+                newFill.put("price", price);
+                newFill.put("quantity", remainingQty);
+                newFill.put("timestamp", timestamp);
+                list.add(newFill);
+            }
+        }
+
+        // Sum realized PnL
+        double realizedPnL = 0.0;
+        for (var t : closedTrades) {
+            realizedPnL += ((Number) t.get("pnl")).doubleValue();
+        }
+
+        // Get latest price if running live/paper
+        double currentPrice = 0.0;
+        Optional<AutoCloseable> execOpt = runManager.getActiveExecutor(record.runId());
+        if (execOpt.isPresent() && execOpt.get() instanceof OandaStreamingExecutor exec) {
+            currentPrice = exec.getLastMidPrice();
+        }
+
+        // Calculate open PnL
+        double openPnL = 0.0;
+        int openTradesCount = 0;
+        for (var entry : openFills.entrySet()) {
+            String symbol = entry.getKey();
+            for (var fill : entry.getValue()) {
+                double qty = ((Number) fill.get("quantity")).doubleValue();
+                double entryPrice = ((Number) fill.get("price")).doubleValue();
+                String side = String.valueOf(fill.get("side"));
+                openTradesCount++;
+                if (currentPrice > 0.0) {
+                    openPnL += ForexPnL.pnlUsd(
+                        symbol,
+                        Order.Side.valueOf(side),
+                        entryPrice,
+                        currentPrice,
+                        qty
+                    );
+                }
+            }
+        }
+
+        metrics.openTradesCount = openTradesCount;
+        metrics.openPnL = openPnL;
+        metrics.totalPnL = realizedPnL + openPnL;
+        return metrics;
     }
 }

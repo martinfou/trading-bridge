@@ -2,7 +2,9 @@ package com.martinfou.trading.runtime;
 
 import com.martinfou.trading.backtest.RunMode;
 import com.martinfou.trading.backtest.events.RunEvent;
+import com.martinfou.trading.backtest.events.RunEventType;
 import com.martinfou.trading.broker.Broker;
+import com.martinfou.trading.core.Position;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -71,7 +73,29 @@ public final class ReconciliationService {
         }
 
         Map<String, JournalPositions.Snapshot> journal = JournalPositions.fromFills(eventStore.replayAll(runId));
-        Map<String, JournalPositions.Snapshot> brokerPositions = JournalPositions.fromBroker(broker.getPositions());
+
+        java.util.Set<String> runOrderIds = new java.util.HashSet<>();
+        for (var e : eventStore.replayAll(runId)) {
+            if (e.type() == RunEventType.FILL && e.payload() != null && e.payload().containsKey("orderId")) {
+                runOrderIds.add(String.valueOf(e.payload().get("orderId")));
+            }
+        }
+
+        List<Position> filteredBrokerPositions = new ArrayList<>();
+        for (var pos : broker.getPositions()) {
+            boolean matchesSymbol = pos.symbol().equalsIgnoreCase(config.symbol()) || pos.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(config.symbol().replace("/", "_").replace("-", "_"));
+            if (matchesSymbol) {
+                if (pos.clientTag() != null && !pos.clientTag().isBlank()) {
+                    if (runOrderIds.contains(pos.clientTag())) {
+                        filteredBrokerPositions.add(pos);
+                    }
+                } else {
+                    filteredBrokerPositions.add(pos);
+                }
+            }
+        }
+
+        Map<String, JournalPositions.Snapshot> brokerPositions = JournalPositions.fromBroker(filteredBrokerPositions);
         List<Divergence> divergences = compare(journal, brokerPositions);
 
         if (divergences.isEmpty()) {
