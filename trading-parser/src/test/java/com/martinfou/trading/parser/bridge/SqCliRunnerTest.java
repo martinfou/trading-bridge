@@ -26,6 +26,11 @@ class SqCliRunnerTest {
 
     @Test
     void run_invokesFakeSqCliBinary(@TempDir Path sqHome) throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+            !System.getProperty("os.name").toLowerCase().contains("win"),
+            "Skip Unix shell script execution on Windows"
+        );
+
         Path binary = sqHome.resolve("sqcli");
         Files.writeString(binary, """
             #!/bin/sh
@@ -62,6 +67,11 @@ class SqCliRunnerTest {
 
     @Test
     void run_nonZeroExitCode(@TempDir Path sqHome) throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+            !System.getProperty("os.name").toLowerCase().contains("win"),
+            "Skip Unix shell script execution on Windows"
+        );
+
         Path binary = sqHome.resolve("sqcli");
         Files.writeString(binary, """
             #!/bin/sh
@@ -85,7 +95,8 @@ class SqCliRunnerTest {
 
     @Test
     void buildCommand_preservesArgs() {
-        List<String> command = SqCliRunner.buildCommand(Path.of("/sq/sqcli"), List.of("-data", "action=update"));
-        assertEquals(List.of("/sq/sqcli", "-data", "action=update"), command);
+        Path path = Path.of("/sq/sqcli");
+        List<String> command = SqCliRunner.buildCommand(path, List.of("-data", "action=update"));
+        assertEquals(List.of(path.toString(), "-data", "action=update"), command);
     }
 }

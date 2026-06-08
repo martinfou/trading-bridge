@@ -61,6 +61,9 @@ class ControlPlaneServerTest {
         server.close();
         runManager.close();
         stores.close();
+        // Force GC to release file locks on Windows
+        System.gc();
+        System.runFinalization();
     }
 
     @Test
