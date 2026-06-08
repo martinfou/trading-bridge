@@ -110,4 +110,28 @@ public final class Indicators {
         double risk = side == TradeSide.LONG ? entry - sl : sl - entry;
         return side == TradeSide.LONG ? entry + risk * rr : entry - risk * rr;
     }
+
+    /**
+     * Calcule une position en units basée sur un % de risque et la volatilité.
+     * Plus ATR est élevé, plus la position est petite (risque constant).
+     *
+     * @param capital Capital de référence en $
+     * @param riskPct  % du capital risqué par trade (ex: 0.01 = 1%)
+     * @param atr      Valeur ATR actuelle
+     * @param atrMult  Multiplicateur ATR pour le SL
+     * @param symbol   Symbole de la paire (pour déterminer le pip size)
+     * @return Position arrondie à la centaine d'units
+     */
+    public static long calcRiskPosition(double capital, double riskPct, double atr, double atrMult, String symbol) {
+        if (atr <= 0 || capital <= 0) return 1000;
+        double pipSize = symbol.contains("JPY") ? 0.01 : 0.0001;
+        double slPips = (atr * atrMult) / pipSize;
+        if (slPips <= 0) return 1000;
+        // Approximation: 1 pip ≈ $10 par lot standard (100k units)
+        // Pour JPY: 1 pip ≈ ¥1000 ≈ $6.25 (à 160)
+        double pipValuePerUnit = symbol.contains("JPY") ? 0.0000625 : 0.0001;
+        double riskAmount = capital * riskPct;
+        double units = riskAmount / (slPips * pipValuePerUnit);
+        return Math.max(100, Math.round(units / 100.0) * 100);
+    }
 }
