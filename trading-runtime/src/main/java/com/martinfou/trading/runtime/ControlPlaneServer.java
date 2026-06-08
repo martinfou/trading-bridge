@@ -780,14 +780,33 @@ public final class ControlPlaneServer implements AutoCloseable {
                     if (brokerOpt.isPresent()) {
                     try (var broker = brokerOpt.get()) {
                         broker.connect();
+                        java.util.Set<String> runOrderIds = new java.util.HashSet<>();
+                        if (runManager.eventStore() != null) {
+                            for (var e : runManager.eventStore().replayAll(record.runId())) {
+                                if (e.type() == RunEventType.FILL && e.payload() != null && e.payload().containsKey("orderId")) {
+                                    runOrderIds.add(String.valueOf(e.payload().get("orderId")));
+                                }
+                            }
+                        }
                         for (var pos : broker.getPositions()) {
                             if (pos.symbol().equalsIgnoreCase(record.symbol()) || pos.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(record.symbol().replace("/", "_").replace("-", "_"))) {
-                                positions.add(Map.of(
-                                    "symbol", pos.symbol(),
-                                    "side", pos.side().name(),
-                                    "quantity", pos.quantity(),
-                                    "entryTime", pos.entryTime() != null ? pos.entryTime().toString() : ""
-                                ));
+                                if (pos.clientTag() != null && !pos.clientTag().isBlank()) {
+                                    if (runOrderIds.contains(pos.clientTag())) {
+                                        positions.add(Map.of(
+                                            "symbol", pos.symbol(),
+                                            "side", pos.side().name(),
+                                            "quantity", pos.quantity(),
+                                            "entryTime", pos.entryTime() != null ? pos.entryTime().toString() : ""
+                                        ));
+                                    }
+                                } else {
+                                    positions.add(Map.of(
+                                        "symbol", pos.symbol(),
+                                        "side", pos.side().name(),
+                                        "quantity", pos.quantity(),
+                                        "entryTime", pos.entryTime() != null ? pos.entryTime().toString() : ""
+                                    ));
+                                }
                             }
                         }
                     }

@@ -142,6 +142,47 @@ class ReconciliationServiceTest {
     }
 
     @Test
+    void reconcile_ignoresOtherStrategyPositionsByTag() {
+        try (EventStore store = EventStores.inMemory()) {
+            RunConfigSnapshot config = new RunConfigSnapshot(
+                "TestStrategy",
+                "EUR_USD",
+                "LIVE",
+                "sample",
+                1,
+                null,
+                100_000.0,
+                null,
+                null,
+                ExecutionLabel.LIVE_OANDA.name());
+
+            Broker broker = new Broker() {
+                @Override public boolean isConnected() { return true; }
+                @Override public void connect() {}
+                @Override public void disconnect() {}
+                @Override public void reconnect() {}
+                @Override public OrderSubmitResult submitOrder(Order order) { return null; }
+                @Override public OrderSubmitResult cancelOrder(String id) { return null; }
+                @Override public List<Position> getPositions() {
+                    return List.of(new Position("EUR_USD", Order.Side.BUY, 1000, 1.10, Instant.now(), "other-run-id"));
+                }
+                @Override public AccountState getAccountState() { return new AccountState(100000, 100000, "USD"); }
+                @Override public void addEventListener(java.util.function.Consumer<com.martinfou.trading.broker.BrokerEvent> l) {}
+            };
+
+            ReconciliationService.ReconcileResult result = service.reconcile(
+                "our-run-id",
+                config,
+                broker,
+                store);
+
+            assertFalse(result.skipped());
+            assertTrue(result.aligned());
+            assertEquals(0, result.divergences().size());
+        }
+    }
+
+    @Test
     void journalPositions_netsPositions() {
         var event1 = new com.martinfou.trading.backtest.events.RunEvent(
             com.martinfou.trading.backtest.events.RunEvent.SCHEMA_VERSION,

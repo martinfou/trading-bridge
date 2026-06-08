@@ -577,18 +577,20 @@ onUnmounted(() => {
             <span class="status-val cooldown">{{ formatSeconds(run.cooldownSecondsRemaining) }}</span>
           </div>
           <div class="metric-row">
-            <span>Daily Drawdown</span>
-            <span :class="['metric-val', run.dailyDdBreached ? 'text-danger' : '']">
-              {{ run.dailyDrawdownPct ? run.dailyDrawdownPct.toFixed(2) + '%' : '0.00%' }}
+            <span>Open Trades</span>
+            <span>{{ run.openTrades ?? 0 }}</span>
+          </div>
+          <div class="metric-row">
+            <span>Open P&L</span>
+            <span :class="['metric-val', (run.openPnL ?? 0) > 0 ? 'text-success' : (run.openPnL ?? 0) < 0 ? 'text-danger' : '']">
+              ${{ (run.openPnL ?? 0).toFixed(2) }}
             </span>
           </div>
           <div class="metric-row">
-            <span>Max Daily Drawdown</span>
-            <span>{{ run.maxDailyDrawdownPct ? run.maxDailyDrawdownPct.toFixed(2) + '%' : '0.00%' }}</span>
-          </div>
-          <div class="metric-row">
-            <span>Event Count</span>
-            <span>{{ run.eventCount }}</span>
+            <span>Total P&L</span>
+            <span :class="['metric-val', (run.totalPnL ?? 0) > 0 ? 'text-success' : (run.totalPnL ?? 0) < 0 ? 'text-danger' : '']">
+              ${{ (run.totalPnL ?? 0).toFixed(2) }}
+            </span>
           </div>
         </div>
 

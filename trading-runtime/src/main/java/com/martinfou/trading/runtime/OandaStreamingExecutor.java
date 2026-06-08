@@ -68,6 +68,7 @@ public final class OandaStreamingExecutor implements AutoCloseable {
     // Cooldown logic fields
     private final List<Instant> recentLosses = new ArrayList<>();
     private Instant cooldownUntil = null;
+    private volatile double lastMidPrice = 0.0;
 
     public OandaStreamingExecutor(
         String runId,
@@ -184,6 +185,10 @@ public final class OandaStreamingExecutor implements AutoCloseable {
         return cooldownUntil;
     }
 
+    public double getLastMidPrice() {
+        return lastMidPrice;
+    }
+
     private void bootstrapHistory() {
         try {
             log.info("Bootstrapping indicator warm-up with last 500 history bars...");
@@ -196,6 +201,9 @@ public final class OandaStreamingExecutor implements AutoCloseable {
             }
             // Discard any pending orders generated during indicator warm-up
             strategy.getPendingOrders();
+            if (!historyBars.isEmpty()) {
+                lastMidPrice = historyBars.getLast().close();
+            }
             log.info("Warm-up complete. Replayed {} bars.", limit);
         } catch (IOException e) {
             log.warn("Failed to load history bootstrap bars: {}. Indicators starting dry.", e.getMessage());
@@ -206,6 +214,8 @@ public final class OandaStreamingExecutor implements AutoCloseable {
         if (isWeekend(timestamp)) {
             return;
         }
+
+        lastMidPrice = (bid + ask) / 2.0;
 
         // 1. Perform rollover checks
         checkRollovers(timestamp);
@@ -312,8 +322,26 @@ public final class OandaStreamingExecutor implements AutoCloseable {
 
     private void triggerBreachLiquidation(String actionType, String message) {
         // Cancel all pending orders & liquidate active positions
+        java.util.Set<String> runOrderIds = new java.util.HashSet<>();
+        try {
+            if (eventStore != null) {
+                for (var e : eventStore.replayAll(runId)) {
+                    if (e.type() == RunEventType.FILL && e.payload() != null && e.payload().containsKey("orderId")) {
+                        runOrderIds.add(String.valueOf(e.payload().get("orderId")));
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("Failed to replay fills for liquidation filtering in run {}", runId, e);
+        }
+
         for (Position pos : broker.getPositions()) {
             if (pos.symbol().equalsIgnoreCase(config.symbol())) {
+                if (pos.clientTag() != null && !pos.clientTag().isBlank()) {
+                    if (!runOrderIds.contains(pos.clientTag())) {
+                        continue;
+                    }
+                }
                 Order marketClose = new Order(
                     pos.symbol(),
                     pos.side() == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY,
@@ -425,9 +453,27 @@ public final class OandaStreamingExecutor implements AutoCloseable {
         streamingClient.removeListener(tickListener);
         streamingClient.unsubscribe(config.symbol());
 
+        java.util.Set<String> runOrderIds = new java.util.HashSet<>();
+        try {
+            if (eventStore != null) {
+                for (var e : eventStore.replayAll(runId)) {
+                    if (e.type() == RunEventType.FILL && e.payload() != null && e.payload().containsKey("orderId")) {
+                        runOrderIds.add(String.valueOf(e.payload().get("orderId")));
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("Failed to replay fills for active liquidation filtering in run {}", runId, e);
+        }
+
         // Cancel all pending orders
         for (Position pos : broker.getPositions()) {
             if (pos.symbol().equalsIgnoreCase(config.symbol())) {
+                if (pos.clientTag() != null && !pos.clientTag().isBlank()) {
+                    if (!runOrderIds.contains(pos.clientTag())) {
+                        continue;
+                    }
+                }
                 Order marketClose = new Order(
                     pos.symbol(),
                     pos.side() == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY,
