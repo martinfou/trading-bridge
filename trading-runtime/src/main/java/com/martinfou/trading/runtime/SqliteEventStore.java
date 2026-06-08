@@ -118,6 +118,21 @@ public final class SqliteEventStore implements EventStore {
         }
     }
 
+    @Override
+    public List<String> listAllRunIds() {
+        try (PreparedStatement ps = connection.prepareStatement(
+            "SELECT DISTINCT run_id FROM events");
+             ResultSet rs = ps.executeQuery()) {
+            List<String> ids = new ArrayList<>();
+            while (rs.next()) {
+                ids.add(rs.getString(1));
+            }
+            return List.copyOf(ids);
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to list run IDs", e);
+        }
+    }
+
     EventStoreConfig config() {
         return config;
     }

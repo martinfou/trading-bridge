@@ -573,6 +573,8 @@ public class LiveStrategyRunner implements Runnable {
             barHistory.add(bar);
             strategy.onBar(bar);
         }
+        // Discard any pending orders generated during warm-up
+        strategy.getPendingOrders();
         if (!initialBars.isEmpty()) {
             lastBarTime = initialBars.get(initialBars.size() - 1).timestamp();
         }

@@ -51,6 +51,11 @@ public final class BroadcastingEventStore implements EventStore {
     }
 
     @Override
+    public List<String> listAllRunIds() {
+        return delegate.listAllRunIds();
+    }
+
+    @Override
     public void close() {
         delegate.close();
     }

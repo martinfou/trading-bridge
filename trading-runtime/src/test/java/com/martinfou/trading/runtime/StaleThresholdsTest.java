@@ -12,8 +12,8 @@ class StaleThresholdsTest {
 
     @Test
     void normalized_rejectsNonPositiveThreshold() {
-        assertEquals(120, new StaleThresholds(0).normalized().runningStaleThresholdSeconds());
-        assertEquals(120, new StaleThresholds(-5).normalized().runningStaleThresholdSeconds());
+        assertEquals(3600, new StaleThresholds(0).normalized().runningStaleThresholdSeconds());
+        assertEquals(3600, new StaleThresholds(-5).normalized().runningStaleThresholdSeconds());
     }
 
     @Test

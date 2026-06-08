@@ -67,6 +67,7 @@ export interface RunResult {
   }
   trades?: Trade[]
   equityCurve?: number[]
+  positions?: any[]
 }
 
 export interface Trade {

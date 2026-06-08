@@ -13,6 +13,7 @@ public final class ControlPlaneMain {
         RuntimeDataPaths.ensureDataDirectories();
         RuntimeStores.Bundle stores = RuntimeStores.sqliteWithBroadcast(config);
         RunManager runManager = new RunManager(stores.eventStore(), stores.deploymentStore());
+        runManager.recoverRuns();
         PromoteGateThresholds thresholds = PromoteGateThresholds.loadDefault();
         PromoteService promoteService = new PromoteService(
             runManager,

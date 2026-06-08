@@ -94,6 +94,11 @@ class BroadcastingEventStoreTest {
         }
 
         @Override
+        public List<String> listAllRunIds() {
+            return delegate.listAllRunIds();
+        }
+
+        @Override
         public void close() {
             delegate.close();
         }

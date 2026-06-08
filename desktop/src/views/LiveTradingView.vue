@@ -8,7 +8,7 @@ import KpiStrip from '../components/KpiStrip.vue'
 import EquityChart from '../components/EquityChart.vue'
 import type { Bar, Trade } from '@/types/control-plane'
 
-const { getControlSummary, killStrategy, getBars, getTrades, getEquityCurve, getBrokerAccounts, saveBrokerAccounts, testBrokerAccount } = useControlPlane()
+const { getControlSummary, killStrategy, getBars, getTrades, getEquityCurve, getRun, getBrokerAccounts, saveBrokerAccounts, testBrokerAccount } = useControlPlane()
 const route = useRoute()
 
 const summary = ref<any>(null)
@@ -77,6 +77,17 @@ async function fetchSummary() {
     const data = await getControlSummary()
     summary.value = data
     error.value = null
+
+    if (selectedRunId.value && activeTab.value === 'positions') {
+      try {
+        const runData = await getRun(selectedRunId.value)
+        if (runData && runData.positions) {
+          inspectPositions.value = runData.positions
+        }
+      } catch (err) {
+        // ignore
+      }
+    }
   } catch (e: any) {
     error.value = e.message
   } finally {
@@ -259,6 +270,7 @@ const stats = computed(() => {
 const inspectBars = ref<Bar[]>([])
 const inspectTrades = ref<Trade[]>([])
 const inspectEquity = ref<number[]>([])
+const inspectPositions = ref<any[]>([])
 const loadingInspect = ref(false)
 const inspectError = ref<string | null>(null)
 
@@ -269,14 +281,16 @@ async function inspectRun(runId: string) {
   activeTab.value = 'overview'
   
   try {
-    const [barsData, tradesData, equityData] = await Promise.all([
+    const [barsData, tradesData, equityData, runData] = await Promise.all([
       getBars(runId).catch(() => []),
       getTrades(runId).catch(() => []),
-      getEquityCurve(runId).catch(() => [])
+      getEquityCurve(runId).catch(() => []),
+      getRun(runId).catch(() => null)
     ])
     inspectBars.value = barsData
     inspectTrades.value = tradesData
     inspectEquity.value = equityData
+    inspectPositions.value = runData?.positions || []
   } catch (e: any) {
     inspectError.value = 'Failed to load strategy telemetry details: ' + e.message
   } finally {
@@ -303,6 +317,18 @@ function formatSeconds(seconds?: number): string {
   const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0')
   const s = Math.floor(seconds % 60).toString().padStart(2, '0')
   return `${h}:${m}:${s}`
+}
+
+function formatTime(iso: string): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return iso
+  return d.toLocaleDateString('fr-CA', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
 onMounted(async () => {
@@ -593,7 +619,7 @@ onUnmounted(() => {
         </button>
         <button :class="['tab', { active: activeTab === 'positions' }]" @click="activeTab = 'positions'">
           Open Positions
-          <span class="tab-count">{{ selectedRun.positions ? selectedRun.positions.length : 0 }}</span>
+          <span class="tab-count">{{ inspectPositions.length }}</span>
         </button>
         <button :class="['tab', { active: activeTab === 'chart' }]" @click="activeTab = 'chart'">
           Price Chart
@@ -644,19 +670,21 @@ onUnmounted(() => {
 
         <!-- Open Positions tab -->
         <div v-if="activeTab === 'positions'" class="tab-panel">
-          <div v-if="!selectedRun.positions || selectedRun.positions.length === 0" class="empty-panel-state">
+          <div v-if="inspectPositions.length === 0" class="empty-panel-state">
             <p>No active floating positions currently held by this strategy.</p>
           </div>
           <table v-else class="live-positions-table">
             <thead>
               <tr>
+                <th>Open Time</th>
                 <th>Symbol</th>
                 <th>Side</th>
                 <th>Quantity</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(p, i) in selectedRun.positions" :key="i">
+              <tr v-for="(p, i) in inspectPositions" :key="i">
+                <td class="cell-time">{{ formatTime(p.entryTime) }}</td>
                 <td>{{ p.symbol }}</td>
                 <td>
                   <span :class="['side-badge', p.side.toLowerCase()]">{{ p.side }}</span>
@@ -979,6 +1007,12 @@ onUnmounted(() => {
   padding: 0.75rem 0.85rem;
   border-bottom: 1px solid var(--border);
   font-size: 0.8rem;
+}
+
+.live-positions-table td.cell-time {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 .live-positions-table td.num {

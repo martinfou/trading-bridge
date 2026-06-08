@@ -92,6 +92,11 @@ class EventGapDetectorTest {
         }
 
         @Override
+        public List<String> listAllRunIds() {
+            return events.stream().map(e -> e.event().runId()).distinct().toList();
+        }
+
+        @Override
         public void close() {
         }
     }

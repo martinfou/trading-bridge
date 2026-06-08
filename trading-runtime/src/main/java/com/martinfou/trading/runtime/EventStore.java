@@ -19,6 +19,8 @@ public interface EventStore extends AutoCloseable {
 
     List<StoredRunEvent> queryWithSequence(String runId, long afterSequence, int limit);
 
+    List<String> listAllRunIds();
+
     @Override
     void close();
 }

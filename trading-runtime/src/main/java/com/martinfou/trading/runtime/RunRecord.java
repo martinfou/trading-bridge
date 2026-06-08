@@ -37,6 +37,34 @@ public final class RunRecord {
         this.status = Status.CREATED;
     }
 
+    RunRecord(
+        String runId,
+        String strategyId,
+        String symbol,
+        RunMode mode,
+        Instant startedAt,
+        Map<String, Object> configSnapshot,
+        String configHash,
+        Status status,
+        Instant completedAt,
+        String errorMessage,
+        Map<String, Object> endedPayload,
+        Instant lastEventAt
+    ) {
+        this.runId = runId;
+        this.strategyId = strategyId;
+        this.symbol = symbol;
+        this.mode = mode;
+        this.startedAt = startedAt;
+        this.configSnapshot = configSnapshot;
+        this.configHash = configHash;
+        this.status = status;
+        this.completedAt = completedAt;
+        this.errorMessage = errorMessage;
+        this.endedPayload = endedPayload;
+        this.lastEventAt = lastEventAt;
+    }
+
     public String runId() {
         return runId;
     }

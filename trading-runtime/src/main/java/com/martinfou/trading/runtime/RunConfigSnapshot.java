@@ -180,6 +180,50 @@ public record RunConfigSnapshot(
             weeklyLossVal);
     }
 
+    public static RunConfigSnapshot fromMap(Map<String, Object> map) {
+        Object count = map.get("barsSourceCount");
+        Integer barsCount = count instanceof Number n ? n.intValue() : null;
+        Object year = map.get("barsSourceYear");
+        String barsYear = year != null ? String.valueOf(year) : null;
+        Object path = map.get("barsSourcePath");
+        String barsPath = path != null ? String.valueOf(path) : null;
+        Object capital = map.get("capital");
+        Double capitalValue = capital instanceof Number n ? n.doubleValue() : null;
+        Object quantityValue = map.get("quantity");
+        Double quantity = quantityValue instanceof Number n ? n.doubleValue() : null;
+        Object commission = map.get("commissionPerTrade");
+        Double commissionValue = commission instanceof Number n ? n.doubleValue() : null;
+        Object slippage = map.get("slippagePct");
+        Double slippageValue = slippage instanceof Number n ? n.doubleValue() : null;
+        String dataTf = map.get("dataTimeframe") != null ? String.valueOf(map.get("dataTimeframe")) : null;
+        String stratTf = map.get("strategyTimeframe") != null ? String.valueOf(map.get("strategyTimeframe")) : null;
+        Object maxDd = map.get("maxDailyDrawdownPct");
+        Double maxDdVal = maxDd instanceof Number n ? n.doubleValue() : null;
+        Object dailyLoss = map.get("dailyLossLimitPct");
+        Double dailyLossVal = dailyLoss instanceof Number n ? n.doubleValue() : null;
+        Object weeklyLoss = map.get("weeklyLossLimitPct");
+        Double weeklyLossVal = weeklyLoss instanceof Number n ? n.doubleValue() : null;
+        return new RunConfigSnapshot(
+            String.valueOf(map.get("strategyId")),
+            String.valueOf(map.get("symbol")),
+            String.valueOf(map.get("mode")),
+            map.get("barsSourceType") != null ? String.valueOf(map.get("barsSourceType")) : null,
+            barsCount,
+            barsYear,
+            barsPath,
+            capitalValue,
+            quantity,
+            commissionValue,
+            slippageValue,
+            map.get("executionLabel") != null ? String.valueOf(map.get("executionLabel")) : null,
+            map.get("brokerAccountId") != null ? String.valueOf(map.get("brokerAccountId")) : null,
+            dataTf,
+            stratTf,
+            maxDdVal,
+            dailyLossVal,
+            weeklyLossVal);
+    }
+
     public static RunConfigSnapshot fromRequest(RunManager.StartRunRequest request, String resolvedSymbol) {
         BarSourceResolver.BarsSource source = request.barsSource();
         Double quantityUnits = request.lotSize() != null

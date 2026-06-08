@@ -11,7 +11,7 @@ import java.nio.file.Path;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record StaleThresholds(long runningStaleThresholdSeconds) {
 
-    public static final StaleThresholds DEFAULT = new StaleThresholds(120);
+    public static final StaleThresholds DEFAULT = new StaleThresholds(3600);
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 

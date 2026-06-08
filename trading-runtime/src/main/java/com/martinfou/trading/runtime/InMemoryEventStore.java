@@ -68,6 +68,14 @@ public final class InMemoryEventStore implements EventStore {
     }
 
     @Override
+    public synchronized List<String> listAllRunIds() {
+        return events.stream()
+            .map(StoredEvent::runId)
+            .distinct()
+            .toList();
+    }
+
+    @Override
     public void close() {
         // no resources
     }

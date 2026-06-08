@@ -1,3 +1,4 @@
 {
-  "runningStaleThresholdSeconds": 120
+  "runningStaleThresholdSeconds": 3600
 }
+

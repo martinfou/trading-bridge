@@ -362,6 +362,180 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
             .max(Comparator.comparing(r -> r.completedAt().orElse(r.startedAt())));
     }
 
+    @SuppressWarnings("unchecked")
+    public void recoverRuns() {
+        List<String> runIds;
+        try {
+            runIds = eventStore.listAllRunIds();
+        } catch (Exception e) {
+            log.error("Failed to list run IDs for recovery", e);
+            return;
+        }
+
+        List<RecoveryCandidate> candidates = new ArrayList<>();
+
+        for (String runId : runIds) {
+            try {
+                List<RunEvent> events = eventStore.replayAll(runId);
+                if (events.isEmpty()) {
+                    continue;
+                }
+                RunEvent startedEvent = events.stream()
+                    .filter(e -> e.type() == RunEventType.RUN_STARTED)
+                    .findFirst()
+                    .orElse(null);
+                if (startedEvent == null) {
+                    continue;
+                }
+
+                Map<String, Object> configMap = (Map<String, Object>) startedEvent.payload().get("configSnapshot");
+                if (configMap == null) {
+                    continue;
+                }
+
+                RunConfigSnapshot configSnapshot = RunConfigSnapshot.fromMap(configMap);
+                RunMode runMode = RunMode.valueOf(configSnapshot.mode().toUpperCase());
+
+                // Determine status from event history
+                RunRecord.Status status = RunRecord.Status.RUNNING;
+                Instant completedAt = null;
+                String errorMessage = null;
+                Map<String, Object> endedPayload = null;
+                Instant lastEventAt = events.getLast().timestamp();
+
+                for (RunEvent e : events) {
+                    if (e.type() == RunEventType.RUN_ENDED) {
+                        status = RunRecord.Status.COMPLETED;
+                        completedAt = e.timestamp();
+                        endedPayload = e.payload();
+                    } else if (e.type() == RunEventType.ERROR) {
+                        status = RunRecord.Status.FAILED;
+                        completedAt = e.timestamp();
+                        errorMessage = (String) e.payload().get("message");
+                    }
+                }
+
+                RunRecord record = new RunRecord(
+                    runId,
+                    configSnapshot.strategyId(),
+                    configSnapshot.symbol(),
+                    runMode,
+                    startedEvent.timestamp(),
+                    configMap,
+                    configSnapshot.hash(),
+                    status,
+                    completedAt,
+                    errorMessage,
+                    endedPayload,
+                    lastEventAt
+                );
+
+                runs.put(runId, record);
+                snapshots.put(runId, configSnapshot);
+
+                if (status == RunRecord.Status.RUNNING) {
+                    candidates.add(new RecoveryCandidate(runId, record, configSnapshot, runMode, lastEventAt));
+                }
+            } catch (Exception ex) {
+                log.error("Failed to recover run {}", runId, ex);
+            }
+        }
+
+        // Group by strategy:symbol:mode:executionLabel to deduplicate duplicate active runs
+        Map<String, List<RecoveryCandidate>> grouped = new LinkedHashMap<>();
+        for (RecoveryCandidate c : candidates) {
+            String key = c.configSnapshot.strategyId() + ":" +
+                         c.configSnapshot.symbol() + ":" +
+                         c.configSnapshot.mode() + ":" +
+                         c.configSnapshot.resolvedExecutionLabel().name();
+            grouped.computeIfAbsent(key, k -> new ArrayList<>()).add(c);
+        }
+
+        for (Map.Entry<String, List<RecoveryCandidate>> entry : grouped.entrySet()) {
+            List<RecoveryCandidate> list = entry.getValue();
+            // Sort by lastEventAt descending, then by startedAt descending
+            list.sort((a, b) -> {
+                int cmp = b.lastEventAt.compareTo(a.lastEventAt);
+                if (cmp != 0) return cmp;
+                return b.record.startedAt().compareTo(a.record.startedAt());
+            });
+
+            // The first one is the latest (primary) candidate to resume/restart
+            RecoveryCandidate primary = list.getFirst();
+
+            // Mark all older duplicates as failed
+            for (int i = 1; i < list.size(); i++) {
+                RecoveryCandidate duplicate = list.get(i);
+                String failReason = "Interrupted by server restart (duplicate)";
+                duplicate.record.markFailed(failReason);
+                try {
+                    eventStore.append(duplicate.runId, com.martinfou.trading.backtest.events.RunEvent.error(
+                        duplicate.runId,
+                        duplicate.configSnapshot.strategyId(),
+                        duplicate.configSnapshot.symbol(),
+                        duplicate.runMode,
+                        failReason
+                    ));
+                } catch (Exception dbEx) {
+                    log.error("Failed to append error event for duplicate run {}", duplicate.runId, dbEx);
+                }
+            }
+
+            // Evaluate the primary candidate
+            long staleThresholdSeconds = StaleThresholds.loadDefault().runningStaleThresholdSeconds();
+            long secondsSinceLastEvent = java.time.Duration.between(primary.lastEventAt, java.time.Instant.now()).getSeconds();
+            boolean isStale = secondsSinceLastEvent > staleThresholdSeconds;
+
+            if (primary.configSnapshot.resolvedExecutionLabel().isBrokerBacked() && !isStale) {
+                log.info("Auto-restarting active broker run {} for strategy {}", primary.runId, primary.configSnapshot.strategyId());
+                executor.submit(() -> {
+                    try {
+                        List<Bar> bars = loadBars(primary.configSnapshot);
+                        double capital = primary.configSnapshot.resolvedCapital();
+                        executeRun(primary.runId, primary.configSnapshot, bars, capital, primary.record);
+                    } catch (Exception ex) {
+                        log.error("Failed to auto-restart run {}", primary.runId, ex);
+                        String errorMsg = "Auto-restart failed: " + ex.getMessage();
+                        primary.record.markFailed(errorMsg);
+                        try {
+                            eventStore.append(primary.runId, com.martinfou.trading.backtest.events.RunEvent.error(
+                                primary.runId,
+                                primary.configSnapshot.strategyId(),
+                                primary.configSnapshot.symbol(),
+                                primary.runMode,
+                                errorMsg
+                            ));
+                        } catch (Exception dbEx) {
+                            log.error("Failed to append error event for run {}", primary.runId, dbEx);
+                        }
+                    }
+                });
+            } else {
+                String failReason = isStale ? "Interrupted by server restart (stale)" : "Interrupted by server restart";
+                primary.record.markFailed(failReason);
+                try {
+                    eventStore.append(primary.runId, com.martinfou.trading.backtest.events.RunEvent.error(
+                        primary.runId,
+                        primary.configSnapshot.strategyId(),
+                        primary.configSnapshot.symbol(),
+                        primary.runMode,
+                        failReason
+                    ));
+                } catch (Exception dbEx) {
+                    log.error("Failed to append error event for run {}", primary.runId, dbEx);
+                }
+            }
+        }
+    }
+
+    private record RecoveryCandidate(
+        String runId,
+        RunRecord record,
+        RunConfigSnapshot configSnapshot,
+        RunMode runMode,
+        Instant lastEventAt
+    ) {}
+
     public EventStore eventStore() {
         return eventStore;
     }

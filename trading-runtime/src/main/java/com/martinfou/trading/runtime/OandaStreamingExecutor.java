@@ -194,6 +194,8 @@ public final class OandaStreamingExecutor implements AutoCloseable {
             for (int i = historyBars.size() - limit; i < historyBars.size(); i++) {
                 strategy.onBar(historyBars.get(i));
             }
+            // Discard any pending orders generated during indicator warm-up
+            strategy.getPendingOrders();
             log.info("Warm-up complete. Replayed {} bars.", limit);
         } catch (IOException e) {
             log.warn("Failed to load history bootstrap bars: {}. Indicators starting dry.", e.getMessage());

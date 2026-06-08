@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -138,6 +139,58 @@ class ReconciliationServiceTest {
             assertTrue(store.replayAll("run-exec").stream()
                 .anyMatch(e -> e.type() == RunEventType.RECONCILIATION_ALERT));
         }
+    }
+
+    @Test
+    void journalPositions_netsPositions() {
+        var event1 = new com.martinfou.trading.backtest.events.RunEvent(
+            com.martinfou.trading.backtest.events.RunEvent.SCHEMA_VERSION,
+            RunEventType.FILL,
+            Instant.now(),
+            "run-1",
+            "Test",
+            "EUR_USD",
+            "LIVE",
+            Map.<String, Object>of("symbol", "EUR_USD", "side", "BUY", "quantity", 2000.0, "price", 1.10)
+        );
+        var event2 = new com.martinfou.trading.backtest.events.RunEvent(
+            com.martinfou.trading.backtest.events.RunEvent.SCHEMA_VERSION,
+            RunEventType.FILL,
+            Instant.now(),
+            "run-1",
+            "Test",
+            "EUR_USD",
+            "LIVE",
+            Map.<String, Object>of("symbol", "EUR_USD", "side", "SELL", "quantity", 500.0, "price", 1.11)
+        );
+        var event3 = new com.martinfou.trading.backtest.events.RunEvent(
+            com.martinfou.trading.backtest.events.RunEvent.SCHEMA_VERSION,
+            RunEventType.FILL,
+            Instant.now(),
+            "run-1",
+            "Test",
+            "EUR_USD",
+            "LIVE",
+            Map.<String, Object>of("symbol", "EUR_USD", "side", "SELL", "quantity", 1500.0, "price", 1.12)
+        );
+        var event4 = new com.martinfou.trading.backtest.events.RunEvent(
+            com.martinfou.trading.backtest.events.RunEvent.SCHEMA_VERSION,
+            RunEventType.FILL,
+            Instant.now(),
+            "run-1",
+            "Test",
+            "GBP_USD",
+            "LIVE",
+            Map.<String, Object>of("symbol", "GBP_USD", "side", "SELL", "quantity", 1000.0, "price", 1.25)
+        );
+
+        var netPositions = JournalPositions.fromFills(List.of(event1, event2, event3, event4));
+        assertEquals(1, netPositions.size());
+        var gbpPos = netPositions.get("GBP_USD:SELL");
+        org.junit.jupiter.api.Assertions.assertNotNull(gbpPos);
+        assertEquals("GBP_USD", gbpPos.symbol());
+        assertEquals(Order.Side.SELL, gbpPos.side());
+        assertEquals(1000.0, gbpPos.quantity(), 0.001);
     }
 
     /** After first fill, reports inflated quantity at broker vs journal. */
