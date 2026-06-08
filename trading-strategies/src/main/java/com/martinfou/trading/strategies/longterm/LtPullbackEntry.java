@@ -24,8 +24,9 @@ public class LtPullbackEntry implements Strategy {
     private static final int RSI_PERIOD = 14;
     private static final double ATR_MULT_SL = 2.0;
     private static final double ATR_MULT_TP = 4.0;
-    private static final double MAX_POSITION = 2000;
-    private static final double EMA_PROXIMITY = 0.001; // 0.1% proximity threshold
+    private static final double REFERENCE_CAPITAL = 10_000;
+    private static final double RISK_PCT = 0.01;
+    private static final double EMA_PROXIMITY = 0.001;
     private static final int RSI_OVERSOLD = 40;
     private static final int RSI_OVERBOUGHT = 60;
     private static final int MAX_HOLD_BARS = 480;
@@ -82,7 +83,6 @@ public class LtPullbackEntry implements Strategy {
             boolean hitSl = direction == Order.Side.BUY ? close <= entrySl : close >= entrySl;
             boolean hitTp = direction == Order.Side.BUY ? close >= entryTp : close <= entryTp;
 
-            // Exit on opposite signal, SL, TP, or max hold
             boolean oppositeExit = (direction == Order.Side.BUY && !isUptrend)
                                 || (direction == Order.Side.SELL && !isDowntrend);
             if (oppositeExit || hitSl || hitTp || barsInTrade >= MAX_HOLD_BARS) {
@@ -94,20 +94,20 @@ public class LtPullbackEntry implements Strategy {
 
         if (tradesToday >= 1) return;
 
-        // Uptrend: buy on pullback near EMA(50) with RSI oversold
+        long position = Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, ATR_MULT_SL, symbol);
+
         if (isUptrend && emaProximity < EMA_PROXIMITY && rsi < RSI_OVERSOLD) {
             double stopLoss = close - atr * ATR_MULT_SL;
             double takeProfit = close + atr * ATR_MULT_TP;
-            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, MAX_POSITION, close)
+            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, position, close)
                 .withStopLoss(stopLoss).withTakeProfit(takeProfit));
             entryPrice = close; entrySl = stopLoss; entryTp = takeProfit;
             direction = Order.Side.BUY; inTrade = true; tradesToday++; barsInTrade = 0;
         }
-        // Downtrend: sell on pullback near EMA(50) with RSI overbought
         else if (isDowntrend && emaProximity < EMA_PROXIMITY && rsi > RSI_OVERBOUGHT) {
             double stopLoss = close + atr * ATR_MULT_SL;
             double takeProfit = close - atr * ATR_MULT_TP;
-            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, MAX_POSITION, close)
+            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, position, close)
                 .withStopLoss(stopLoss).withTakeProfit(takeProfit));
             entryPrice = close; entrySl = stopLoss; entryTp = takeProfit;
             direction = Order.Side.SELL; inTrade = true; tradesToday++; barsInTrade = 0;
