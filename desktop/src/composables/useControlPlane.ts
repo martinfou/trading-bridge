@@ -62,6 +62,29 @@ async function apiPost<T>(path: string, body: unknown, baseUrl: string): Promise
   }
 }
 
+async function apiDelete<T>(path: string, baseUrl: string): Promise<T> {
+  try {
+    const resp = await fetch(`${baseUrl}${path}`, {
+      method: 'DELETE',
+      headers: { Accept: 'application/json' },
+    })
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '')
+      const errMsg = `DELETE ${path} ${resp.status}: ${text.slice(0, 200)}`
+      useStatusBar().setStatus(errMsg, 'error')
+      throw new Error(errMsg)
+    }
+    return await resp.json()
+  } catch (err: any) {
+    if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+      const cleanMsg = `Connection to Control Plane at ${baseUrl} failed.`
+      useStatusBar().setStatus(cleanMsg, 'error')
+    } else {
+      useStatusBar().setStatus(err.message, 'error')
+    }
+    throw err
+  }
+}
 
 export function useControlPlane() {
   const { controlPlaneUrl } = useControlPlaneConfig()
@@ -241,6 +264,76 @@ export function useControlPlane() {
     return apiGet<any>(`/api/runs/${runId}/monte-carlo?runs=${runs}&blockSize=${blockSize}`, controlPlaneUrl.value)
   }
 
+  async function listBacktests(filters?: {
+    symbol?: string
+    strategyId?: string
+    minSharpe?: number
+    minProfitFactor?: number
+    sortBy?: string
+    sortOrder?: string
+    limit?: number
+    offset?: number
+  }): Promise<{ total: number; limit: number; offset: number; items: any[] }> {
+    const params = new URLSearchParams()
+    if (filters) {
+      if (filters.symbol) params.append('symbol', filters.symbol)
+      if (filters.strategyId) params.append('strategyId', filters.strategyId)
+      if (filters.minSharpe != null) params.append('minSharpe', filters.minSharpe.toString())
+      if (filters.minProfitFactor != null) params.append('minProfitFactor', filters.minProfitFactor.toString())
+      if (filters.sortBy) params.append('sortBy', filters.sortBy)
+      if (filters.sortOrder) params.append('sortOrder', filters.sortOrder)
+      if (filters.limit != null) params.append('limit', filters.limit.toString())
+      if (filters.offset != null) params.append('offset', filters.offset.toString())
+    }
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return apiGet<{ total: number; limit: number; offset: number; items: any[] }>(
+      `/api/backtests${query}`,
+      controlPlaneUrl.value
+    )
+  }
+
+  async function getBacktestDetails(runId: string): Promise<any> {
+    return apiGet<any>(`/api/backtests/${runId}`, controlPlaneUrl.value)
+  }
+
+  async function getHeatmap(filters: {
+    strategyId: string
+    symbol?: string
+    xParam: string
+    yParam: string
+    metric?: string
+  }): Promise<any> {
+    const params = new URLSearchParams()
+    params.append('strategyId', filters.strategyId)
+    if (filters.symbol) params.append('symbol', filters.symbol)
+    params.append('xParam', filters.xParam)
+    params.append('yParam', filters.yParam)
+    if (filters.metric) params.append('metric', filters.metric)
+    return apiGet<any>(`/api/backtests/analytics/heatmap?${params.toString()}`, controlPlaneUrl.value)
+  }
+
+  async function getPareto(filters: {
+    strategyId: string
+    symbol?: string
+    metricX?: string
+    metricY?: string
+  }): Promise<any> {
+    const params = new URLSearchParams()
+    params.append('strategyId', filters.strategyId)
+    if (filters.symbol) params.append('symbol', filters.symbol)
+    if (filters.metricX) params.append('metricX', filters.metricX)
+    if (filters.metricY) params.append('metricY', filters.metricY)
+    return apiGet<any>(`/api/backtests/analytics/pareto?${params.toString()}`, controlPlaneUrl.value)
+  }
+
+  async function deleteBacktest(runId: string): Promise<any> {
+    return apiDelete<any>(`/api/backtests/${runId}`, controlPlaneUrl.value)
+  }
+
+  async function deleteAllBacktests(): Promise<any> {
+    return apiDelete<any>('/api/backtests', controlPlaneUrl.value)
+  }
+
   return {
     startRun,
     getRun,
@@ -261,6 +354,12 @@ export function useControlPlane() {
     getHistoricalDataStatus,
     downloadHistoricalData,
     deleteHistoricalData,
+    listBacktests,
+    getBacktestDetails,
+    getHeatmap,
+    getPareto,
+    deleteBacktest,
+    deleteAllBacktests,
     error,
     loading,
     controlPlaneUrl,

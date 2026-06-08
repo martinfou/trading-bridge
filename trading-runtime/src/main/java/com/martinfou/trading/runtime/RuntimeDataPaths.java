@@ -18,6 +18,8 @@ public final class RuntimeDataPaths {
 
     static final String ENV_EVENT_STORE = "TRADING_BRIDGE_EVENT_STORE";
     static final String ENV_DATA_DIR = "TRADING_BRIDGE_DATA_DIR";
+    static final String ENV_HISTORICAL_DIR = "TRADING_BRIDGE_HISTORICAL_DIR";
+    static final String ENV_RESOURCES_DIR = "TRADING_BRIDGE_RESOURCES_DIR";
 
     private static final Path HOME_FALLBACK = Path.of(
         System.getProperty("user.home"), ".trading-bridge", "events.db");
@@ -49,9 +51,46 @@ public final class RuntimeDataPaths {
         return parent != null ? parent : eventStore.toAbsolutePath().normalize();
     }
 
-    /** Ensures {@code data/runtime/} (or configured data dir) exists. */
+    public static Path defaultHistoricalDirectory() {
+        String explicitHist = System.getenv(ENV_HISTORICAL_DIR);
+        if (explicitHist != null && !explicitHist.isBlank()) {
+            return Path.of(explicitHist).toAbsolutePath().normalize();
+        }
+
+        Path repoRoot = EventStoreConfig.findRepoRoot();
+        if (repoRoot != null) {
+            return repoRoot.resolve("data/historical").toAbsolutePath().normalize();
+        }
+
+        return defaultDataDirectory().resolve("historical").toAbsolutePath().normalize();
+    }
+
+    public static Path defaultBarsDirectory() {
+        return defaultHistoricalDirectory().resolve("bars");
+    }
+
+    public static Path defaultDukascopyDirectory() {
+        return defaultHistoricalDirectory().resolve("dukascopy");
+    }
+
+    public static Path scriptsDirectory() {
+        String explicitRes = System.getenv(ENV_RESOURCES_DIR);
+        if (explicitRes != null && !explicitRes.isBlank()) {
+            return Path.of(explicitRes).resolve("scripts").toAbsolutePath().normalize();
+        }
+
+        Path repoRoot = EventStoreConfig.findRepoRoot();
+        if (repoRoot != null) {
+            return repoRoot.resolve("scripts").toAbsolutePath().normalize();
+        }
+
+        return Path.of(".").resolve("scripts").toAbsolutePath().normalize();
+    }
+
+    /** Ensures {@code data/runtime/} (or configured data dir) and historical dirs exist. */
     public static void ensureDataDirectories() throws java.io.IOException {
-        Path dataDir = defaultDataDirectory();
-        Files.createDirectories(dataDir);
+        Files.createDirectories(defaultDataDirectory());
+        Files.createDirectories(defaultBarsDirectory());
+        Files.createDirectories(defaultDukascopyDirectory());
     }
 }

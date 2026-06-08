@@ -42,30 +42,33 @@ public final class BarSourceResolver {
         return switch (source.type().toLowerCase()) {
             case "sample" -> sampleBars(symbol, source.count() != null ? source.count() : 500);
             case "ci" -> loadCiSubset(symbol);
-            case "year" -> {
+             case "year" -> {
                 if (source.yearSpec() == null || source.yearSpec().isBlank()) {
                     throw new IllegalArgumentException("barsSource.year is required for type=year");
                 }
                 yield HistoricalDataLoader.loadYearSpec(
-                    symbol, source.yearSpec(), timeframe, HistoricalDataLoader.DEFAULT_BARS_DIR);
+                    symbol, source.yearSpec(), timeframe, RuntimeDataPaths.defaultBarsDirectory());
             }
             case "file" -> loadFileBars(source, symbol);
             default -> throw new IllegalArgumentException("Unknown barsSource.type: " + source.type());
         };
-    }
-
-    private static List<Bar> loadFileBars(BarsSource source, String symbol) throws IOException {
-        if (source.path() == null || source.path().isBlank()) {
-            throw new IllegalArgumentException("barsSource.path is required for type=file");
-        }
-        Path path = Path.of(source.path().trim());
-        if (!path.isAbsolute()) {
-            Path repoRoot = EventStoreConfig.findRepoRoot();
-            if (repoRoot != null) {
-                path = repoRoot.resolve(path).normalize();
-            }
-        }
-        return HistoricalDataLoader.loadPath(path, symbol);
+     }
+ 
+     private static List<Bar> loadFileBars(BarsSource source, String symbol) throws IOException {
+         if (source.path() == null || source.path().isBlank()) {
+             throw new IllegalArgumentException("barsSource.path is required for type=file");
+         }
+         Path path = Path.of(source.path().trim());
+         if (!path.isAbsolute()) {
+             Path root = EventStoreConfig.findRepoRoot();
+             if (root == null) {
+                 root = RuntimeDataPaths.defaultHistoricalDirectory().getParent();
+             }
+             if (root != null) {
+                 path = root.resolve(path).normalize();
+             }
+         }
+         return HistoricalDataLoader.loadPath(path, symbol);
     }
 
     static List<Bar> sampleBars(String symbol, int count) {

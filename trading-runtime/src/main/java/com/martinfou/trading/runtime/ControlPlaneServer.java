@@ -183,9 +183,14 @@ public final class ControlPlaneServer implements AutoCloseable {
         HistoricalDataService historicalDataService
     ) {
         DataAvailabilityService dataAvailability = new DataAvailabilityService();
+        BacktestController backtestController = new BacktestController();
+        io.javalin.json.JavalinJackson jsonMapper = new io.javalin.json.JavalinJackson()
+            .updateMapper(m -> m.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule())
+                                .disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS));
         return Javalin.create(config -> {
             config.showJavalinBanner = false;
             config.bundledPlugins.enableCors(cors -> cors.addRule(rule -> rule.anyHost()));
+            config.jsonMapper(jsonMapper);
         })
             .before(ctx -> {
                 ctx.header("Access-Control-Allow-Origin", "*");
@@ -469,6 +474,12 @@ public final class ControlPlaneServer implements AutoCloseable {
                 ctx.status(HttpStatus.ACCEPTED);
                 ctx.json(response);
             })
+            .get("/api/backtests", backtestController::listBacktests)
+            .get("/api/backtests/analytics/heatmap", backtestController::getHeatmap)
+            .get("/api/backtests/analytics/pareto", backtestController::getPareto)
+            .get("/api/backtests/{runId}", backtestController::getBacktestDetails)
+            .delete("/api/backtests", backtestController::deleteAllBacktests)
+            .delete("/api/backtests/{runId}", backtestController::deleteBacktest)
             .post("/api/runs", ctx -> {
                 RunManager.StartRunRequest request = ctx.bodyAsClass(RunManager.StartRunRequest.class);
                 String runId = runManager.startRun(request);

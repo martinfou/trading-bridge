@@ -36,4 +36,32 @@ class RuntimeDataPathsTest {
         config.ensureParentDirectories();
         assertTrue(Files.isDirectory(db.getParent()));
     }
+
+    @Test
+    void defaultHistoricalDirectory_resolvesToRepoHistoricalWhenAvailable() {
+        Path repoRoot = EventStoreConfig.findRepoRoot();
+        if (repoRoot == null) {
+            return;
+        }
+        assertEquals(
+            repoRoot.resolve("data/historical").toAbsolutePath().normalize(),
+            RuntimeDataPaths.defaultHistoricalDirectory());
+        assertEquals(
+            repoRoot.resolve("data/historical/bars").toAbsolutePath().normalize(),
+            RuntimeDataPaths.defaultBarsDirectory());
+        assertEquals(
+            repoRoot.resolve("data/historical/dukascopy").toAbsolutePath().normalize(),
+            RuntimeDataPaths.defaultDukascopyDirectory());
+    }
+
+    @Test
+    void scriptsDirectory_resolvesToRepoScriptsWhenAvailable() {
+        Path repoRoot = EventStoreConfig.findRepoRoot();
+        if (repoRoot == null) {
+            return;
+        }
+        assertEquals(
+            repoRoot.resolve("scripts").toAbsolutePath().normalize(),
+            RuntimeDataPaths.scriptsDirectory());
+    }
 }

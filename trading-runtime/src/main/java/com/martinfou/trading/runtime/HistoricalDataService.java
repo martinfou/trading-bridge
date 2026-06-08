@@ -38,9 +38,9 @@ public final class HistoricalDataService implements AutoCloseable {
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
     public HistoricalDataService() {
-        this.repoRoot = EventStoreConfig.findRepoRoot() != null ? EventStoreConfig.findRepoRoot() : Path.of(".");
-        this.dukascopyDir = repoRoot.resolve("data/historical/dukascopy");
-        this.barsDir = repoRoot.resolve("data/historical/bars");
+        this.repoRoot = RuntimeDataPaths.scriptsDirectory().getParent();
+        this.dukascopyDir = RuntimeDataPaths.defaultDukascopyDirectory();
+        this.barsDir = RuntimeDataPaths.defaultBarsDirectory();
         ensureDirectories();
     }
 

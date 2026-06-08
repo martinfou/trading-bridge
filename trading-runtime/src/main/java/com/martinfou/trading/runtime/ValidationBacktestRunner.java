@@ -27,6 +27,6 @@ final class ValidationBacktestRunner {
             capital,
             null,
             profile);
-        return context.run();
+        return context.withPersist(false).run();
     }
 }
