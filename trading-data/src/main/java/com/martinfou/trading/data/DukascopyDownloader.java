@@ -149,6 +149,7 @@ public final class DukascopyDownloader {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .header("User-Agent", "Mozilla/5.0")
+                .timeout(Duration.ofSeconds(5))
                 .GET()
                 .build();
 
