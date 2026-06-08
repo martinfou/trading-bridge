@@ -61,4 +61,74 @@ class ControlPlaneClientTest {
             server.stop(0);
         }
     }
+
+    @Test
+    void listOandaAccounts_callsEndpoint() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/api/broker-accounts/oanda-accounts", exchange -> {
+            byte[] body = """
+                {"accounts":[{"id":"101-123","tags":[]}]}
+                """.strip().getBytes();
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.start();
+        try {
+            int port = server.getAddress().getPort();
+            ControlPlaneClient client = new ControlPlaneClient("http://127.0.0.1:" + port);
+            var node = client.listOandaAccounts("mock-token", "https://api-fxpractice.oanda.com");
+            assertEquals("101-123", node.get("accounts").get(0).get("id").asText());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void updateBrokerAccount_callsEndpoint() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/api/broker-accounts", exchange -> {
+            byte[] body = """
+                {"success":true}
+                """.strip().getBytes();
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.start();
+        try {
+            int port = server.getAddress().getPort();
+            ControlPlaneClient client = new ControlPlaneClient("http://127.0.0.1:" + port);
+            var node = client.updateBrokerAccount("default", "OANDA", "mock-token", "101-123", "https://api-fxpractice.oanda.com");
+            org.junit.jupiter.api.Assertions.assertTrue(node.get("success").asBoolean());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void testBrokerAccount_callsEndpoint() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/api/broker-accounts/test", exchange -> {
+            byte[] body = """
+                {"success":true,"balance":12345.67,"currency":"USD"}
+                """.strip().getBytes();
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.start();
+        try {
+            int port = server.getAddress().getPort();
+            ControlPlaneClient client = new ControlPlaneClient("http://127.0.0.1:" + port);
+            var node = client.testBrokerAccount("default", "OANDA", "mock-token", "101-123", "https://api-fxpractice.oanda.com");
+            org.junit.jupiter.api.Assertions.assertTrue(node.get("success").asBoolean());
+            assertEquals(12345.67, node.get("balance").asDouble());
+        } finally {
+            server.stop(0);
+        }
+    }
 }

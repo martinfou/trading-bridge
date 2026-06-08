@@ -52,6 +52,7 @@ public final class TuiCommandHandler {
                 case "status" -> status(parts);
                 case "backtest", "bt" -> backtest(parts, reader, liveOutput);
                 case "promote" -> promote(parts);
+                case "configure-oanda", "oanda-setup" -> configureOanda(reader, liveOutput);
                 case "run" -> showRun(parts);
                 case "events" -> showEvents(parts);
                 case "kill" -> kill(parts);
@@ -82,6 +83,7 @@ public final class TuiCommandHandler {
             "      args: <id> [SYMBOL YEAR | SYMBOL 2006-2012 | --sample | --ci | file.csv]",
             "            [--capital 1000] [--lots 0.01]",
             "  /promote <id> PAPER|LIVE [runId]",
+            "  /configure-oanda   Interactive wizard to configure OANDA token and account ID",
             "  /run <runId>       Run status + full backtest report",
             "  /events <runId>    Last 20 run events",
             "  /kill <id> [reason]",
@@ -379,6 +381,106 @@ public final class TuiCommandHandler {
 
     private static String fmt(double v) {
         return String.format(Locale.ROOT, "%.2f", v);
+    }
+
+    private List<String> configureOanda(LineReader reader, java.util.function.Consumer<String> liveOutput)
+        throws IOException, InterruptedException {
+        if (reader == null) {
+            return List.of("This is an interactive command and requires a terminal.");
+        }
+        List<String> transcript = new ArrayList<>();
+        say(transcript, liveOutput, "=== OANDA Credentials Setup ===");
+        
+        String envChoice = TuiPrompts.choose(
+            reader, "Select Environment (1: PAPER/Practice, 2: LIVE/Production)", List.of("1", "2"), "1", liveOutput);
+        
+        String id;
+        String restUrl;
+        if ("2".equals(envChoice)) {
+            id = "oanda_live";
+            restUrl = "https://api-fxtrade.oanda.com";
+            say(transcript, liveOutput, "→ Environment: LIVE (Registry ID: " + id + ")");
+        } else {
+            id = "default";
+            restUrl = "https://api-fxpractice.oanda.com";
+            say(transcript, liveOutput, "→ Environment: PAPER (Registry ID: " + id + ")");
+        }
+
+        say(transcript, liveOutput, "");
+        String token = reader.readLine("Enter OANDA API Token: ", '*');
+        if (token == null || token.isBlank()) {
+            return List.of("Setup cancelled: token cannot be empty.");
+        }
+        
+        say(transcript, liveOutput, "Fetching accounts from OANDA...");
+        JsonNode response;
+        try {
+            response = client.listOandaAccounts(token, restUrl);
+        } catch (Exception e) {
+            say(transcript, liveOutput, "✗ Failed to fetch accounts: " + e.getMessage());
+            return transcript;
+        }
+
+        JsonNode accountsNode = response.get("accounts");
+        if (accountsNode == null || !accountsNode.isArray() || accountsNode.isEmpty()) {
+            say(transcript, liveOutput, "✗ No accounts found associated with this token.");
+            return transcript;
+        }
+
+        List<String> accountIds = new ArrayList<>();
+        say(transcript, liveOutput, "");
+        say(transcript, liveOutput, "Available OANDA Accounts:");
+        for (int i = 0; i < accountsNode.size(); i++) {
+            String accId = accountsNode.get(i).get("id").asText();
+            accountIds.add(accId);
+            say(transcript, liveOutput, "  " + (i + 1) + ". " + accId);
+        }
+
+        say(transcript, liveOutput, "");
+        String selectedAccountId = TuiPrompts.choose(
+            reader, "Select Account [# or id]", accountIds, null, liveOutput);
+        say(transcript, liveOutput, "→ Selected Account: " + selectedAccountId);
+
+        say(transcript, liveOutput, "Testing connection to OANDA with selected account...");
+        boolean testOk = false;
+        try {
+            JsonNode testResponse = client.testBrokerAccount(id, "OANDA", token, selectedAccountId, restUrl);
+            if (testResponse.path("success").asBoolean(false)) {
+                double balance = testResponse.path("balance").asDouble(0.0);
+                String currency = testResponse.path("currency").asText("USD");
+                say(transcript, liveOutput, String.format("✓ Connection successful! Balance: %,.2f %s", balance, currency));
+                testOk = true;
+            } else {
+                say(transcript, liveOutput, "✗ Connection check failed: " + testResponse.path("error").asText("Unknown error"));
+            }
+        } catch (Exception e) {
+            say(transcript, liveOutput, "✗ Connection check failed: " + e.getMessage());
+        }
+
+        if (!testOk) {
+            String saveAnyway = TuiPrompts.choose(reader, "Connection failed. Save anyway? (y/n)", List.of("y", "n"), "n", liveOutput);
+            if (!"y".equalsIgnoreCase(saveAnyway)) {
+                say(transcript, liveOutput, "Setup cancelled.");
+                return transcript;
+            }
+        }
+
+        say(transcript, liveOutput, "Saving configuration to control plane...");
+        try {
+            client.updateBrokerAccount(id, "OANDA", token, selectedAccountId, restUrl);
+            say(transcript, liveOutput, "✓ OANDA credentials successfully saved for account ID: " + selectedAccountId);
+        } catch (Exception e) {
+            say(transcript, liveOutput, "✗ Failed to save configuration: " + e.getMessage());
+        }
+
+        return transcript;
+    }
+
+    private static void say(List<String> transcript, java.util.function.Consumer<String> liveOutput, String line) {
+        transcript.add(line);
+        if (liveOutput != null) {
+            liveOutput.accept(line);
+        }
     }
 
     private static String formatJson(JsonNode node) {

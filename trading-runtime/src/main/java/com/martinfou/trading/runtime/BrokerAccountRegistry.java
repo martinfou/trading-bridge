@@ -124,6 +124,9 @@ public final class BrokerAccountRegistry {
         if (env != null && !env.isBlank()) {
             return load(Path.of(env));
         }
+        if (System.getProperty("trading.bridge.test") != null) {
+            return syntheticDefault();
+        }
         Path repoRoot = EventStoreConfig.findRepoRoot();
         if (repoRoot != null) {
             Path localFile = repoRoot.resolve("data/runtime/broker-accounts.local.json");

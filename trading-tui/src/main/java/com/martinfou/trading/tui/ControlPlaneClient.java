@@ -152,6 +152,39 @@ public final class ControlPlaneClient {
         return postJson("/api/strategies/" + encodePath(strategyId) + "/promote", body);
     }
 
+    public JsonNode listOandaAccounts(String token, String restUrl)
+        throws IOException, InterruptedException {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("token", token);
+        body.put("restUrl", restUrl);
+        return postJson("/api/broker-accounts/oanda-accounts", body);
+    }
+
+    public JsonNode updateBrokerAccount(String id, String provider, String token, String accountId, String restUrl)
+        throws IOException, InterruptedException {
+        Map<String, Object> account = new LinkedHashMap<>();
+        account.put("id", id);
+        account.put("provider", provider);
+        account.put("token", token);
+        account.put("accountId", accountId);
+        account.put("defaultRestUrl", restUrl);
+        
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("accounts", java.util.List.of(account));
+        return postJson("/api/broker-accounts", body);
+    }
+
+    public JsonNode testBrokerAccount(String id, String provider, String token, String accountId, String restUrl)
+        throws IOException, InterruptedException {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("id", id);
+        body.put("provider", provider);
+        body.put("token", token);
+        body.put("accountId", accountId);
+        body.put("defaultRestUrl", restUrl);
+        return postJson("/api/broker-accounts/test", body);
+    }
+
     public JsonNode kill(String strategyId, String actor, String reason)
         throws IOException, InterruptedException {
         Map<String, Object> body = Map.of(
