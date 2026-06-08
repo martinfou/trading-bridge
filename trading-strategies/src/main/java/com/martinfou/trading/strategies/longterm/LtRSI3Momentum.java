@@ -1,0 +1,1 @@
+fatal: path 'trading-strategies/src/main/java/com/martinfou/trading/strategies/longterm/LtRSI3Momentum.java' does not exist in 'HEAD'
