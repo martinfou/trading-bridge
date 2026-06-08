@@ -123,7 +123,7 @@ onMounted(async () => {
 
     <!-- Grid -->
     <div v-for="(stratList, family) in grouped" :key="family" class="family-section">
-      <h2 class="family-heading" :style="{ color: family === 'PROP' ? '#6366f1' : family === 'SQ_IMPORTED' ? '#f59e0b' : family === 'GENERATED' ? '#22c55e' : '#a855f7' }">
+      <h2 class="family-heading" :style="{ color: family === 'PROP' ? '#6366f1' : family === 'SQ_IMPORTED' ? '#f59e0b' : family === 'GENERATED' ? '#22c55e' : family === 'LONG_TERM' ? '#f97316' : '#a855f7' }">
         {{ family }}
         <span class="family-count">{{ stratList.length }}</span>
       </h2>

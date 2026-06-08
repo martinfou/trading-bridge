@@ -4,6 +4,7 @@ import com.martinfou.trading.core.Strategy;
 import com.martinfou.trading.strategies.generated.GeneratedStrategyCatalog;
 import com.martinfou.trading.strategies.harness.HarnessStrategyCatalog;
 import com.martinfou.trading.strategies.llmweekly.LlmWeeklyStrategyCatalog;
+import com.martinfou.trading.strategies.longterm.LongTermStrategyCatalog;
 import com.martinfou.trading.strategies.newsweekly.NewsWeeklyStrategyCatalog;
 import com.martinfou.trading.strategies.prop.PropStrategyCatalog;
 import com.martinfou.trading.strategies.sqimported.SqImportedStrategyCatalog;
@@ -21,7 +22,7 @@ import java.util.function.Function;
 public final class StrategyCatalog {
 
     public enum Family {
-        PROP, SQ_IMPORTED, GENERATED, LLM_WEEKLY, NEWS_WEEKLY, HARNESS, EXAMPLE
+        PROP, SQ_IMPORTED, GENERATED, LONG_TERM, LLM_WEEKLY, NEWS_WEEKLY, HARNESS, EXAMPLE
     }
 
     public record Entry(
@@ -64,6 +65,17 @@ public final class StrategyCatalog {
         if (family == Family.SQ_IMPORTED) {
             return "Rule-Based";
         }
+        if (family == Family.LONG_TERM) {
+            return switch (id) {
+                case "LtCrossMomentum", "LtDoubleMA", "LtPullbackEntry", "LtEfficiencyRatio" -> "Trend Following";
+                case "LtRSIMeanRev" -> "Mean Reversion";
+                case "LtRSI3Momentum", "LtSqueezeMomentum" -> "Momentum";
+                case "LtRangeBreakout" -> "Breakout";
+                case "LtVolRegime" -> "Adaptive";
+                case "LtBollingerSqueeze" -> "Volatility Breakout";
+                default -> "Trend Following";
+            };
+        }
         if (id.equals("SmaCrossover")) {
             return "Trend Following";
         }
@@ -86,6 +98,21 @@ public final class StrategyCatalog {
         }
         if (family == Family.SQ_IMPORTED) {
             return List.of("EMA", "RSI", "Bollinger Bands");
+        }
+        if (family == Family.LONG_TERM) {
+            return switch (id) {
+                case "LtCrossMomentum" -> List.of("SMA", "ATR");
+                case "LtRSIMeanRev" -> List.of("RSI", "SMA", "ATR");
+                case "LtRSI3Momentum" -> List.of("RSI", "EMA", "ATR");
+                case "LtRangeBreakout" -> List.of("Donchian Channel", "ATR");
+                case "LtVolRegime" -> List.of("ATR", "EMA", "RSI");
+                case "LtBollingerSqueeze" -> List.of("Bollinger Bands", "ATR");
+                case "LtSqueezeMomentum" -> List.of("Bollinger Bands", "RSI", "ATR");
+                case "LtPullbackEntry" -> List.of("EMA", "SMA", "RSI", "ATR");
+                case "LtDoubleMA" -> List.of("EMA", "SMA", "ATR");
+                case "LtEfficiencyRatio" -> List.of("Efficiency Ratio", "EMA", "ATR");
+                default -> List.of("ATR");
+            };
         }
         if (id.equals("SmaCrossover")) {
             return List.of("SMA");
@@ -112,6 +139,21 @@ public final class StrategyCatalog {
         if (family == Family.SQ_IMPORTED) {
             return "Machine-generated strategy imported from StrategyQuant.";
         }
+        if (family == Family.LONG_TERM) {
+            return switch (id) {
+                case "LtCrossMomentum" -> "Golden cross / death cross on SMA(20)/SMA(100) with ATR risk management.";
+                case "LtRSIMeanRev" -> "Mean reversion on RSI(14) extremes with SMA(100) trend filter.";
+                case "LtRSI3Momentum" -> "Momentum on RSI(3) with EMA(200) trend filter and ATR stops.";
+                case "LtRangeBreakout" -> "Donchian channel (20) breakout with trailing ATR stop.";
+                case "LtVolRegime" -> "Adaptive: trend-follow in high vol, mean-reversion in low vol via ATR ratio.";
+                case "LtBollingerSqueeze" -> "Breakout from Bollinger Bandwidth squeeze with ATR SL/TP.";
+                case "LtSqueezeMomentum" -> "Bollinger squeeze breakout confirmed by RSI momentum.";
+                case "LtPullbackEntry" -> "Pullback to EMA(50) in trend direction with RSI confirmation.";
+                case "LtDoubleMA" -> "EMA(50)/SMA(200) golden cross / death cross with ATR risk management.";
+                case "LtEfficiencyRatio" -> "Kaufman Efficiency Ratio trend filter with EMA(50) direction.";
+                default -> "Long-term systematic strategy (H1, 15+ year horizon).";
+            };
+        }
         if (id.equals("SmaCrossover")) {
             return "Simple SMA crossover strategy (20/50 fast/slow SMA crossover).";
         }
@@ -134,6 +176,9 @@ public final class StrategyCatalog {
         NewsWeeklyStrategyCatalog.all().keySet().forEach(id ->
             put(id, Family.NEWS_WEEKLY, NewsWeeklyStrategyCatalog.defaultSymbol(id),
                 sym -> NewsWeeklyStrategyCatalog.create(id, sym)));
+        LongTermStrategyCatalog.all().keySet().forEach(id ->
+            put(id, Family.LONG_TERM, LongTermStrategyCatalog.defaultSymbol(id),
+                sym -> LongTermStrategyCatalog.create(id, sym)));
         HarnessStrategyCatalog.all().keySet().forEach(id ->
             put(id, Family.HARNESS, HarnessStrategyCatalog.defaultSymbol(id),
                 sym -> HarnessStrategyCatalog.create(id, sym)));
