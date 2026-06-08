@@ -23,7 +23,8 @@ public class LtDoubleMA implements Strategy {
     private static final int ATR_PERIOD = 14;
     private static final double ATR_MULT_SL = 2.0;
     private static final double ATR_MULT_TP = 4.0;
-    private static final double MAX_POSITION = 2000;
+    private static final double REFERENCE_CAPITAL = 10_000;
+    private static final double RISK_PCT = 0.01;
     private static final int MAX_HOLD_BARS = 240;
     private static final java.time.ZoneId TZ = java.time.ZoneId.of("America/New_York");
 
@@ -96,14 +97,14 @@ public class LtDoubleMA implements Strategy {
         if (crossUp) {
             double stopLoss = close - sl;
             double takeProfit = close + tp;
-            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, MAX_POSITION, close)
+            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, ATR_MULT_SL, symbol), close)
                 .withStopLoss(stopLoss).withTakeProfit(takeProfit));
             entryPrice = close; entrySl = stopLoss; entryTp = takeProfit;
             direction = Order.Side.BUY; inTrade = true; tradesToday++; barsInTrade = 0;
         } else if (crossDown) {
             double stopLoss = close + sl;
             double takeProfit = close - tp;
-            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, MAX_POSITION, close)
+            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, ATR_MULT_SL, symbol), close)
                 .withStopLoss(stopLoss).withTakeProfit(takeProfit));
             entryPrice = close; entrySl = stopLoss; entryTp = takeProfit;
             direction = Order.Side.SELL; inTrade = true; tradesToday++; barsInTrade = 0;
