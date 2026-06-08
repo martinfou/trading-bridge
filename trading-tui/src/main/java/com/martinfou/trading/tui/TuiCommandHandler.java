@@ -78,7 +78,7 @@ public final class TuiCommandHandler {
         return List.of(
             "Trading Bridge TUI — control plane client",
             "  /list              List strategies + deployment mode",
-            "  /status [id]       Control summary or promote-readiness",
+            "  /status [id]       Trading Desk summary or promote-readiness",
             "  /backtest [args]   Start BACKTEST (no args = interactive wizard)",
             "      args: <id> [SYMBOL YEAR | SYMBOL 2006-2012 | --sample | --ci | file.csv]",
             "            [--capital 1000] [--lots 0.01]",
@@ -116,7 +116,7 @@ public final class TuiCommandHandler {
         }
         JsonNode summary = client.controlSummary();
         List<String> lines = new ArrayList<>();
-        lines.add("Control summary:");
+        lines.add("Trading Desk summary:");
         if (summary.has("strategies")) {
             for (JsonNode s : summary.get("strategies")) {
                 String id = s.get("strategyId").asText();

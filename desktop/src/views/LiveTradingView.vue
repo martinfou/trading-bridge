@@ -346,7 +346,7 @@ onUnmounted(() => {
   <div class="view-container">
     <div class="header">
       <div class="title-section">
-        <h2>Live Room 📡</h2>
+        <h2>Trading Desk 📡</h2>
         <p class="subtitle">Prop-shop real-time operations board</p>
       </div>
       <div style="display: flex; gap: 0.5rem;">
