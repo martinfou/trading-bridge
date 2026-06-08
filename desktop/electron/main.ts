@@ -20,6 +20,7 @@ interface JvmConfig {
   jarPath: string
   dataDir: string
   cwd: string
+  resourcesDir: string
 }
 
 function resolveDevPaths(): JvmConfig {
@@ -33,7 +34,7 @@ function resolveDevPaths(): JvmConfig {
     if (fs.existsSync(candidate)) javaBin = candidate
   }
 
-  return { javaBin, jarPath, dataDir: path.join(projectRoot, 'data/runtime'), cwd: projectRoot }
+  return { javaBin, jarPath, dataDir: path.join(projectRoot, 'data/runtime'), cwd: projectRoot, resourcesDir: projectRoot }
 }
 
 function resolvePackagedPaths(): JvmConfig {
@@ -41,7 +42,7 @@ function resolvePackagedPaths(): JvmConfig {
   const jarPath = path.join(resourcesDir, 'jar/control-plane.jar')
   const javaBin = path.join(resourcesDir, 'jre/bin/java' + (process.platform === 'win32' ? '.exe' : ''))
   const dataDir = path.join(app.getPath('userData'), 'data')
-  return { javaBin, jarPath, dataDir, cwd: dataDir }
+  return { javaBin, jarPath, dataDir, cwd: dataDir, resourcesDir }
 }
 
 function resolveConfig(): JvmConfig {
@@ -83,6 +84,7 @@ function startJavaProcess(cfg: JvmConfig): void {
       ...process.env,
       CONTROL_PLANE_PORT: String(CONTROL_PLANE_PORT),
       TRADING_BRIDGE_DATA_DIR: cfg.dataDir,
+      TRADING_BRIDGE_RESOURCES_DIR: cfg.resourcesDir,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })

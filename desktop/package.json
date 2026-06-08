@@ -48,6 +48,13 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "../scripts",
+        "to": "resources/scripts",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "linux": {

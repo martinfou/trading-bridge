@@ -10,6 +10,10 @@ import com.martinfou.trading.core.Strategy;
 import com.martinfou.trading.data.HistoricalDataLoader;
 import com.martinfou.trading.strategies.StrategyCatalog;
 import com.martinfou.trading.strategies.StrategyCatalog.Family;
+import com.martinfou.trading.backtest.persistence.BacktestPersistenceService;
+import com.martinfou.trading.backtest.persistence.BacktestQueryFilters;
+import com.martinfou.trading.backtest.persistence.BacktestRunSummary;
+import com.martinfou.trading.backtest.persistence.SqliteBacktestRunStore;
 
 import java.nio.file.Path;
 import java.time.Instant;
@@ -49,6 +53,11 @@ public class RunBacktest {
 
         if (args[0].equals("--list")) {
             printList();
+            return;
+        }
+
+        if (args[0].equals("--query")) {
+            runCliQuery(args);
             return;
         }
 
@@ -244,6 +253,7 @@ public class RunBacktest {
               RunBacktest --list
               RunBacktest --help
               RunBacktest --sample
+              RunBacktest --query [--symbol <sym>] [--strategy <id>] [--min-sharpe <val>] [--min-pf <val>] [--sort-by <col>] [--limit <n>]
               RunBacktest <strategyId> --sample
               RunBacktest <strategyId> EUR_USD 2012 [capital]
               RunBacktest <strategyId> EUR_USD 2012 --json
@@ -259,5 +269,102 @@ public class RunBacktest {
 
             Deprecated aliases: RunPropBacktest, RunSqBacktest
             """);
+    }
+
+    private static void runCliQuery(String[] args) {
+        String symbol = null;
+        String strategyId = null;
+        Double minSharpe = null;
+        Double minProfitFactor = null;
+        String sortBy = "created_at";
+        String sortOrder = "DESC";
+        Integer limit = 20;
+        Integer offset = 0;
+
+        for (int i = 1; i < args.length; i++) {
+            if ("--symbol".equals(args[i]) && i + 1 < args.length) {
+                symbol = args[++i];
+            } else if ("--strategy".equals(args[i]) && i + 1 < args.length) {
+                strategyId = args[++i];
+            } else if (("--min-sharpe".equals(args[i]) || "--sharpe".equals(args[i])) && i + 1 < args.length) {
+                try {
+                    minSharpe = Double.parseDouble(args[++i]);
+                } catch (NumberFormatException e) {
+                    System.err.println("Invalid min-sharpe value: " + args[i]);
+                }
+            } else if (("--min-profit-factor".equals(args[i]) || "--min-pf".equals(args[i]) || "--min-profitfactor".equals(args[i])) && i + 1 < args.length) {
+                try {
+                    minProfitFactor = Double.parseDouble(args[++i]);
+                } catch (NumberFormatException e) {
+                    System.err.println("Invalid min-profit-factor value: " + args[i]);
+                }
+            } else if ("--sort-by".equals(args[i]) && i + 1 < args.length) {
+                sortBy = args[++i];
+            } else if ("--sort-order".equals(args[i]) && i + 1 < args.length) {
+                sortOrder = args[++i];
+            } else if ("--limit".equals(args[i]) && i + 1 < args.length) {
+                try {
+                    limit = Integer.parseInt(args[++i]);
+                } catch (NumberFormatException e) {
+                    System.err.println("Invalid limit value: " + args[i]);
+                }
+            } else if ("--offset".equals(args[i]) && i + 1 < args.length) {
+                try {
+                    offset = Integer.parseInt(args[++i]);
+                } catch (NumberFormatException e) {
+                    System.err.println("Invalid offset value: " + args[i]);
+                }
+            }
+        }
+
+        var filters = BacktestQueryFilters.builder()
+            .symbol(symbol)
+            .strategyId(strategyId)
+            .minSharpe(minSharpe)
+            .minProfitFactor(minProfitFactor)
+            .sortBy(sortBy)
+            .sortOrder(sortOrder)
+            .limit(limit)
+            .offset(offset)
+            .build();
+
+        Path dbPath = BacktestPersistenceService.resolveDefaultDbPath();
+        System.out.println("Querying backtest runs from: " + dbPath);
+
+        try (var store = new SqliteBacktestRunStore(dbPath)) {
+            var results = store.list(filters);
+            if (results.isEmpty()) {
+                System.out.println("No matching backtest runs found.");
+                return;
+            }
+
+            System.out.println("+----------+--------------------------------+---------+--------+--------+--------+--------+--------+--------------+----------------------+");
+            System.out.printf("| %-8s | %-30s | %-7s | %6s | %6s | %6s | %6s | %6s | %12s | %-20s |%n",
+                "Run ID", "Strategy", "Symbol", "Trades", "Win %", "MaxDD%", "Sharpe", "PF", "Total PnL", "Created At");
+            System.out.println("+----------+--------------------------------+---------+--------+--------+--------+--------+--------+--------------+----------------------+");
+
+            for (var run : results) {
+                String shortId = run.runId().length() > 8 ? run.runId().substring(0, 8) : run.runId();
+                String stratId = run.strategyId().length() > 30 ? run.strategyId().substring(0, 27) + "..." : run.strategyId();
+                System.out.printf("| %-8s | %-30s | %-7s | %6d | %5.1f%% | %5.2f%% | %6.2f | %6.2f | %12.2f | %-20s |%n",
+                    shortId,
+                    stratId,
+                    run.symbol(),
+                    run.totalTrades(),
+                    run.winRatePct(),
+                    run.maxDrawdownPct(),
+                    run.sharpeRatio(),
+                    run.profitFactor(),
+                    run.totalPnl(),
+                    run.createdAt().toString().substring(0, 19).replace('T', ' ')
+                );
+            }
+            System.out.println("+----------+--------------------------------+---------+--------+--------+--------+--------+--------+--------------+----------------------+");
+            int totalCount = store.count(filters);
+            System.out.printf("Showing %d of %d total matching runs.%n", results.size(), totalCount);
+        } catch (Exception e) {
+            System.err.println("Error querying database: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 }

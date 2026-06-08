@@ -1,6 +1,7 @@
 package com.martinfou.trading.backtest;
 
 import com.martinfou.trading.backtest.events.RunEvent;
+import com.martinfou.trading.backtest.persistence.BacktestPersistenceService;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Strategy;
 
@@ -24,7 +25,8 @@ public record RunContext(
     String assignedRunId,
     BacktestExecutionCost executionCost,
     String dataTimeframe,
-    String strategyTimeframe
+    String strategyTimeframe,
+    boolean persist
 ) {
 
     public RunContext {
@@ -103,7 +105,8 @@ public record RunContext(
             assignedRunId,
             BacktestExecutionCost.ZERO,
             null,
-            null);
+            null,
+            true);
     }
 
     public static RunContext forStrategy(
@@ -128,7 +131,8 @@ public record RunContext(
             assignedRunId,
             executionCost,
             null,
-            null);
+            null,
+            true);
     }
 
     public static RunContext forStrategy(
@@ -155,12 +159,18 @@ public record RunContext(
             assignedRunId,
             executionCost,
             dataTimeframe,
-            strategyTimeframe);
+            strategyTimeframe,
+            true);
     }
 
     /** Returns a copy wired to the given event listener. */
     public RunContext withEventListener(Consumer<RunEvent> listener) {
-        return new RunContext(strategyId, symbol, mode, bars, initialCapital, strategy, listener, assignedRunId, executionCost, dataTimeframe, strategyTimeframe);
+        return new RunContext(strategyId, symbol, mode, bars, initialCapital, strategy, listener, assignedRunId, executionCost, dataTimeframe, strategyTimeframe, persist);
+    }
+
+    /** Returns a copy with the given persist flag. */
+    public RunContext withPersist(boolean persist) {
+        return new RunContext(strategyId, symbol, mode, bars, initialCapital, strategy, eventListener, assignedRunId, executionCost, dataTimeframe, strategyTimeframe, persist);
     }
 
     /**
@@ -193,6 +203,9 @@ public record RunContext(
             };
             var endedPayload = new java.util.LinkedHashMap<>(BacktestResultPayload.toEndedPayload(result));
             emit(RunEvent.ended(runId, eventStrategyId, symbol, mode, Map.copyOf(endedPayload)));
+            if (mode == RunMode.BACKTEST && persist) {
+                BacktestPersistenceService.save(runId, this, result);
+            }
             return result;
         } catch (RuntimeException e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();

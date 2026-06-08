@@ -51,6 +51,7 @@ const nav = [
   { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/data-manager', label: 'Data Manager', icon: Database },
   { path: '/strategies', label: 'Strategies', icon: Cpu },
+  { path: '/results', label: 'Backtests', icon: Clock },
   { path: '/live-trading', label: 'Live Room', icon: Radio },
   { path: '/compare', label: 'Compare', icon: GitCompare },
 ]

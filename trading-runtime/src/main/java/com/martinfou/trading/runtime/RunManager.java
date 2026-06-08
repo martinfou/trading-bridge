@@ -545,10 +545,8 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
 
         String sourceType = config.barsSourceType();
         if (System.getProperty("trading.bridge.test") == null && sourceType != null && !sourceType.equalsIgnoreCase("sample")) {
-            Path repoRoot = EventStoreConfig.findRepoRoot();
-            Path baseDir = repoRoot != null ? repoRoot : Path.of(".");
-            Path barsDir = baseDir.resolve("data/historical/bars");
-            Path csvDir = baseDir.resolve("data/historical/dukascopy");
+            Path barsDir = RuntimeDataPaths.defaultBarsDirectory();
+            Path csvDir = RuntimeDataPaths.defaultDukascopyDirectory();
             try {
                 String symbol = config.symbol();
                 int currentYear = java.time.LocalDate.now().getYear();
@@ -558,7 +556,7 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
 
                 // 1. Download current year if catalog is completely empty
                 if (emptyCatalog) {
-                    lockAndDownload(baseDir, symbol, currentYear, config.strategyTimeframe(), barsDir, csvDir);
+                    lockAndDownload(symbol, currentYear, config.strategyTimeframe(), barsDir, csvDir);
                 }
 
                 // 2. Download requested year(s) if missing
@@ -569,16 +567,16 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
                         int start = Integer.parseInt(parts[0]);
                         int end = Integer.parseInt(parts[1]);
                         for (int y = start; y <= end; y++) {
-                            lockAndDownload(baseDir, symbol, y, config.strategyTimeframe(), barsDir, csvDir);
+                            lockAndDownload(symbol, y, config.strategyTimeframe(), barsDir, csvDir);
                         }
                     } else if (!yearSpec.equalsIgnoreCase("all")) {
                         try {
                             int yearToDownload = Integer.parseInt(yearSpec);
-                            lockAndDownload(baseDir, symbol, yearToDownload, config.strategyTimeframe(), barsDir, csvDir);
+                            lockAndDownload(symbol, yearToDownload, config.strategyTimeframe(), barsDir, csvDir);
                         } catch (NumberFormatException ignored) {}
                     }
                 } else {
-                    lockAndDownload(baseDir, symbol, currentYear, config.strategyTimeframe(), barsDir, csvDir);
+                    lockAndDownload(symbol, currentYear, config.strategyTimeframe(), barsDir, csvDir);
                 }
             } catch (Exception e) {
                 log.warn("Failed to check or download historical data: {}", e.getMessage());
@@ -593,10 +591,11 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
         return BarSourceResolver.load(source, config.symbol());
     }
 
-    private static void downloadYearSync(Path baseDir, String symbol, int year, String tf) throws IOException {
+    private static void downloadYearSync(String symbol, int year, String tf) throws IOException {
         String pair = symbol.replace("_", "").toLowerCase(java.util.Locale.ROOT);
+        Path scriptsDir = RuntimeDataPaths.scriptsDirectory();
         List<String> command = List.of(
-            "./scripts/download-data.sh",
+            scriptsDir.resolve("download-data.sh").toAbsolutePath().toString(),
             "--pair", pair,
             "--year", String.valueOf(year),
             "--tf", tf.toLowerCase(java.util.Locale.ROOT)
@@ -604,7 +603,7 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
 
         log.info("Executing synchronous download command: {}", command);
         ProcessBuilder pb = new ProcessBuilder(command);
-        pb.directory(baseDir.toFile());
+        pb.directory(scriptsDir.getParent().toFile());
         pb.redirectErrorStream(true);
         Process process = pb.start();
 
@@ -635,7 +634,7 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
         }
     }
 
-    private static void lockAndDownload(Path baseDir, String symbol, int year, String tf, Path barsDir, Path csvDir) throws IOException {
+    private static void lockAndDownload(String symbol, int year, String tf, Path barsDir, Path csvDir) throws IOException {
         if (isYearAvailable(symbol, year, barsDir, csvDir)) {
             return;
         }
@@ -651,7 +650,7 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
                 }
                 System.out.println("No bars available for strategy symbol " + symbol + " and year " + year + ". Downloading data... This will take a while.");
                 log.info("No bars available for strategy symbol {} and year {}. Downloading data... This will take a while.", symbol, year);
-                downloadYearSync(baseDir, symbol, year, timeframe);
+                downloadYearSync(symbol, year, timeframe);
             }
         } finally {
             lock.unlock();

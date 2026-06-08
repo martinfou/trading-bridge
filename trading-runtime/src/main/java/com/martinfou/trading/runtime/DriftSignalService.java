@@ -100,11 +100,35 @@ public final class DriftSignalService {
                 now)));
         }
 
+        Optional<BacktestRunMetrics> baseline = Optional.empty();
+        Optional<String> baselineHash = Optional.empty();
+
         Optional<RunRecord> baselineRun = deployment
             .map(DeploymentRecord::sourceRunId)
             .flatMap(runManager::getRun);
-        Optional<BacktestRunMetrics> baseline = baselineRun.map(BacktestRunMetrics::fromRun);
-        Optional<String> baselineHash = baselineRun.map(RunRecord::configHash);
+
+        if (baselineRun.isPresent()) {
+            baseline = baselineRun.map(BacktestRunMetrics::fromRun);
+            baselineHash = baselineRun.map(RunRecord::configHash);
+        } else if (deployment.isPresent() && deployment.get().sourceRunId() != null) {
+            String sourceId = deployment.get().sourceRunId();
+            java.nio.file.Path dbPath = com.martinfou.trading.backtest.persistence.BacktestPersistenceService.resolveDefaultDbPath();
+            try (var store = new com.martinfou.trading.backtest.persistence.SqliteBacktestRunStore(dbPath)) {
+                var detailsOpt = store.get(sourceId);
+                if (detailsOpt.isPresent()) {
+                    var details = detailsOpt.get();
+                    baseline = Optional.of(new BacktestRunMetrics(
+                        details.totalTrades(),
+                        details.totalReturnPct(),
+                        details.maxDrawdownPct(),
+                        details.winRatePct()
+                    ));
+                    baselineHash = Optional.of(details.parameterHash());
+                }
+            } catch (Exception ignored) {
+                // best effort fallback
+            }
+        }
 
         return Optional.of(engine.evaluate(new DriftEngine.StrategyDriftInput(
             strategyId,
