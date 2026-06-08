@@ -20,7 +20,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
-public final class DukascopyDownloader {
+public class DukascopyDownloader {
 
     private static final Logger log = LoggerFactory.getLogger(DukascopyDownloader.class);
 
@@ -145,10 +145,11 @@ public final class DukascopyDownloader {
         return csvPath;
     }
 
-    private byte[] downloadFile(String url) throws IOException, InterruptedException {
+    byte[] downloadFile(String url) throws IOException, InterruptedException {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .header("User-Agent", "Mozilla/5.0")
+                .timeout(Duration.ofSeconds(5))
                 .GET()
                 .build();
 
