@@ -199,6 +199,21 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
         return record;
     }
 
+    public RunRecord restoreRun(String runId, RunConfigSnapshot config) {
+        if (runId == null || runId.isBlank()) {
+            throw new IllegalArgumentException("runId must not be null or blank");
+        }
+        if (config == null) {
+            throw new IllegalArgumentException("config must not be null");
+        }
+        RunMode runMode = RunMode.valueOf(config.mode().toUpperCase());
+        RunRecord record = new RunRecord(runId, config.strategyId(), config.symbol(), runMode, config);
+        snapshots.put(runId, config);
+        runs.put(runId, record);
+        notifyTransition(null, record, RunTransition.REGISTER);
+        return record;
+    }
+
     @Override
     public RunRecord start(String runId) {
         RunRecord record = requireRun(runId);
