@@ -3,6 +3,9 @@ package com.martinfou.trading.runtime;
 import com.martinfou.trading.backtest.events.RunEvent;
 import com.martinfou.trading.backtest.events.RunEventType;
 import com.martinfou.trading.parser.bridge.SqInboxPaths;
+import com.martinfou.trading.parser.bridge.SqCliRunner;
+import com.martinfou.trading.parser.bridge.SqCliOptions;
+import com.martinfou.trading.parser.bridge.SqCliRunResult;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -30,6 +33,9 @@ class SqBridgeServiceTest {
         if (service != null) {
             service.close();
         }
+        // Force GC to release file locks on Windows
+        System.gc();
+        System.runFinalization();
     }
 
     @Test
@@ -61,31 +67,35 @@ class SqBridgeServiceTest {
     void status_cachesProbeWithinTtl(@TempDir Path repo) throws Exception {
         Path sqHome = repo.resolve("sq");
         Files.createDirectories(sqHome);
-        Path binary = sqHome.resolve("sqcli");
-        Files.writeString(binary, """
-            #!/bin/sh
-            exit 0
-            """);
-        binary.toFile().setExecutable(true);
 
         Instant t0 = Instant.parse("2026-05-31T12:00:00Z");
         Clock clock = Clock.fixed(t0, ZoneOffset.UTC);
         String previous = System.getProperty("sq.bridge.sq.home");
         System.setProperty("sq.bridge.sq.home", sqHome.toString());
         try {
+            java.util.concurrent.atomic.AtomicInteger callCount = new java.util.concurrent.atomic.AtomicInteger(0);
+            SqCliRunner mockRunner = new SqCliRunner() {
+                @Override
+                public SqCliRunResult run(SqCliOptions options, List<String> sqCliArgs) {
+                    callCount.incrementAndGet();
+                    return new SqCliRunResult(List.of("sqcli"), 0, "ok", "", false, 10);
+                }
+            };
+
             service = new SqBridgeService(new InMemoryEventStore(), repo, clock,
                 Executors.newSingleThreadExecutor(),
                 new com.martinfou.trading.parser.bridge.SqInboxProcessor(),
-                new com.martinfou.trading.parser.bridge.SqCliRunner());
+                mockRunner);
 
             Map<String, Object> first = service.status();
             assertTrue((Boolean) first.get("sqHomeConfigured"));
             assertTrue((Boolean) first.get("sqcliReachable"));
+            assertEquals(1, callCount.get());
 
-            Files.delete(binary);
             Map<String, Object> cached = service.status();
             assertTrue((Boolean) cached.get("sqcliReachable"));
             assertEquals(t0.toString(), cached.get("lastProbeAt"));
+            assertEquals(1, callCount.get()); // Verification of caching
         } finally {
             if (previous == null) {
                 System.clearProperty("sq.bridge.sq.home");
