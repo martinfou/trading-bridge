@@ -29,7 +29,8 @@ public class LtSqueezeMomentum implements Strategy {
     private static final int ATR_PERIOD = 14;
     private static final double ATR_MULT_SL = 2.0;
     private static final double ATR_MULT_TP = 4.0;
-    private static final double MAX_POSITION = 2000;
+    private static final double REFERENCE_CAPITAL = 10_000;
+    private static final double RISK_PCT = 0.01;
     private static final int MAX_HOLD_BARS = 240;
     private static final java.time.ZoneId TZ = java.time.ZoneId.of("America/New_York");
 
@@ -94,11 +95,13 @@ public class LtSqueezeMomentum implements Strategy {
         // Only trade during squeeze
         if (bandwidth > SQUEEZE_THRESHOLD) return;
 
+        long position = Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, ATR_MULT_SL, symbol);
+
         // RSI confirms squeeze direction
         if (rsi > RSI_BULL) {
             double stopLoss = close - atr * ATR_MULT_SL;
             double takeProfit = close + atr * ATR_MULT_TP;
-            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, MAX_POSITION, close)
+            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, position, close)
                 .withStopLoss(stopLoss).withTakeProfit(takeProfit));
             entryPrice = close; entrySl = stopLoss; entryTp = takeProfit;
             entryBandwidth = bandwidth;
@@ -106,7 +109,7 @@ public class LtSqueezeMomentum implements Strategy {
         } else if (rsi < RSI_BEAR) {
             double stopLoss = close + atr * ATR_MULT_SL;
             double takeProfit = close - atr * ATR_MULT_TP;
-            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, MAX_POSITION, close)
+            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, position, close)
                 .withStopLoss(stopLoss).withTakeProfit(takeProfit));
             entryPrice = close; entrySl = stopLoss; entryTp = takeProfit;
             entryBandwidth = bandwidth;
