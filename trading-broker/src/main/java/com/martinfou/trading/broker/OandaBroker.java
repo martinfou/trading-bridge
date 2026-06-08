@@ -111,7 +111,7 @@ public final class OandaBroker implements Broker {
     public List<Position> getPositions() {
         List<Position> out = new ArrayList<>();
         for (OandaPositionSnapshot row : client.fetchOpenPositions()) {
-            out.add(new Position(row.instrument(), row.side(), row.units(), row.averagePrice()));
+            out.add(new Position(row.instrument(), row.side(), row.units(), row.averagePrice(), java.time.Instant.EPOCH, row.clientTag()));
         }
         return List.copyOf(out);
     }

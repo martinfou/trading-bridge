@@ -7,5 +7,6 @@ public record OandaPositionSnapshot(
     String instrument,
     Order.Side side,
     double units,
-    double averagePrice
+    double averagePrice,
+    String clientTag
 ) {}

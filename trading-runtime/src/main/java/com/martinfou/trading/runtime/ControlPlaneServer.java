@@ -780,13 +780,64 @@ public final class ControlPlaneServer implements AutoCloseable {
                 .toList());
         }
 
-        var positions = JournalPositions.fromFills(runManager.eventStore().replayAll(record.runId())).values().stream()
-            .map(pos -> Map.of(
-                "symbol", pos.symbol(),
-                "side", pos.side().name(),
-                "quantity", pos.quantity()
-            ))
-            .toList();
+        List<Map<String, Object>> positions = new ArrayList<>();
+        if (record.status() == RunRecord.Status.RUNNING && label.isBrokerBacked()) {
+            try {
+                String accountId = record.configSnapshot().containsKey("brokerAccountId")
+                    ? String.valueOf(record.configSnapshot().get("brokerAccountId"))
+                    : null;
+                if (runManager != null && runManager.brokerAccountRegistry() != null) {
+                    var brokerOpt = runManager.brokerAccountRegistry().broker(accountId, label);
+                    if (brokerOpt.isPresent()) {
+                        try (var broker = brokerOpt.get()) {
+                            broker.connect();
+                            java.util.Set<String> runOrderIds = new java.util.HashSet<>();
+                            if (runManager.eventStore() != null) {
+                                for (var e : runManager.eventStore().replayAll(record.runId())) {
+                                    if (e.type() == RunEventType.FILL && e.payload() != null && e.payload().containsKey("orderId")) {
+                                        runOrderIds.add(String.valueOf(e.payload().get("orderId")));
+                                    }
+                                }
+                            }
+                            for (var pos : broker.getPositions()) {
+                                if (pos.symbol().equalsIgnoreCase(record.symbol()) || pos.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(record.symbol().replace("/", "_").replace("-", "_"))) {
+                                    if (pos.clientTag() != null && !pos.clientTag().isBlank()) {
+                                        if (runOrderIds.contains(pos.clientTag())) {
+                                            positions.add(Map.of(
+                                                "symbol", pos.symbol(),
+                                                "side", pos.side().name(),
+                                                "quantity", pos.quantity(),
+                                                "entryTime", pos.entryTime() != null ? pos.entryTime().toString() : ""
+                                            ));
+                                        }
+                                    } else {
+                                        positions.add(Map.of(
+                                            "symbol", pos.symbol(),
+                                            "side", pos.side().name(),
+                                            "quantity", pos.quantity(),
+                                            "entryTime", pos.entryTime() != null ? pos.entryTime().toString() : ""
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // fallback to journal fills
+            }
+        }
+        if (positions.isEmpty()) {
+            List<Map<String, Object>> journalPositions = JournalPositions.fromFills(runManager.eventStore().replayAll(record.runId())).values().stream()
+                .map(pos -> Map.<String, Object>of(
+                    "symbol", pos.symbol(),
+                    "side", pos.side().name(),
+                    "quantity", pos.quantity(),
+                    "entryTime", pos.entryTime() != null ? pos.entryTime().toString() : ""
+                ))
+                .toList();
+            positions.addAll(journalPositions);
+        }
         json.put("positions", positions);
 
         return json;

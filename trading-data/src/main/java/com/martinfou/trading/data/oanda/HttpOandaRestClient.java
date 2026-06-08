@@ -216,11 +216,19 @@ public final class HttpOandaRestClient implements OandaRestClient {
             for (JsonNode trade : json.get("trades")) {
                 double units = Double.parseDouble(trade.get("currentUnits").asText());
                 Order.Side side = units >= 0 ? Order.Side.BUY : Order.Side.SELL;
+                String clientTag = null;
+                if (trade.has("clientExtensions") && !trade.get("clientExtensions").isNull()) {
+                    JsonNode ext = trade.get("clientExtensions");
+                    if (ext.has("tag")) {
+                        clientTag = ext.get("tag").asText();
+                    }
+                }
                 positions.add(new OandaPositionSnapshot(
                     trade.get("instrument").asText(),
                     side,
                     Math.abs(units),
-                    Double.parseDouble(trade.get("price").asText())));
+                    Double.parseDouble(trade.get("price").asText()),
+                    clientTag));
             }
             return List.copyOf(positions);
         } catch (Exception e) {
