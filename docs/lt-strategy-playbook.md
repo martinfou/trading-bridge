@@ -422,10 +422,285 @@ Avant de déclarer une stratégie "livrée" :
 
 ---
 
-## 9. 📚 Références
+## 10. 🤖 Génération Automatisée via LLM
+
+> **Objectif :** Utiliser un LLM (DeepSeek / Claude) orchestré par **LangChain4j** pour
+> générer, compiler, backtester et valider des stratégies long terme en boucle autonome.
+
+### 10.1 Pourquoi LangChain4j
+
+| Critère | LangChain4j | Spring AI | Custom Java | Raison |
+|---------|-------------|-----------|-------------|--------|
+| **Chaînage (chain)** | ✅ natif | ✅ natif | ❌ à coder | Prompt → LLM → Parse → Code → Compile → Backtest |
+| **Structured output** | ✅ JSON Schema | ✅ | ❌ manuel | Sortie LLM parsable en `StrategySpec` |
+| **Tool calling** | ✅ natif | ✅ | ❌ | LLM peut appeler `compileAndTest(strategySpec)` |
+| **Memory / RAG** | ✅ ContentRetriever | ✅ | ❌ | Injecter les leçons apprises dans le contexte |
+| **Déjà compatible** | Java 21+ | Spring | — | Le projet est Maven, pas Spring |
+| **Poids** | ~2MB | ~15MB | — | Plus léger, pas de framework Web |
+
+**Verdict :** **LangChain4j** — Java 21 compatible, pas de dépendance Spring, structured output natif,
+léger. S'intègre dans le monorepo Maven comme module `trading-intelligence`.
+
+### 10.2 Architecture proposée
+
+```mermaid
+flowchart LR
+    PLAYBOOK[lt-strategy-playbook.md] -->|Contexte système| LLM[LLM<br/>DeepSeek/Claude]
+    LESSONS[Leçons apprises<br/>section 1.3] -->|RAG / mémoire| LLM
+    CATALOG[StrategyCatalog] -->|Stratégies existantes| LLM
+    LLM -->|JSON structuré| SPEC[StrategySpec]
+    SPEC -->|Template Java| CODEGEN[Code Generator]
+    CODEGEN -->|.java| COMPILE[Maven Compile]
+    COMPILE -->|.class| BACKTEST[Backtest Engine]
+    BACKTEST -->|Résultats| EVAL[Evaluator]
+    EVAL -->|PF < seuil| LLM
+    EVAL -->|PF ≥ seuil| VALIDATED[✅ Validée]
+    VALIDATED -->|Enregistrement| CATALOG
+```
+
+### 10.3 Data Model — StrategySpec
+
+Le LLM produit un **JSON structuré** que LangChain4j parse via `JsonSchema` :
+
+```java
+public record StrategySpec(
+    String name,                    // ex: "LtEfficiencyRatio"
+    String inspiration,             // source / papier de recherche
+    String description,             // une phrase
+    String type,                    // Trend Following, Mean Reversion, Momentum...
+    List<String> indicators,        // ["SMA", "ATR", "RSI"]
+    // Paramètres
+    int fastPeriod,                 // 20
+    int slowPeriod,                 // 100
+    int rsiPeriod,                  // 14
+    int atrPeriod,                  // 14
+    double slMultiplier,            // 2.0
+    double tpMultiplier,            // 4.0
+    double entryThreshold,          // 0.5
+    // Logique d'entrée
+    EntryCondition longEntry,       // "SMA_FAST > SMA_SLOW"
+    EntryCondition shortEntry,      // "SMA_FAST < SMA_SLOW"
+    // Logique de sortie
+    ExitCondition exitCondition,    // "REVERSE_SIGNAL", "SL_TP", "MAX_HOLD"
+    int maxHoldBars                 // 240
+) {}
+
+public enum EntryCondition {
+    SMA_CROSSOVER, SMA_CROSSUNDER,
+    RSI_OVERSOLD, RSI_OVERBOUGHT,
+    PRICE_ABOVE_EMA, PRICE_BELOW_EMA,
+    BOLLINGER_SQUEEZE,
+    DONCHIAN_BREAKOUT
+}
+
+public enum ExitCondition {
+    REVERSE_SIGNAL, SL_TP, RSI_NEUTRAL, MAX_HOLD
+}
+```
+
+### 10.4 Implémentation avec LangChain4j
+
+```java
+// 1. Dépendance Maven (pom.xml)
+<dependency>
+    <groupId>dev.langchain4j</groupId>
+    <artifactId>langchain4j</artifactId>
+    <version>1.0.0-beta2</version>
+</dependency>
+<dependency>
+    <groupId>dev.langchain4j</groupId>
+    <artifactId>langchain4j-deepseek</artifactId>
+    <version>1.0.0-beta2</version>
+</dependency>
+```
+
+```java
+// 2. Agent de génération de stratégie
+public class LtStrategyAgent {
+
+    private final ChatLanguageModel model;
+    private final StrategyCodeGenerator codegen;
+    private final BacktestRunner backtester;
+
+    public LtStrategyAgent() {
+        this.model = DeepSeekChatModel.builder()
+            .apiKey(System.getenv("DEEPSEEK_API_KEY"))
+            .modelName("deepseek-chat")
+            .temperature(0.7)
+            .build();
+
+        this.codegen = new StrategyCodeGenerator();
+        this.backtester = new BacktestRunner();
+    }
+
+    /** Boucle generate → compile → backtest → iterate */
+    public StrategySpec generateAndValidate(int maxAttempts) {
+        for (int i = 0; i < maxAttempts; i++) {
+            // Phase 1: LLM génère un spec
+            StrategySpec spec = generateSpec();
+
+            // Phase 2: Code generation
+            String javaSource = codegen.generate(spec);
+
+            // Phase 3: Compilation
+            boolean compiled = codegen.compile(javaSource);
+            if (!compiled) continue;
+
+            // Phase 4: Backtest walk-forward
+            BacktestResult result = backtester.runWalkforward(spec);
+
+            // Phase 5: Évaluation
+            if (result.profitFactor() >= 1.05
+                && result.oos1ProfitFactor() >= 1.0
+                && result.oos2ProfitFactor() >= 1.0) {
+                return spec;  // ✅ Validée
+            }
+
+            // Phase 6: Feedback loop — renvoyer les résultats au LLM
+            feedback(spec, result);
+        }
+        return null; // Échec après maxAttempts
+    }
+
+    private StrategySpec generateSpec() {
+        String prompt = loadPlaybookContext()  // Sections 1-9 du playbook
+            + "\n\nGénère une nouvelle stratégie long terme au format StrategySpec."
+            + "\nInspire-toi des leçons apprises (section 1.3) "
+            + "et évite les patterns qui ont échoué.";
+
+        return model.generate(prompt, StrategySpec.class);
+    }
+
+    private void feedback(StrategySpec spec, BacktestResult result) {
+        String message = String.format("""
+            Stratégie: %s
+            PF FULL: %.4f | PF OOS1: %.4f | PF OOS2: %.4f
+            Sharpe: %.4f | DD: %.2f%% | WR: %.1f%%
+
+            %s
+            """,
+            spec.name(), result.profitFactor(),
+            result.oos1ProfitFactor(), result.oos2ProfitFactor(),
+            result.sharpeRatio(), result.maxDrawdownPct(),
+            result.winningTrades() * 100.0 / Math.max(1, result.totalTrades()),
+            analyseEchec(result)
+        );
+
+        // Injecter dans le contexte pour la prochaine itération
+        model.addContext(message);
+    }
+}
+```
+
+### 10.5 Prompt système (à charger depuis resources)
+
+Le prompt système doit inclure :
+
+```
+Tu es un architecte de stratégies de trading long terme pour le Trading Bridge.
+Tu travailles dans un monorepo Java avec le framework suivant disponible:
+- Indicators: SMA, EMA, RSI, ATR, Bollinger Bands, Donchian Channel, Efficiency Ratio
+- Position sizing: calcRiskPosition(capital, riskPct, atr, slMult, symbol)
+- REFERENCE_CAPITAL = 10_000, RISK_PCT = 0.01
+- Exit: closeOnly() obligatoire
+- H1 timeframe, max 1 trade/jour
+
+RÈGLES STRICTES (ne jamais violer):
+1. Toujours utiliser calcRiskPosition (pas de position fixe)
+2. Toujours closeOnly() sur les sorties
+3. Toujours 4 paires majeures: EUR/USD, GBP/USD, USD/JPY, AUD/USD
+4. Walk-forward validation: FULL (2010-2025), IS (2010-2018), OOS1 (2019-2022), OOS2 (2023-2025)
+5. Max 3 indicateurs par stratégie
+6. PF minimum: FULL ≥ 1.05, OOS1 ≥ 1.0, OOS2 ≥ 1.0
+
+LEÇONS APPRISES:
+[insérer section 1.3 du playbook]
+```
+
+### 10.6 Modules existants à réutiliser
+
+| Module | Classe | Rôle |
+|--------|--------|------|
+| `trading-intelligence` | `HttpDeepSeekClient` | Client LLM existant (DeepSeek API) |
+| `trading-intelligence` | `WeeklyPlanner` | Planner dual-pass (T=0.7 → T=0.2) |
+| `trading-intelligence` | `WeeklyStrategyCodeGenerator` | Codegen Java existant (templates T1-T8) |
+| `trading-intelligence` | `TemplateRegistry` | Registre de templates de stratégies |
+| `trading-intelligence` | `LlmClient` | Interface LLM unifiée |
+| `trading-backtest` | `BacktestEngine` | Moteur de backtest |
+| `trading-runtime` | `ControlPlaneServer` | API HTTP pour lancer les runs |
+| `trading-strategies` | `LongTermStrategyCatalog` | Catalog d'enregistrement |
+
+### 10.7 Pipeline de feedback (itératif)
+
+```mermaid
+flowchart TD
+    A[LLM génère StrategySpec] --> B{JSON valide?}
+    B -->|Non| A
+    B -->|Oui| C[Générer code Java]
+    C --> D{Compile?}
+    D -->|Non| A
+    D -->|Oui| E[Backtest walk-forward]
+    E --> F{Seuils atteints?}
+    F -->|Non| G[Analyser échec]
+    G -->|Feedback| A
+    F -->|Oui| H[✅ Enregistrer dans Catalog]
+    H --> I[Commit + push feature/lt-strategies]
+```
+
+### 10.8 Critères d'arrêt
+
+Le LLM doit itérer jusqu'à ce que :
+
+| Condition | Action |
+|-----------|--------|
+| PF FULL ≥ 1.05 **ET** OOS1 ≥ 1.0 **ET** OOS2 ≥ 1.0 | ✅ Accepter |
+| 5 itérations sans progression | ❌ Abandonner, documenter l'échec |
+| Même stratégie générée 2× de suite | 🔄 Forcer un concept différent |
+| PF OOS < 0.9 | ❌ Abandon (overfitting) |
+
+### 10.9 Exemple d'exécution
+
+```
+$ mvn exec:java -pl trading-intelligence \
+  -Dexec.mainClass="com.martinfou.trading.intelligence.agent.LtStrategyAgent"
+  
+🤖 Iteration 1 — LtAdaptiveMomentum
+   → PF: 1.32 | OOS1: 0.89 | OOS2: 0.91
+   → ❌ OOS1 < 1.0 — overfitting détecté
+   → Feedback: "Trop de paramètres, réduire à 2 indicateurs"
+
+🤖 Iteration 2 — LtSmaMomentum
+   → PF: 1.18 | OOS1: 1.09 | OOS2: 1.12
+   → ✅ Validée — enregistrement dans LongTermStrategyCatalog
+```
+
+### 10.10 Intégration continue (cron hebdomadaire)
+
+```bash
+# Script cron — génère et teste N stratégies chaque semaine
+#!/bin/bash
+cd ~/projects/trading-bridge
+source ~/.bashrc
+
+mvn compile -q -pl trading-intelligence -am -DskipTests
+mvn exec:java -pl trading-intelligence \
+  -Dexec.mainClass="com.martinfou.trading.intelligence.agent.LtStrategyAgent" \
+  -Dexec.args="--count 3 --max-iterations 5"
+
+# Si une stratégie est validée, commit automatique
+# (via le cron job Hermes avec script mode)
+```
+
+---
+
+## 11. 📚 Références
 
 - `Indicators.calcRiskPosition` — `trading-core/.../indicators/Indicators.java`
 - `LongTermStrategyCatalog` — `trading-strategies/.../longterm/`
 - `StrategyCatalog` — `trading-strategies/.../strategies/`
-- Validation reports existants : sur la branche `feature/lt-strategies`
+- `HttpDeepSeekClient` — `trading-intelligence/.../llm/HttpDeepSeekClient.java`
+- `WeeklyStrategyCodeGenerator` — `trading-intelligence/.../compile/WeeklyStrategyCodeGenerator.java`
+- `TemplateRegistry` — `trading-intelligence/.../template/TemplateRegistry.java`
+- **LangChain4j docs** — https://docs.langchain4j.dev
+- Validation reports : sur la branche `feature/lt-strategies`
 - TUI commands : `/help`, `/backtest`, `/list`, `/status`
