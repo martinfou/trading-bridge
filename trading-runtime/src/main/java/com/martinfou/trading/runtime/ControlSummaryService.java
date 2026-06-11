@@ -121,7 +121,11 @@ public final class ControlSummaryService {
             StrategyPnLMetrics pnlMetrics = calculatePnLMetrics(record);
             item.put("openTrades", pnlMetrics.openTradesCount);
             item.put("openPnL", pnlMetrics.openPnL);
+            item.put("realizedPnL", pnlMetrics.realizedPnL);
             item.put("totalPnL", pnlMetrics.totalPnL);
+            item.put("netQuantity", pnlMetrics.netQuantity);
+            item.put("netSide", pnlMetrics.netSide);
+            item.put("positions", getPositions(record, label));
 
             runItems.add(item);
 
@@ -243,7 +247,87 @@ public final class ControlSummaryService {
     private static class StrategyPnLMetrics {
         int openTradesCount = 0;
         double openPnL = 0.0;
+        double realizedPnL = 0.0;
         double totalPnL = 0.0;
+        double netQuantity = 0.0;
+        String netSide = "FLAT";
+    }
+
+    private List<Map<String, Object>> getPositions(RunRecord record, ExecutionLabel label) {
+        List<Map<String, Object>> positions = new ArrayList<>();
+        if (record.status() == RunRecord.Status.RUNNING && label.isBrokerBacked()) {
+            try {
+                String accountId = record.configSnapshot().containsKey("brokerAccountId")
+                    ? String.valueOf(record.configSnapshot().get("brokerAccountId"))
+                    : null;
+                if (runManager != null && runManager.brokerAccountRegistry() != null) {
+                    var brokerOpt = runManager.brokerAccountRegistry().broker(accountId, label);
+                    if (brokerOpt.isPresent()) {
+                        try (var broker = brokerOpt.get()) {
+                            broker.connect();
+                            java.util.Set<String> runOrderIds = new java.util.HashSet<>();
+                            if (runManager.eventStore() != null) {
+                                for (var e : runManager.eventStore().replayAll(record.runId())) {
+                                    if (e.type() == RunEventType.FILL && e.payload() != null && e.payload().containsKey("orderId")) {
+                                        runOrderIds.add(String.valueOf(e.payload().get("orderId")));
+                                    }
+                                }
+                            }
+                            var journalPositions = JournalPositions.fromFills(runManager.eventStore().replayAll(record.runId()));
+                            for (var pos : broker.getPositions()) {
+                                if (pos.symbol().equalsIgnoreCase(record.symbol()) || pos.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(record.symbol().replace("/", "_").replace("-", "_"))) {
+                                    java.time.Instant resolvedEntryTime = pos.entryTime();
+                                    if (resolvedEntryTime == null || resolvedEntryTime.equals(java.time.Instant.EPOCH)) {
+                                        String journalKey = pos.symbol() + ":" + pos.side().name();
+                                        var jp = journalPositions.get(journalKey);
+                                        if (jp != null && jp.entryTime() != null) {
+                                            resolvedEntryTime = jp.entryTime();
+                                        }
+                                    }
+                                    if (pos.clientTag() != null && !pos.clientTag().isBlank()) {
+                                        if (runOrderIds.contains(pos.clientTag())) {
+                                            positions.add(Map.of(
+                                                "symbol", pos.symbol(),
+                                                "side", pos.side().name(),
+                                                "quantity", pos.quantity(),
+                                                "entryTime", resolvedEntryTime != null ? resolvedEntryTime.toString() : "",
+                                                "entryPrice", pos.entryPrice(),
+                                                "stopLoss", pos.stopLoss(),
+                                                "takeProfit", pos.takeProfit()
+                                            ));
+                                        }
+                                    } else {
+                                        positions.add(Map.of(
+                                            "symbol", pos.symbol(),
+                                            "side", pos.side().name(),
+                                            "quantity", pos.quantity(),
+                                            "entryTime", resolvedEntryTime != null ? resolvedEntryTime.toString() : "",
+                                            "entryPrice", pos.entryPrice(),
+                                            "stopLoss", pos.stopLoss(),
+                                            "takeProfit", pos.takeProfit()
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // fallback to journal fills
+            }
+        }
+        if (positions.isEmpty()) {
+            List<Map<String, Object>> journalPositions = JournalPositions.fromFills(runManager.eventStore().replayAll(record.runId())).values().stream()
+                .map(pos -> Map.<String, Object>of(
+                    "symbol", pos.symbol(),
+                    "side", pos.side().name(),
+                    "quantity", pos.quantity(),
+                    "entryTime", pos.entryTime() != null ? pos.entryTime().toString() : ""
+                ))
+                .toList();
+            positions.addAll(journalPositions);
+        }
+        return positions;
     }
 
     private StrategyPnLMetrics calculatePnLMetrics(RunRecord record) {
@@ -314,6 +398,8 @@ public final class ControlSummaryService {
         // Calculate open PnL
         double openPnL = 0.0;
         int openTradesCount = 0;
+        double netBuyQty = 0.0;
+        double netSellQty = 0.0;
         for (var entry : openFills.entrySet()) {
             String symbol = entry.getKey();
             for (var fill : entry.getValue()) {
@@ -321,6 +407,11 @@ public final class ControlSummaryService {
                 double entryPrice = ((Number) fill.get("price")).doubleValue();
                 String side = String.valueOf(fill.get("side"));
                 openTradesCount++;
+                if ("BUY".equalsIgnoreCase(side)) {
+                    netBuyQty += qty;
+                } else if ("SELL".equalsIgnoreCase(side)) {
+                    netSellQty += qty;
+                }
                 if (currentPrice > 0.0) {
                     openPnL += ForexPnL.pnlUsd(
                         symbol,
@@ -335,7 +426,21 @@ public final class ControlSummaryService {
 
         metrics.openTradesCount = openTradesCount;
         metrics.openPnL = openPnL;
+        metrics.realizedPnL = realizedPnL;
         metrics.totalPnL = realizedPnL + openPnL;
+
+        double diff = netBuyQty - netSellQty;
+        if (diff > 0.0) {
+            metrics.netQuantity = diff;
+            metrics.netSide = "LONG";
+        } else if (diff < 0.0) {
+            metrics.netQuantity = -diff;
+            metrics.netSide = "SHORT";
+        } else {
+            metrics.netQuantity = 0.0;
+            metrics.netSide = "FLAT";
+        }
+
         return metrics;
     }
 }

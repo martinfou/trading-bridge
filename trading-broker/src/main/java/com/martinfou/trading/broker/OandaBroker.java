@@ -71,13 +71,13 @@ public final class OandaBroker implements Broker {
         OandaMarketOrderResult result;
 
         if (order.type() == Order.Type.MARKET) {
-            if (order.stopLoss() > 0 || order.takeProfit() > 0) {
-                result = client.placeOrder("MARKET", instrument, units, 0.0, order.stopLoss(), order.takeProfit(), order.id());
+            if (order.stopLoss() > 0 || order.takeProfit() > 0 || order.trailingStop() > 0) {
+                result = client.placeOrder("MARKET", instrument, units, 0.0, order.stopLoss(), order.takeProfit(), order.trailingStop(), order.guaranteed(), order.id());
             } else {
                 result = client.placeMarketOrder(instrument, units, order.id());
             }
         } else {
-            result = client.placeOrder(order.type().name(), instrument, units, order.price(), order.stopLoss(), order.takeProfit(), order.id());
+            result = client.placeOrder(order.type().name(), instrument, units, order.price(), order.stopLoss(), order.takeProfit(), order.trailingStop(), order.guaranteed(), order.id());
         }
 
         if (!result.success()) {
@@ -111,7 +111,8 @@ public final class OandaBroker implements Broker {
     public List<Position> getPositions() {
         List<Position> out = new ArrayList<>();
         for (OandaPositionSnapshot row : client.fetchOpenPositions()) {
-            out.add(new Position(row.instrument(), row.side(), row.units(), row.averagePrice(), java.time.Instant.EPOCH, row.clientTag()));
+            java.time.Instant entryTime = row.entryTime() != null ? row.entryTime() : java.time.Instant.EPOCH;
+            out.add(new Position(row.instrument(), row.side(), row.units(), row.averagePrice(), entryTime, row.clientTag()));
         }
         return List.copyOf(out);
     }

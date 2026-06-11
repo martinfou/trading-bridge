@@ -15,7 +15,9 @@ public record BrokerEvent(
     String side,
     Double quantity,
     Double price,
-    String message
+    String message,
+    Double stopLoss,
+    Double takeProfit
 ) {
 
     public static BrokerEvent submitted(Order order) {
@@ -27,32 +29,75 @@ public record BrokerEvent(
             order.side().name(),
             order.quantity(),
             order.price(),
-            null);
+            null,
+            order.stopLoss(),
+            order.takeProfit());
     }
 
     public static BrokerEvent fill(Order order, double fillPrice) {
+        return fill(order.id(), order.symbol(), order.side().name(), order.quantity(), fillPrice, order.stopLoss(), order.takeProfit());
+    }
+
+    public static BrokerEvent fill(String orderId, String symbol, String side, double quantity, double fillPrice, Double stopLoss, Double takeProfit) {
         return new BrokerEvent(
             BrokerEventType.FILL,
             Instant.now(),
-            order.id(),
-            order.symbol(),
-            order.side().name(),
-            order.quantity(),
+            orderId,
+            symbol,
+            side,
+            quantity,
             fillPrice,
-            null);
+            null,
+            stopLoss,
+            takeProfit);
     }
 
     public static BrokerEvent reject(Order order, String reason) {
+        return reject(order.id(), order.symbol(), order.side().name(), order.quantity(), order.price(), reason, order.stopLoss(), order.takeProfit());
+    }
+
+    public static BrokerEvent reject(String orderId, String symbol, String side, double quantity, double price, String reason, Double stopLoss, Double takeProfit) {
         return new BrokerEvent(
             BrokerEventType.REJECT,
             Instant.now(),
-            order.id(),
-            order.symbol(),
-            order.side().name(),
-            order.quantity(),
-            order.price(),
-            reason);
+            orderId,
+            symbol,
+            side,
+            quantity,
+            price,
+            reason,
+            stopLoss,
+            takeProfit);
     }
+
+    public static BrokerEvent partialClose(String symbol, String side, double quantity, double price) {
+        return new BrokerEvent(
+            BrokerEventType.PARTIAL_CLOSE,
+            Instant.now(),
+            null,
+            symbol,
+            side,
+            quantity,
+            price,
+            null,
+            null,
+            null);
+    }
+
+    public static BrokerEvent financing(String symbol, double amount) {
+        return new BrokerEvent(
+            BrokerEventType.FINANCING,
+            Instant.now(),
+            null,
+            symbol,
+            null,
+            amount, // We abuse quantity to store financing amount for now
+            null,
+            "Daily Financing",
+            null,
+            null);
+    }
+
 
     public Map<String, Object> toPayload() {
         Map<String, Object> map = new LinkedHashMap<>();
@@ -71,6 +116,12 @@ public record BrokerEvent(
         }
         if (message != null) {
             map.put("message", message);
+        }
+        if (stopLoss != null) {
+            map.put("stopLoss", stopLoss);
+        }
+        if (takeProfit != null) {
+            map.put("takeProfit", takeProfit);
         }
         return Map.copyOf(map);
     }

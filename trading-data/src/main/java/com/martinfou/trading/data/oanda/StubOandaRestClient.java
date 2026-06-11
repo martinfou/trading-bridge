@@ -11,7 +11,7 @@ public final class StubOandaRestClient implements OandaRestClient {
 
     private final List<OandaMarketOrderResult> scriptedResults = new CopyOnWriteArrayList<>();
     private final List<OandaPositionSnapshot> positions = new CopyOnWriteArrayList<>();
-    private OandaAccountSnapshot account = new OandaAccountSnapshot(100_000, 100_000, 0, "USD");
+    private OandaAccountSnapshot account = new OandaAccountSnapshot(100_000, 100_000, 0, "USD", 100_000, 0, 0);
     private long nextOrderId = 1;
 
     public StubOandaRestClient scriptFailure(int httpStatus, String message) {
@@ -37,12 +37,13 @@ public final class StubOandaRestClient implements OandaRestClient {
             units >= 0 ? Order.Side.BUY : Order.Side.SELL,
             Math.abs(units),
             price,
-            clientTag));
+            clientTag,
+            null));
         return OandaMarketOrderResult.success(orderId, tradeId, price);
     }
 
     @Override
-    public OandaMarketOrderResult placeOrder(String type, String instrument, long units, double price, double stopLoss, double takeProfit, String clientTag) {
+    public OandaMarketOrderResult placeOrder(String type, String instrument, long units, double price, double stopLoss, double takeProfit, double trailingStop, boolean guaranteed, String clientTag) {
         if (!scriptedResults.isEmpty()) {
             return scriptedResults.removeFirst();
         }
@@ -55,7 +56,8 @@ public final class StubOandaRestClient implements OandaRestClient {
                 units >= 0 ? Order.Side.BUY : Order.Side.SELL,
                 Math.abs(units),
                 fillPrice,
-                clientTag));
+                clientTag,
+                null));
         }
         return new OandaMarketOrderResult(201, orderId, tradeId, type.equalsIgnoreCase("MARKET") ? fillPrice : null, null);
     }
@@ -66,17 +68,27 @@ public final class StubOandaRestClient implements OandaRestClient {
     }
 
     @Override
+    public boolean closeTrade(String tradeId, String units) {
+        return true;
+    }
+
+    @Override
     public List<java.util.Map<String, Object>> fetchTransactions(int limit) {
         return List.of();
     }
 
     @Override
     public OandaAccountSnapshot fetchAccountSummary() {
-        return account;
+        return new OandaAccountSnapshot(100_000, 100_000, 0, "USD", 100_000, 0, 0);
     }
 
     @Override
     public List<OandaPositionSnapshot> fetchOpenPositions() {
-        return List.copyOf(positions);
+        return new ArrayList<>(positions);
+    }
+
+    @Override
+    public java.util.Map<String, Object> fetchOrderBook(String instrument) {
+        return java.util.Map.of("instrument", instrument, "orderBook", java.util.Map.of());
     }
 }

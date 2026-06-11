@@ -55,16 +55,21 @@ public final class ControlPlaneMain {
         String dbPath = config.dbPath().toString();
         try (java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:sqlite:" + dbPath)) {
             String sql = """
-                SELECT DISTINCT run_id, json_line 
+                SELECT run_id, json_line 
                 FROM events 
-                WHERE json_extract(json_line, '$.type') = 'RUN_STARTED' 
-                  AND (json_extract(json_line, '$.mode') = 'PAPER' OR json_extract(json_line, '$.mode') = 'LIVE')
-                  AND run_id NOT IN (
-                      SELECT run_id 
-                      FROM events 
-                      WHERE json_extract(json_line, '$.type') = 'RUN_ENDED' 
-                         OR json_extract(json_line, '$.type') = 'ERROR'
-                  )
+                WHERE sequence IN (
+                    SELECT MIN(sequence) 
+                    FROM events 
+                    WHERE json_extract(json_line, '$.type') = 'RUN_STARTED' 
+                    GROUP BY run_id
+                )
+                AND (json_extract(json_line, '$.mode') = 'PAPER' OR json_extract(json_line, '$.mode') = 'LIVE')
+                AND run_id NOT IN (
+                    SELECT run_id 
+                    FROM events 
+                    WHERE json_extract(json_line, '$.type') = 'RUN_ENDED' 
+                       OR json_extract(json_line, '$.type') = 'ERROR'
+                )
                 """;
             try (java.sql.PreparedStatement stmt = conn.prepareStatement(sql);
                  java.sql.ResultSet rs = stmt.executeQuery()) {

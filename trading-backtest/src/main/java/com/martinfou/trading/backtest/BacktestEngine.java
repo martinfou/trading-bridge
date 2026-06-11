@@ -346,7 +346,7 @@ public class BacktestEngine {
         else if (pnl < 0) losingTrades++;
 
         trades.add(new Trade(order.symbol(), opposite.side(), opposite.entryPrice(), exitPrice,
-            qty, opposite.entryTime(), timestamp));
+            qty, opposite.entryTime(), timestamp, usdJpyRate, opposite.stopLoss(), opposite.takeProfit()));
 
         opposite.reduceQuantity(qty);
 
@@ -449,7 +449,7 @@ public class BacktestEngine {
         else if (pnl < 0) losingTrades++;
 
         trades.add(new Trade(pos.symbol(), pos.side(), pos.entryPrice(), exitPrice,
-            pos.quantity(), pos.entryTime(), timestamp));
+            pos.quantity(), pos.entryTime(), timestamp, usdJpyRate, pos.stopLoss(), pos.takeProfit()));
 
         // Remove from the symbol's position list
         List<Position> posList = openPositionsBySymbol.get(pos.symbol());

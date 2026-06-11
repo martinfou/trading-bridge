@@ -16,6 +16,8 @@ public class Order {
     private double price;
     private double stopLoss;
     private double takeProfit;
+    private double trailingStop;
+    private boolean guaranteed;
     private boolean closeOnly;
     private Status status = Status.PENDING;
     private Instant createdAt = TimeConventions.now();
@@ -37,6 +39,8 @@ public class Order {
     public double price() { return price; }
     public double stopLoss() { return stopLoss; }
     public double takeProfit() { return takeProfit; }
+    public double trailingStop() { return trailingStop; }
+    public boolean guaranteed() { return guaranteed; }
     public boolean isCloseOnly() { return closeOnly; }
     public Status status() { return status; }
     public Instant createdAt() { return createdAt; }
@@ -44,6 +48,8 @@ public class Order {
 
     public Order withStopLoss(double sl) { this.stopLoss = sl; return this; }
     public Order withTakeProfit(double tp) { this.takeProfit = tp; return this; }
+    public Order withTrailingStop(double ts) { this.trailingStop = ts; return this; }
+    public Order withGuaranteed(boolean g) { this.guaranteed = g; return this; }
 
     /** Updates quantity in place so strategy and engine share the same order instance. */
     public Order rescaleQuantity(double quantity) {

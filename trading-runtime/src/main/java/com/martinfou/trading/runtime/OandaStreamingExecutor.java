@@ -579,7 +579,7 @@ public final class OandaStreamingExecutor implements AutoCloseable {
     private void persistBrokerEvent(BrokerEvent brokerEvent) {
         RunEventType type = switch (brokerEvent.type()) {
             case ORDER_SUBMITTED -> RunEventType.ORDER_SUBMITTED;
-            case FILL -> RunEventType.FILL;
+            case FILL, PARTIAL_CLOSE, FINANCING -> RunEventType.FILL;
             case REJECT -> RunEventType.REJECT;
         };
         RunEvent event = new RunEvent(

@@ -48,6 +48,8 @@ public final class BacktestResultPayload {
                 tm.put("entryTime", t.entryTime().toString());
                 tm.put("exitTime", t.exitTime().toString());
                 tm.put("pnl", t.pnl());
+                tm.put("stopLoss", t.stopLoss());
+                tm.put("takeProfit", t.takeProfit());
                 serializedTrades.add(tm);
             }
         }

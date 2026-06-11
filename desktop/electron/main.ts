@@ -77,6 +77,8 @@ function startJavaProcess(cfg: JvmConfig): void {
   console.log('[main] Starting JVM:', cfg.javaBin, '-jar', cfg.jarPath)
   javaProcess = spawn(cfg.javaBin, [
     '--enable-native-access=ALL-UNNAMED',
+    '-Dorg.slf4j.simpleLogger.showDateTime=true',
+    '-Dorg.slf4j.simpleLogger.dateTimeFormat=yyyy-MM-dd HH:mm:ss.SSS',
     '-jar', cfg.jarPath,
   ], {
     cwd: cfg.cwd,

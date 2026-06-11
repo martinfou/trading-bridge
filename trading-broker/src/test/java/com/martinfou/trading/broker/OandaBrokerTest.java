@@ -56,7 +56,7 @@ class OandaBrokerTest {
         }
 
         @Override
-        public OandaMarketOrderResult placeOrder(String type, String instrument, long units, double price, double stopLoss, double takeProfit, String clientTag) {
+        public OandaMarketOrderResult placeOrder(String type, String instrument, long units, double price, double stopLoss, double takeProfit, double trailingStop, boolean guaranteed, String clientTag) {
             lastInstrument = instrument;
             lastUnits = units;
             return OandaMarketOrderResult.success("1", "T1", price > 0 ? price : 1.1001);
@@ -68,18 +68,28 @@ class OandaBrokerTest {
         }
 
         @Override
+        public boolean closeTrade(String tradeId, String units) {
+            return true;
+        }
+
+        @Override
         public java.util.List<java.util.Map<String, Object>> fetchTransactions(int limit) {
             return java.util.List.of();
         }
 
         @Override
         public OandaAccountSnapshot fetchAccountSummary() {
-            return new OandaAccountSnapshot(100_000, 100_000, 0, "USD");
+            return new OandaAccountSnapshot(100_000, 100_000, 0, "USD", 100_000, 0, 0);
         }
 
         @Override
         public java.util.List<OandaPositionSnapshot> fetchOpenPositions() {
             return java.util.List.of();
+        }
+
+        @Override
+        public java.util.Map<String, Object> fetchOrderBook(String instrument) {
+            return java.util.Map.of("instrument", instrument, "orderBook", java.util.Map.of());
         }
     }
 }

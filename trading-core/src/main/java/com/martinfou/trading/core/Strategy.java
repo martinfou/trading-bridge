@@ -9,6 +9,10 @@ public interface Strategy {
     List<Order> getPendingOrders();
     void reset();
 
+    default void onSentiment(java.util.Map<String, Object> sentiment) {
+        // Default no-op for backward compatibility
+    }
+
     @SuppressWarnings("unchecked")
     default List<Bar> getHistory() {
         try {

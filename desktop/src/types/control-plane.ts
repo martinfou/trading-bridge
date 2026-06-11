@@ -78,6 +78,8 @@ export interface Trade {
   entryTime: string
   exitTime: string
   pnl: number
+  stopLoss?: number
+  takeProfit?: number
 }
 
 export interface Bar {

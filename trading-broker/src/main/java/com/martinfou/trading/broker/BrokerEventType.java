@@ -4,5 +4,7 @@ package com.martinfou.trading.broker;
 public enum BrokerEventType {
     ORDER_SUBMITTED,
     FILL,
+    PARTIAL_CLOSE,
+    FINANCING,
     REJECT
 }
