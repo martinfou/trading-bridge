@@ -51,8 +51,16 @@ public class OandaPriceClient {
     }
 
     public List<Bar> getCandles(String instrument, String granularity, int count) throws Exception {
-        var json = get("/accounts/" + accountId + "/instruments/" + instrument
-            + "/candles?granularity=" + granularity + "&count=" + count);
+        return getCandlesBefore(instrument, granularity, count, null);
+    }
+
+    public List<Bar> getCandlesBefore(String instrument, String granularity, int count, Instant to) throws Exception {
+        String url = "/accounts/" + accountId + "/instruments/" + instrument
+            + "/candles?granularity=" + granularity + "&count=" + count;
+        if (to != null) {
+            url += "&to=" + java.net.URLEncoder.encode(to.toString(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        var json = get(url);
         var candles = json.get("candles");
         List<Bar> bars = new ArrayList<>();
 

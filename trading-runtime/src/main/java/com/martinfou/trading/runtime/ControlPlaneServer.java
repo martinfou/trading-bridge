@@ -730,9 +730,11 @@ public final class ControlPlaneServer implements AutoCloseable {
                 RunRecord record = runManager.getRun(runId)
                     .orElseThrow(() -> new NotFoundException("Run not found: " + runId));
                 RunConfigSnapshot config = RunConfigSnapshot.fromRecord(record);
+                Integer limit = ctx.queryParam("limit") != null ? Integer.parseInt(ctx.queryParam("limit")) : null;
+                Instant to = ctx.queryParam("to") != null ? Instant.parse(ctx.queryParam("to")) : null;
                 List<com.martinfou.trading.core.Bar> bars;
                 try {
-                    bars = RunManager.loadBars(config);
+                    bars = RunManager.loadBars(config, limit, to);
                 } catch (IOException e) {
                     throw new BadRequestException("Failed to load bars: " + e.getMessage());
                 }

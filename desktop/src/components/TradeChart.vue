@@ -10,6 +10,10 @@ const props = defineProps<{
   height?: number
 }>()
 
+const emit = defineEmits<{
+  (e: 'loadMoreBars', oldestTime: string): void
+}>()
+
 const container = ref<HTMLDivElement>()
 const timezone = ref<'local' | 'utc'>('local')
 const selectedLineOption = ref<string>('auto')
@@ -249,6 +253,14 @@ function render() {
         precision: 5,
         minMove: 0.00001,
       },
+    })
+
+    chart.timeScale().subscribeVisibleLogicalRangeChange(logicalRange => {
+      if (logicalRange !== null && logicalRange.from < 50) {
+        if (props.bars.length > 0) {
+          emit('loadMoreBars', props.bars[0].time)
+        }
+      }
     })
   }
 

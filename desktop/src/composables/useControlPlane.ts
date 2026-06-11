@@ -171,8 +171,12 @@ export function useControlPlane() {
     return data.equityCurve
   }
 
-  async function getBars(runId: string): Promise<Bar[]> {
-    const data = await apiGet<{ bars: Bar[] }>(`/api/runs/${runId}/bars`, controlPlaneUrl.value)
+  async function getBars(runId: string, limit?: number, to?: string): Promise<Bar[]> {
+    const params = new URLSearchParams()
+    if (limit) params.append('limit', limit.toString())
+    if (to) params.append('to', to)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    const data = await apiGet<{ bars: Bar[] }>(`/api/runs/${runId}/bars${query}`, controlPlaneUrl.value)
     return data.bars
   }
 
