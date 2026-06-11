@@ -191,6 +191,10 @@ public final class BrokerAccountRegistry {
         return accountsById.get(resolveId(id));
     }
 
+    public List<AccountEntry> getRawAccounts() {
+        return List.copyOf(accountsById.values());
+    }
+
     public List<BrokerAccount> listMasked() {
         return accountsById.values().stream()
             .map(this::toMaskedView)

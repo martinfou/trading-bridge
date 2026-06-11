@@ -96,16 +96,16 @@ function next() { if (canNext()) page.value++ }
           <th class="sortable" @click="toggleSort('side')">
             Side {{ sortColumn === 'side' ? (sortDir === 'asc' ? '▲' : '▼') : '' }}
           </th>
-          <th class="sortable" @click="toggleSort('entryPrice')">
+          <th class="sortable header-num" @click="toggleSort('entryPrice')">
             Entry Price {{ sortColumn === 'entryPrice' ? (sortDir === 'asc' ? '▲' : '▼') : '' }}
           </th>
-          <th class="sortable" @click="toggleSort('exitPrice')">
+          <th class="sortable header-num" @click="toggleSort('exitPrice')">
             Exit Price {{ sortColumn === 'exitPrice' ? (sortDir === 'asc' ? '▲' : '▼') : '' }}
           </th>
-          <th class="sortable" @click="toggleSort('quantity')">
+          <th class="sortable header-num" @click="toggleSort('quantity')">
             Qty {{ sortColumn === 'quantity' ? (sortDir === 'asc' ? '▲' : '▼') : '' }}
           </th>
-          <th class="sortable" @click="toggleSort('pnl')">
+          <th class="sortable header-num" @click="toggleSort('pnl')">
             PnL {{ sortColumn === 'pnl' ? (sortDir === 'asc' ? '▲' : '▼') : '' }}
           </th>
         </tr>
@@ -189,6 +189,11 @@ th {
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
   user-select: none;
+}
+
+th.header-num {
+  text-align: right;
+  padding-right: 0.75rem;
 }
 
 th.sortable {

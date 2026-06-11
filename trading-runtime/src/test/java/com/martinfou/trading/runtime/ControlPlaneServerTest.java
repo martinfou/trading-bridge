@@ -366,6 +366,13 @@ class ControlPlaneServerTest {
     }
 
     @Test
+    void brokerAccounts_balances_returnsBalances() throws Exception {
+        HttpResponse<String> response = get("/api/broker-accounts/balances");
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("\"balances\""));
+    }
+
+    @Test
     void testBrokerAccount_missingFields_returns400() throws Exception {
         HttpResponse<String> response = post("/api/broker-accounts/test", "{\"provider\":\"OANDA\"}");
         assertEquals(400, response.statusCode());

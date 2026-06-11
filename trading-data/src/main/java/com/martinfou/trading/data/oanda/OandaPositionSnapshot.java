@@ -8,5 +8,6 @@ public record OandaPositionSnapshot(
     Order.Side side,
     double units,
     double averagePrice,
-    String clientTag
+    String clientTag,
+    java.time.Instant entryTime
 ) {}

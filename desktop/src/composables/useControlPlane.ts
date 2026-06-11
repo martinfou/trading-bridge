@@ -176,6 +176,10 @@ export function useControlPlane() {
     return data.bars
   }
 
+  const getSentiment = async (instrument: string): Promise<any> => {
+    return apiGet<any>(`/api/sentiment/${instrument}`, controlPlaneUrl.value)
+  }
+
   async function listRuns(): Promise<RunSummary[]> {
     const data = await apiGet<{ runs: RunSummary[] }>('/api/runs', controlPlaneUrl.value)
     return data.runs
@@ -196,6 +200,11 @@ export function useControlPlane() {
   async function getBrokerAccounts(): Promise<BrokerAccount[]> {
     const data = await apiGet<{ accounts: BrokerAccount[] }>('/api/broker-accounts', controlPlaneUrl.value)
     return data.accounts
+  }
+
+  async function getBrokerBalances(): Promise<any[]> {
+    const data = await apiGet<{ balances: any[] }>('/api/broker-accounts/balances', controlPlaneUrl.value)
+    return data.balances
   }
 
   async function promoteStrategy(
@@ -345,6 +354,7 @@ export function useControlPlane() {
     getControlSummary,
     killStrategy,
     getBrokerAccounts,
+    getBrokerBalances,
     saveBrokerAccounts,
     testBrokerAccount,
     getMonteCarlo,
@@ -360,6 +370,7 @@ export function useControlPlane() {
     getPareto,
     deleteBacktest,
     deleteAllBacktests,
+    getSentiment,
     error,
     loading,
     controlPlaneUrl,

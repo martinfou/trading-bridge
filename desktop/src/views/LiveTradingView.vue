@@ -2,20 +2,38 @@
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useControlPlane } from '../composables/useControlPlane'
+import { useRunWebSocket } from '../composables/useRunWebSocket'
 import TradeChart from '../components/TradeChart.vue'
 import TradeTable from '../components/TradeTable.vue'
 import KpiStrip from '../components/KpiStrip.vue'
 import EquityChart from '../components/EquityChart.vue'
+import OrderBook from '../components/OrderBook.vue'
 import type { Bar, Trade } from '@/types/control-plane'
 
-const { getControlSummary, killStrategy, getBars, getTrades, getEquityCurve, getBrokerAccounts, saveBrokerAccounts, testBrokerAccount } = useControlPlane()
+const { getControlSummary, killStrategy, getBars, getTrades, getEquityCurve, getBrokerAccounts, getBrokerBalances, saveBrokerAccounts, testBrokerAccount } = useControlPlane()
 const route = useRoute()
 
 const summary = ref<any>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
 const selectedRunId = ref<string | null>(null)
-const activeTab = ref<'overview' | 'chart' | 'trades' | 'positions'>('overview')
+const activeTab = ref<'overview' | 'chart' | 'trades' | 'positions' | 'sentiment'>('chart')
+const tradeChartRef = ref<any>(null)
+
+const { connect, disconnect, lastEvent } = useRunWebSocket()
+
+watch(lastEvent, (event) => {
+  if (!event) return
+  if (event.type === 'BAR' && event.payload && event.payload.bar) {
+    if (tradeChartRef.value) {
+      tradeChartRef.value.updateBar(event.payload.bar)
+    }
+  }
+  if (event.type === 'FILL' || event.type === 'ORDER_SUBMITTED') {
+    updateInspectTelemetry()
+    fetchSummary()
+  }
+})
 
 // Telemetry polling timer
 let pollTimer: any = null
@@ -28,6 +46,32 @@ const savingAccounts = ref(false)
 const accountsError = ref<string | null>(null)
 const accountsSuccess = ref<string | null>(null)
 const editingAccount = ref<any | null>(null)
+
+// Broker balances state
+const brokerBalances = ref<any[]>([])
+
+const totalBrokerBalance = computed(() => {
+  if (!brokerBalances.value || brokerBalances.value.length === 0) {
+    return 0
+  }
+  return brokerBalances.value.reduce((sum, b) => sum + (b.balance || 0), 0)
+})
+
+const brokerCurrency = computed(() => {
+  if (!brokerBalances.value || brokerBalances.value.length === 0) {
+    return ''
+  }
+  const activeBalance = brokerBalances.value.find(b => b.currency)
+  return activeBalance ? activeBalance.currency : ''
+})
+
+async function fetchBalances() {
+  try {
+    brokerBalances.value = await getBrokerBalances()
+  } catch (err) {
+    console.error('Failed to fetch broker balances:', err)
+  }
+}
 
 // Connection testing state
 const testingConnection = ref(false)
@@ -72,11 +116,16 @@ async function testAccountConnection() {
   }
 }
 
+
 async function fetchSummary() {
   try {
     const data = await getControlSummary()
     summary.value = data
     error.value = null
+    if (selectedRunId.value) {
+      await updateInspectTelemetry()
+    }
+    await fetchBalances()
   } catch (e: any) {
     error.value = e.message
   } finally {
@@ -262,25 +311,43 @@ const inspectEquity = ref<number[]>([])
 const loadingInspect = ref(false)
 const inspectError = ref<string | null>(null)
 
-async function inspectRun(runId: string) {
+async function selectRun(runId: string) {
   selectedRunId.value = runId
-  loadingInspect.value = true
-  inspectError.value = null
-  activeTab.value = 'overview'
-  
+  disconnect()
+  connect(runId)
+  updateInspectTelemetry()
+}
+
+async function updateInspectTelemetry(background = false) {
+  if (!selectedRunId.value) return
+  const runId = selectedRunId.value
+
+  if (!background) {
+    loadingInspect.value = true
+    inspectError.value = null
+  }
+
   try {
     const [barsData, tradesData, equityData] = await Promise.all([
       getBars(runId).catch(() => []),
       getTrades(runId).catch(() => []),
       getEquityCurve(runId).catch(() => [])
     ])
-    inspectBars.value = barsData
-    inspectTrades.value = tradesData
-    inspectEquity.value = equityData
+    if (selectedRunId.value === runId) {
+      inspectBars.value = barsData
+      inspectTrades.value = tradesData
+      inspectEquity.value = equityData
+    }
   } catch (e: any) {
-    inspectError.value = 'Failed to load strategy telemetry details: ' + e.message
+    if (!background) {
+      inspectError.value = 'Failed to load strategy telemetry details: ' + e.message
+    } else {
+      console.error('Failed to background-refresh strategy inspection details:', e)
+    }
   } finally {
-    loadingInspect.value = false
+    if (!background) {
+      loadingInspect.value = false
+    }
   }
 }
 
@@ -305,11 +372,38 @@ function formatSeconds(seconds?: number): string {
   return `${h}:${m}:${s}`
 }
 
+function formatPosition(netSide: string, netQuantity?: number): string {
+  if (!netSide || netSide === 'FLAT' || !netQuantity) return 'FLAT'
+  const qty = netQuantity >= 1000 ? `${(netQuantity / 1000).toFixed(0)}k` : netQuantity.toString()
+  return `${netSide} ${qty}`
+}
+
+function formatPositionAge(entryTimeStr?: string): string {
+  if (!entryTimeStr) return '—'
+  try {
+    const entry = new Date(entryTimeStr).getTime()
+    if (entry < 86400000) return '—'
+    const diffMs = Date.now() - entry
+    if (diffMs < 0) return 'Just now'
+    const diffSec = Math.floor(diffMs / 1000)
+    if (diffSec < 60) return `${diffSec}s`
+    const diffMin = Math.floor(diffSec / 60)
+    if (diffMin < 60) return `${diffMin}m`
+    const diffH = Math.floor(diffMin / 60)
+    if (diffH < 24) return `${diffH}h ${diffMin % 60}m`
+    const diffD = Math.floor(diffH / 24)
+    return `${diffD}d ${diffH % 24}h`
+  } catch {
+    return '—'
+  }
+}
+
+
 onMounted(async () => {
   await fetchSummary()
   const runId = route.query.runId
   if (typeof runId === 'string') {
-    inspectRun(runId)
+    selectRun(runId)
   }
   if (route.query.setupBroker === 'true') {
     showAccountsConfig.value = true
@@ -323,7 +417,7 @@ onMounted(async () => {
 
 watch(() => route.query.runId, (newRunId) => {
   if (typeof newRunId === 'string') {
-    inspectRun(newRunId)
+    selectRun(newRunId)
   }
 })
 
@@ -339,6 +433,7 @@ watch(() => route.query.setupBroker, (newSetupBroker) => {
 
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
+  disconnect()
 })
 </script>
 
@@ -498,6 +593,12 @@ onUnmounted(() => {
         <span class="stat-value">${{ stats.totalAllocated.toLocaleString() }}</span>
       </div>
       <div class="stat-card">
+        <span class="stat-label">Broker Balance</span>
+        <span class="stat-value text-accent">
+          {{ totalBrokerBalance > 0 ? '$' + totalBrokerBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + (brokerCurrency ? ' ' + brokerCurrency : '') : '—' }}
+        </span>
+      </div>
+      <div class="stat-card">
         <span class="stat-label">Stale Heartbeats</span>
         <span :class="['stat-value', stats.staleCount > 0 ? 'text-danger' : '']">{{ stats.staleCount }}</span>
       </div>
@@ -551,11 +652,19 @@ onUnmounted(() => {
             <span class="status-val cooldown">{{ formatSeconds(run.cooldownSecondsRemaining) }}</span>
           </div>
           <div class="metric-row">
-            <span>Open Trades</span>
-            <span>{{ run.openTrades ?? 0 }}</span>
+            <span>Position</span>
+            <span :class="['status-val', run.netSide ? run.netSide.toLowerCase() : 'flat']">
+              {{ formatPosition(run.netSide, run.netQuantity) }}
+            </span>
           </div>
           <div class="metric-row">
-            <span>Open P&L</span>
+            <span>Realized P&L</span>
+            <span :class="['metric-val', (run.realizedPnL ?? 0) > 0 ? 'text-success' : (run.realizedPnL ?? 0) < 0 ? 'text-danger' : '']">
+              ${{ (run.realizedPnL ?? 0).toFixed(2) }}
+            </span>
+          </div>
+          <div class="metric-row">
+            <span>Floating P&L</span>
             <span :class="['metric-val', (run.openPnL ?? 0) > 0 ? 'text-success' : (run.openPnL ?? 0) < 0 ? 'text-danger' : '']">
               ${{ (run.openPnL ?? 0).toFixed(2) }}
             </span>
@@ -569,7 +678,7 @@ onUnmounted(() => {
         </div>
 
         <div class="card-footer">
-          <button class="btn btn-secondary btn-sm flex-grow" @click="inspectRun(run.runId)">
+          <button class="btn btn-secondary btn-sm flex-grow" @click="selectRun(run.runId)">
             Inspect
           </button>
           <button class="btn btn-danger btn-sm" @click="triggerKill(run)">
@@ -603,6 +712,9 @@ onUnmounted(() => {
         <button :class="['tab', { active: activeTab === 'trades' }]" @click="activeTab = 'trades'">
           Trades History
           <span class="tab-count">{{ inspectTrades.length }}</span>
+        </button>
+        <button :class="['tab', { active: activeTab === 'sentiment' }]" @click="activeTab = 'sentiment'">
+          Market Sentiment
         </button>
       </div>
 
@@ -647,36 +759,60 @@ onUnmounted(() => {
         <!-- Open Positions tab -->
         <div v-if="activeTab === 'positions'" class="tab-panel">
           <div v-if="!selectedRun.positions || selectedRun.positions.length === 0" class="empty-panel-state">
-            <p>No active floating positions currently held by this strategy.</p>
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 text-gray-500 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+            <p class="text-lg font-medium text-gray-300">No Active Positions</p>
+            <p class="text-sm text-gray-500 mt-2">This strategy currently has no floating positions in the market.</p>
           </div>
-          <table v-else class="live-positions-table">
-            <thead>
-              <tr>
-                <th>Symbol</th>
-                <th>Side</th>
-                <th>Quantity</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(p, i) in selectedRun.positions" :key="i">
-                <td>{{ p.symbol }}</td>
-                <td>
-                  <span :class="['side-badge', p.side.toLowerCase()]">{{ p.side }}</span>
-                </td>
-                <td class="num">{{ p.quantity }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <div v-else class="glass-table-container">
+            <table class="live-positions-table">
+              <thead>
+                <tr>
+                  <th class="text-left pl-6">Instrument</th>
+                  <th class="text-left">Side</th>
+                  <th class="num">Quantity</th>
+                  <th class="num">Entry Price</th>
+                  <th class="num">Stop Loss</th>
+                  <th class="num">Take Profit</th>
+                  <th class="text-right pr-6">Duration</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(p, i) in selectedRun.positions" :key="i" class="position-row">
+                  <td class="pl-6">
+                    <div class="symbol-badge">
+                      <span class="font-bold text-gray-100 tracking-wider">{{ p.symbol }}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <span :class="['modern-badge', p.side.toLowerCase()]">
+                      <span class="dot"></span>
+                      {{ p.side }}
+                    </span>
+                  </td>
+                  <td class="num font-mono text-gray-200">{{ p.quantity?.toLocaleString() }}</td>
+                  <td class="num font-mono text-yellow-400 font-medium">{{ p.entryPrice ? p.entryPrice.toFixed(5) : '—' }}</td>
+                  <td class="num font-mono text-red-400">{{ p.stopLoss ? p.stopLoss.toFixed(5) : '—' }}</td>
+                  <td class="num font-mono text-green-400">{{ p.takeProfit ? p.takeProfit.toFixed(5) : '—' }}</td>
+                  <td class="text-right pr-6 text-gray-400 font-mono text-sm">{{ formatPositionAge(p.entryTime) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <!-- Price Chart tab -->
         <div v-if="activeTab === 'chart'" class="tab-panel">
-          <TradeChart :bars="inspectBars" :trades="inspectTrades" :height="400" />
+          <TradeChart ref="tradeChartRef" :bars="inspectBars" :trades="inspectTrades" :positions="selectedRun?.positions" :height="400" />
         </div>
 
         <!-- Trades History tab -->
         <div v-if="activeTab === 'trades'" class="tab-panel">
           <TradeTable :trades="inspectTrades" />
+        </div>
+
+        <!-- Sentiment / Order Book tab -->
+        <div v-if="activeTab === 'sentiment'" class="tab-panel">
+          <OrderBook :instrument="selectedRun.symbol" />
         </div>
       </div>
     </div>
@@ -709,7 +845,7 @@ onUnmounted(() => {
 
 .stats-strip {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 1rem;
 }
 
@@ -829,6 +965,9 @@ onUnmounted(() => {
 .status-val.suspended_daily { color: #f97316; }
 .status-val.suspended_weekly { color: #ef4444; }
 .status-val.cooldown { color: #3b82f6; }
+.status-val.long { color: var(--success); }
+.status-val.short { color: var(--danger); }
+.status-val.flat { color: var(--text-secondary); }
 
 .card-footer {
   margin-top: auto;
@@ -983,8 +1122,13 @@ onUnmounted(() => {
   font-size: 0.8rem;
 }
 
+.live-positions-table th.num {
+  text-align: right;
+}
+
 .live-positions-table td.num {
   font-family: monospace;
+  text-align: right;
 }
 
 .side-badge {
@@ -1216,5 +1360,76 @@ onUnmounted(() => {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* Glass UI Elements */
+.glass-table-container {
+  background: rgba(17, 19, 23, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.position-row {
+  transition: background-color 0.2s ease;
+}
+
+.position-row:hover {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+.symbol-badge {
+  display: inline-flex;
+  align-items: center;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(99, 102, 241, 0.15) 100%);
+  padding: 0.35rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.modern-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.modern-badge .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.modern-badge.buy {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10B981;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.modern-badge.buy .dot {
+  background-color: #10B981;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.8);
+}
+
+.modern-badge.sell {
+  background: rgba(239, 68, 68, 0.1);
+  color: #EF4444;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.modern-badge.sell .dot {
+  background-color: #EF4444;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.8);
+}
+
+.live-positions-table th.num, .live-positions-table td.num {
+  text-align: right;
 }
 </style>

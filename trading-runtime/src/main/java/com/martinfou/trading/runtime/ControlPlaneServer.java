@@ -201,6 +201,18 @@ public final class ControlPlaneServer implements AutoCloseable {
                 "status", "ok",
                 "version", VERSION,
                 "dataCatalog", true)))
+            .get("/api/sentiment/{instrument}", ctx -> {
+                String instrument = ctx.pathParam("instrument");
+                var credsOpt = com.martinfou.trading.broker.BrokerCredentials.oandaFromEnvironment();
+                if (credsOpt.isEmpty()) {
+                    ctx.status(500).result("OANDA credentials not configured");
+                    return;
+                }
+                var creds = credsOpt.get();
+                var restClient = new com.martinfou.trading.data.oanda.HttpOandaRestClient(creds.apiToken(), creds.accountId(), creds.restUrl());
+                var service = new com.martinfou.trading.data.oanda.OandaSentimentService(restClient);
+                ctx.json(service.getOrderBook(instrument));
+            })
             .get("/api/sq-bridge/status", ctx -> ctx.json(sqBridgeService.status()))
             .post("/api/sq-bridge/process-inbox", ctx -> {
                 SqBridgeService.ProcessInboxResponse response = sqBridgeService.processInboxAsync();
@@ -256,6 +268,29 @@ public final class ControlPlaneServer implements AutoCloseable {
             .get("/api/control/summary", ctx -> ctx.json(summaryService.buildSummary()))
             .get("/api/broker-accounts", ctx -> ctx.json(Map.of(
                 "accounts", runManager.brokerAccountRegistry().listMasked())))
+            .get("/api/broker-accounts/balances", ctx -> {
+                java.util.List<Map<String, Object>> balances = new java.util.ArrayList<>();
+                for (BrokerAccountRegistry.AccountEntry entry : runManager.brokerAccountRegistry().getRawAccounts()) {
+                    if (runManager.brokerAccountRegistry().credentialsConfigured(entry.id())) {
+                        try (com.martinfou.trading.broker.Broker broker = runManager.brokerAccountRegistry().broker(entry.id()).orElse(null)) {
+                            if (broker != null) {
+                                broker.connect();
+                                com.martinfou.trading.broker.AccountState state = broker.getAccountState();
+                                balances.add(Map.of(
+                                    "id", entry.id(),
+                                    "provider", entry.provider(),
+                                    "balance", state.balance(),
+                                    "currency", state.currency(),
+                                    "equity", state.equity()
+                                ));
+                            }
+                        } catch (Exception e) {
+                            // ignore and skip
+                        }
+                    }
+                }
+                ctx.json(Map.of("balances", balances));
+            })
             .post("/api/broker-accounts", ctx -> {
                 try {
                     BrokerAccountRegistry.ConfigFile config = ctx.bodyAsClass(BrokerAccountRegistry.ConfigFile.class);
@@ -841,15 +876,27 @@ public final class ControlPlaneServer implements AutoCloseable {
                                     }
                                 }
                             }
+                            var journalPositions = JournalPositions.fromFills(runManager.eventStore().replayAll(record.runId()));
                             for (var pos : broker.getPositions()) {
                                 if (pos.symbol().equalsIgnoreCase(record.symbol()) || pos.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(record.symbol().replace("/", "_").replace("-", "_"))) {
+                                    java.time.Instant resolvedEntryTime = pos.entryTime();
+                                    if (resolvedEntryTime == null || resolvedEntryTime.equals(java.time.Instant.EPOCH)) {
+                                        String journalKey = pos.symbol() + ":" + pos.side().name();
+                                        var jp = journalPositions.get(journalKey);
+                                        if (jp != null && jp.entryTime() != null) {
+                                            resolvedEntryTime = jp.entryTime();
+                                        }
+                                    }
                                     if (pos.clientTag() != null && !pos.clientTag().isBlank()) {
                                         if (runOrderIds.contains(pos.clientTag())) {
                                             positions.add(Map.of(
                                                 "symbol", pos.symbol(),
                                                 "side", pos.side().name(),
                                                 "quantity", pos.quantity(),
-                                                "entryTime", pos.entryTime() != null ? pos.entryTime().toString() : ""
+                                                "entryTime", resolvedEntryTime != null ? resolvedEntryTime.toString() : "",
+                                                "entryPrice", pos.entryPrice(),
+                                                "stopLoss", pos.stopLoss(),
+                                                "takeProfit", pos.takeProfit()
                                             ));
                                         }
                                     } else {
@@ -857,7 +904,10 @@ public final class ControlPlaneServer implements AutoCloseable {
                                             "symbol", pos.symbol(),
                                             "side", pos.side().name(),
                                             "quantity", pos.quantity(),
-                                            "entryTime", pos.entryTime() != null ? pos.entryTime().toString() : ""
+                                            "entryTime", resolvedEntryTime != null ? resolvedEntryTime.toString() : "",
+                                            "entryPrice", pos.entryPrice(),
+                                            "stopLoss", pos.stopLoss(),
+                                            "takeProfit", pos.takeProfit()
                                         ));
                                     }
                                 }
@@ -898,6 +948,8 @@ public final class ControlPlaneServer implements AutoCloseable {
             String side = String.valueOf(payload.get("side"));
             double qty = ((Number) payload.get("quantity")).doubleValue();
             double price = ((Number) payload.get("price")).doubleValue();
+            double stopLoss = payload.containsKey("stopLoss") && payload.get("stopLoss") != null ? ((Number) payload.get("stopLoss")).doubleValue() : 0.0;
+            double takeProfit = payload.containsKey("takeProfit") && payload.get("takeProfit") != null ? ((Number) payload.get("takeProfit")).doubleValue() : 0.0;
             Instant timestamp = event.timestamp();
 
             List<Map<String, Object>> list = openFills.computeIfAbsent(symbol, k -> new ArrayList<>());
@@ -928,6 +980,8 @@ public final class ControlPlaneServer implements AutoCloseable {
                 trade.put("entryTime", ((Instant) first.get("timestamp")).toString());
                 trade.put("exitTime", timestamp.toString());
                 trade.put("pnl", pnl);
+                trade.put("stopLoss", first.getOrDefault("stopLoss", 0.0));
+                trade.put("takeProfit", first.getOrDefault("takeProfit", 0.0));
                 trades.add(trade);
 
                 remainingQty -= matchQty;
@@ -945,6 +999,8 @@ public final class ControlPlaneServer implements AutoCloseable {
                 newFill.put("price", price);
                 newFill.put("quantity", remainingQty);
                 newFill.put("timestamp", timestamp);
+                newFill.put("stopLoss", stopLoss);
+                newFill.put("takeProfit", takeProfit);
                 list.add(newFill);
             }
         }

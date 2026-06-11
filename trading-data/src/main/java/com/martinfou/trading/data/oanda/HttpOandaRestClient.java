@@ -27,6 +27,31 @@ public final class HttpOandaRestClient implements OandaRestClient {
     private final String baseUrl;
     private final HttpClient client;
     private final ObjectMapper mapper = new ObjectMapper();
+    private final Map<String, OandaInstrument> instrumentCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private OandaInstrument getInstrument(String name) {
+        if (instrumentCache.isEmpty()) {
+            synchronized (instrumentCache) {
+                if (instrumentCache.isEmpty()) {
+                    try {
+                        JsonNode json = get("/accounts/" + accountId + "/instruments");
+                        for (JsonNode inst : json.get("instruments")) {
+                            instrumentCache.put(inst.get("name").asText(), new OandaInstrument(
+                                inst.get("name").asText(),
+                                inst.get("type").asText(),
+                                inst.get("displayPrecision").asInt(),
+                                inst.get("pipLocation").asInt(),
+                                inst.has("marginRate") ? inst.get("marginRate").asDouble() : 0.0
+                            ));
+                        }
+                    } catch (Exception e) {
+                        log.warn("Failed to fetch instruments: {}", e.getMessage());
+                    }
+                }
+            }
+        }
+        return instrumentCache.getOrDefault(name, new OandaInstrument(name, "UNKNOWN", name.contains("JPY") ? 3 : 5, name.contains("JPY") ? -2 : -4, 0.05));
+    }
 
     public HttpOandaRestClient(String apiToken, String accountId, boolean practice) {
         this(apiToken, accountId, practice
@@ -85,8 +110,10 @@ public final class HttpOandaRestClient implements OandaRestClient {
     }
 
     @Override
-    public OandaMarketOrderResult placeOrder(String type, String instrument, long units, double price, double stopLoss, double takeProfit, String clientTag) {
+    public OandaMarketOrderResult placeOrder(String type, String instrument, long units, double price, double stopLoss, double takeProfit, double trailingStop, boolean guaranteed, String clientTag) {
         try {
+            OandaInstrument instMeta = getInstrument(instrument);
+            String fmt = "%." + instMeta.displayPrecision() + "f";
             Map<String, Object> order = new LinkedHashMap<>();
             order.put("type", type.toUpperCase());
             order.put("instrument", instrument);
@@ -95,14 +122,15 @@ public final class HttpOandaRestClient implements OandaRestClient {
                 order.put("timeInForce", "FOK");
             } else {
                 order.put("timeInForce", "GTC");
-                String fmt = instrument.contains("JPY") ? "%.3f" : "%.5f";
                 order.put("price", String.format(java.util.Locale.US, fmt, price));
             }
-            String fmt = instrument.contains("JPY") ? "%.3f" : "%.5f";
             if (stopLoss > 0) {
                 Map<String, Object> sl = new LinkedHashMap<>();
                 sl.put("price", String.format(java.util.Locale.US, fmt, stopLoss));
                 sl.put("timeInForce", "GTC");
+                if (guaranteed) {
+                    sl.put("guaranteed", true);
+                }
                 order.put("stopLossOnFill", sl);
             }
             if (takeProfit > 0) {
@@ -110,6 +138,12 @@ public final class HttpOandaRestClient implements OandaRestClient {
                 tp.put("price", String.format(java.util.Locale.US, fmt, takeProfit));
                 tp.put("timeInForce", "GTC");
                 order.put("takeProfitOnFill", tp);
+            }
+            if (trailingStop > 0) {
+                Map<String, Object> ts = new LinkedHashMap<>();
+                ts.put("distance", String.format(java.util.Locale.US, fmt, trailingStop));
+                ts.put("timeInForce", "GTC");
+                order.put("trailingStopLossOnFill", ts);
             }
             if (clientTag != null && !clientTag.isBlank()) {
                 order.put("clientExtensions", Map.of("tag", clientTag, "comment", clientTag));
@@ -173,6 +207,35 @@ public final class HttpOandaRestClient implements OandaRestClient {
     }
 
     @Override
+    public boolean closeTrade(String tradeId, String units) {
+        try {
+            Map<String, Object> bodyMap = new LinkedHashMap<>();
+            if (units != null && !units.isBlank() && !units.equalsIgnoreCase("ALL")) {
+                bodyMap.put("units", units);
+            }
+            String body = bodyMap.isEmpty() ? "{}" : mapper.writeValueAsString(bodyMap);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + "accounts/" + accountId + "/trades/" + tradeId + "/close"))
+                .header("Authorization", "Bearer " + apiToken)
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(body))
+                .timeout(Duration.ofSeconds(15))
+                .build();
+
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 200) {
+                return true;
+            }
+            log.warn("Failed to close OANDA trade {}. HTTP status: {}, Response: {}", tradeId, response.statusCode(), response.body());
+            return false;
+        } catch (Exception e) {
+            log.warn("OANDA trade close failed for trade {}: {}", tradeId, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
     public List<Map<String, Object>> fetchTransactions(int limit) {
         try {
             JsonNode json = get("/accounts/" + accountId + "/transactions");
@@ -199,10 +262,14 @@ public final class HttpOandaRestClient implements OandaRestClient {
             JsonNode json = get("/accounts/" + accountId + "/summary");
             JsonNode account = json.get("account");
             return new OandaAccountSnapshot(
-                Double.parseDouble(account.get("balance").asText()),
-                Double.parseDouble(account.get("NAV").asText()),
-                Double.parseDouble(account.get("unrealizedPL").asText()),
-                account.get("currency").asText());
+                Double.parseDouble(account.path("balance").asText("0")),
+                Double.parseDouble(account.path("NAV").asText("0")),
+                Double.parseDouble(account.path("unrealizedPL").asText("0")),
+                account.path("currency").asText(),
+                Double.parseDouble(account.path("marginAvailable").asText("0")),
+                Double.parseDouble(account.path("marginUsed").asText("0")),
+                Double.parseDouble(account.path("marginCloseoutPercent").asText("0"))
+            );
         } catch (Exception e) {
             throw new IllegalStateException("Failed to fetch OANDA account summary", e);
         }
@@ -223,16 +290,32 @@ public final class HttpOandaRestClient implements OandaRestClient {
                         clientTag = ext.get("tag").asText();
                     }
                 }
+                java.time.Instant entryTime = null;
+                if (trade.has("openTime")) {
+                    entryTime = java.time.Instant.parse(trade.get("openTime").asText());
+                }
                 positions.add(new OandaPositionSnapshot(
                     trade.get("instrument").asText(),
                     side,
                     Math.abs(units),
                     Double.parseDouble(trade.get("price").asText()),
-                    clientTag));
+                    clientTag,
+                    entryTime));
             }
             return List.copyOf(positions);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to fetch OANDA open trades", e);
+        }
+    }
+
+    @Override
+    public Map<String, Object> fetchOrderBook(String instrument) {
+        try {
+            JsonNode json = get("/instruments/" + instrument + "/orderBook");
+            return mapper.convertValue(json, new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+        } catch (Exception e) {
+            log.warn("Failed to fetch OANDA order book for {}: {}", instrument, e.getMessage());
+            return Map.of();
         }
     }
 

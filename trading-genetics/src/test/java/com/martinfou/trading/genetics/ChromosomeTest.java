@@ -120,11 +120,23 @@ class ChromosomeTest {
     @Test
     void testCopyIsIndependent() {
         Chromosome original = Chromosome.random();
+        Chromosome originalSnapshot = original.copy();
         Chromosome copy = original.copy();
         assertEquals(original, copy);
-        // Modify copy
-        copy.mutate();
-        // Original should be unchanged
+        
+        // Mutate copy until it changes (to handle cases where mutation delta is 0 or clamped)
+        boolean changed = false;
+        for (int i = 0; i < 100; i++) {
+            copy.mutate();
+            if (!copy.equals(originalSnapshot)) {
+                changed = true;
+                break;
+            }
+        }
+        assertTrue(changed, "Mutation should eventually change the copy");
+        
+        // Original should remain unchanged (independent of copy)
+        assertEquals(originalSnapshot, original);
         assertNotEquals(original, copy);
     }
 
