@@ -227,9 +227,9 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
             throw new IllegalStateException("Missing config snapshot for run " + runId);
         }
         if (record.status() == RunRecord.Status.CREATED) {
-            List<Bar> bars;
+            List<com.martinfou.trading.core.Bar> bars;
             try {
-                bars = loadBars(config);
+                bars = loadBars(config, null, null);
             } catch (IOException e) {
                 throw new IllegalArgumentException("Failed to load bars for run " + runId + ": " + e.getMessage(), e);
             }
@@ -529,7 +529,7 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
         return record;
     }
 
-    static List<Bar> loadBars(RunConfigSnapshot config) throws IOException {
+    static List<Bar> loadBars(RunConfigSnapshot config, Integer limit, Instant to) throws IOException {
         String mode = config.mode();
         if (mode != null && (mode.equalsIgnoreCase("PAPER") || mode.equalsIgnoreCase("LIVE"))) {
             try {
@@ -547,8 +547,9 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
                     com.martinfou.trading.data.OandaPriceClient priceClient = new com.martinfou.trading.data.OandaPriceClient(
                         creds.apiToken(), creds.accountId(), creds.restUrl().contains("practice")
                     );
-                    log.info("Fetching last 500 live {} bars from OANDA for symbol {}...", tf, config.symbol());
-                    return priceClient.getCandles(config.symbol(), tf, 500);
+                    int fetchCount = (limit != null && limit > 0) ? limit : 500;
+                    log.info("Fetching last {} live {} bars from OANDA for symbol {} (to: {})...", fetchCount, tf, config.symbol(), to);
+                    return priceClient.getCandlesBefore(config.symbol(), tf, fetchCount, to);
                 }
             } catch (Exception e) {
                 log.warn("Failed to fetch live candles from OANDA: {}. Falling back to default bars.", e.getMessage());
@@ -603,7 +604,14 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
             config.barsSourceCount(),
             config.barsSourceYear(),
             config.barsSourcePath());
-        return BarSourceResolver.load(source, config.symbol());
+        List<Bar> allBars = BarSourceResolver.load(source, config.symbol());
+        if (to != null) {
+            allBars = allBars.stream().filter(b -> b.timestamp().isBefore(to)).toList();
+        }
+        if (limit != null && limit > 0 && limit < allBars.size()) {
+            allBars = allBars.subList(allBars.size() - limit, allBars.size());
+        }
+        return allBars;
     }
 
     private static void downloadYearSync(String symbol, int year, String tf) throws IOException {

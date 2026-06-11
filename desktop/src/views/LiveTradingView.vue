@@ -309,7 +309,23 @@ const inspectBars = ref<Bar[]>([])
 const inspectTrades = ref<Trade[]>([])
 const inspectEquity = ref<number[]>([])
 const loadingInspect = ref(false)
+const isLoadingOlderBars = ref(false)
 const inspectError = ref<string | null>(null)
+
+async function handleLoadMoreBars(oldestTimestamp: string) {
+  if (!selectedRunId.value || isLoadingOlderBars.value) return
+  isLoadingOlderBars.value = true
+  try {
+    const olderBars = await getBars(selectedRunId.value, 500, oldestTimestamp)
+    if (olderBars && olderBars.length > 0) {
+      inspectBars.value = [...olderBars, ...inspectBars.value]
+    }
+  } catch (e: any) {
+    console.error('Failed to load older bars:', e)
+  } finally {
+    isLoadingOlderBars.value = false
+  }
+}
 
 async function selectRun(runId: string) {
   selectedRunId.value = runId
@@ -802,7 +818,7 @@ onUnmounted(() => {
 
         <!-- Price Chart tab -->
         <div v-if="activeTab === 'chart'" class="tab-panel">
-          <TradeChart ref="tradeChartRef" :bars="inspectBars" :trades="inspectTrades" :positions="selectedRun?.positions" :height="400" />
+          <TradeChart ref="tradeChartRef" :bars="inspectBars" :trades="inspectTrades" :positions="selectedRun?.positions" :height="400" @loadMoreBars="handleLoadMoreBars" />
         </div>
 
         <!-- Trades History tab -->

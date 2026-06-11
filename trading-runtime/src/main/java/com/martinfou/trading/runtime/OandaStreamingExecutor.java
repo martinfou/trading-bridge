@@ -193,7 +193,7 @@ public final class OandaStreamingExecutor implements AutoCloseable {
         try {
             log.info("Bootstrapping indicator warm-up with last 500 history bars...");
             // Load history bars (e.g. 500 bars)
-            List<Bar> historyBars = RunManager.loadBars(config);
+            List<Bar> historyBars = RunManager.loadBars(config, null, null);
             strategy.reset();
             int limit = Math.min(historyBars.size(), 500);
             for (int i = historyBars.size() - limit; i < historyBars.size(); i++) {

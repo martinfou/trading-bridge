@@ -88,6 +88,23 @@ async function loadMonteCarloData() {
   }
 }
 
+const loadingOlderBars = ref(false)
+
+async function handleLoadMoreBars(oldestTimestamp: string) {
+  if (!runId || loadingOlderBars.value) return
+  loadingOlderBars.value = true
+  try {
+    const olderBars = await getBars(runId, 500, oldestTimestamp)
+    if (olderBars && olderBars.length > 0) {
+      bars.value = [...olderBars, ...bars.value]
+    }
+  } catch (e: any) {
+    console.error('Failed to load older bars:', e)
+  } finally {
+    loadingOlderBars.value = false
+  }
+}
+
 async function loadBarsData() {
   if (bars.value.length > 0 || !runId) return
   loadingBars.value = true
@@ -305,7 +322,7 @@ onUnmounted(() => {
         </div>
         <div v-else-if="barsError" class="banner error">{{ barsError }}</div>
         <template v-else>
-          <TradeChart :bars="bars" :trades="trades" :height="450" />
+          <TradeChart :bars="bars" :trades="trades" :height="450" @loadMoreBars="handleLoadMoreBars" />
         </template>
       </div>
 
