@@ -31,7 +31,8 @@ public class CompileGate {
     }
 
     public Result compile() throws IOException, InterruptedException {
-        List<String> command = List.of("mvn", "compile", "-pl", "trading-strategies", "-am", "-q");
+        String mvn = System.getProperty("os.name").toLowerCase().contains("win") ? "mvn.cmd" : "mvn";
+        List<String> command = List.of(mvn, "compile", "-pl", "trading-strategies", "-am", "-q");
         ProcessBuilder pb = new ProcessBuilder(command);
         pb.directory(repoRoot.toFile());
         pb.redirectErrorStream(true);

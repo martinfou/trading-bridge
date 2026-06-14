@@ -617,12 +617,23 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
     private static void downloadYearSync(String symbol, int year, String tf) throws IOException {
         String pair = symbol.replace("_", "").toLowerCase(java.util.Locale.ROOT);
         Path scriptsDir = RuntimeDataPaths.scriptsDirectory();
-        List<String> command = List.of(
-            scriptsDir.resolve("download-data.sh").toAbsolutePath().toString(),
-            "--pair", pair,
-            "--year", String.valueOf(year),
-            "--tf", tf.toLowerCase(java.util.Locale.ROOT)
-        );
+        List<String> command;
+        if (System.getProperty("os.name").toLowerCase().contains("win")) {
+            command = List.of(
+                "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                scriptsDir.resolve("download-data.ps1").toAbsolutePath().toString(),
+                "--pair", pair,
+                "--year", String.valueOf(year),
+                "--tf", tf.toLowerCase(java.util.Locale.ROOT)
+            );
+        } else {
+            command = List.of(
+                scriptsDir.resolve("download-data.sh").toAbsolutePath().toString(),
+                "--pair", pair,
+                "--year", String.valueOf(year),
+                "--tf", tf.toLowerCase(java.util.Locale.ROOT)
+            );
+        }
 
         log.info("Executing synchronous download command: {}", command);
         ProcessBuilder pb = new ProcessBuilder(command);

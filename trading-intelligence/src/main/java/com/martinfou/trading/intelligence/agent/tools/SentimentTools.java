@@ -97,8 +97,9 @@ public class SentimentTools {
         }
 
         try (var stream = Files.list(intelRoot)) {
+            java.util.regex.Pattern briefPattern = java.util.regex.Pattern.compile("^brief-\\d{4}-\\d{2}-\\d{2}\\.json$");
             List<Path> files = stream
-                .filter(p -> p.getFileName().toString().startsWith("brief-") && p.getFileName().toString().endsWith(".json"))
+                .filter(p -> briefPattern.matcher(p.getFileName().toString()).matches())
                 .toList();
 
             Path closestFile = null;
@@ -107,7 +108,6 @@ public class SentimentTools {
             for (Path file : files) {
                 try {
                     String name = file.getFileName().toString();
-                    if (name.length() <= 11) continue; // safety guard for brief-.json
                     String dateStr = name.substring(6, name.length() - 5);
                     LocalDate localDate = LocalDate.parse(dateStr);
                     Instant fileInstant = localDate.atStartOfDay(ZoneOffset.UTC).toInstant();

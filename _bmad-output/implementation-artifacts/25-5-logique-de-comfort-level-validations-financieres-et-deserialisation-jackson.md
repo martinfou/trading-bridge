@@ -1,6 +1,6 @@
 # Story 25.5: Logique de Comfort Level, validations financières et désérialisation Jackson
 
-Status: review
+Status: done
 
 ## Story
 
@@ -97,9 +97,17 @@ Antigravity (Google DeepMind)
 - Algorithme déterministe de calcul du ComfortLevel (HIGH, MEDIUM, LOW) programmé selon le win-rate de saisonnalité, le score de sentiment et les indicateurs macro/sentiment.
 - Validations financières strictes développées (targetedPriceZone à +/- 5%, invalidationPips entre 10 et 200, conformité biais/side/trigger, clés autorisées d'executionContextRules).
 - Suite de tests unitaires exhaustive écrite dans AgenticStrategistServiceTest vérifiant de bout en bout ces règles de validation et de calcul.
+- Corrections de revue de code intégrées et validées (validation du type de trigger, rejet du biais nul, thread-safety, null-safety de TokenUsage, filtrage regex des briefs, mise en cache barsDir).
 
 ### File List
 
 - `trading-intelligence/src/main/java/com/martinfou/trading/intelligence/agent/ValidationException.java`
 - `trading-intelligence/src/main/java/com/martinfou/trading/intelligence/agent/AgenticStrategistService.java`
 - `trading-intelligence/src/test/java/com/martinfou/trading/intelligence/agent/AgenticStrategistServiceTest.java`
+- `trading-intelligence/src/main/java/com/martinfou/trading/intelligence/agent/utils/InstrumentUtil.java`
+- `trading-intelligence/src/main/java/com/martinfou/trading/intelligence/agent/GuardrailChatModel.java`
+- `trading-intelligence/src/main/java/com/martinfou/trading/intelligence/agent/tools/SeasonalityTools.java`
+- `trading-intelligence/src/main/java/com/martinfou/trading/intelligence/agent/tools/MacroTools.java`
+- `trading-intelligence/src/main/java/com/martinfou/trading/intelligence/agent/tools/SentimentTools.java`
+- `trading-data/src/main/java/com/martinfou/trading/data/SeasonalityAnalyzer.java`
+- `trading-intelligence/src/test/java/com/martinfou/trading/intelligence/agent/WeeklyStrategyOutlookRawTest.java`
