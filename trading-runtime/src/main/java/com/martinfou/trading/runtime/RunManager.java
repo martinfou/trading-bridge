@@ -9,6 +9,8 @@ import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.broker.Broker;
 import com.martinfou.trading.core.Strategy;
 import com.martinfou.trading.strategies.StrategyCatalog;
+import com.martinfou.trading.data.DukascopyDownloader;
+import com.martinfou.trading.data.BarStore;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -616,47 +618,18 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
 
     private static void downloadYearSync(String symbol, int year, String tf) throws IOException {
         String pair = symbol.replace("_", "").toLowerCase(java.util.Locale.ROOT);
-        Path scriptsDir = RuntimeDataPaths.scriptsDirectory();
-        List<String> command;
-        if (System.getProperty("os.name").toLowerCase().contains("win")) {
-            command = List.of(
-                "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                scriptsDir.resolve("download-data.ps1").toAbsolutePath().toString(),
-                "--pair", pair,
-                "--year", String.valueOf(year),
-                "--tf", tf.toLowerCase(java.util.Locale.ROOT)
-            );
-        } else {
-            command = List.of(
-                scriptsDir.resolve("download-data.sh").toAbsolutePath().toString(),
-                "--pair", pair,
-                "--year", String.valueOf(year),
-                "--tf", tf.toLowerCase(java.util.Locale.ROOT)
-            );
-        }
+        String tfLower = tf.toLowerCase(java.util.Locale.ROOT);
+        Path csvDir = RuntimeDataPaths.defaultDukascopyDirectory();
+        Path barsDir = RuntimeDataPaths.defaultBarsDirectory();
 
-        log.info("Executing synchronous download command: {}", command);
-        ProcessBuilder pb = new ProcessBuilder(command);
-        pb.directory(scriptsDir.getParent().toFile());
-        pb.redirectErrorStream(true);
-        Process process = pb.start();
+        DukascopyDownloader downloader = new DukascopyDownloader();
+        log.info("Starting Java-native download for pair {} year {} tf {}", pair, year, tfLower);
+        Path downloadedCsv = downloader.download(pair, year, tfLower, csvDir);
 
-        try (var reader = new java.io.BufferedReader(new java.io.InputStreamReader(process.getInputStream()))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                log.info("[download-data-sync] {}", line);
-            }
-        }
-
-        try {
-            int exitCode = process.waitFor();
-            if (exitCode != 0) {
-                throw new IOException("Download process failed with exit code " + exitCode);
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("Download process was interrupted", e);
-        }
+        log.info("Converting downloaded CSV {} to binary bars...", downloadedCsv);
+        BarStore store = new BarStore(symbol, tf.toUpperCase(java.util.Locale.ROOT) + "_" + year, barsDir);
+        store.writeFromCSV(downloadedCsv);
+        log.info("Successfully completed Java-native download and conversion for {} year {}", symbol, year);
     }
 
     private static boolean isYearAvailable(String symbol, int year, Path barsDir, Path csvDir) {

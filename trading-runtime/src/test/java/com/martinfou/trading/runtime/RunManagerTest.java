@@ -124,4 +124,46 @@ class RunManagerTest {
         }
         throw new AssertionError("timeout waiting for run " + runId);
     }
+
+    @Test
+    void startRun_triggersJavaNativeDownloadAndConvertsSuccessfully() throws Exception {
+        String original = System.getProperty("trading.bridge.test");
+        System.clearProperty("trading.bridge.test");
+        try {
+            java.nio.file.Files.deleteIfExists(java.nio.file.Path.of("data/historical/bars/EUR_USD_H1_2025.bars"));
+            java.nio.file.Files.deleteIfExists(java.nio.file.Path.of("data/historical/dukascopy/eurusd-h1-bid-2025-01-01-2025-12-31.csv"));
+
+            try (RuntimeStores.Bundle stores = RuntimeStores.inMemoryWithBroadcast();
+                 RunManager manager = new RunManager(stores.eventStore())) {
+
+                String runId = manager.startRun(new RunManager.StartRunRequest(
+                    "LondonOpenRangeBreakout",
+                    "EUR_USD",
+                    "BACKTEST",
+                    new BarSourceResolver.BarsSource("year", 0, 2025),
+                    100_000.0,
+                    null,
+                    null,
+                    null,
+                    null));
+
+                RunRecord record = null;
+                for (int i = 0; i < 600; i++) {
+                    record = manager.getRun(runId).orElseThrow();
+                    if (record.status() != RunRecord.Status.RUNNING) {
+                        break;
+                    }
+                    Thread.sleep(100);
+                }
+                assertEquals(RunRecord.Status.COMPLETED, record.status());
+
+                assertTrue(java.nio.file.Files.exists(java.nio.file.Path.of("data/historical/bars/EUR_USD_H1_2025.bars")));
+                assertTrue(java.nio.file.Files.exists(java.nio.file.Path.of("data/historical/dukascopy/eurusd-h1-bid-2025-01-01-2025-12-31.csv")));
+            }
+        } finally {
+            if (original != null) {
+                System.setProperty("trading.bridge.test", original);
+            }
+        }
+    }
 }

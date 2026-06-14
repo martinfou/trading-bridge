@@ -101,6 +101,36 @@ public final class ControlPlaneClient {
         return getJson("/api/data/availability/" + encodePath(symbol));
     }
 
+    public JsonNode historicalDataStatus(String tf) throws IOException, InterruptedException {
+        return getJson("/api/historical-data/status?tf=" + encodePath(tf));
+    }
+
+    public JsonNode downloadHistoricalData(
+        String pair,
+        Integer year,
+        Integer startYear,
+        Integer endYear,
+        String tf,
+        Boolean syncMode
+    ) throws IOException, InterruptedException {
+        Map<String, Object> body = new LinkedHashMap<>();
+        if (pair != null) body.put("pair", pair);
+        if (year != null) body.put("year", year);
+        if (startYear != null) body.put("startYear", startYear);
+        if (endYear != null) body.put("endYear", endYear);
+        if (tf != null) body.put("tf", tf);
+        if (syncMode != null) body.put("syncMode", syncMode);
+        return postJson("/api/historical-data/download", body);
+    }
+
+    public JsonNode deleteHistoricalData(String pair, int year, String tf) throws IOException, InterruptedException {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("pair", pair);
+        body.put("year", year);
+        body.put("tf", tf);
+        return postJson("/api/historical-data/delete", body);
+    }
+
     JsonNode emptyJsonObject() {
         return MAPPER.createObjectNode();
     }
