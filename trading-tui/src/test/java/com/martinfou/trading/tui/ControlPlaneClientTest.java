@@ -131,4 +131,70 @@ class ControlPlaneClientTest {
             server.stop(0);
         }
     }
+
+    @Test
+    void historicalDataStatus_callsEndpoint() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/api/historical-data/status", exchange -> {
+            assertEquals("tf=h1", exchange.getRequestURI().getQuery());
+            byte[] body = """
+                {"status":[],"activeDownloads":[],"activeTasks":[]}
+                """.strip().getBytes();
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.start();
+        try {
+            int port = server.getAddress().getPort();
+            ControlPlaneClient client = new ControlPlaneClient("http://127.0.0.1:" + port);
+            var node = client.historicalDataStatus("h1");
+            org.junit.jupiter.api.Assertions.assertTrue(node.has("status"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void downloadHistoricalData_callsEndpoint() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/api/historical-data/download", exchange -> {
+            byte[] body = "{\"accepted\":true}".getBytes();
+            exchange.sendResponseHeaders(202, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.start();
+        try {
+            int port = server.getAddress().getPort();
+            ControlPlaneClient client = new ControlPlaneClient("http://127.0.0.1:" + port);
+            var node = client.downloadHistoricalData("eurusd", 2012, null, null, "h1", false);
+            org.junit.jupiter.api.Assertions.assertTrue(node.get("accepted").asBoolean());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void deleteHistoricalData_callsEndpoint() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/api/historical-data/delete", exchange -> {
+            byte[] body = "{\"success\":true}".getBytes();
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.start();
+        try {
+            int port = server.getAddress().getPort();
+            ControlPlaneClient client = new ControlPlaneClient("http://127.0.0.1:" + port);
+            var node = client.deleteHistoricalData("eurusd", 2012, "h1");
+            org.junit.jupiter.api.Assertions.assertTrue(node.get("success").asBoolean());
+        } finally {
+            server.stop(0);
+        }
+    }
 }

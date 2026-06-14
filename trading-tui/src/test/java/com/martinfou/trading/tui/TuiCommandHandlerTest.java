@@ -172,4 +172,130 @@ class TuiCommandHandlerTest {
             server.stop(0);
         }
     }
+
+    @Test
+    void dataCommand_help() {
+        var handler = new TuiCommandHandler(new ControlPlaneClient("http://127.0.0.1:1"));
+        List<String> out = handler.handle("/data help");
+        assertTrue(out.stream().anyMatch(l -> l.contains("Usage: /data")));
+        assertTrue(out.stream().anyMatch(l -> l.contains("status [tf]")));
+    }
+
+    @Test
+    void dataCommand_status() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/api/historical-data/status", exchange -> {
+            byte[] body = """
+                {
+                  "status": [
+                    {
+                      "symbol": "EUR_USD",
+                      "pair": "eurusd",
+                      "year": 2012,
+                      "timeframe": "h1",
+                      "csvExists": true,
+                      "csvSize": 1024,
+                      "barsExists": true,
+                      "barsSize": 2048
+                    },
+                    {
+                      "symbol": "GBP_USD",
+                      "pair": "gbpusd",
+                      "year": 2013,
+                      "timeframe": "h1",
+                      "csvExists": true,
+                      "csvSize": 1024,
+                      "barsExists": false,
+                      "barsSize": 0
+                    }
+                  ],
+                  "activeDownloads": [],
+                  "activeTasks": [
+                    {
+                      "key": "eurusd-2012-h1",
+                      "progress": 50,
+                      "currentAction": "Processing"
+                    }
+                  ]
+                }
+                """.strip().getBytes();
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.start();
+        try {
+            var handler = new TuiCommandHandler(new ControlPlaneClient("http://127.0.0.1:" + server.getAddress().getPort()));
+            List<String> lines = handler.handle("/data status h1");
+            assertTrue(lines.stream().anyMatch(l -> l.contains("Active tasks:")));
+            assertTrue(lines.stream().anyMatch(l -> l.contains("eurusd-2012-h1: 50%")));
+            assertTrue(lines.stream().anyMatch(l -> l.contains("EUR_USD: 2012 (CSV+BARS)")));
+            assertTrue(lines.stream().anyMatch(l -> l.contains("GBP_USD: 2013 (CSV)")));
+            assertTrue(lines.stream().anyMatch(l -> l.contains("GBP_JPY: [no data]")));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void dataCommand_downloadSingleYear() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/api/historical-data/download", exchange -> {
+            byte[] body = "{\"accepted\":true}".getBytes();
+            exchange.sendResponseHeaders(202, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.start();
+        try {
+            var handler = new TuiCommandHandler(new ControlPlaneClient("http://127.0.0.1:" + server.getAddress().getPort()));
+            List<String> lines = handler.handle("/data download eurusd 2012 h1");
+            assertTrue(lines.getFirst().contains("Download started"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void dataCommand_downloadRange() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/api/historical-data/download", exchange -> {
+            byte[] body = "{\"accepted\":true}".getBytes();
+            exchange.sendResponseHeaders(202, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.start();
+        try {
+            var handler = new TuiCommandHandler(new ControlPlaneClient("http://127.0.0.1:" + server.getAddress().getPort()));
+            List<String> lines = handler.handle("/data download eurusd 2012-2015 h1");
+            assertTrue(lines.getFirst().contains("Download started"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void dataCommand_delete() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/api/historical-data/delete", exchange -> {
+            byte[] body = "{\"success\":true}".getBytes();
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.start();
+        try {
+            var handler = new TuiCommandHandler(new ControlPlaneClient("http://127.0.0.1:" + server.getAddress().getPort()));
+            List<String> lines = handler.handle("/data delete EUR_USD 2012-2013 h1");
+            assertTrue(lines.get(0).contains("Deleted EUR_USD 2012 (H1)"));
+            assertTrue(lines.get(1).contains("Deleted EUR_USD 2013 (H1)"));
+        } finally {
+            server.stop(0);
+        }
+    }
 }

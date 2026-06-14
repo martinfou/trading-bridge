@@ -18,13 +18,18 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
 
 public class DukascopyDownloader {
 
     private static final Logger log = LoggerFactory.getLogger(DukascopyDownloader.class);
 
     private final HttpClient httpClient;
+    private final Semaphore httpSemaphore = new Semaphore(50);
 
     public DukascopyDownloader() {
         this.httpClient = HttpClient.newBuilder()
@@ -49,76 +54,40 @@ public class DukascopyDownloader {
     }
 
     /**
-     * Downloads data for a specific pair and date range, and writes the CSV to outputDir.
+     * Downloads data for a specific pair and date range in parallel, and writes the CSV to outputDir.
      */
     public Path downloadRange(String pair, LocalDate start, LocalDate end, String timeframe, Path outputDir) throws IOException {
         String symbol = pair.toUpperCase().replace("_", "").replace("/", "");
         String tfLower = timeframe.toLowerCase();
         long barDurationMs = tfLower.equals("m1") ? 60 * 1000L : 3600 * 1000L;
 
-        List<Candle> allCandles = new ArrayList<>();
-        log.info("Downloading Dukascopy data for {} ({}) from {} to {}", symbol, timeframe, start, end);
+        log.info("Downloading Dukascopy data for {} ({}) from {} to {} in parallel", symbol, timeframe, start, end);
 
-        long currentBarStartMs = -1;
-        double open = 0, high = 0, low = 0, close = 0;
+        List<CompletableFuture<List<Candle>>> futures = new ArrayList<>();
 
-        LocalDate current = start;
-        while (!current.isAfter(end)) {
-            for (int hour = 0; hour < 24; hour++) {
-                // Dukascopy month is 0-indexed: 00 to 11
-                String url = String.format("https://datafeed.dukascopy.com/datafeed/%s/%d/%02d/%02d/%02dh_ticks.bi5",
-                        symbol, current.getYear(), current.getMonthValue() - 1, current.getDayOfMonth(), hour);
-
-                try {
-                    byte[] data = downloadFile(url);
-                    if (data != null && data.length > 0) {
-                        long baseHourMs = LocalDateTime.of(current.getYear(), current.getMonthValue(), current.getDayOfMonth(), hour, 0, 0)
-                                .toInstant(ZoneOffset.UTC).toEpochMilli();
-
-                        try (LZMAInputStream lzma = new LZMAInputStream(new ByteArrayInputStream(data))) {
-                            byte[] decompressed = lzma.readAllBytes();
-                            ByteBuffer wrap = ByteBuffer.wrap(decompressed);
-
-                            while (wrap.remaining() >= 20) {
-                                int timeOffsetMs = wrap.getInt();
-                                double ask = wrap.getInt() / 100000.0;
-                                double bid = wrap.getInt() / 100000.0;
-                                float askVol = wrap.getFloat();
-                                float bidVol = wrap.getFloat();
-
-                                long tickTimeMs = baseHourMs + timeOffsetMs;
-                                long barStartMs = (tickTimeMs / barDurationMs) * barDurationMs;
-
-                                if (currentBarStartMs == -1) {
-                                    currentBarStartMs = barStartMs;
-                                    open = bid;
-                                    high = bid;
-                                    low = bid;
-                                    close = bid;
-                                } else if (barStartMs == currentBarStartMs) {
-                                    high = Math.max(high, bid);
-                                    low = Math.min(low, bid);
-                                    close = bid;
-                                } else {
-                                    allCandles.add(new Candle(currentBarStartMs, open, high, low, close));
-                                    currentBarStartMs = barStartMs;
-                                    open = bid;
-                                    high = bid;
-                                    low = bid;
-                                    close = bid;
-                                }
-                            }
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            LocalDate current = start;
+            while (!current.isAfter(end)) {
+                for (int hour = 0; hour < 24; hour++) {
+                    final LocalDate date = current;
+                    final int h = hour;
+                    futures.add(CompletableFuture.supplyAsync(() -> {
+                        try {
+                            return downloadAndParseHour(symbol, date, h, barDurationMs);
+                        } catch (Exception e) {
+                            log.warn("Failed to download or parse data for date: {} Hour: {}. Error: {}", date, h, e.getMessage());
+                            return Collections.emptyList();
                         }
-                    }
-                } catch (Exception e) {
-                    log.warn("Failed to download or parse data for date: {} Hour: {} - URL: {}. Error: {}", current, hour, url, e.getMessage());
+                    }, executor));
                 }
+                current = current.plusDays(1);
             }
-            current = current.plusDays(1);
-        }
+        } // try-with-resources auto-closes the executor, waiting for all virtual threads to complete
 
-        if (currentBarStartMs != -1) {
-            allCandles.add(new Candle(currentBarStartMs, open, high, low, close));
+        // Collect candles chronologically
+        List<Candle> allCandles = new ArrayList<>();
+        for (var future : futures) {
+            allCandles.addAll(future.join());
         }
 
         if (allCandles.isEmpty()) {
@@ -145,42 +114,107 @@ public class DukascopyDownloader {
         return csvPath;
     }
 
-    byte[] downloadFile(String url) throws IOException, InterruptedException {
-        int maxRetries = 3;
-        long backoffMs = 500;
+    private List<Candle> downloadAndParseHour(String symbol, LocalDate date, int hour, long barDurationMs) throws IOException, InterruptedException {
+        // Dukascopy month is 0-indexed: 00 to 11
+        String url = String.format("https://datafeed.dukascopy.com/datafeed/%s/%d/%02d/%02d/%02dh_ticks.bi5",
+                symbol, date.getYear(), date.getMonthValue() - 1, date.getDayOfMonth(), hour);
 
-        for (int attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                HttpRequest request = HttpRequest.newBuilder()
-                        .uri(URI.create(url))
-                        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                        .timeout(Duration.ofSeconds(10))
-                        .GET()
-                        .build();
-
-                HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
-                if (response.statusCode() == 200) {
-                    return response.body();
-                } else if (response.statusCode() == 404) {
-                    // No data for this hour (weekend or holiday)
-                    return null;
-                } else if (response.statusCode() == 429 || response.statusCode() == 503) {
-                    log.warn("Rate limited (HTTP {}) for URL: {}, retrying in {}ms... (attempt {}/{})", 
-                            response.statusCode(), url, backoffMs, attempt, maxRetries);
-                } else {
-                    throw new IOException("HTTP status code: " + response.statusCode() + " for URL: " + url);
-                }
-            } catch (IOException | InterruptedException e) {
-                if (attempt == maxRetries) {
-                    throw e;
-                }
-                log.warn("Connection error for URL: {}, retrying in {}ms... (attempt {}/{}): {}", 
-                        url, backoffMs, attempt, maxRetries, e.getMessage());
-            }
-
-            Thread.sleep(backoffMs);
-            backoffMs *= 2; // exponential backoff
+        byte[] data = downloadFile(url);
+        if (data == null || data.length == 0) {
+            return Collections.emptyList();
         }
-        throw new IOException("Failed to download URL: " + url + " after " + maxRetries + " attempts");
+
+        long baseHourMs = LocalDateTime.of(date.getYear(), date.getMonthValue(), date.getDayOfMonth(), hour, 0, 0)
+                .toInstant(ZoneOffset.UTC).toEpochMilli();
+
+        try (LZMAInputStream lzma = new LZMAInputStream(new ByteArrayInputStream(data))) {
+            byte[] decompressed = lzma.readAllBytes();
+            return parseTicksToCandles(decompressed, baseHourMs, barDurationMs);
+        }
+    }
+
+    private List<Candle> parseTicksToCandles(byte[] decompressed, long baseHourMs, long barDurationMs) {
+        List<Candle> hourCandles = new ArrayList<>();
+        ByteBuffer wrap = ByteBuffer.wrap(decompressed);
+        long currentBarStartMs = -1;
+        double open = 0, high = 0, low = 0, close = 0;
+
+        while (wrap.remaining() >= 20) {
+            int timeOffsetMs = wrap.getInt();
+            double ask = wrap.getInt() / 100000.0;
+            double bid = wrap.getInt() / 100000.0;
+            float askVol = wrap.getFloat();
+            float bidVol = wrap.getFloat();
+
+            long tickTimeMs = baseHourMs + timeOffsetMs;
+            long barStartMs = (tickTimeMs / barDurationMs) * barDurationMs;
+
+            if (currentBarStartMs == -1) {
+                currentBarStartMs = barStartMs;
+                open = bid;
+                high = bid;
+                low = bid;
+                close = bid;
+            } else if (barStartMs == currentBarStartMs) {
+                high = Math.max(high, bid);
+                low = Math.min(low, bid);
+                close = bid;
+            } else {
+                hourCandles.add(new Candle(currentBarStartMs, open, high, low, close));
+                currentBarStartMs = barStartMs;
+                open = bid;
+                high = bid;
+                low = bid;
+                close = bid;
+            }
+        }
+        if (currentBarStartMs != -1) {
+            hourCandles.add(new Candle(currentBarStartMs, open, high, low, close));
+        }
+        return hourCandles;
+    }
+
+    byte[] downloadFile(String url) throws IOException, InterruptedException {
+        httpSemaphore.acquire();
+        try {
+            int maxRetries = 3;
+            long backoffMs = 500;
+
+            for (int attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    HttpRequest request = HttpRequest.newBuilder()
+                            .uri(URI.create(url))
+                            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                            .timeout(Duration.ofSeconds(10))
+                            .GET()
+                            .build();
+
+                    HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+                    if (response.statusCode() == 200) {
+                        return response.body();
+                    } else if (response.statusCode() == 404) {
+                        // No data for this hour (weekend or holiday)
+                        return null;
+                    } else if (response.statusCode() == 429 || response.statusCode() == 503) {
+                        log.warn("Rate limited (HTTP {}) for URL: {}, retrying in {}ms... (attempt {}/{})", 
+                                response.statusCode(), url, backoffMs, attempt, maxRetries);
+                    } else {
+                        throw new IOException("HTTP status code: " + response.statusCode() + " for URL: " + url);
+                    }
+                } catch (IOException | InterruptedException e) {
+                    if (attempt == maxRetries) {
+                        throw e;
+                    }
+                    log.warn("Connection error for URL: {}, retrying in {}ms... (attempt {}/{}): {}", 
+                            url, backoffMs, attempt, maxRetries, e.getMessage());
+                }
+
+                Thread.sleep(backoffMs);
+                backoffMs *= 2; // exponential backoff
+            }
+            throw new IOException("Failed to download URL: " + url + " after " + maxRetries + " attempts");
+        } finally {
+            httpSemaphore.release();
+        }
     }
 }

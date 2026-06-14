@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -59,6 +61,7 @@ public final class TuiCommandHandler {
                 case "inbox", "sq" -> sqBridge(parts);
                 case "weekly-build", "weekly" -> weeklyBuild(parts);
                 case "weekly-status", "wb-status" -> weeklyStatus();
+                case "data" -> dataCommand(parts);
                 case "quit", "exit", "q" -> List.of("__QUIT__");
                 default -> List.of("Unknown command: /" + command + ". Type /help");
             };
@@ -90,6 +93,7 @@ public final class TuiCommandHandler {
             "  /sq | /inbox [process]   SQ bridge status or trigger inbox drain",
             "  /weekly-status           Weekly builder hot-folder counts",
             "  /weekly-build [--plan|--compile|--deploy]   Trigger Job 1/2/3",
+            "  /data <args>             Historical data status, download, or delete (type /data for help)",
             "  /quit              Exit",
             "Env: CONTROL_PLANE_URL (default http://localhost:8080)");
     }
@@ -488,6 +492,221 @@ public final class TuiCommandHandler {
         if (liveOutput != null) {
             liveOutput.accept(line);
         }
+    }
+
+    private List<String> dataCommand(List<String> parts) throws IOException, InterruptedException {
+        if (parts.size() < 2) {
+            return dataHelp();
+        }
+        String subcommand = parts.get(1).toLowerCase(Locale.ROOT);
+        return switch (subcommand) {
+            case "help", "?" -> dataHelp();
+            case "status" -> dataStatus(parts);
+            case "download" -> dataDownload(parts);
+            case "delete" -> dataDelete(parts);
+            default -> List.of("Unknown subcommand: /data " + subcommand + ". Type /data help");
+        };
+    }
+
+    private List<String> dataHelp() {
+        return List.of(
+            "Usage: /data <subcommand> [args]",
+            "Subcommands:",
+            "  status [tf]                 Show downloaded historical data status (default tf: h1)",
+            "  download <pair> <year> [tf]  Download historical data for a specific year (e.g. /data download eurusd 2012)",
+            "  download <pair> <start>-<end> [tf] Download range of years (e.g. /data download eurusd 2012-2015)",
+            "  download --sync [tf]        Trigger full local sync of all pairs and years",
+            "  delete <pair> <year> [tf]    Delete local files for a year (e.g. /data delete eurusd 2012)",
+            "  delete <pair> <start>-<end> [tf] Delete local files for a range of years"
+        );
+    }
+
+    private List<String> dataStatus(List<String> parts) throws IOException, InterruptedException {
+        String tf = "h1";
+        if (parts.size() >= 3) {
+            tf = parts.get(2).toLowerCase(Locale.ROOT);
+        }
+        JsonNode root = client.historicalDataStatus(tf);
+        List<String> lines = new ArrayList<>();
+
+        JsonNode activeTasks = root.path("activeTasks");
+        if (activeTasks.isArray() && !activeTasks.isEmpty()) {
+            lines.add("Active tasks:");
+            for (JsonNode task : activeTasks) {
+                String key = task.path("key").asText();
+                int progress = task.path("progress").asInt(0);
+                String action = task.path("currentAction").asText();
+                lines.add(String.format("  - %s: %d%% (%s)", key, progress, action));
+            }
+            lines.add("");
+        }
+
+        JsonNode activeDownloads = root.path("activeDownloads");
+        if (activeDownloads.isArray() && !activeDownloads.isEmpty() && activeTasks.isEmpty()) {
+            lines.add("Active downloads:");
+            for (JsonNode dl : activeDownloads) {
+                lines.add("  - " + dl.asText());
+            }
+            lines.add("");
+        }
+
+        lines.add("Historical Data status (" + tf.toUpperCase(Locale.ROOT) + "):");
+        
+        List<String> supportedPairs = List.of("EUR_USD", "GBP_USD", "GBP_JPY", "USD_CAD", "USD_JPY", "AUD_USD", "NZD_USD", "USD_CHF");
+        Map<String, List<String>> pairYears = new LinkedHashMap<>();
+        for (String sp : supportedPairs) {
+            pairYears.put(sp, new ArrayList<>());
+        }
+
+        JsonNode statusList = root.path("status");
+        if (statusList.isArray()) {
+            for (JsonNode item : statusList) {
+                String sym = item.path("symbol").asText();
+                boolean csvExists = item.path("csvExists").asBoolean(false);
+                boolean barsExists = item.path("barsExists").asBoolean(false);
+                if (csvExists || barsExists) {
+                    int year = item.path("year").asInt();
+                    String state;
+                    if (csvExists && barsExists) {
+                        state = year + " (CSV+BARS)";
+                    } else if (csvExists) {
+                        state = year + " (CSV)";
+                    } else {
+                        state = year + " (BARS)";
+                    }
+                    pairYears.computeIfAbsent(sym, k -> new ArrayList<>()).add(state);
+                }
+            }
+        }
+
+        for (Map.Entry<String, List<String>> entry : pairYears.entrySet()) {
+            String sym = entry.getKey();
+            List<String> years = entry.getValue();
+            if (years.isEmpty()) {
+                lines.add("  " + sym + ": [no data]");
+            } else {
+                Collections.sort(years);
+                lines.add("  " + sym + ": " + String.join(", ", years));
+            }
+        }
+        return lines;
+    }
+
+    private List<String> dataDownload(List<String> parts) throws IOException, InterruptedException {
+        if (parts.size() < 3) {
+            return List.of("Usage: /data download <pair> <year-or-range> [tf] OR /data download --sync [tf]");
+        }
+        String p2 = parts.get(2);
+        if ("--sync".equalsIgnoreCase(p2)) {
+            String tf = "h1";
+            if (parts.size() >= 4) {
+                tf = parts.get(3).toLowerCase(Locale.ROOT);
+            }
+            JsonNode resp = client.downloadHistoricalData(null, null, null, null, tf, true);
+            return List.of(resp.path("accepted").asBoolean(false) ? "Sync download started" : "Sync download busy/already running");
+        }
+
+        if (parts.size() < 4) {
+            return List.of("Usage: /data download <pair> <year-or-range> [tf]");
+        }
+
+        String pair = normalizePair(p2);
+        String yearSpec = parts.get(3);
+        String tf = "h1";
+        if (parts.size() >= 5) {
+            tf = parts.get(4).toLowerCase(Locale.ROOT);
+        }
+
+        Integer startYear = null;
+        Integer endYear = null;
+        Integer year = null;
+
+        if (yearSpec.contains("-")) {
+            String[] split = yearSpec.split("-");
+            if (split.length != 2) {
+                return List.of("Invalid year range: " + yearSpec);
+            }
+            try {
+                startYear = Integer.parseInt(split[0]);
+                endYear = Integer.parseInt(split[1]);
+            } catch (NumberFormatException e) {
+                return List.of("Invalid year range values: " + yearSpec);
+            }
+        } else {
+            try {
+                year = Integer.parseInt(yearSpec);
+            } catch (NumberFormatException e) {
+                return List.of("Invalid year: " + yearSpec);
+            }
+        }
+
+        JsonNode resp = client.downloadHistoricalData(pair, year, startYear, endYear, tf, false);
+        String label = (startYear != null && endYear != null) ? (startYear + "-" + endYear) : String.valueOf(year);
+        return List.of(resp.path("accepted").asBoolean(false)
+            ? "Download started for " + toSymbol(pair) + " " + label + " (" + tf.toUpperCase(Locale.ROOT) + ")"
+            : "Download busy/already running");
+    }
+
+    private List<String> dataDelete(List<String> parts) throws IOException, InterruptedException {
+        if (parts.size() < 4) {
+            return List.of("Usage: /data delete <pair> <year-or-range> [tf]");
+        }
+        String pair = normalizePair(parts.get(2));
+        String yearSpec = parts.get(3);
+        String tf = "h1";
+        if (parts.size() >= 5) {
+            tf = parts.get(4).toLowerCase(Locale.ROOT);
+        }
+
+        List<Integer> yearsToDelete = new ArrayList<>();
+        if (yearSpec.contains("-")) {
+            String[] split = yearSpec.split("-");
+            if (split.length != 2) {
+                return List.of("Invalid year range: " + yearSpec);
+            }
+            try {
+                int start = Integer.parseInt(split[0]);
+                int end = Integer.parseInt(split[1]);
+                for (int y = start; y <= end; y++) {
+                    yearsToDelete.add(y);
+                }
+            } catch (NumberFormatException e) {
+                return List.of("Invalid year range values: " + yearSpec);
+            }
+        } else {
+            try {
+                yearsToDelete.add(Integer.parseInt(yearSpec));
+            } catch (NumberFormatException e) {
+                return List.of("Invalid year: " + yearSpec);
+            }
+        }
+
+        List<String> lines = new ArrayList<>();
+        for (int y : yearsToDelete) {
+            client.deleteHistoricalData(pair, y, tf);
+            lines.add("Deleted " + toSymbol(pair) + " " + y + " (" + tf.toUpperCase(Locale.ROOT) + ")");
+        }
+        return lines;
+    }
+
+    private static String toSymbol(String pair) {
+        if (pair == null) return "";
+        return switch (pair.toLowerCase(Locale.ROOT)) {
+            case "eurusd" -> "EUR_USD";
+            case "gbpusd" -> "GBP_USD";
+            case "gbpjpy" -> "GBP_JPY";
+            case "usdcad" -> "USD_CAD";
+            case "usdjpy" -> "USD_JPY";
+            case "audusd" -> "AUD_USD";
+            case "nzdusd" -> "NZD_USD";
+            case "usdchf" -> "USD_CHF";
+            default -> pair.toUpperCase(Locale.ROOT);
+        };
+    }
+
+    private static String normalizePair(String pair) {
+        if (pair == null) return null;
+        return pair.toLowerCase(Locale.ROOT).replace("_", "").replace("/", "");
     }
 
     private static String formatJson(JsonNode node) {
