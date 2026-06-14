@@ -12,6 +12,12 @@ $ScriptDir = Split-Path -Parent -Path $MyInvocation.MyCommand.Definition
 $Root = Resolve-Path (Join-Path $ScriptDir "..") | Select-Object -ExpandProperty Path
 Set-Location $Root
 
+# Resolve Maven command
+$MvnCmd = "mvn"
+if (Test-Path "$Root\mvnw.cmd") {
+    $MvnCmd = "$Root\mvnw.cmd"
+}
+
 # Setup env vars
 if (-not $env:TRADING_BRIDGE_ROOT) {
     $env:TRADING_BRIDGE_ROOT = $Root
@@ -54,10 +60,10 @@ try {
         } else {
             Write-Host "Starting control plane (background)..."
             Write-Host "Building trading-runtime (and dependencies)..."
-            mvn -q -pl trading-runtime -am install -DskipTests
+            & $MvnCmd -q -pl trading-runtime -am install -DskipTests
             
             # Start control plane process in background
-            $CP_Process = Start-Process -FilePath "cmd.exe" -ArgumentList "/c mvn -q exec:java -pl trading-runtime -Dexec.mainClass=com.martinfou.trading.runtime.ControlPlaneMain" -NoNewWindow -PassThru
+            $CP_Process = Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$MvnCmd`" -q exec:java -pl trading-runtime -Dexec.mainClass=com.martinfou.trading.runtime.ControlPlaneMain" -NoNewWindow -PassThru
             
             # Poll for health
             $success = $false
@@ -81,13 +87,13 @@ try {
     } elseif (-not (Get-ControlPlaneHealthy)) {
         Write-Warning "Control plane not reachable at $($env:CONTROL_PLANE_URL)"
         Write-Warning "  Start it in another terminal:"
-        Write-Warning "    mvn exec:java -pl trading-runtime -Dexec.mainClass=com.martinfou.trading.runtime.ControlPlaneMain"
+        Write-Warning "    & `"$MvnCmd`" exec:java -pl trading-runtime -Dexec.mainClass=com.martinfou.trading.runtime.ControlPlaneMain"
         Write-Warning "  Or re-run: .\scripts\run-tui.ps1 --with-control-plane"
         Write-Host ""
     }
 
     Write-Host "Trading Bridge TUI -> $($env:CONTROL_PLANE_URL)"
-    mvn exec:java -pl trading-tui -Dexec.mainClass=com.martinfou.trading.tui.TradingTuiMain
+    & $MvnCmd exec:java -pl trading-tui -Dexec.mainClass=com.martinfou.trading.tui.TradingTuiMain
 
 } finally {
     if ($CP_Process -and -not $CP_Process.HasExited) {
