@@ -11,6 +11,8 @@ public interface EventStore extends AutoCloseable {
 
     long append(String runId, RunEvent event);
 
+    void clear(String runId);
+
     List<RunEvent> query(String runId, long afterSequence, int limit);
 
     long count(String runId);

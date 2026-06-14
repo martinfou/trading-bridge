@@ -74,6 +74,11 @@ class BroadcastingEventStoreTest {
         }
 
         @Override
+        public void clear(String runId) {
+            delegate.clear(runId);
+        }
+
+        @Override
         public List<RunEvent> query(String runId, long afterSequence, int limit) {
             return delegate.query(runId, afterSequence, limit);
         }

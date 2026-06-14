@@ -9,5 +9,6 @@ public record OandaPositionSnapshot(
     double units,
     double averagePrice,
     String clientTag,
-    java.time.Instant entryTime
+    java.time.Instant entryTime,
+    String tradeId
 ) {}

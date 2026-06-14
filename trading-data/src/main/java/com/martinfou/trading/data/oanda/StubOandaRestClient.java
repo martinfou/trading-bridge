@@ -38,7 +38,8 @@ public final class StubOandaRestClient implements OandaRestClient {
             Math.abs(units),
             price,
             clientTag,
-            null));
+            null,
+            tradeId));
         return OandaMarketOrderResult.success(orderId, tradeId, price);
     }
 
@@ -57,7 +58,8 @@ public final class StubOandaRestClient implements OandaRestClient {
                 Math.abs(units),
                 fillPrice,
                 clientTag,
-                null));
+                null,
+                tradeId));
         }
         return new OandaMarketOrderResult(201, orderId, tradeId, type.equalsIgnoreCase("MARKET") ? fillPrice : null, null);
     }

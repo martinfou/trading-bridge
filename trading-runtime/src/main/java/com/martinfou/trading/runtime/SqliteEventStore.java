@@ -65,6 +65,17 @@ public final class SqliteEventStore implements EventStore {
     }
 
     @Override
+    public void clear(String runId) {
+        EventStoreValidation.requireRunId(runId);
+        try (PreparedStatement ps = connection.prepareStatement("DELETE FROM events WHERE run_id = ?")) {
+            ps.setString(1, runId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to clear events for run " + runId, e);
+        }
+    }
+
+    @Override
     public List<RunEvent> query(String runId, long afterSequence, int limit) {
         return queryWithSequence(runId, afterSequence, limit).stream()
             .map(StoredRunEvent::event)

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Start the Trading Bridge control plane (HTTP :8080).
 #
-# Usage: ./scripts/run-control-plane.sh
+# Usage: ./scripts/start-control-plane.sh
 
 set -euo pipefail
 

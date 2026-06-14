@@ -108,11 +108,22 @@ public final class OandaBroker implements Broker {
     }
 
     @Override
+    public boolean closeTrade(String tradeId, double quantity) {
+        if (!connected) {
+            return false;
+        }
+        String units = String.valueOf(Math.round(quantity));
+        return client.closeTrade(tradeId, units);
+    }
+
+    @Override
     public List<Position> getPositions() {
         List<Position> out = new ArrayList<>();
         for (OandaPositionSnapshot row : client.fetchOpenPositions()) {
             java.time.Instant entryTime = row.entryTime() != null ? row.entryTime() : java.time.Instant.EPOCH;
-            out.add(new Position(row.instrument(), row.side(), row.units(), row.averagePrice(), entryTime, row.clientTag()));
+            Position p = new Position(row.instrument(), row.side(), row.units(), row.averagePrice(), entryTime, row.clientTag());
+            p.withBrokerTradeId(row.tradeId());
+            out.add(p);
         }
         return List.copyOf(out);
     }
