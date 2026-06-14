@@ -38,13 +38,29 @@ function updateClock() {
   utcTime.value = `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss} UTC`
 }
 
+const isConnected = ref(false)
+let connectionInterval: any = null
+
+async function checkConnection() {
+  try {
+    const res = await fetch(`${controlPlaneUrl.value}/api/control/summary`)
+    isConnected.value = res.ok
+  } catch (err) {
+    isConnected.value = false
+  }
+}
+
 onMounted(() => {
   updateClock()
   clockInterval = setInterval(updateClock, 1000)
+  
+  checkConnection()
+  connectionInterval = setInterval(checkConnection, 2000)
 })
 
 onUnmounted(() => {
   if (clockInterval) clearInterval(clockInterval)
+  if (connectionInterval) clearInterval(connectionInterval)
 })
 
 const nav = [
@@ -97,8 +113,10 @@ function quitApp() {
     </main>
     <footer class="status-bar" :class="[type, { 'has-message': message }]">
       <div class="status-left">
-        <span class="status-dot" :class="[message ? type : 'ready']"></span>
-        <span class="status-text">{{ message ? `System Alert` : 'System Ready' }}</span>
+        <span class="status-dot" :class="[message ? type : (isConnected ? 'ready' : 'error')]"></span>
+        <span class="status-text">
+          {{ message ? 'System Alert' : (isConnected ? 'System Ready' : 'Control Plane Disconnected') }}
+        </span>
       </div>
 
       <div class="status-center">

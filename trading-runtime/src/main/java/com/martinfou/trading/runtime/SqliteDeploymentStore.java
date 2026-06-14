@@ -79,6 +79,16 @@ public final class SqliteDeploymentStore implements DeploymentStore {
     }
 
     @Override
+    public void delete(String strategyId) {
+        try (PreparedStatement ps = connection.prepareStatement("DELETE FROM deployments WHERE strategy_id = ?")) {
+            ps.setString(1, strategyId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to delete deployment for " + strategyId, e);
+        }
+    }
+
+    @Override
     public List<DeploymentRecord> listAll() {
         try (Statement stmt = connection.createStatement();
              ResultSet rs = stmt.executeQuery(

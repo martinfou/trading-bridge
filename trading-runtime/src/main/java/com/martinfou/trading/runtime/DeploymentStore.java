@@ -10,6 +10,8 @@ public interface DeploymentStore extends AutoCloseable {
 
     void save(DeploymentRecord record);
 
+    void delete(String strategyId);
+
     List<DeploymentRecord> listAll();
 
     @Override

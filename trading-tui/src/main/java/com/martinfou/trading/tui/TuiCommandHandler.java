@@ -117,12 +117,19 @@ public final class TuiCommandHandler {
         JsonNode summary = client.controlSummary();
         List<String> lines = new ArrayList<>();
         lines.add("Trading Desk summary:");
-        if (summary.has("strategies")) {
-            for (JsonNode s : summary.get("strategies")) {
-                String id = s.get("strategyId").asText();
-                String mode = s.has("deploymentMode") ? s.get("deploymentMode").asText() : "—";
-                lines.add("  " + id + "  " + mode);
+        if (summary.has("runs") && summary.get("runs").size() > 0) {
+            for (JsonNode run : summary.get("runs")) {
+                String id = run.path("strategyId").asText();
+                String mode = run.path("mode").asText();
+                String status = run.path("status").asText();
+                String runId = run.path("runId").asText();
+                double pnl = run.path("totalPnL").asDouble(0.0);
+                int openTrades = run.path("openTrades").asInt(0);
+                lines.add(String.format("  %-25s %-5s %-10s (PnL: $%7.2f, Open: %d) [%s]", 
+                    id, mode, status, pnl, openTrades, runId));
             }
+        } else {
+            lines.add("  No active runs currently in the Trading Desk.");
         }
         return lines;
     }

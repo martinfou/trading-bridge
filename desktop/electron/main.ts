@@ -151,7 +151,7 @@ function waitForControlPlane(): Promise<void> {
         reject(new Error(`Control plane not ready after ${READY_TIMEOUT_MS / 1000}s`))
         return
       }
-      if (!javaProcess) {
+      if (!javaProcess && !process.env.NO_CONTROL_PLANE) {
         reject(new Error('JVM exited before control plane was ready'))
         return
       }
@@ -320,39 +320,41 @@ app.whenReady().then(async () => {
   const cfg = resolveConfig()
 
   // Check if port is taken
-  const portTaken = await isPortTaken(CONTROL_PLANE_PORT)
-  if (portTaken) {
-    console.log(`[main] Port ${CONTROL_PLANE_PORT} is taken, checking if it is a Trading Bridge copy...`)
-    const isBridge = await isTradingBridgeInstance(CONTROL_PLANE_PORT)
-    if (isBridge) {
-      const choice = dialog.showMessageBoxSync({
-        type: 'question',
-        buttons: ['Oui, arrêter', 'Non, quitter'],
-        defaultId: 0,
-        title: 'Trading Bridge',
-        message: `Une autre instance de Trading Bridge utilise déjà le port ${CONTROL_PLANE_PORT}.`,
-        detail: 'Voulez-vous arrêter cette instance pour démarrer la nouvelle ?',
-        cancelId: 1
-      })
-      if (choice === 0) {
-        console.log(`[main] Stopping process on port ${CONTROL_PLANE_PORT}...`)
-        killProcessOnPort(CONTROL_PLANE_PORT)
-        // Verify port is now free (give it a moment)
-        await new Promise(r => setTimeout(r, 1000))
-        const stillTaken = await isPortTaken(CONTROL_PLANE_PORT)
-        if (stillTaken) {
-          showError(`Impossible de libérer le port ${CONTROL_PLANE_PORT}. Veuillez le fermer manuellement.`)
+  if (!process.env.NO_CONTROL_PLANE) {
+    const portTaken = await isPortTaken(CONTROL_PLANE_PORT)
+    if (portTaken) {
+      console.log(`[main] Port ${CONTROL_PLANE_PORT} is taken, checking if it is a Trading Bridge copy...`)
+      const isBridge = await isTradingBridgeInstance(CONTROL_PLANE_PORT)
+      if (isBridge) {
+        const choice = dialog.showMessageBoxSync({
+          type: 'question',
+          buttons: ['Oui, arrêter', 'Non, quitter'],
+          defaultId: 0,
+          title: 'Trading Bridge',
+          message: `Une autre instance de Trading Bridge utilise déjà le port ${CONTROL_PLANE_PORT}.`,
+          detail: 'Voulez-vous arrêter cette instance pour démarrer la nouvelle ?',
+          cancelId: 1
+        })
+        if (choice === 0) {
+          console.log(`[main] Stopping process on port ${CONTROL_PLANE_PORT}...`)
+          killProcessOnPort(CONTROL_PLANE_PORT)
+          // Verify port is now free (give it a moment)
+          await new Promise(r => setTimeout(r, 1000))
+          const stillTaken = await isPortTaken(CONTROL_PLANE_PORT)
+          if (stillTaken) {
+            showError(`Impossible de libérer le port ${CONTROL_PLANE_PORT}. Veuillez le fermer manuellement.`)
+            app.quit()
+            return
+          }
+        } else {
           app.quit()
           return
         }
       } else {
+        showError(`Le port ${CONTROL_PLANE_PORT} est déjà utilisé par une autre application.\n\nVeuillez libérer ce port et relancer Trading Bridge.`)
         app.quit()
         return
       }
-    } else {
-      showError(`Le port ${CONTROL_PLANE_PORT} est déjà utilisé par une autre application.\n\nVeuillez libérer ce port et relancer Trading Bridge.`)
-      app.quit()
-      return
     }
   }
 
@@ -360,7 +362,11 @@ app.whenReady().then(async () => {
   createLoadingWindow()
 
   // Start JVM
-  startJavaProcess(cfg)
+  if (!process.env.NO_CONTROL_PLANE) {
+    startJavaProcess(cfg)
+  } else {
+    console.log('[main] NO_CONTROL_PLANE is set, skipping embedded Java process')
+  }
 
   // Wait for control plane
   try {

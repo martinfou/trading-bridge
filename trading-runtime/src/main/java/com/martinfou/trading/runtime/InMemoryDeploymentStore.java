@@ -21,6 +21,11 @@ public final class InMemoryDeploymentStore implements DeploymentStore {
     }
 
     @Override
+    public void delete(String strategyId) {
+        records.remove(strategyId);
+    }
+
+    @Override
     public List<DeploymentRecord> listAll() {
         return List.copyOf(records.values());
     }

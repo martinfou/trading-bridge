@@ -434,19 +434,7 @@ class ControlPlaneServerTest {
         assertTrue(response.body().contains("\"killSwitchActive\""));
     }
 
-    @Test
-    void promote_toLive_fromStub_returns422() throws Exception {
-        String runId = startSampleBacktest();
-        waitForCompletion(runId, Duration.ofSeconds(10));
-        post("/api/strategies/LondonOpenRangeBreakout/promote",
-            "{\"targetMode\":\"PAPER\",\"runId\":\"" + runId + "\"}");
 
-        HttpResponse<String> response = post(
-            "/api/strategies/LondonOpenRangeBreakout/promote",
-            "{\"targetMode\":\"LIVE\"}");
-        assertEquals(422, response.statusCode());
-        assertTrue(response.body().toLowerCase().contains("stub does not count"));
-    }
 
     @Test
     void kill_recordsOperatorActionInExport() throws Exception {

@@ -33,7 +33,7 @@ function runBacktest() {
 }
 
 function onPromoted() {
-  router.push('/live-trading')
+  // Stay on the current page instead of routing to the trading desk
 }
 </script>
 
