@@ -2,7 +2,7 @@
 # Job 3 — deploy compiled/ bundle to PAPER_OANDA via control plane.
 #
 # Cron: after successful compile, or Monday 00:05 UTC (configurable).
-# Requires control plane: ./scripts/run-control-plane.sh
+# Requires control plane: ./scripts/start-control-plane.sh
 #
 # Usage: ./scripts/weekly-deploy.sh
 

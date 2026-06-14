@@ -62,13 +62,14 @@ public final class OandaStreamingExecutor implements AutoCloseable {
     private Instant lastDailyRollover;
     private Instant lastWeeklyRollover;
 
-    private boolean suspendedDaily = false;
-    private boolean suspendedWeekly = false;
+    private volatile boolean suspendedDaily = false;
+    private volatile boolean suspendedWeekly = false;
+    private volatile Instant cooldownUntil = null;
+    private volatile double lastMidPrice = 0.0;
+    private Instant lastTickHeartbeat = Instant.MIN;
 
     // Cooldown logic fields
     private final List<Instant> recentLosses = new ArrayList<>();
-    private Instant cooldownUntil = null;
-    private volatile double lastMidPrice = 0.0;
 
     public OandaStreamingExecutor(
         String runId,
@@ -108,6 +109,11 @@ public final class OandaStreamingExecutor implements AutoCloseable {
                 if (instrument.equalsIgnoreCase(config.symbol())) {
                     processTick(timestamp, bid, ask);
                 }
+            }
+
+            @Override
+            public void onHeartbeat(Instant timestamp) {
+                processHeartbeat(timestamp);
             }
 
             @Override
@@ -168,6 +174,47 @@ public final class OandaStreamingExecutor implements AutoCloseable {
         triggerActiveLiquidation();
     }
 
+    public void closePositions() {
+        java.util.Set<String> runOrderIds = new java.util.HashSet<>();
+        try {
+            if (eventStore != null) {
+                for (var e : eventStore.replayAll(runId)) {
+                    if (e.type() == RunEventType.FILL && e.payload() != null && e.payload().containsKey("orderId")) {
+                        runOrderIds.add(String.valueOf(e.payload().get("orderId")));
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("Failed to replay fills for manual close filtering in run {}", runId, e);
+        }
+
+        for (Position pos : broker.getPositions()) {
+            if (pos.symbol().equalsIgnoreCase(config.symbol())) {
+                if (pos.clientTag() != null && !pos.clientTag().isBlank()) {
+                    if (!runOrderIds.contains(pos.clientTag())) {
+                        continue;
+                    }
+                }
+                if (pos.brokerTradeId() != null && !pos.brokerTradeId().isBlank()) {
+                    log.info("Closing OANDA trade directly via REST: tradeId={}, qty={}", pos.brokerTradeId(), pos.quantity());
+                    broker.closeTrade(pos.brokerTradeId(), pos.quantity());
+                } else {
+                    Order marketClose = new Order(
+                        pos.symbol(),
+                        pos.side() == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY,
+                        Order.Type.MARKET,
+                        pos.quantity(),
+                        0.0
+                    ).closeOnly();
+                    log.info("Submitting manual close order: {}", marketClose);
+                    broker.submitOrder(marketClose);
+                }
+            }
+        }
+        emitOperatorAction("MANUAL_CLOSE", "Operator closed positions manually.");
+    }
+
+
     @Override
     public void close() {
         stop();
@@ -215,6 +262,11 @@ public final class OandaStreamingExecutor implements AutoCloseable {
             return;
         }
 
+        if (java.time.Duration.between(lastTickHeartbeat, timestamp).getSeconds() >= 60) {
+            HeartbeatEvents.emitTickHeartbeat(runId, config, runMode, eventStore, timestamp);
+            lastTickHeartbeat = timestamp;
+        }
+
         lastMidPrice = (bid + ask) / 2.0;
 
         // 1. Perform rollover checks
@@ -223,8 +275,8 @@ public final class OandaStreamingExecutor implements AutoCloseable {
         // 2. Perform risk circuit checks (DLL, WLL, Drawdown)
         checkRiskCircuitBreakers(timestamp);
 
-        double mid = (bid + ask) / 2.0;
-        Bar tickBar = new Bar(config.symbol(), timestamp, mid, mid, mid, mid, 1);
+        lastMidPrice = (bid + ask) / 2.0;
+        Bar tickBar = new Bar(config.symbol(), timestamp, lastMidPrice, lastMidPrice, lastMidPrice, lastMidPrice, 1);
 
         if (aggregator.isNewPeriod(tickBar)) {
             aggregator.completePeriod();
@@ -241,6 +293,16 @@ public final class OandaStreamingExecutor implements AutoCloseable {
             }
         }
         aggregator.add(tickBar);
+    }
+
+    private void processHeartbeat(Instant timestamp) {
+        if (isWeekend(timestamp)) {
+            return;
+        }
+        if (java.time.Duration.between(lastTickHeartbeat, timestamp).getSeconds() >= 60) {
+            HeartbeatEvents.emitTickHeartbeat(runId, config, runMode, eventStore, timestamp);
+            lastTickHeartbeat = timestamp;
+        }
     }
 
     private void checkRollovers(Instant now) {
@@ -342,15 +404,20 @@ public final class OandaStreamingExecutor implements AutoCloseable {
                         continue;
                     }
                 }
-                Order marketClose = new Order(
-                    pos.symbol(),
-                    pos.side() == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY,
-                    Order.Type.MARKET,
-                    pos.quantity(),
-                    0.0
-                ).closeOnly();
-                log.info("Submitting emergency close order due to breach: {}", marketClose);
-                broker.submitOrder(marketClose);
+                if (pos.brokerTradeId() != null && !pos.brokerTradeId().isBlank()) {
+                    log.info("Closing OANDA trade directly via REST due to breach: tradeId={}, qty={}", pos.brokerTradeId(), pos.quantity());
+                    broker.closeTrade(pos.brokerTradeId(), pos.quantity());
+                } else {
+                    Order marketClose = new Order(
+                        pos.symbol(),
+                        pos.side() == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY,
+                        Order.Type.MARKET,
+                        pos.quantity(),
+                        0.0
+                    ).closeOnly();
+                    log.info("Submitting emergency close order due to breach: {}", marketClose);
+                    broker.submitOrder(marketClose);
+                }
             }
         }
         emitOperatorAction(actionType, message);
@@ -474,15 +541,20 @@ public final class OandaStreamingExecutor implements AutoCloseable {
                         continue;
                     }
                 }
-                Order marketClose = new Order(
-                    pos.symbol(),
-                    pos.side() == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY,
-                    Order.Type.MARKET,
-                    pos.quantity(),
-                    0.0
-                ).closeOnly();
-                log.info("Submitting emergency close order: {}", marketClose);
-                broker.submitOrder(marketClose);
+                if (pos.brokerTradeId() != null && !pos.brokerTradeId().isBlank()) {
+                    log.info("Closing OANDA trade directly via REST due to drawdown breach: tradeId={}, qty={}", pos.brokerTradeId(), pos.quantity());
+                    broker.closeTrade(pos.brokerTradeId(), pos.quantity());
+                } else {
+                    Order marketClose = new Order(
+                        pos.symbol(),
+                        pos.side() == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY,
+                        Order.Type.MARKET,
+                        pos.quantity(),
+                        0.0
+                    ).closeOnly();
+                    log.info("Submitting emergency close order: {}", marketClose);
+                    broker.submitOrder(marketClose);
+                }
             }
         }
         emitOperatorAction("DRAWDOWN_BREACH", "Max 10% drawdown exceeded.");

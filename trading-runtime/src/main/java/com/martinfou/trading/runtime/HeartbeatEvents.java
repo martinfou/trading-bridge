@@ -34,4 +34,25 @@ final class HeartbeatEvents {
             bar.timestamp());
         eventStore.append(runId, event);
     }
+
+    static void emitTickHeartbeat(
+        String runId,
+        RunConfigSnapshot config,
+        RunMode runMode,
+        EventStore eventStore,
+        java.time.Instant timestamp
+    ) {
+        var payload = new LinkedHashMap<String, Object>();
+        payload.put("source", "TICK_LOOP");
+        payload.put("tickTime", timestamp.toString());
+
+        RunEvent event = RunEvent.heartbeat(
+            runId,
+            config.strategyId(),
+            config.symbol(),
+            runMode,
+            Map.copyOf(payload),
+            timestamp);
+        eventStore.append(runId, event);
+    }
 }

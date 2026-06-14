@@ -10,6 +10,10 @@ public class Position {
 
     private final java.time.Instant entryTime;
     private final String clientTag;
+    private String brokerTradeId;
+
+    public String brokerTradeId() { return brokerTradeId; }
+    public Position withBrokerTradeId(String brokerTradeId) { this.brokerTradeId = brokerTradeId; return this; }
 
     public Position(String symbol, Order.Side side, double quantity, double entryPrice, java.time.Instant entryTime, String clientTag) {
         this.symbol = symbol; this.side = side;

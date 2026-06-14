@@ -76,6 +76,7 @@ public final class HttpOandaRestClient implements OandaRestClient {
             order.put("timeInForce", "FOK");
             if (clientTag != null && !clientTag.isBlank()) {
                 order.put("clientExtensions", Map.of("tag", clientTag, "comment", clientTag));
+                order.put("tradeClientExtensions", Map.of("tag", clientTag, "comment", clientTag));
             }
             String body = mapper.writeValueAsString(Map.of("order", order));
 
@@ -147,6 +148,7 @@ public final class HttpOandaRestClient implements OandaRestClient {
             }
             if (clientTag != null && !clientTag.isBlank()) {
                 order.put("clientExtensions", Map.of("tag", clientTag, "comment", clientTag));
+                order.put("tradeClientExtensions", Map.of("tag", clientTag, "comment", clientTag));
             }
             String body = mapper.writeValueAsString(Map.of("order", order));
 
@@ -300,7 +302,8 @@ public final class HttpOandaRestClient implements OandaRestClient {
                     Math.abs(units),
                     Double.parseDouble(trade.get("price").asText()),
                     clientTag,
-                    entryTime));
+                    entryTime,
+                    trade.get("id").asText()));
             }
             return List.copyOf(positions);
         } catch (Exception e) {

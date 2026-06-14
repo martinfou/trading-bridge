@@ -347,6 +347,10 @@ export function useControlPlane() {
     return apiDelete<any>('/api/backtests', controlPlaneUrl.value)
   }
 
+  async function closePositions(runId: string): Promise<any> {
+    return apiPost<any>(`/api/runs/${runId}/close-positions`, {}, controlPlaneUrl.value)
+  }
+
   return {
     startRun,
     getRun,
@@ -375,6 +379,7 @@ export function useControlPlane() {
     deleteBacktest,
     deleteAllBacktests,
     getSentiment,
+    closePositions,
     error,
     loading,
     controlPlaneUrl,

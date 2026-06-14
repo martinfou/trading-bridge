@@ -38,6 +38,7 @@ public final class ControlPlaneServer implements AutoCloseable {
     private final SqBridgeService sqBridgeService;
     private final WeeklyBuilderService weeklyBuilderService;
     private final HistoricalDataService historicalDataService;
+    private final StaleRunWatchdog watchdog;
     private final Javalin app;
 
     public ControlPlaneServer(
@@ -108,6 +109,8 @@ public final class ControlPlaneServer implements AutoCloseable {
         this.sqBridgeService = sqBridgeService;
         this.weeklyBuilderService = weeklyBuilderService;
         this.historicalDataService = historicalDataService != null ? historicalDataService : new HistoricalDataService();
+        this.watchdog = new StaleRunWatchdog(runManager, summaryService);
+        this.watchdog.start();
         this.app = createApp(runManager, eventHub, promoteService, killSwitchService, summaryService,
             sqBridgeService, weeklyBuilderService, this.historicalDataService);
         app.start(port);
@@ -168,6 +171,7 @@ public final class ControlPlaneServer implements AutoCloseable {
     @Override
     public void close() {
         app.stop();
+        watchdog.close();
         sqBridgeService.close();
         weeklyBuilderService.close();
     }
@@ -565,6 +569,64 @@ public final class ControlPlaneServer implements AutoCloseable {
                     "runId", runId,
                     "status", RunRecord.Status.RUNNING.name()));
             })
+            .post("/api/runs/{runId}/close-positions", ctx -> {
+                String runId = ctx.pathParam("runId");
+                runManager.getRun(runId)
+                    .orElseThrow(() -> new NotFoundException("Run not found: " + runId));
+                runManager.closePositions(runId);
+                ctx.status(HttpStatus.OK);
+                ctx.json(Map.of("success", true, "message", "Position close order submitted successfully"));
+            })
+            .post("/api/runs/{runId}/clear-events", ctx -> {
+                String runId = ctx.pathParam("runId");
+                runManager.getRun(runId)
+                    .orElseThrow(() -> new NotFoundException("Run not found: " + runId));
+                runManager.eventStore().clear(runId);
+                ctx.status(HttpStatus.OK);
+                ctx.json(Map.of("success", true, "message", "Run events cleared successfully"));
+            })
+            .post("/api/runs/start-all-harness", ctx -> {
+                List<String> started = new ArrayList<>();
+                for (var entry : StrategyCatalog.entries()) {
+                    if (entry.id().startsWith("Harness_")) {
+                        boolean isAlreadyRunning = runManager.list(null).stream()
+                            .anyMatch(r -> r.strategyId().equals(entry.id())
+                                && r.mode() == com.martinfou.trading.backtest.RunMode.PAPER
+                                && r.status() == RunRecord.Status.RUNNING);
+                        if (!isAlreadyRunning) {
+                            String executionLabel = "PAPER_STUB";
+                            String brokerAccountId = null;
+                            if (runManager.brokerAccountRegistry().credentialsConfigured("oanda-paper")) {
+                                executionLabel = "PAPER_OANDA";
+                                brokerAccountId = "oanda-paper";
+                            } else if (runManager.brokerAccountRegistry().credentialsConfigured("default")) {
+                                executionLabel = "PAPER_OANDA";
+                                brokerAccountId = "default";
+                            }
+
+                            RunManager.StartRunRequest request = new RunManager.StartRunRequest(
+                                entry.id(),
+                                entry.defaultSymbol(),
+                                "PAPER",
+                                new BarSourceResolver.BarsSource("sample", 500, null, null),
+                                100000.0,
+                                null, // lotSize
+                                0.07,
+                                1e-4,
+                                executionLabel,
+                                brokerAccountId
+                            );
+                            runManager.startRun(request);
+                            started.add(entry.id());
+                        }
+                    }
+                }
+                ctx.status(HttpStatus.OK);
+                ctx.json(Map.of(
+                    "success", true,
+                    "message", "Started " + started.size() + " harness strategies in paper trading",
+                    "started", started));
+            })
             .get("/api/runs", ctx -> {
                 List<Map<String, Object>> items = runManager.list(null).stream()
                     .map(r -> {
@@ -787,6 +849,10 @@ public final class ControlPlaneServer implements AutoCloseable {
                 ctx.status(HttpStatus.BAD_REQUEST);
                 ctx.json(Map.of("error", e.getMessage()));
             })
+            .exception(IllegalStateException.class, (e, ctx) -> {
+                ctx.status(HttpStatus.BAD_REQUEST);
+                ctx.json(Map.of("error", e.getMessage()));
+            })
             .exception(Exception.class, (e, ctx) -> {
                 ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
                 ctx.json(Map.of("error", e.getMessage() != null ? e.getMessage() : "Internal error"));
@@ -860,6 +926,7 @@ public final class ControlPlaneServer implements AutoCloseable {
         }
 
         List<Map<String, Object>> positions = new ArrayList<>();
+        boolean brokerChecked = false;
         if (record.status() == RunRecord.Status.RUNNING && label.isBrokerBacked()) {
             try {
                 String accountId = record.configSnapshot().containsKey("brokerAccountId")
@@ -870,6 +937,7 @@ public final class ControlPlaneServer implements AutoCloseable {
                     if (brokerOpt.isPresent()) {
                         try (var broker = brokerOpt.get()) {
                             broker.connect();
+                            brokerChecked = true;
                             java.util.Set<String> runOrderIds = new java.util.HashSet<>();
                             if (runManager.eventStore() != null) {
                                 for (var e : runManager.eventStore().replayAll(record.runId())) {
@@ -918,10 +986,11 @@ public final class ControlPlaneServer implements AutoCloseable {
                     }
                 }
             } catch (Exception e) {
+                brokerChecked = false;
                 // fallback to journal fills
             }
         }
-        if (positions.isEmpty()) {
+        if (!brokerChecked && positions.isEmpty()) {
             List<Map<String, Object>> journalPositions = JournalPositions.fromFills(runManager.eventStore().replayAll(record.runId())).values().stream()
                 .map(pos -> Map.<String, Object>of(
                     "symbol", pos.symbol(),
