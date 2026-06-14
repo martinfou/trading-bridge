@@ -24,7 +24,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.*;
+import com.martinfou.trading.intelligence.agent.utils.InstrumentUtil;
 
 /**
  * Orchestrator service for the Agentic Strategist ReAct loop.
@@ -32,6 +34,7 @@ import java.util.concurrent.*;
 public class AgenticStrategistService implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(AgenticStrategistService.class);
+    private static final String SYSTEM_PROMPT_TEMPLATE = loadSystemPromptStatic();
     
     private final ChatLanguageModel chatModelOverride;
     private final ExecutorService executor;
@@ -83,10 +86,12 @@ public class AgenticStrategistService implements AutoCloseable {
      * @throws Exception if execution fails or timeouts/budget/iteration limits are exceeded
      */
     public WeeklyStrategyOutlook run(String asset, Instant cutoff) throws Exception {
+        Objects.requireNonNull(asset, "asset cannot be null");
+        Objects.requireNonNull(cutoff, "cutoff cannot be null");
         log.info("Starting weekly analysis for asset: {}, cutoff: {}", asset, cutoff);
 
         // 1. Retrieve currentAssetPrice via SeasonalityAnalyzer
-        String instrument = normalizeInstrument(asset);
+        String instrument = InstrumentUtil.normalizeInstrument(asset);
         SeasonalityAnalyzer analyzer = new SeasonalityAnalyzer();
         List<Bar> bars = analyzer.loadBars(instrument);
         if (bars == null || bars.isEmpty()) {
@@ -105,9 +110,8 @@ public class AgenticStrategistService implements AutoCloseable {
         double currentAssetPrice = filtered.get(filtered.size() - 1).close();
         log.info("Normalized instrument: {}, current asset price: {}", instrument, currentAssetPrice);
 
-        // 2. Load and interpolate prompt
-        String systemPromptTemplate = loadSystemPrompt();
-        String systemPrompt = systemPromptTemplate
+        // 2. Load and interpolate prompt from cache
+        String systemPrompt = SYSTEM_PROMPT_TEMPLATE
                 .replace("{{targetAsset}}", asset)
                 .replace("{{currentAssetPrice}}", String.valueOf(currentAssetPrice))
                 .replace("{{cutoffTimestamp}}", cutoff.toString());
@@ -135,6 +139,11 @@ public class AgenticStrategistService implements AutoCloseable {
         } catch (TimeoutException e) {
             log.error("Execution timed out for asset: {}", asset);
             future.cancel(true);
+            throw e;
+        } catch (InterruptedException e) {
+            log.error("Execution interrupted for asset: {}", asset);
+            future.cancel(true);
+            Thread.currentThread().interrupt();
             throw e;
         } catch (ExecutionException e) {
             Throwable cause = e.getCause();
@@ -179,11 +188,17 @@ public class AgenticStrategistService implements AutoCloseable {
     }
 
     private ComfortLevel computeComfortLevel(WeeklyStrategyOutlookRaw raw) {
+        if (raw.bias() == null) {
+            throw new ValidationException("bias cannot be null");
+        }
+        if (raw.riskFactors() == null) {
+            throw new ValidationException("riskFactors cannot be null");
+        }
         MarketDirection bias = raw.bias();
         double winRate = raw.seasonalityWinRate();
         double sentiment = raw.rawSentimentScore();
-        boolean macroConflict = raw.riskFactors() != null && raw.riskFactors().macroEventConflict();
-        boolean sentimentDivergence = raw.riskFactors() != null && raw.riskFactors().sentimentDivergence();
+        boolean macroConflict = raw.riskFactors().macroEventConflict();
+        boolean sentimentDivergence = raw.riskFactors().sentimentDivergence();
 
         // Check LOW first as it takes precedence
         if (macroConflict 
@@ -210,6 +225,9 @@ public class AgenticStrategistService implements AutoCloseable {
     }
 
     private void validateOutlook(WeeklyStrategyOutlook outlook, double currentAssetPrice) {
+        if (outlook.bias() == null) {
+            throw new ValidationException("bias cannot be null");
+        }
         // Validation of setup side and trigger type depending on bias
         if (outlook.bias() == MarketDirection.NEUTRAL) {
             if (outlook.setups() != null && !outlook.setups().isEmpty()) {
@@ -218,6 +236,15 @@ public class AgenticStrategistService implements AutoCloseable {
         } else if (outlook.bias() == MarketDirection.BULLISH) {
             if (outlook.setups() != null) {
                 for (TradeTriggerCondition setup : outlook.setups()) {
+                    if (setup == null) {
+                        throw new ValidationException("setup cannot be null");
+                    }
+                    if (setup.side() == null) {
+                        throw new ValidationException("setup side cannot be null");
+                    }
+                    if (setup.type() == null) {
+                        throw new ValidationException("setup type cannot be null");
+                    }
                     if (setup.side() != Order.Side.BUY) {
                         throw new ValidationException("BULLISH bias permits only BUY setups, but found " + setup.side());
                     }
@@ -226,13 +253,21 @@ public class AgenticStrategistService implements AutoCloseable {
         } else if (outlook.bias() == MarketDirection.BEARISH) {
             if (outlook.setups() != null) {
                 for (TradeTriggerCondition setup : outlook.setups()) {
+                    if (setup == null) {
+                        throw new ValidationException("setup cannot be null");
+                    }
+                    if (setup.side() == null) {
+                        throw new ValidationException("setup side cannot be null");
+                    }
+                    if (setup.type() == null) {
+                        throw new ValidationException("setup type cannot be null");
+                    }
                     if (setup.side() != Order.Side.SELL) {
                         throw new ValidationException("BEARISH bias permits only SELL setups, but found " + setup.side());
                     }
                 }
             }
         }
-
         // Validation of price zone, invalidation pips, and executionContextRules keys
         if (outlook.setups() != null) {
             for (TradeTriggerCondition setup : outlook.setups()) {
@@ -259,16 +294,8 @@ public class AgenticStrategistService implements AutoCloseable {
         }
     }
 
-    private String normalizeInstrument(String asset) {
-        String normalized = asset.replace('_', '/').toUpperCase();
-        if (!normalized.contains("/") && normalized.length() == 6) {
-            normalized = normalized.substring(0, 3) + "/" + normalized.substring(3);
-        }
-        return normalized;
-    }
-
-    private String loadSystemPrompt() {
-        try (InputStream is = getClass().getResourceAsStream("/prompts/agentic-strategist-system.txt")) {
+    private static String loadSystemPromptStatic() {
+        try (InputStream is = AgenticStrategistService.class.getResourceAsStream("/prompts/agentic-strategist-system.txt")) {
             if (is == null) {
                 throw new IllegalStateException("Prompt template not found in classpath: /prompts/agentic-strategist-system.txt");
             }

@@ -22,7 +22,13 @@ import java.util.stream.Collectors;
 public class SeasonalityAnalyzer {
 
     private static final Logger log = LoggerFactory.getLogger(SeasonalityAnalyzer.class);
-    private Path getBarsDir() {
+    private final Path barsDir;
+
+    public SeasonalityAnalyzer() {
+        this.barsDir = resolveBarsDir();
+    }
+
+    private Path resolveBarsDir() {
         String dir = System.getProperty("trading.data.dir");
         if (dir != null) {
             return Path.of(dir);
@@ -34,8 +40,13 @@ public class SeasonalityAnalyzer {
             return candidate;
         } else {
             // user.dir might be a module (e.g. trading-data), go up one level
-            return ud.getParent().resolve("data/historical/bars");
+            Path parent = ud.getParent();
+            return parent != null ? parent.resolve("data/historical/bars") : ud.resolve("data/historical/bars");
         }
+    }
+
+    private Path getBarsDir() {
+        return barsDir;
     }
 
     // Known seasonal adages checked by the analyzer

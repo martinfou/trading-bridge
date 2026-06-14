@@ -2,6 +2,7 @@ package com.martinfou.trading.intelligence.agent;
 
 import com.martinfou.trading.core.agent.MarketDirection;
 import com.martinfou.trading.core.agent.MarketRegime;
+import com.martinfou.trading.core.agent.WeeklyStrategyOutlook;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
@@ -474,6 +475,112 @@ class AgenticStrategistServiceTest {
             assertThrows(TimeoutException.class, () -> {
                 service.run("EUR_USD", testCutoff);
             });
+        }
+    }
+
+    @Test
+    void testNullParametersThrowException() {
+        try (AgenticStrategistService service = new AgenticStrategistService(null)) {
+            assertThrows(NullPointerException.class, () -> service.run(null, testCutoff));
+            assertThrows(NullPointerException.class, () -> service.run("EUR_USD", null));
+        }
+    }
+
+    @Test
+    void testNullBiasThrowsValidationException() {
+        ChatLanguageModel mockModel = new ChatLanguageModel() {
+            @Override
+            public Response<AiMessage> generate(List<ChatMessage> messages) {
+                // bias is null
+                String json = "{\"targetAsset\":\"EUR_USD\",\"bias\":null,\"identifiedRegime\":\"HIGH_VOL_TREND\",\"rawSentimentScore\":0.2,\"seasonalityWinRate\":65.0,\"strategyRationale\":\"test\",\"setups\":[],\"riskFactors\":{\"sentimentDivergence\":false,\"macroEventConflict\":false,\"coreFrictionDetails\":\"\"},\"alphaKillSwitchCondition\":\"test\"}";
+                return Response.from(AiMessage.from(json), new TokenUsage(100, 200));
+            }
+            @Override
+            public Response<AiMessage> generate(List<ChatMessage> messages, List<ToolSpecification> toolSpecs) {
+                return generate(messages);
+            }
+            @Override
+            public Response<AiMessage> generate(List<ChatMessage> messages, ToolSpecification toolSpec) {
+                return generate(messages);
+            }
+        };
+
+        try (AgenticStrategistService service = new AgenticStrategistService(mockModel)) {
+            assertThrows(ValidationException.class, () -> service.run("EUR_USD", testCutoff));
+        }
+    }
+
+    @Test
+    void testNullSetupElementThrowsValidationException() {
+        ChatLanguageModel mockModel = new ChatLanguageModel() {
+            @Override
+            public Response<AiMessage> generate(List<ChatMessage> messages) {
+                // setups list contains a null element
+                String json = "{\"targetAsset\":\"EUR_USD\",\"bias\":\"BULLISH\",\"identifiedRegime\":\"HIGH_VOL_TREND\",\"rawSentimentScore\":0.2,\"seasonalityWinRate\":65.0,\"strategyRationale\":\"test\",\"setups\":[null],\"riskFactors\":{\"sentimentDivergence\":false,\"macroEventConflict\":false,\"coreFrictionDetails\":\"\"},\"alphaKillSwitchCondition\":\"test\"}";
+                return Response.from(AiMessage.from(json), new TokenUsage(100, 200));
+            }
+            @Override
+            public Response<AiMessage> generate(List<ChatMessage> messages, List<ToolSpecification> toolSpecs) {
+                return generate(messages);
+            }
+            @Override
+            public Response<AiMessage> generate(List<ChatMessage> messages, ToolSpecification toolSpec) {
+                return generate(messages);
+            }
+        };
+
+        try (AgenticStrategistService service = new AgenticStrategistService(mockModel)) {
+            assertThrows(ValidationException.class, () -> service.run("EUR_USD", testCutoff));
+        }
+    }
+
+    @Test
+    void testNullSetupFieldsThrowValidationException() {
+        ChatLanguageModel mockModel = new ChatLanguageModel() {
+            @Override
+            public Response<AiMessage> generate(List<ChatMessage> messages) {
+                // setups element has null side/type
+                String json = "{\"targetAsset\":\"EUR_USD\",\"bias\":\"BULLISH\",\"identifiedRegime\":\"HIGH_VOL_TREND\",\"rawSentimentScore\":0.2,\"seasonalityWinRate\":65.0,\"strategyRationale\":\"test\",\"setups\":[{\"setupName\":\"test\",\"side\":null,\"type\":null,\"targetedPriceZone\":1.1350,\"invalidationPips\":30,\"executionContextRules\":{}}],\"riskFactors\":{\"sentimentDivergence\":false,\"macroEventConflict\":false,\"coreFrictionDetails\":\"\"},\"alphaKillSwitchCondition\":\"test\"}";
+                return Response.from(AiMessage.from(json), new TokenUsage(100, 200));
+            }
+            @Override
+            public Response<AiMessage> generate(List<ChatMessage> messages, List<ToolSpecification> toolSpecs) {
+                return generate(messages);
+            }
+            @Override
+            public Response<AiMessage> generate(List<ChatMessage> messages, ToolSpecification toolSpec) {
+                return generate(messages);
+            }
+        };
+
+        try (AgenticStrategistService service = new AgenticStrategistService(mockModel)) {
+            assertThrows(ValidationException.class, () -> service.run("EUR_USD", testCutoff));
+        }
+    }
+
+    @Test
+    void testNullTokenUsageCountsGracefulHandling() throws Exception {
+        ChatLanguageModel mockModel = new ChatLanguageModel() {
+            @Override
+            public Response<AiMessage> generate(List<ChatMessage> messages) {
+                String json = "{\"targetAsset\":\"EUR_USD\",\"bias\":\"BULLISH\",\"identifiedRegime\":\"HIGH_VOL_TREND\",\"rawSentimentScore\":0.2,\"seasonalityWinRate\":65.0,\"strategyRationale\":\"test\",\"setups\":[],\"riskFactors\":{\"sentimentDivergence\":false,\"macroEventConflict\":false,\"coreFrictionDetails\":\"\"},\"alphaKillSwitchCondition\":\"test\"}";
+                // TokenUsage has null counts
+                TokenUsage usage = new TokenUsage(null, null);
+                return Response.from(AiMessage.from(json), usage);
+            }
+            @Override
+            public Response<AiMessage> generate(List<ChatMessage> messages, List<ToolSpecification> toolSpecs) {
+                return generate(messages);
+            }
+            @Override
+            public Response<AiMessage> generate(List<ChatMessage> messages, ToolSpecification toolSpec) {
+                return generate(messages);
+            }
+        };
+
+        try (AgenticStrategistService service = new AgenticStrategistService(mockModel)) {
+            WeeklyStrategyOutlook outlook = service.run("EUR_USD", testCutoff);
+            assertNotNull(outlook);
         }
     }
 }

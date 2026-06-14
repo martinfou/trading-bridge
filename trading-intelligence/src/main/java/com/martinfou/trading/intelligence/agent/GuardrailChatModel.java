@@ -21,7 +21,8 @@ public class GuardrailChatModel implements ChatLanguageModel {
 
     private final ChatLanguageModel delegate;
     private final String modelName;
-    private int iterations = 0;
+    private final java.util.concurrent.atomic.AtomicInteger iterations = new java.util.concurrent.atomic.AtomicInteger(0);
+    private final Object costLock = new Object();
     private double accumulatedCost = 0.0;
 
     public GuardrailChatModel(ChatLanguageModel delegate) {
@@ -60,44 +61,52 @@ public class GuardrailChatModel implements ChatLanguageModel {
     }
 
     public int getIterations() {
-        return iterations;
+        return iterations.get();
     }
 
     public double getAccumulatedCost() {
-        return accumulatedCost;
+        synchronized (costLock) {
+            return accumulatedCost;
+        }
     }
 
     private void checkGuardrailsBefore() {
-        iterations++;
-        log.info("ReAct loop iteration #{}", iterations);
-        if (iterations > 4) {
-            log.error("ReAct loop iteration limit exceeded: {}", iterations);
+        int currentIteration = iterations.incrementAndGet();
+        log.info("ReAct loop iteration #{}", currentIteration);
+        if (currentIteration > 4) {
+            log.error("ReAct loop iteration limit exceeded: {}", currentIteration);
             throw new IterationLimitExceededException("ReAct loop exceeded maximum of 4 iterations");
         }
     }
 
     private void checkGuardrailsAfter(Response<AiMessage> response) {
         if (response != null && response.tokenUsage() != null) {
-            int inputTokens = response.tokenUsage().inputTokenCount();
-            int outputTokens = response.tokenUsage().outputTokenCount();
+            Integer in = response.tokenUsage().inputTokenCount();
+            Integer out = response.tokenUsage().outputTokenCount();
+            int inputTokens = in != null ? in : 0;
+            int outputTokens = out != null ? out : 0;
 
             // Rates per 1M tokens
             double inputRate = 0.14 / 1_000_000.0;
             double outputRate = 0.28 / 1_000_000.0;
 
-            if (modelName.contains("gpt-4")) {
-                inputRate = 2.50 / 1_000_000.0;
-                outputRate = 10.00 / 1_000_000.0;
-            }
+             if (modelName.contains("gpt-4")) {
+                 inputRate = 2.50 / 1_000_000.0;
+                 outputRate = 10.00 / 1_000_000.0;
+             }
 
             double cost = (inputTokens * inputRate) + (outputTokens * outputRate);
-            accumulatedCost += cost;
+            double currentAccumulatedCost;
+            synchronized (costLock) {
+                accumulatedCost += cost;
+                currentAccumulatedCost = accumulatedCost;
+            }
             log.info("Iteration cost: ${} (Input: {}, Output: {}), Accumulated: ${}", 
-                    String.format("%.6f", cost), inputTokens, outputTokens, String.format("%.6f", accumulatedCost));
+                    String.format("%.6f", cost), inputTokens, outputTokens, String.format("%.6f", currentAccumulatedCost));
 
-            if (accumulatedCost > 0.50) {
-                log.error("Budget exceeded: accumulated cost is ${}", String.format("%.6f", accumulatedCost));
-                throw new BudgetExceededException("Accumulated token cost of $" + String.format("%.4f", accumulatedCost) + " exceeded cost limit of $0.50");
+            if (currentAccumulatedCost > 0.50) {
+                log.error("Budget exceeded: accumulated cost is ${}", String.format("%.6f", currentAccumulatedCost));
+                throw new BudgetExceededException("Accumulated token cost of $" + String.format("%.4f", currentAccumulatedCost) + " exceeded cost limit of $0.50");
             }
         }
     }

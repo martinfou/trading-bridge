@@ -255,7 +255,7 @@ development_status:
   25-2-declaration-des-records-cibles-et-dtos-partages: done
   25-3-implementation-des-outils-d-ingestion-avec-isolation-temporelle: done
   25-4-developpement-du-service-d-orchestration-agenticstrategistservice-et-de-la-boucle-react: done
-  25-5-logique-de-comfort-level-validations-financieres-et-deserialisation-jackson: review
+  25-5-logique-de-comfort-level-validations-financieres-et-deserialisation-jackson: done
   25-6-mecanisme-de-fallback-degrade-bypass-et-telemetrie: backlog
   25-7-experience-store-boucle-de-feedback-rag: backlog
   25-8-integration-du-control-plane-http-ecriture-json-et-tests-unitaires: backlog

@@ -18,6 +18,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import com.martinfou.trading.intelligence.agent.utils.InstrumentUtil;
 
 public class SeasonalityTools {
 
@@ -36,7 +37,7 @@ public class SeasonalityTools {
 
         log.info("fetchWeeklySeasonality called: asset={}, cutoff={}", asset, cutoffTimestamp);
 
-        String instrument = normalizeInstrument(asset);
+        String instrument = InstrumentUtil.normalizeInstrument(asset);
         ZonedDateTime cutoffZdt = ZonedDateTime.ofInstant(cutoffTimestamp, ZoneId.of("UTC"));
         int targetWeek = cutoffZdt.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR);
         int cutoffYear = cutoffZdt.get(IsoFields.WEEK_BASED_YEAR);
@@ -128,13 +129,6 @@ public class SeasonalityTools {
         }
     }
 
-    private String normalizeInstrument(String asset) {
-        String normalized = asset.replace('_', '/').toUpperCase();
-        if (!normalized.contains("/") && normalized.length() == 6) {
-            normalized = normalized.substring(0, 3) + "/" + normalized.substring(3);
-        }
-        return normalized;
-    }
 
     private double getPipSize(String instrument) {
         if (instrument.contains("JPY")) {

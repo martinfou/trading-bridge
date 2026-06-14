@@ -82,12 +82,21 @@ class WeeklyStrategyOutlookRawTest {
     }
 
     @Test
-    void testGsonDeserialization() {
-        String json = "{\"targetAsset\":\"EUR_USD\",\"bias\":\"BULLISH\",\"identifiedRegime\":\"HIGH_VOL_TREND\",\"rawSentimentScore\":0.2,\"seasonalityWinRate\":65.0,\"strategyRationale\":\"test\",\"setups\":[],\"riskFactors\":{\"sentimentDivergence\":false,\"macroEventConflict\":false,\"coreFrictionDetails\":\"\"},\"alphaKillSwitchCondition\":\"test\"}";
-        com.google.gson.Gson gson = new com.google.gson.Gson();
-        WeeklyStrategyOutlookRaw raw = gson.fromJson(json, WeeklyStrategyOutlookRaw.class);
-        assertNotNull(raw);
-        assertEquals("EUR_USD", raw.targetAsset());
-        assertEquals(65.0, raw.seasonalityWinRate());
+    void testJacksonDeserializationCaseInsensitive() throws Exception {
+        com.fasterxml.jackson.databind.ObjectMapper mapper = com.fasterxml.jackson.databind.json.JsonMapper.builder()
+                .configure(com.fasterxml.jackson.databind.MapperFeature.ACCEPT_CASE_INSENSITIVE_ENUMS, true)
+                .build();
+
+        String jsonBullishUpper = "{\"targetAsset\":\"EUR_USD\",\"bias\":\"BULLISH\",\"identifiedRegime\":\"HIGH_VOL_TREND\",\"rawSentimentScore\":0.2,\"seasonalityWinRate\":65.0,\"strategyRationale\":\"test\",\"setups\":[],\"riskFactors\":{\"sentimentDivergence\":false,\"macroEventConflict\":false,\"coreFrictionDetails\":\"\"},\"alphaKillSwitchCondition\":\"test\"}";
+        WeeklyStrategyOutlookRaw raw1 = mapper.readValue(jsonBullishUpper, WeeklyStrategyOutlookRaw.class);
+        assertEquals(MarketDirection.BULLISH, raw1.bias());
+
+        String jsonBullishMixed = "{\"targetAsset\":\"EUR_USD\",\"bias\":\"Bullish\",\"identifiedRegime\":\"HIGH_VOL_TREND\",\"rawSentimentScore\":0.2,\"seasonalityWinRate\":65.0,\"strategyRationale\":\"test\",\"setups\":[],\"riskFactors\":{\"sentimentDivergence\":false,\"macroEventConflict\":false,\"coreFrictionDetails\":\"\"},\"alphaKillSwitchCondition\":\"test\"}";
+        WeeklyStrategyOutlookRaw raw2 = mapper.readValue(jsonBullishMixed, WeeklyStrategyOutlookRaw.class);
+        assertEquals(MarketDirection.BULLISH, raw2.bias());
+
+        String jsonBullishLower = "{\"targetAsset\":\"EUR_USD\",\"bias\":\"bullish\",\"identifiedRegime\":\"HIGH_VOL_TREND\",\"rawSentimentScore\":0.2,\"seasonalityWinRate\":65.0,\"strategyRationale\":\"test\",\"setups\":[],\"riskFactors\":{\"sentimentDivergence\":false,\"macroEventConflict\":false,\"coreFrictionDetails\":\"\"},\"alphaKillSwitchCondition\":\"test\"}";
+        WeeklyStrategyOutlookRaw raw3 = mapper.readValue(jsonBullishLower, WeeklyStrategyOutlookRaw.class);
+        assertEquals(MarketDirection.BULLISH, raw3.bias());
     }
 }
