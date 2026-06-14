@@ -80,4 +80,14 @@ class WeeklyStrategyOutlookRawTest {
         assertEquals(MarketDirection.NEUTRAL, seasonality.directionalBias());
         assertEquals(15, seasonality.averagePips());
     }
+
+    @Test
+    void testGsonDeserialization() {
+        String json = "{\"targetAsset\":\"EUR_USD\",\"bias\":\"BULLISH\",\"identifiedRegime\":\"HIGH_VOL_TREND\",\"rawSentimentScore\":0.2,\"seasonalityWinRate\":65.0,\"strategyRationale\":\"test\",\"setups\":[],\"riskFactors\":{\"sentimentDivergence\":false,\"macroEventConflict\":false,\"coreFrictionDetails\":\"\"},\"alphaKillSwitchCondition\":\"test\"}";
+        com.google.gson.Gson gson = new com.google.gson.Gson();
+        WeeklyStrategyOutlookRaw raw = gson.fromJson(json, WeeklyStrategyOutlookRaw.class);
+        assertNotNull(raw);
+        assertEquals("EUR_USD", raw.targetAsset());
+        assertEquals(65.0, raw.seasonalityWinRate());
+    }
 }

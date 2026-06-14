@@ -22,21 +22,19 @@ import java.util.stream.Collectors;
 public class SeasonalityAnalyzer {
 
     private static final Logger log = LoggerFactory.getLogger(SeasonalityAnalyzer.class);
-    private static final Path BARS_DIR;
-    static {
+    private Path getBarsDir() {
         String dir = System.getProperty("trading.data.dir");
         if (dir != null) {
-            BARS_DIR = Path.of(dir);
+            return Path.of(dir);
+        }
+        Path ud = Path.of(System.getProperty("user.dir"));
+        // Check if user.dir is the project root or a module subdir
+        Path candidate = ud.resolve("data/historical/bars");
+        if (Files.exists(candidate)) {
+            return candidate;
         } else {
-            Path ud = Path.of(System.getProperty("user.dir"));
-            // Check if user.dir is the project root or a module subdir
-            Path candidate = ud.resolve("data/historical/bars");
-            if (Files.exists(candidate)) {
-                BARS_DIR = candidate;
-            } else {
-                // user.dir might be a module (e.g. trading-data), go up one level
-                BARS_DIR = ud.getParent().resolve("data/historical/bars");
-            }
+            // user.dir might be a module (e.g. trading-data), go up one level
+            return ud.getParent().resolve("data/historical/bars");
         }
     }
 
@@ -256,10 +254,10 @@ public class SeasonalityAnalyzer {
 
     // ── Bar loading ──
 
-    private List<Bar> loadBars(String instrument) throws Exception {
+    public List<Bar> loadBars(String instrument) throws Exception {
         String fname = MERGE_FILES.get(instrument);
         if (fname == null) return List.of();
-        Path path = BARS_DIR.resolve(fname);
+        Path path = getBarsDir().resolve(fname);
         if (!Files.exists(path)) return List.of();
 
         byte[] raw = Files.readAllBytes(path);

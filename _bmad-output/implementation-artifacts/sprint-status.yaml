@@ -1,5 +1,5 @@
 # generated: 2026-06-06
-# last_updated: 2026-06-06T14:24:10Z
+# last_updated: 2026-06-14T04:04:00Z
 # project: trading-bridge
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: "2026-06-06"
-last_updated: "2026-06-06T23:26:10Z"
+last_updated: "2026-06-14T04:07:00Z"
 project: trading-bridge
 project_key: NOKEY
 tracking_system: file-system
@@ -130,7 +130,7 @@ development_status:
   14-4-export-genetics-vers-catalog: backlog
   epic-14-retrospective: optional
 
-  epic-15: done
+  epic-15: in-progress
   15-1-gate-backtest-mvp-golden-metriques-minimales: backlog
   15-2-promoteservice-et-deploymentstore: backlog
   15-3-api-promote-avec-rejet-422: backlog
@@ -139,6 +139,7 @@ development_status:
   15-6-execution-label-sm2: done
   15-7-html-due-diligence-report: done
   15-8-prop-shop-runbook: done
+  15-9-exception-de-promotion-pour-les-strategies-harness: done
   epic-15-retrospective: done
 
   epic-16: done
@@ -152,7 +153,9 @@ development_status:
   16-8-pre-trade-risk-engine: done
   16-9-multi-account-broker: done
   16-10-ibkr-broker-connector: done
+  16-11-harness-test-strategies: backlog
   epic-16-retrospective: done
+
 
   epic-17: done
   17-1-get-control-summary-phase-a-observabilite: backlog
@@ -249,10 +252,10 @@ development_status:
 
   epic-25: in-progress
   25-1-configuration-des-dependances-maven-et-factory-de-modeles-deepseek-ollama: done
-  25-2-declaration-des-records-cibles-et-dtos-partages: in-progress
-  25-3-implementation-des-outils-d-ingestion-avec-isolation-temporelle: backlog
-  25-4-developpement-du-service-d-orchestration-agenticstrategistservice-et-de-la-boucle-react: backlog
-  25-5-logique-de-comfort-level-validations-financieres-et-deserialisation-jackson: backlog
+  25-2-declaration-des-records-cibles-et-dtos-partages: done
+  25-3-implementation-des-outils-d-ingestion-avec-isolation-temporelle: done
+  25-4-developpement-du-service-d-orchestration-agenticstrategistservice-et-de-la-boucle-react: done
+  25-5-logique-de-comfort-level-validations-financieres-et-deserialisation-jackson: review
   25-6-mecanisme-de-fallback-degrade-bypass-et-telemetrie: backlog
   25-7-experience-store-boucle-de-feedback-rag: backlog
   25-8-integration-du-control-plane-http-ecriture-json-et-tests-unitaires: backlog

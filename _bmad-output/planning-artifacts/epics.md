@@ -112,7 +112,7 @@ FR5: Config snapshot immutability — Chaque run stocke un snapshot config immua
 
 FR6: Advanced validation modules (post-MVP) — Plateforme supporte validation pluggable : purged walk-forward, CPCV, stress tests, chemins synthétiques. Résultats gates stockés comme RunEvents. Realise UJ-1 (étendu).
 
-FR7: Promote with automated gates — Martin peut promouvoir vers PAPER ou LIVE uniquement si gates passent (golden backtest, min trades, bande drawdown, 30 jours paper minimum avant LIVE). `POST /api/strategies/{id}/promote` retourne 422 avec raisons si échec. Realise UJ-2.
+FR7: Promote with automated gates — Martin peut promouvoir vers PAPER ou LIVE uniquement si gates passent (golden backtest, min trades, bande drawdown, 30 jours paper minimum avant LIVE). Exception pour la famille HARNESS : les stratégies HARNESS contournent les verrous de performance (minTrades, maxDrawdown, minReturn, goldenBaseline, validationModule) lors de la promotion PAPER, à condition qu'un backtest complété ait été exécuté (pour valider la configuration et disposer d'un runId). `POST /api/strategies/{id}/promote` retourne 422 avec raisons si échec. Realise UJ-2.
 
 FR8: Paper trading on OANDA — Martin peut exécuter en mode PAPER sur OANDA demo avec events journalisés comme backtest. Promote LIVE bloqué si paper < 30 jours. Stub `PAPER_STUB` max 30 j en dev. Realise UJ-2.
 
@@ -764,6 +764,22 @@ So that promotion is a deliberate decision, not an accidental click.
 **And** runbook states PAPER_STUB is dev-only and excluded from LIVE path
 **And** (test: API test for readiness endpoint structure)
 
+### Story 15.9: Exception de promotion pour les stratégies HARNESS
+
+As a Martin,
+I want the promotion gates to PAPER mode to automatically pass for strategies belonging to the HARNESS family,
+So that I can run them in paper trading to validate system execution even if they are not profitable.
+
+**Acceptance Criteria:**
+
+**Given** a strategy that belongs to the `Family.HARNESS` family (determined by `StrategyCatalog.family(strategyId) == Family.HARNESS`)
+**When** I promote the strategy to `PAPER` (either via REST API or CLI)
+**Then** the promotion check bypasses the backtest metrics checks (`minTrades`, `maxDrawdown`, `minReturn`, `goldenBaseline`, `validationModule`)
+**And** these checks are marked as passed (`true`) in the `GateCheckResult` list with a status/message indicating they are bypassed for the HARNESS strategy.
+**And** a completed backtest run (existence of a `runId` with `COMPLETED` status) is still required (fails with `backtest_exists` = false if not present)
+**And** the broker-specific checks (OANDA/IBKR credentials and accounts) are still evaluated and enforced normally.
+**And** (test: unit tests in `PromoteServiceTest` verify the HARNESS promotion bypass)
+
 ---
 
 ## Epic 16: Exécution broker (OANDA must-ship → IBKR Phase 2)
@@ -941,6 +957,28 @@ So that I am not locked to one broker (PS-GR17).
 **And** events journal identically to OANDA
 **And** promote gates unchanged including 30-day paper rule
 **And** OANDA tests still pass independently
+
+### Story 16.11: Stratégies de test HARNESS pour la validation de la plateforme (prop-shop)
+
+As a Martin,
+I want a suite of specialized HARNESS testing strategies (RiskViolator, HighFrequencyPing, OrderModifier, InvalidOrders, ThrottlingProbe, ReconciliationCheck) registered in the catalog,
+So that I can validate edge cases of the paper and live trading engine without risking real capital.
+
+**Prerequisites:** Stories 16.2–16.8 (broker pipeline).
+
+**Acceptance Criteria:**
+
+**Given** the `HarnessStrategyCatalog`
+**When** the control plane runs
+**Then** the following harness strategies are registered:
+- `Harness_RiskViolator`: Tries to violate pre-trade risk limits (large lot size, drawdown breach) to test the risk engine.
+- `Harness_HighFrequencyPing`: Trades very frequently to measure latency, WebSocket stability, and order queue throughput.
+- `Harness_OrderModifier`: Trailing/chasing order modifications (SL/TP) to validate broker modification endpoints.
+- `Harness_InvalidOrders`: Places invalid orders (invalid symbol, negative volume) to test error handling.
+- `Harness_ThrottlingProbe`: Burst of concurrent orders to test rate limiting.
+- `Harness_ReconciliationCheck`: Simulates connection state changes or position gaps to test automatic journal reconciliation.
+**And** they are all tagged with `Family.HARNESS` so they bypass performance promotion gates to `PAPER`.
+**And** unit tests or integration tests verify their execution behavior using `FakeBroker`.
 
 ---
 

@@ -41,12 +41,15 @@ from pathlib import Path
 try:
     import tomllib
 except ImportError:
-    sys.stderr.write(
-        "error: Python 3.11+ is required (stdlib `tomllib` not found).\n"
-        "Install a newer Python or run the resolution manually per the\n"
-        "fallback instructions in the skill's SKILL.md.\n"
-    )
-    sys.exit(3)
+    try:
+        import tomli as tomllib
+    except ImportError:
+        sys.stderr.write(
+            "error: Python 3.11+ is required (stdlib `tomllib` not found) "
+            "or the `tomli` package must be installed.\n"
+            "Install a newer Python, run `pip install tomli`, or run the resolution manually.\n"
+        )
+        sys.exit(3)
 
 
 _MISSING = object()

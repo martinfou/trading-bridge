@@ -141,18 +141,29 @@ public final class PromoteService {
             } else {
                 RunRecord run = runOpt.get();
                 BacktestRunMetrics metrics = BacktestRunMetrics.fromRun(run);
+                boolean isHarness = StrategyCatalog.family(strategyId) == StrategyCatalog.Family.HARNESS;
                 checks.add(PromoteGates.backtestCompleted(run));
-                checks.add(PromoteGates.goldenBaseline(run, thresholds));
-                checks.add(PromoteGates.minTrades(metrics, thresholds));
-                checks.add(PromoteGates.maxDrawdown(metrics, thresholds));
-                checks.add(PromoteGates.minReturn(metrics, thresholds));
+                checks.add(isHarness
+                    ? new GateCheckResult("golden_baseline", true, "[Bypass HARNESS] Golden baseline check bypassed")
+                    : PromoteGates.goldenBaseline(run, thresholds));
+                checks.add(isHarness
+                    ? GateCheckResult.numeric("min_trades", true, "[Bypass HARNESS] Min trades check bypassed", thresholds.minTrades(), metrics.totalTrades())
+                    : PromoteGates.minTrades(metrics, thresholds));
+                checks.add(isHarness
+                    ? GateCheckResult.numeric("max_drawdown_pct", true, "[Bypass HARNESS] Max drawdown check bypassed", thresholds.maxDrawdownPct(), metrics.maxDrawdownPct())
+                    : PromoteGates.maxDrawdown(metrics, thresholds));
+                checks.add(isHarness
+                    ? GateCheckResult.numeric("min_return_pct", true, "[Bypass HARNESS] Min return check bypassed", thresholds.minReturnPct(), metrics.totalReturnPct())
+                    : PromoteGates.minReturn(metrics, thresholds));
                 ValidationAuditBuffer auditBuffer = new ValidationAuditBuffer(false);
                 ValidationContext validationContext = new ValidationContext(
                     strategyId, run, runManager.eventStore(), auditBuffer);
-                checks.add(PromoteGates.validationModule(
-                    validationContext,
-                    thresholds,
-                    validationModules));
+                checks.add(isHarness
+                    ? new GateCheckResult("validation_module", true, "[Bypass HARNESS] Validation modules bypassed")
+                    : PromoteGates.validationModule(
+                        validationContext,
+                        thresholds,
+                        validationModules));
                 if (checks.stream().allMatch(GateCheckResult::passed)) {
                     auditBuffer.flush(run, runManager.eventStore());
                 }

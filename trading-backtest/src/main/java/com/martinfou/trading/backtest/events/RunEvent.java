@@ -1,6 +1,7 @@
 package com.martinfou.trading.backtest.events;
 
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.core.Bar;
 
 import java.time.Instant;
 import java.util.Map;
@@ -130,6 +131,36 @@ public record RunEvent(
         return new RunEvent(
             SCHEMA_VERSION,
             RunEventType.HEARTBEAT,
+            timestamp,
+            runId,
+            strategyId,
+            symbol,
+            mode.name(),
+            Map.copyOf(payload));
+    }
+
+    public static RunEvent bar(
+        String runId,
+        String strategyId,
+        String symbol,
+        RunMode mode,
+        Bar bar,
+        Instant timestamp
+    ) {
+        var barMap = new java.util.LinkedHashMap<String, Object>();
+        barMap.put("time", bar.timestamp().toString());
+        barMap.put("open", bar.open());
+        barMap.put("high", bar.high());
+        barMap.put("low", bar.low());
+        barMap.put("close", bar.close());
+        barMap.put("volume", bar.volume());
+
+        var payload = new java.util.LinkedHashMap<String, Object>();
+        payload.put("bar", barMap);
+
+        return new RunEvent(
+            SCHEMA_VERSION,
+            RunEventType.BAR,
             timestamp,
             runId,
             strategyId,

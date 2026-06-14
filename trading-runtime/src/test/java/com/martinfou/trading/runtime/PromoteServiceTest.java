@@ -297,6 +297,50 @@ class PromoteServiceTest {
         }
     }
 
+    @Test
+    void promoteToPaper_harnessStrategy_bypassesMetricGates() throws Exception {
+        try (RuntimeStores.Bundle stores = RuntimeStores.inMemoryWithBroadcast();
+             RunManager manager = new RunManager(stores.eventStore())) {
+            // Strict thresholds (minTrades=100) and validation enabled
+            PromoteService service = new PromoteService(
+                manager,
+                stores.deploymentStore(),
+                new PromoteGateThresholds(100, 100.0, -50.0, 1.0, 30, true),
+                Clock.systemUTC(),
+                List.of(),
+                () -> false);
+
+            // Harness_NeverTrade generates 0 trades (would fail minTrades normally)
+            String runId = manager.startRun(new RunManager.StartRunRequest(
+                "Harness_NeverTrade",
+                "EUR_USD",
+                "BACKTEST",
+                new BarSourceResolver.BarsSource("sample", 500, null),
+                100_000.0,
+                null,
+                null,
+                null,
+                null));
+            waitForCompletion(manager, runId);
+
+            PromoteService.PromoteResponse response = service.promote(
+                "Harness_NeverTrade",
+                new PromoteService.PromoteRequest("PAPER", runId));
+
+            assertTrue(response.promoted());
+            assertTrue(response.checks().stream().allMatch(GateCheckResult::passed));
+            assertTrue(stores.deploymentStore().get("Harness_NeverTrade").isPresent());
+            
+            // Assert that the metric gates carry the bypass messages
+            assertTrue(response.checks().stream()
+                .filter(c -> "min_trades".equals(c.name()))
+                .anyMatch(c -> c.message().contains("[Bypass HARNESS]")));
+            assertTrue(response.checks().stream()
+                .filter(c -> "max_drawdown_pct".equals(c.name()))
+                .anyMatch(c -> c.message().contains("[Bypass HARNESS]")));
+        }
+    }
+
     private static void waitForCompletion(RunManager manager, String runId) throws InterruptedException {
         for (int i = 0; i < 200; i++) {
             RunRecord record = manager.getRun(runId).orElseThrow();

@@ -4,10 +4,10 @@
 
 status: final
 created: 2026-05-24
-updated: 2026-05-30
+updated: 2026-06-13
 owner: Martin Fournier
 epic: platform-e2e
-revision: "2026-05-30 — party mode + impl Epic 12/13 ; addendum § backtest trust ; §8c–8d"
+revision: "2026-06-13 — exception HARNESS sur les promote gates PAPER"
 related:
 
 - _bmad-output/planning-artifacts/adr-13-distributed-platform.md
@@ -187,6 +187,8 @@ Platform supports pluggable validation: purged walk-forward, CPCV, stress tests,
 #### FR-7: Promote with automated gates
 
 Martin can promote a strategy to PAPER or LIVE only when pre-defined gates pass (golden backtest, min trades, max drawdown band, **30 jours paper minimum avant LIVE**). Realizes UJ-2.
+
+**Exception pour la famille `HARNESS`** : Les stratégies de type `HARNESS` (famille `Family.HARNESS` dans le catalogue) sont exemptées de tous les seuils de performance de backtest (`minTrades`, `maxDrawdown`, `minReturn`, `goldenBaseline` et validation par modules) pour la promotion vers `PAPER`. Un backtest complété avec succès (existence d'un `runId`) reste obligatoire afin de valider le comportement technique initial de la stratégie. Les vérifications d'identifiants de courtier (OANDA/IBKR) et de comptes s'appliquent normalement.
 
 **Consequences (testable):**
 

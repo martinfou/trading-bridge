@@ -73,3 +73,26 @@ Stories **12-10** et **12-11** — détail technique post-incident baseline :
 **CI :** `GoldenBacktestTest` skip sans data ; **`PlatformRobustnessTest` + `BacktestEngineContractTest` toujours exécutés.**
 
 Réf. : `docs/testing.md`, `_bmad-output/implementation-artifacts/12-10-backtest-engine-trust.md`, `12-11-platform-test-strategies.md`.
+
+## Exception HARNESS pour Paper Trading (2026-06-13)
+
+**Décision d'architecture / produit :** Autoriser le contournement (bypass) des gates de performance pour les stratégies `HARNESS` en mode `PAPER`.
+
+### Rationnel
+Les stratégies de test (famille `HARNESS`) ne sont pas conçues pour générer du profit ou respecter des contraintes réelles de drawdown/trades. Par exemple :
+- `Harness_NeverTrade` effectue 0 trade, ce qui viole la gate `minTrades` (seuil par défaut ou personnalisé).
+- `Harness_LimitNeverFills` ne remplit jamais ses ordres limites (0 trade).
+- `Harness_FlipEveryBar` ou d'autres stratégies scriptées peuvent avoir un drawdown extrême ou un rendement négatif.
+
+Pour tester le routage des ordres en paper trading simulé ou réel (OANDA demo / IBKR paper), ces stratégies doivent pouvoir être promues.
+
+### Solution technique (Option 1 retenue)
+Lors d'une demande de promotion de type `PAPER` :
+1. **Existence du backtest** : Exiger qu'un backtest ait été exécuté avec succès pour la stratégie (statut `COMPLETED`, présence d'un `runId`). Cela évite de promouvoir une stratégie dont le code Java est instable ou dont la configuration est erronée.
+2. **Ignorer les seuils** : Les promote gates suivants renvoient systématiquement un succès (`GateCheckResult.passed = true`) :
+   - `minTrades`
+   - `maxDrawdown`
+   - `minReturn`
+   - `goldenBaseline`
+   - `validationModule`
+3. **Maintien des contrôles système** : Les vérifications d'identifiants de courtier (OANDA, IBKR) et de validité de compte restent en vigueur.
