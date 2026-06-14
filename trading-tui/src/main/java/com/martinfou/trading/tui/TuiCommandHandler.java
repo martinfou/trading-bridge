@@ -56,8 +56,6 @@ public final class TuiCommandHandler {
                 case "run" -> showRun(parts);
                 case "events" -> showEvents(parts);
                 case "kill" -> kill(parts);
-                case "close-positions" -> closePositions(parts);
-                case "start-all-harness" -> startAllHarness();
                 case "inbox", "sq" -> sqBridge(parts);
                 case "weekly-build", "weekly" -> weeklyBuild(parts);
                 case "weekly-status", "wb-status" -> weeklyStatus();
@@ -89,8 +87,6 @@ public final class TuiCommandHandler {
             "  /run <runId>       Run status + full backtest report",
             "  /events <runId>    Last 20 run events",
             "  /kill <id> [reason]",
-            "  /close-positions <runId> Close active open positions for a run",
-            "  /start-all-harness Start all strategies starting with Harness_ in paper trading",
             "  /sq | /inbox [process]   SQ bridge status or trigger inbox drain",
             "  /weekly-status           Weekly builder hot-folder counts",
             "  /weekly-build [--plan|--compile|--deploy]   Trigger Job 1/2/3",
@@ -347,30 +343,6 @@ public final class TuiCommandHandler {
         String reason = parts.size() >= 3 ? String.join(" ", parts.subList(2, parts.size())) : null;
         JsonNode response = client.kill(parts.get(1), "tui", reason);
         return List.of("Kill accepted: " + formatJson(response));
-    }
-
-    private List<String> closePositions(List<String> parts) throws IOException, InterruptedException {
-        String runId = parts.size() >= 2 ? parts.get(1) : lastRunId;
-        if (runId == null || runId.isBlank()) {
-            return List.of("Usage: /close-positions <runId>");
-        }
-        JsonNode response = client.closePositions(runId);
-        return List.of("Close positions accepted: " + formatJson(response));
-    }
-
-    private List<String> startAllHarness() throws IOException, InterruptedException {
-        JsonNode response = client.startAllHarness();
-        boolean success = response.path("success").asBoolean(false);
-        String msg = response.path("message").asText("Request completed");
-        if (success && response.has("started")) {
-            List<String> lines = new ArrayList<>();
-            lines.add(msg);
-            for (JsonNode id : response.get("started")) {
-                lines.add("  Started: " + id.asText());
-            }
-            return lines;
-        }
-        return List.of(msg);
     }
 
     private List<String> tailEvents(String runId, int limit) throws IOException, InterruptedException {

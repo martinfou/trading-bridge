@@ -39,7 +39,6 @@ public final class OandaStreamingClient implements AutoCloseable {
 
     public interface OandaTickListener {
         void onTick(String instrument, Instant timestamp, double bid, double ask);
-        void onHeartbeat(Instant timestamp);
         void onConnectionStateChange(boolean active);
     }
 
@@ -189,9 +188,6 @@ public final class OandaStreamingClient implements AutoCloseable {
                 double bid = node.get("bids").get(0).get("price").asDouble();
                 double ask = node.get("asks").get(0).get("price").asDouble();
                 notifyTick(instrument, time, bid, ask);
-            } else if ("HEARTBEAT".equals(type)) {
-                Instant time = Instant.parse(node.get("time").asText());
-                notifyHeartbeat(time);
             }
         } catch (Exception e) {
             log.warn("Failed to parse OANDA stream line: {}", e.getMessage());
@@ -201,12 +197,6 @@ public final class OandaStreamingClient implements AutoCloseable {
     private void notifyTick(String instrument, Instant timestamp, double bid, double ask) {
         for (OandaTickListener listener : listeners) {
             listener.onTick(instrument, timestamp, bid, ask);
-        }
-    }
-
-    private void notifyHeartbeat(Instant timestamp) {
-        for (OandaTickListener listener : listeners) {
-            listener.onHeartbeat(timestamp);
         }
     }
 

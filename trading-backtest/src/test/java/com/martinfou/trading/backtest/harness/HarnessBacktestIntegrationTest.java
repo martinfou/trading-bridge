@@ -36,10 +36,10 @@ class HarnessBacktestIntegrationTest {
     }
 
     @Test
-    void buyThenCloseNextBar_repeatedTrades() {
+    void buyThenCloseNextBar_oneTrade() {
         List<Bar> bars = HarnessTestBars.repeat(SYMBOL, 5, 1.10);
         BacktestResult result = run(HarnessStrategyCatalog.create("Harness_BuyThenCloseNextBar", SYMBOL), bars);
-        assertEquals(3, result.totalTrades());
+        assertEquals(1, result.totalTrades());
     }
 
     @Test

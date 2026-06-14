@@ -69,11 +69,6 @@ class EventGapDetectorTest {
         }
 
         @Override
-        public void clear(String runId) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
         public List<RunEvent> query(String runId, long afterSequence, int limit) {
             return queryWithSequence(runId, afterSequence, limit).stream().map(StoredRunEvent::event).toList();
         }

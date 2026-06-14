@@ -26,12 +26,6 @@ public final class InMemoryEventStore implements EventStore {
     }
 
     @Override
-    public synchronized void clear(String runId) {
-        EventStoreValidation.requireRunId(runId);
-        events.removeIf(e -> e.runId().equals(runId));
-    }
-
-    @Override
     public synchronized List<RunEvent> query(String runId, long afterSequence, int limit) {
         return queryWithSequence(runId, afterSequence, limit).stream()
             .map(StoredRunEvent::event)

@@ -255,7 +255,6 @@ public final class ControlSummaryService {
 
     private List<Map<String, Object>> getPositions(RunRecord record, ExecutionLabel label) {
         List<Map<String, Object>> positions = new ArrayList<>();
-        boolean brokerChecked = false;
         if (record.status() == RunRecord.Status.RUNNING && label.isBrokerBacked()) {
             try {
                 String accountId = record.configSnapshot().containsKey("brokerAccountId")
@@ -266,7 +265,6 @@ public final class ControlSummaryService {
                     if (brokerOpt.isPresent()) {
                         try (var broker = brokerOpt.get()) {
                             broker.connect();
-                            brokerChecked = true;
                             java.util.Set<String> runOrderIds = new java.util.HashSet<>();
                             if (runManager.eventStore() != null) {
                                 for (var e : runManager.eventStore().replayAll(record.runId())) {
@@ -298,6 +296,16 @@ public final class ControlSummaryService {
                                                 "takeProfit", pos.takeProfit()
                                             ));
                                         }
+                                    } else {
+                                        positions.add(Map.of(
+                                            "symbol", pos.symbol(),
+                                            "side", pos.side().name(),
+                                            "quantity", pos.quantity(),
+                                            "entryTime", resolvedEntryTime != null ? resolvedEntryTime.toString() : "",
+                                            "entryPrice", pos.entryPrice(),
+                                            "stopLoss", pos.stopLoss(),
+                                            "takeProfit", pos.takeProfit()
+                                        ));
                                     }
                                 }
                             }
@@ -305,11 +313,10 @@ public final class ControlSummaryService {
                     }
                 }
             } catch (Exception e) {
-                brokerChecked = false;
                 // fallback to journal fills
             }
         }
-        if (!brokerChecked && positions.isEmpty()) {
+        if (positions.isEmpty()) {
             List<Map<String, Object>> journalPositions = JournalPositions.fromFills(runManager.eventStore().replayAll(record.runId())).values().stream()
                 .map(pos -> Map.<String, Object>of(
                     "symbol", pos.symbol(),

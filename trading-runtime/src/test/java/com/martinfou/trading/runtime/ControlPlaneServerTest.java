@@ -540,16 +540,6 @@ class ControlPlaneServerTest {
         assertTrue(response.body().contains("\"promoted\":false"));
     }
 
-    @Test
-    void closePositions_returns400WhenNoActiveOandaStreamingExecutor() throws Exception {
-        String runId = startSampleBacktest();
-        waitForCompletion(runId, Duration.ofSeconds(10));
-        HttpResponse<String> response = post("/api/runs/" + runId + "/close-positions", "{}");
-        assertEquals(400, response.statusCode());
-        assertTrue(response.body().contains("does not have an active OANDA streaming executor"));
-    }
-
-
     private String startSampleBacktest() throws Exception {
         String body = """
             {
@@ -636,19 +626,6 @@ class ControlPlaneServerTest {
             Thread.sleep(25);
         }
         throw new AssertionError("Run did not complete in time: " + runId);
-    }
-
-    @Test
-    void startAllHarness_startsPaperTradingHarnesses() throws Exception {
-        HttpResponse<String> response = post("/api/runs/start-all-harness", "{}");
-        assertEquals(200, response.statusCode(), "Response body: " + response.body());
-        assertTrue(response.body().contains("\"success\":true"));
-        assertTrue(response.body().contains("Started"));
-        // Verify harness runs are now present in RunManager
-        long runningHarnesses = runManager.list(null).stream()
-            .filter(r -> r.strategyId().startsWith("Harness_") && r.status() == RunRecord.Status.RUNNING)
-            .count();
-        assertTrue(runningHarnesses > 0);
     }
 
     private HttpResponse<String> get(String path) throws Exception {

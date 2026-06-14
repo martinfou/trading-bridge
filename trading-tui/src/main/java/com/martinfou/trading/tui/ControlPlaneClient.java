@@ -160,14 +160,6 @@ public final class ControlPlaneClient {
         return postJson("/api/broker-accounts/oanda-accounts", body);
     }
 
-    public JsonNode closePositions(String runId) throws IOException, InterruptedException {
-        return postJson("/api/runs/" + runId + "/close-positions", Map.of());
-    }
-
-    public JsonNode startAllHarness() throws IOException, InterruptedException {
-        return postJson("/api/runs/start-all-harness", Map.of());
-    }
-
     public JsonNode updateBrokerAccount(String id, String provider, String token, String accountId, String restUrl)
         throws IOException, InterruptedException {
         Map<String, Object> account = new LinkedHashMap<>();
