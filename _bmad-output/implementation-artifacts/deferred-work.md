@@ -110,3 +110,8 @@ Items deferred during code reviews — not blocking current stories.
 
 - **Notion de Sentiment Retail Oanda limitée au propre compte utilisateur** — L'analyseur appelle `/openTrades` de l'account ID configuré, ce qui correspond aux transactions de l'utilisateur lui-même et non au sentiment retail global.
 - **Mode Oanda Practice configuré en dur à true** — Pas de paramétrage externe pour basculer en mode de production réel.
+
+## Deferred from: code review of 25-3-implementation-des-outils-d-ingestion-avec-isolation-temporelle (2026-06-14)
+
+- **Perte des métadonnées macroéconomiques previous et forecast** — Le DTO `WeeklyIntelBrief` ne stockant pas les valeurs `previous` et `forecast` pour les événements du calendrier, celles-ci sont retournées sous forme de chaînes vides `""`, privant le modèle de contexte historique.
+

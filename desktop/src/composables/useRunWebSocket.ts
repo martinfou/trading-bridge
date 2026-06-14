@@ -36,7 +36,8 @@ export function useRunWebSocket() {
 
     ws.onmessage = (msg: MessageEvent) => {
       try {
-        const event: WsEvent = JSON.parse(msg.data)
+        const parsed = JSON.parse(msg.data)
+        const event: WsEvent = parsed.event || parsed
         events.value.push(event)
         lastEvent.value = event
       } catch {

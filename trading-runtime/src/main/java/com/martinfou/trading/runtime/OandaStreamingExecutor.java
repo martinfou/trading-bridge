@@ -241,6 +241,12 @@ public final class OandaStreamingExecutor implements AutoCloseable {
             }
         }
         aggregator.add(tickBar);
+
+        Bar currentBar = aggregator.getInProgressBar();
+        if (currentBar != null) {
+            RunEvent barEvent = RunEvent.bar(runId, config.strategyId(), config.symbol(), runMode, currentBar, timestamp);
+            eventStore.publishEphemeral(runId, barEvent);
+        }
     }
 
     private void checkRollovers(Instant now) {

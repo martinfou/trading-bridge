@@ -31,6 +31,11 @@ public final class BroadcastingEventStore implements EventStore {
     }
 
     @Override
+    public void publishEphemeral(String runId, RunEvent event) {
+        hub.publish(runId, new StoredRunEvent(-1L, event));
+    }
+
+    @Override
     public List<RunEvent> query(String runId, long afterSequence, int limit) {
         return delegate.query(runId, afterSequence, limit);
     }
