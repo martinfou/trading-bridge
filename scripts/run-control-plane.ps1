@@ -17,10 +17,16 @@ if (-not $env:CONTROL_PLANE_PORT) {
     $env:CONTROL_PLANE_PORT = "8080"
 }
 
+# Resolve Maven command
+$MvnCmd = "mvn"
+if (Test-Path "$Root\mvnw.cmd") {
+    $MvnCmd = "$Root\mvnw.cmd"
+}
+
 Write-Host "Building trading-runtime (and dependencies)..."
-mvn -q -pl trading-runtime -am install -DskipTests
+& $MvnCmd -q -pl trading-runtime -am install -DskipTests
 
 Write-Host "Control plane -> http://localhost:$($env:CONTROL_PLANE_PORT)"
 Write-Host "Stop: Ctrl+C in this terminal, or: .\scripts\stop-control-plane.ps1"
 
-mvn exec:java -pl trading-runtime "-Dexec.mainClass=com.martinfou.trading.runtime.ControlPlaneMain"
+& $MvnCmd exec:java -pl trading-runtime "-Dexec.mainClass=com.martinfou.trading.runtime.ControlPlaneMain"
