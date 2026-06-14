@@ -93,7 +93,7 @@ try {
     }
 
     Write-Host "Trading Bridge TUI -> $($env:CONTROL_PLANE_URL)"
-    & $MvnCmd exec:java -pl trading-tui -Dexec.mainClass=com.martinfou.trading.tui.TradingTuiMain
+    & $MvnCmd exec:java -pl trading-tui "-Dexec.mainClass=com.martinfou.trading.tui.TradingTuiMain"
 
 } finally {
     if ($CP_Process -and -not $CP_Process.HasExited) {
