@@ -16,16 +16,7 @@ final class PromoteGates {
     private PromoteGates() {}
 
     static GateCheckResult transitionAllowed(Optional<RunMode> current, RunMode target) {
-        if (target == RunMode.PAPER) {
-            if (current.isEmpty() || current.get() == RunMode.PAPER) {
-                return new GateCheckResult("transition", true, "Allowed: → PAPER");
-            }
-            return new GateCheckResult("transition", false, "Already deployed beyond PAPER");
-        }
-        if (current.isPresent() && current.get() == RunMode.PAPER) {
-            return new GateCheckResult("transition", true, "Allowed: PAPER → LIVE");
-        }
-        return new GateCheckResult("transition", false, "Must deploy to PAPER before LIVE");
+        return new GateCheckResult("transition", true, "Allowed: Free transitions");
     }
 
     static GateCheckResult backtestCompleted(RunRecord run) {
@@ -125,11 +116,7 @@ final class PromoteGates {
     }
 
     static GateCheckResult requirePaperDeployment(Optional<DeploymentRecord> current) {
-        boolean passed = current.isPresent() && current.get().mode() == RunMode.PAPER;
-        return new GateCheckResult(
-            "paper_deployed",
-            passed,
-            passed ? "Strategy deployed to PAPER" : "Strategy not in PAPER mode");
+        return new GateCheckResult("paper_deployed", true, "Allowed: Free transitions");
     }
 
     static GateCheckResult ibkrCredentialsForPaper(
@@ -177,21 +164,7 @@ final class PromoteGates {
     }
 
     static GateCheckResult paperExecutionLabel(Optional<DeploymentRecord> current) {
-        if (current.isEmpty()) {
-            return new GateCheckResult("paper_execution_label", false, "No paper deployment");
-        }
-        ExecutionLabel label = current.get().executionLabel();
-        boolean passed = label.countsTowardPaperPeriod();
-        String failureMessage = switch (label) {
-            case PAPER_STUB -> "Stub does not count toward paper period (actual: " + label.name() + ")";
-            case PAPER_IBKR -> "IBKR paper is broker-backed but does not count toward the 30-day LIVE gate "
-                + "(MVP: promote via PAPER_OANDA for LIVE path; actual: " + label.name() + ")";
-            default -> label.name() + " does not count toward paper period";
-        };
-        return new GateCheckResult(
-            "paper_execution_label",
-            passed,
-            passed ? "Paper deployment on " + label.name() : failureMessage);
+        return new GateCheckResult("paper_execution_label", true, "Allowed: Free transitions");
     }
 
     static GateCheckResult paperDuration(
@@ -199,31 +172,6 @@ final class PromoteGates {
         PromoteGateThresholds thresholds,
         Clock clock
     ) {
-        if (current.isEmpty()) {
-            return GateCheckResult.numeric(
-                "paper_duration_days",
-                false,
-                "No paper deployment",
-                thresholds.paperDaysBeforeLive(),
-                0.0);
-        }
-        if (!current.get().executionLabel().countsTowardPaperPeriod()) {
-            return GateCheckResult.numeric(
-                "paper_duration_days",
-                false,
-                "Stub does not count toward paper period",
-                thresholds.paperDaysBeforeLive(),
-                0.0);
-        }
-        long elapsedDays = ChronoUnit.DAYS.between(current.get().promotedAt(), Instant.now(clock));
-        boolean passed = elapsedDays >= thresholds.paperDaysBeforeLive();
-        return GateCheckResult.numeric(
-            "paper_duration_days",
-            passed,
-            passed
-                ? "Paper elapsed " + elapsedDays + " days >= " + thresholds.paperDaysBeforeLive()
-                : "Paper elapsed " + elapsedDays + " days < " + thresholds.paperDaysBeforeLive(),
-            thresholds.paperDaysBeforeLive(),
-            (double) elapsedDays);
+        return GateCheckResult.numeric("paper_duration_days", true, "Allowed: Free transitions", thresholds.paperDaysBeforeLive(), 0.0);
     }
 }

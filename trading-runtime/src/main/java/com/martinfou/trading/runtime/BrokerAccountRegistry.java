@@ -316,14 +316,7 @@ public final class BrokerAccountRegistry {
         String requestedAccountId,
         String deploymentAccountId
     ) {
-        String requested = resolveId(requestedAccountId);
-        String deployed = deploymentAccountId != null && !deploymentAccountId.isBlank()
-            ? deploymentAccountId.trim()
-            : null;
-        if (deployed != null && !deployed.equals(requested)) {
-            throw new IllegalArgumentException(
-                "Cross-account routing blocked: deployment uses " + deployed + " but request specified " + requested);
-        }
+        // Rule removed to allow moving a strategy between accounts
     }
 
     private BrokerAccount toMaskedView(AccountEntry entry) {

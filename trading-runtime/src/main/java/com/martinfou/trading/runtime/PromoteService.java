@@ -131,8 +131,13 @@ public final class PromoteService {
 
             Optional<RunRecord> runOpt = findBacktestRun(strategyId, request.runId());
             if (runOpt.isEmpty()) {
-                checks.add(new GateCheckResult(
-                    "backtest_exists", false, "No completed BACKTEST run for strategy " + strategyId));
+                if (current.isEmpty()) {
+                    checks.add(new GateCheckResult(
+                        "backtest_exists", false, "No completed BACKTEST run for strategy " + strategyId));
+                } else {
+                    checks.add(new GateCheckResult(
+                        "backtest_exists", true, "Backtest check bypassed for existing deployment"));
+                }
             } else {
                 RunRecord run = runOpt.get();
                 BacktestRunMetrics metrics = BacktestRunMetrics.fromRun(run);

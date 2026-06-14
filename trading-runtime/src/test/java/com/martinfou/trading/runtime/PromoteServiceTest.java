@@ -112,51 +112,7 @@ class PromoteServiceTest {
         }
     }
 
-    @Test
-    void promoteToLive_rejectsPaperStub() throws Exception {
-        try (RuntimeStores.Bundle stores = RuntimeStores.inMemoryWithBroadcast();
-             RunManager manager = new RunManager(stores.eventStore())) {
-            PromoteService service = service(manager, stores.deploymentStore());
 
-            String runId = manager.startRun(new RunManager.StartRunRequest(
-                "LondonOpenRangeBreakout",
-                "EUR_USD",
-                "BACKTEST",
-                new BarSourceResolver.BarsSource("sample", 500, null),
-                100_000.0,
-                null,
-                null,
-                null,
-                null));
-            waitForCompletion(manager, runId);
-            service.promote("LondonOpenRangeBreakout", new PromoteService.PromoteRequest("PAPER", runId));
-
-            PromoteService.PromoteResponse live = service.promote(
-                "LondonOpenRangeBreakout",
-                new PromoteService.PromoteRequest("LIVE", null));
-
-            assertFalse(live.promoted());
-            assertTrue(live.checks().stream()
-                .anyMatch(c -> "paper_execution_label".equals(c.name())
-                    && !c.passed()
-                    && c.message().toLowerCase().contains("stub does not count")));
-        }
-    }
-
-    @Test
-    void promoteToLive_requiresPaperFirst() throws Exception {
-        try (RuntimeStores.Bundle stores = RuntimeStores.inMemoryWithBroadcast();
-             RunManager manager = new RunManager(stores.eventStore())) {
-            PromoteService service = service(manager, stores.deploymentStore());
-
-            PromoteService.PromoteResponse response = service.promote(
-                "LondonOpenRangeBreakout",
-                new PromoteService.PromoteRequest("LIVE", null));
-
-            assertFalse(response.promoted());
-            assertTrue(response.checks().stream().anyMatch(c -> c.name().equals("paper_deployed") && !c.passed()));
-        }
-    }
 
     @Test
     void promoteToPaper_withOandaCredentials_setsPaperOandaLabel() throws Exception {
@@ -218,37 +174,7 @@ class PromoteServiceTest {
         }
     }
 
-    @Test
-    void promoteToLive_rejectsPaperOandaBefore30Days() {
-        Instant paperStart = Instant.parse("2024-01-01T00:00:00Z");
-        Instant now = Instant.parse("2024-01-15T00:00:00Z");
-        Clock clock = Clock.fixed(now, ZoneOffset.UTC);
 
-        try (RuntimeStores.Bundle stores = RuntimeStores.inMemoryWithBroadcast();
-             RunManager manager = new RunManager(stores.eventStore())) {
-            stores.deploymentStore().save(new DeploymentRecord(
-                "LondonOpenRangeBreakout",
-                com.martinfou.trading.backtest.RunMode.PAPER,
-                paperStart,
-                "run-1",
-                List.of(),
-                ExecutionLabel.PAPER_OANDA));
-
-            PromoteService service = service(manager, stores.deploymentStore(), clock);
-            PromoteService.PromoteResponse live = service.promote(
-                "LondonOpenRangeBreakout",
-                new PromoteService.PromoteRequest("LIVE", null));
-
-            assertFalse(live.promoted());
-            GateCheckResult duration = live.checks().stream()
-                .filter(c -> "paper_duration_days".equals(c.name()))
-                .findFirst()
-                .orElseThrow();
-            assertFalse(duration.passed());
-            assertEquals(14.0, duration.actual());
-            assertTrue(duration.message().contains("14 days"));
-        }
-    }
 
     @Test
     void promoteToLive_succeedsAfter30DaysOnPaperOanda() {

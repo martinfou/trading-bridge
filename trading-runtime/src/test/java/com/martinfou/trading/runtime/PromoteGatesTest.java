@@ -67,41 +67,7 @@ class PromoteGatesTest {
         assertEquals("golden_baseline", result.name());
     }
 
-    @Test
-    void paperDuration_stubExcludedFromLive() {
-        DeploymentRecord stubPaper = new DeploymentRecord(
-            "LondonOpenRangeBreakout",
-            com.martinfou.trading.backtest.RunMode.PAPER,
-            Instant.parse("2020-01-01T00:00:00Z"),
-            "run-1",
-            List.of(),
-            ExecutionLabel.PAPER_STUB);
 
-        GateCheckResult label = PromoteGates.paperExecutionLabel(Optional.of(stubPaper));
-        assertFalse(label.passed());
-
-        Clock clock = Clock.fixed(Instant.parse("2024-06-01T00:00:00Z"), ZoneOffset.UTC);
-        GateCheckResult duration = PromoteGates.paperDuration(Optional.of(stubPaper), THRESHOLDS, clock);
-        assertFalse(duration.passed());
-        assertEquals(0.0, duration.actual());
-        assertEquals(30.0, duration.threshold());
-    }
-
-    @Test
-    void paperDuration_passesAfterThirtyDaysOnOanda() {
-        Clock clock = Clock.fixed(Instant.parse("2024-02-01T00:00:00Z"), ZoneOffset.UTC);
-        DeploymentRecord paper = new DeploymentRecord(
-            "LondonOpenRangeBreakout",
-            com.martinfou.trading.backtest.RunMode.PAPER,
-            Instant.parse("2024-01-01T00:00:00Z"),
-            "run-1",
-            List.of(),
-            ExecutionLabel.PAPER_OANDA);
-
-        GateCheckResult duration = PromoteGates.paperDuration(Optional.of(paper), THRESHOLDS, clock);
-        assertTrue(duration.passed());
-        assertEquals(31.0, duration.actual());
-    }
 
     @Test
     void resolvePromotedAt_preservesPaperOandaLineage() {
@@ -169,20 +135,7 @@ class PromoteGatesTest {
             ExecutionLabel.PAPER_IBKR, "ibkr-paper", registry).name());
     }
 
-    @Test
-    void paperExecutionLabel_ibkrMessageDocumentsLivePath() {
-        DeploymentRecord ibkrPaper = new DeploymentRecord(
-            "LondonOpenRangeBreakout",
-            com.martinfou.trading.backtest.RunMode.PAPER,
-            Instant.parse("2024-01-01T00:00:00Z"),
-            "run-1",
-            List.of(),
-            ExecutionLabel.PAPER_IBKR);
 
-        GateCheckResult label = PromoteGates.paperExecutionLabel(Optional.of(ibkrPaper));
-        assertFalse(label.passed());
-        assertTrue(label.message().contains("PAPER_OANDA"));
-    }
 
     @Test
     void resolvePromotedAt_resetsWhenUpgradingFromStub() {

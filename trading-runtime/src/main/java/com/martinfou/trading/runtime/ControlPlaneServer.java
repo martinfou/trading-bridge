@@ -515,6 +515,14 @@ public final class ControlPlaneServer implements AutoCloseable {
                     ctx.json(Map.of("strategyId", strategyId, "deployment", deployment.get().toMap()));
                 }
             })
+            .delete("/api/strategies/{id}/deployments", ctx -> {
+                String strategyId = ctx.pathParam("id");
+                if (!StrategyCatalog.contains(strategyId)) {
+                    throw new NotFoundException("Unknown strategy: " + strategyId);
+                }
+                promoteService.deploymentStore().delete(strategyId);
+                ctx.status(HttpStatus.NO_CONTENT);
+            })
             .get("/api/strategies/{id}/promote-readiness", ctx -> {
                 String strategyId = ctx.pathParam("id");
                 if (!StrategyCatalog.contains(strategyId)) {

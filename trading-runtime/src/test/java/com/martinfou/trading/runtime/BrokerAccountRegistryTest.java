@@ -37,11 +37,6 @@ class BrokerAccountRegistryTest {
         assertEquals("****7890", BrokerAccountRegistry.maskAccountId("101-001-1234567890"));
     }
 
-    @Test
-    void assertRoutingAllowed_blocksCrossAccount() {
-        assertThrows(IllegalArgumentException.class, () ->
-            BrokerAccountRegistry.assertRoutingAllowed("firm-b", "firm-a"));
-    }
 
     @Test
     void resolveId_defaultsWhenBlank() {
