@@ -616,47 +616,18 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
 
     private static void downloadYearSync(String symbol, int year, String tf) throws IOException {
         String pair = symbol.replace("_", "").toLowerCase(java.util.Locale.ROOT);
-        Path scriptsDir = RuntimeDataPaths.scriptsDirectory();
-        List<String> command;
-        if (System.getProperty("os.name").toLowerCase().contains("win")) {
-            command = List.of(
-                "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                scriptsDir.resolve("download-data.ps1").toAbsolutePath().toString(),
-                "--pair", pair,
-                "--year", String.valueOf(year),
-                "--tf", tf.toLowerCase(java.util.Locale.ROOT)
-            );
-        } else {
-            command = List.of(
-                scriptsDir.resolve("download-data.sh").toAbsolutePath().toString(),
-                "--pair", pair,
-                "--year", String.valueOf(year),
-                "--tf", tf.toLowerCase(java.util.Locale.ROOT)
-            );
-        }
+        Path csvDir = RuntimeDataPaths.defaultDukascopyDirectory();
+        Path barsDir = RuntimeDataPaths.defaultBarsDirectory();
 
-        log.info("Executing synchronous download command: {}", command);
-        ProcessBuilder pb = new ProcessBuilder(command);
-        pb.directory(scriptsDir.getParent().toFile());
-        pb.redirectErrorStream(true);
-        Process process = pb.start();
-
-        try (var reader = new java.io.BufferedReader(new java.io.InputStreamReader(process.getInputStream()))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                log.info("[download-data-sync] {}", line);
-            }
-        }
-
-        try {
-            int exitCode = process.waitFor();
-            if (exitCode != 0) {
-                throw new IOException("Download process failed with exit code " + exitCode);
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("Download process was interrupted", e);
-        }
+        com.martinfou.trading.data.DukascopyDownloader downloader = new com.martinfou.trading.data.DukascopyDownloader();
+        log.info("Starting Java-native download for pair {} year {} tf {}", pair, year, tf);
+        
+        Path downloadedCsv = downloader.download(pair, year, tf, csvDir);
+        log.info("Java-native download complete. Converting CSV to BarStore...");
+        
+        com.martinfou.trading.data.BarStore store = new com.martinfou.trading.data.BarStore(symbol, tf.toUpperCase() + "_" + year, barsDir);
+        store.writeFromCSV(downloadedCsv);
+        log.info("Java-native conversion complete for symbol {} year {}", symbol, year);
     }
 
     private static boolean isYearAvailable(String symbol, int year, Path barsDir, Path csvDir) {
