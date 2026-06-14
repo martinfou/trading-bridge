@@ -94,7 +94,7 @@ try {
     
     Write-Host ""
     Write-Host "=== 3. Starting Trading TUI Client ==="
-    & $MvnCmd exec:java -pl trading-tui -Dexec.mainClass="com.martinfou.trading.tui.TradingTuiMain"
+    & $MvnCmd exec:java -pl trading-tui "-Dexec.mainClass=com.martinfou.trading.tui.TradingTuiMain"
     
 } finally {
     Cleanup
