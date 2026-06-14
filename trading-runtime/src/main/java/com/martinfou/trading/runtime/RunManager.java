@@ -289,15 +289,6 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
         };
     }
 
-    public void closePositions(String runId) {
-        AutoCloseable exec = activeExecutors.get(runId);
-        if (exec instanceof OandaStreamingExecutor ose) {
-            ose.closePositions();
-        } else {
-            throw new IllegalStateException("Run " + runId + " does not have an active OANDA streaming executor.");
-        }
-    }
-
     @Override
     public RunRecord pause(String runId) {
         RunRecord record = requireRun(runId);

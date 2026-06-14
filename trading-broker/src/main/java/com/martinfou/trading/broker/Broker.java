@@ -23,9 +23,6 @@ public interface Broker extends AutoCloseable {
 
     OrderSubmitResult submitOrder(Order order);
     OrderSubmitResult cancelOrder(String brokerOrderId);
-    default boolean closeTrade(String tradeId, double quantity) {
-        return false;
-    }
 
     List<Position> getPositions();
 

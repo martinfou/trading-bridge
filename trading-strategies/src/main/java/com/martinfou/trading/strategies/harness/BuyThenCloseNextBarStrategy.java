@@ -22,9 +22,9 @@ public final class BuyThenCloseNextBarStrategy extends HarnessScriptedStrategy {
         if (!symbolMatches(bar)) {
             return;
         }
-        if (barIndex % 2 == 0) {
+        if (barIndex == 0) {
             emit(marketBuy(bar));
-        } else {
+        } else if (barIndex == 1) {
             emit(marketSellClose(bar));
         }
         barIndex++;
