@@ -29,7 +29,7 @@ public class DukascopyDownloader {
     public DukascopyDownloader() {
         this.httpClient = HttpClient.newBuilder()
                 .followRedirects(HttpClient.Redirect.ALWAYS)
-                .connectTimeout(Duration.ofSeconds(10))
+                .connectTimeout(Duration.ofSeconds(15))
                 .build();
     }
 
@@ -146,21 +146,41 @@ public class DukascopyDownloader {
     }
 
     byte[] downloadFile(String url) throws IOException, InterruptedException {
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("User-Agent", "Mozilla/5.0")
-                .timeout(Duration.ofSeconds(5))
-                .GET()
-                .build();
+        int maxRetries = 3;
+        long backoffMs = 500;
 
-        HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
-        if (response.statusCode() == 200) {
-            return response.body();
-        } else if (response.statusCode() == 404) {
-            // No data for this hour (weekend or holiday)
-            return null;
-        } else {
-            throw new IOException("HTTP status code: " + response.statusCode() + " for URL: " + url);
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(url))
+                        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                        .timeout(Duration.ofSeconds(10))
+                        .GET()
+                        .build();
+
+                HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+                if (response.statusCode() == 200) {
+                    return response.body();
+                } else if (response.statusCode() == 404) {
+                    // No data for this hour (weekend or holiday)
+                    return null;
+                } else if (response.statusCode() == 429 || response.statusCode() == 503) {
+                    log.warn("Rate limited (HTTP {}) for URL: {}, retrying in {}ms... (attempt {}/{})", 
+                            response.statusCode(), url, backoffMs, attempt, maxRetries);
+                } else {
+                    throw new IOException("HTTP status code: " + response.statusCode() + " for URL: " + url);
+                }
+            } catch (IOException | InterruptedException e) {
+                if (attempt == maxRetries) {
+                    throw e;
+                }
+                log.warn("Connection error for URL: {}, retrying in {}ms... (attempt {}/{}): {}", 
+                        url, backoffMs, attempt, maxRetries, e.getMessage());
+            }
+
+            Thread.sleep(backoffMs);
+            backoffMs *= 2; // exponential backoff
         }
+        throw new IOException("Failed to download URL: " + url + " after " + maxRetries + " attempts");
     }
 }
