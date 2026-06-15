@@ -115,3 +115,8 @@ Items deferred during code reviews — not blocking current stories.
 
 - **Perte des métadonnées macroéconomiques previous et forecast** — Le DTO `WeeklyIntelBrief` ne stockant pas les valeurs `previous` et `forecast` pour les événements du calendrier, celles-ci sont retournées sous forme de chaînes vides `""`, privant le modèle de contexte historique.
 
+## Deferred from: code review of 26-6-promote-strategy-from-backtest-results (2026-06-15)
+
+- **Double vérification de timeframe et rendu incorrect de Candle TF** — Double vérification du strategyTimeframe présente dans le template et affichage de strategyTimeframe à la place de dataTimeframe ou équivalent pour le Candle TF.
+- **Styles CSS en ligne (Inlined Styles)** — Utilisation de styles CSS inline pour le span Candle TF dans le template HTML.
+

@@ -8,6 +8,10 @@ const props = defineProps<{
   trades: Trade[]
   positions?: any[]
   height?: number
+  bid?: number | null
+  ask?: number | null
+  symbol?: string
+  timeframe?: string
 }>()
 
 const emit = defineEmits<{
@@ -23,6 +27,22 @@ let candlestickSeries: ISeriesApi<'Candlestick'> | null = null
 let entryLine: any = null
 let stopLossLine: any = null
 let takeProfitLine: any = null
+let bidLine: any = null
+let askLine: any = null
+
+function formatSpread(bid: number, ask: number, symbol?: string): string {
+  const diff = ask - bid
+  if (diff <= 0) return '0.00000'
+  const sym = (symbol || '').toUpperCase()
+  if (sym.includes('JPY') || sym.includes('XAU')) {
+    const pips = diff / 0.01
+    return `${diff.toFixed(3)} (${pips.toFixed(1)} pips)`
+  } else if (sym.includes('EUR') || sym.includes('USD') || sym.includes('GBP') || sym.includes('CAD') || sym.includes('AUD') || sym.includes('NZD') || sym.includes('CHF')) {
+    const pips = diff / 0.0001
+    return `${diff.toFixed(5)} (${pips.toFixed(1)} pips)`
+  }
+  return `${diff.toFixed(5)}`
+}
 
 const lineOptions = computed(() => {
   const options = [
@@ -82,6 +102,36 @@ function updatePriceLines() {
   if (takeProfitLine) {
     candlestickSeries.removePriceLine(takeProfitLine)
     takeProfitLine = null
+  }
+  if (bidLine) {
+    candlestickSeries.removePriceLine(bidLine)
+    bidLine = null
+  }
+  if (askLine) {
+    candlestickSeries.removePriceLine(askLine)
+    askLine = null
+  }
+
+  // Draw current live bid and ask lines
+  if (props.bid !== undefined && props.bid !== null && props.bid > 0) {
+    bidLine = candlestickSeries.createPriceLine({
+      price: props.bid,
+      color: '#10B981', // Green
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      axisLabelVisible: true,
+      title: 'Bid',
+    })
+  }
+  if (props.ask !== undefined && props.ask !== null && props.ask > 0) {
+    askLine = candlestickSeries.createPriceLine({
+      price: props.ask,
+      color: '#EF4444', // Red
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      axisLabelVisible: true,
+      title: 'Ask',
+    })
   }
 
   let entry: number | null = null
@@ -419,6 +469,8 @@ onUnmounted(() => {
     entryLine = null
     stopLossLine = null
     takeProfitLine = null
+    bidLine = null
+    askLine = null
   }
 })
 
@@ -440,6 +492,10 @@ watch(selectedLineOption, () => {
   updatePriceLines()
 })
 
+watch(() => [props.bid, props.ask], () => {
+  updatePriceLines()
+})
+
 watch(timezone, () => {
   if (chart) {
     chart.remove()
@@ -448,6 +504,8 @@ watch(timezone, () => {
     entryLine = null
     stopLossLine = null
     takeProfitLine = null
+    bidLine = null
+    askLine = null
   }
   render()
 })
@@ -472,6 +530,15 @@ defineExpose({ updateBar, updatePriceLines })
     <div class="legend">
       <div class="legend-item"><span class="dot buy"></span>Buy Entry</div>
       <div class="legend-item"><span class="dot sell"></span>Sell Entry</div>
+      <div v-if="props.timeframe" class="legend-item text-gray-300 ml-2">
+        <span class="tz-label">TF:</span>
+        <span class="font-bold text-gray-100" style="margin-left: 0.2rem;">{{ props.timeframe }}</span>
+      </div>
+      <div v-if="props.bid && props.ask" class="live-price-strip">
+        <span class="live-price-item"><span class="price-lbl">Bid</span> <span class="price-val bid font-mono">{{ props.bid.toFixed(5) }}</span></span>
+        <span class="live-price-item"><span class="price-lbl">Ask</span> <span class="price-val ask font-mono">{{ props.ask.toFixed(5) }}</span></span>
+        <span class="live-price-item"><span class="price-lbl">Spread</span> <span class="price-val spread font-mono">{{ formatSpread(props.bid, props.ask, props.symbol) }}</span></span>
+      </div>
       <div style="flex-grow: 1;"></div>
       <div style="display: flex; gap: 1rem; align-items: center;">
         <div class="timezone-select-container">
@@ -567,5 +634,43 @@ defineExpose({ updateBar, updatePriceLines })
 
 .tz-select:focus {
   border-color: #d97706;
+}
+
+.live-price-strip {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  margin-left: 0.5rem;
+  padding-left: 1rem;
+  border-left: 1px solid #1F2937;
+}
+
+.live-price-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.price-lbl {
+  color: #6B7280;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.price-val {
+  font-weight: 600;
+}
+
+.price-val.bid {
+  color: #10B981;
+}
+
+.price-val.ask {
+  color: #EF4444;
+}
+
+.price-val.spread {
+  color: #F59E0B;
 }
 </style>

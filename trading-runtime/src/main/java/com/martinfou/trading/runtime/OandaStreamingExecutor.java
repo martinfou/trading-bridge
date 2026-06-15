@@ -75,6 +75,8 @@ public final class OandaStreamingExecutor implements AutoCloseable {
     private final List<Instant> recentLosses = new ArrayList<>();
     private Instant cooldownUntil = null;
     private volatile double lastMidPrice = 0.0;
+    private volatile double lastBid = 0.0;
+    private volatile double lastAsk = 0.0;
 
     public OandaStreamingExecutor(
         String runId,
@@ -162,11 +164,14 @@ public final class OandaStreamingExecutor implements AutoCloseable {
     }
 
     public void stop() {
-        if (!active.getAndSet(false)) {
+        if (active.getAndSet(false)) {
+            doStop();
+        } else {
             try { stopLatch.await(); } catch (InterruptedException e) {}
-            return;
         }
+    }
 
+    private void doStop() {
         try {
             streamingClient.removeListener(tickListener);
             streamingClient.unsubscribe(config.symbol());
@@ -216,6 +221,14 @@ public final class OandaStreamingExecutor implements AutoCloseable {
         return lastMidPrice;
     }
 
+    public double getLastBid() {
+        return lastBid;
+    }
+
+    public double getLastAsk() {
+        return lastAsk;
+    }
+
     private void bootstrapHistory() {
         try {
             log.info("Bootstrapping indicator warm-up with last 500 history bars...");
@@ -247,6 +260,8 @@ public final class OandaStreamingExecutor implements AutoCloseable {
                 record.noteEventAt(timestamp);
             }
 
+            lastBid = bid;
+            lastAsk = ask;
             lastMidPrice = (bid + ask) / 2.0;
 
             // 1. Perform rollover checks
@@ -276,7 +291,7 @@ public final class OandaStreamingExecutor implements AutoCloseable {
 
             Bar currentBar = aggregator.getInProgressBar();
             if (currentBar != null) {
-                RunEvent barEvent = RunEvent.bar(runId, config.strategyId(), config.symbol(), runMode, currentBar, timestamp);
+                RunEvent barEvent = RunEvent.bar(runId, config.strategyId(), config.symbol(), runMode, currentBar, timestamp, bid, ask);
                 eventStore.publishEphemeral(runId, barEvent);
             }
         } catch (Exception e) {
@@ -511,7 +526,9 @@ public final class OandaStreamingExecutor implements AutoCloseable {
     }
 
     private void triggerActiveLiquidation() {
-        active.set(false);
+        if (!active.getAndSet(false)) {
+            return;
+        }
         streamingClient.removeListener(tickListener);
         streamingClient.unsubscribe(config.symbol());
 
@@ -548,7 +565,7 @@ public final class OandaStreamingExecutor implements AutoCloseable {
             }
         }
         emitOperatorAction("DRAWDOWN_BREACH", "Max 10% drawdown exceeded.");
-        stop();
+        doStop();
     }
 
     private void executePendingOrders(Bar lastBar) {
@@ -558,9 +575,19 @@ public final class OandaStreamingExecutor implements AutoCloseable {
                 continue;
             }
 
-            Order order = pending.price() <= 0.0
-                ? new Order(pending.symbol(), pending.side(), pending.type(), pending.quantity(), lastBar.close())
-                : pending;
+            Order order;
+            if (pending.price() <= 0.0) {
+                order = new Order(pending.symbol(), pending.side(), pending.type(), pending.quantity(), lastBar.close());
+                if (pending.isCloseOnly()) {
+                    order.closeOnly();
+                }
+                order.withStopLoss(pending.stopLoss())
+                     .withTakeProfit(pending.takeProfit())
+                     .withTrailingStop(pending.trailingStop())
+                     .withGuaranteed(pending.guaranteed());
+            } else {
+                order = pending;
+            }
 
             RiskCheckResult riskCheck = riskEngine.checkPreTrade(order, broker.getPositions());
             if (!riskCheck.passed()) {

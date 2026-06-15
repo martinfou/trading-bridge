@@ -11,7 +11,7 @@ public interface OandaRestClient {
     OandaMarketOrderResult placeMarketOrder(String instrument, long units, String clientTag);
     OandaMarketOrderResult placeOrder(String type, String instrument, long units, double price, double stopLoss, double takeProfit, double trailingStop, boolean guaranteed, String clientTag);
     boolean cancelOrder(String orderId);
-    boolean closeTrade(String tradeId, String units);
+    double closeTrade(String tradeId, String units);
     java.util.List<java.util.Map<String, Object>> fetchTransactions(int limit);
 
     OandaAccountSnapshot fetchAccountSummary();

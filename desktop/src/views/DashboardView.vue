@@ -7,10 +7,24 @@ import type { RunResult } from '@/types/control-plane'
 import BacktestForm from '@/components/BacktestForm.vue'
 import KpiStrip from '@/components/KpiStrip.vue'
 import EquityChart from '@/components/EquityChart.vue'
+import PromoteModal from '@/components/PromoteModal.vue'
 
 const router = useRouter()
 const route = useRoute()
 const { getRun, getEquityCurve, getHistoricalDataStatus, downloadHistoricalData, deleteHistoricalData } = useControlPlane()
+
+const showPromoteModal = ref(false)
+const promotionSuccessMessage = ref<string | null>(null)
+let promoTimeoutId: any = null
+
+function onPromoted() {
+  promotionSuccessMessage.value = 'Strategy promoted successfully!'
+  if (promoTimeoutId) clearTimeout(promoTimeoutId)
+  promoTimeoutId = setTimeout(() => {
+    promotionSuccessMessage.value = null
+    promoTimeoutId = null
+  }, 5000)
+}
 
 interface ActiveRun {
   runId: string
@@ -275,11 +289,15 @@ onMounted(() => {
 onUnmounted(() => {
   pollTimers.value.forEach(timer => clearInterval(timer))
   if (statusPollTimer) clearInterval(statusPollTimer)
+  if (promoTimeoutId) clearTimeout(promoTimeoutId)
 })
 </script>
 
 <template>
   <div class="view">
+    <!-- Success Notification -->
+    <div v-if="promotionSuccessMessage" class="banner success" style="margin-bottom: 1rem;">{{ promotionSuccessMessage }}</div>
+
     <div class="dashboard-header" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem;">
       <div>
         <h1 style="margin-bottom: 0.25rem;">Dashboard</h1>
@@ -355,7 +373,8 @@ onUnmounted(() => {
           :final-equity="selectedRun.result.result.finalEquity ?? null"
         />
 
-        <div class="results-actions" style="margin-top: 1rem; margin-bottom: 0.5rem; display: flex; justify-content: flex-end;">
+        <div class="results-actions" style="margin-top: 1rem; margin-bottom: 0.5rem; display: flex; justify-content: flex-end; gap: 0.5rem;">
+          <button v-if="selectedRun.status === 'COMPLETED'" class="details-btn promote-btn" @click="showPromoteModal = true">🚀 Promote</button>
           <button class="details-btn" @click="viewFullResults">View Full Results →</button>
         </div>
 
@@ -363,6 +382,15 @@ onUnmounted(() => {
           <h3>Equity Curve</h3>
           <EquityChart :data="selectedRun.equityCurve" :height="250" />
         </div>
+
+        <!-- Promote Modal -->
+        <PromoteModal
+          v-if="selectedRun.result && showPromoteModal"
+          :strategyId="selectedRun.result.strategyId"
+          :show="showPromoteModal"
+          @close="showPromoteModal = false"
+          @promoted="onPromoted"
+        />
       </template>
     </template>
     <!-- Historical Data Manager Accordion -->
@@ -575,6 +603,11 @@ h3 { font-size: 0.9rem; margin-bottom: 0.5rem; color: var(--text-secondary); }
 }
 
 .banner.error { background: #2d1212; color: #fca5a5; border: 1px solid #7f1d1d; }
+.banner.success {
+  background: rgba(34, 197, 94, 0.05);
+  border: 1px solid rgba(34, 197, 94, 0.15);
+  color: #a7f3d0;
+}
 .banner.info { background: #0f1d2d; color: #93c5fd; border: 1px solid #1e3a5f; }
 
 .dots span { animation: blink 1.4s infinite; }

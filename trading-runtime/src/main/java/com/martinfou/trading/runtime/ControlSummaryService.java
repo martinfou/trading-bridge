@@ -100,6 +100,12 @@ public final class ControlSummaryService {
                     long secondsLeft = java.time.Duration.between(now, exec.getCooldownUntil()).getSeconds();
                     item.put("cooldownSecondsRemaining", Math.max(0, secondsLeft));
                 }
+                if (exec.getLastBid() > 0) {
+                    item.put("lastBid", exec.getLastBid());
+                }
+                if (exec.getLastAsk() > 0) {
+                    item.put("lastAsk", exec.getLastAsk());
+                }
             }
             item.put("status", displayStatus);
             item.put("isStale", isStale);

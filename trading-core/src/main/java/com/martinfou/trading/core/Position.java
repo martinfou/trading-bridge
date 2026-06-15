@@ -10,12 +10,18 @@ public class Position {
 
     private final java.time.Instant entryTime;
     private final String clientTag;
+    private final String brokerTradeId;
 
-    public Position(String symbol, Order.Side side, double quantity, double entryPrice, java.time.Instant entryTime, String clientTag) {
+    public Position(String symbol, Order.Side side, double quantity, double entryPrice, java.time.Instant entryTime, String clientTag, String brokerTradeId) {
         this.symbol = symbol; this.side = side;
         this.quantity = quantity; this.entryPrice = entryPrice;
         this.entryTime = entryTime;
         this.clientTag = clientTag;
+        this.brokerTradeId = brokerTradeId;
+    }
+
+    public Position(String symbol, Order.Side side, double quantity, double entryPrice, java.time.Instant entryTime, String clientTag) {
+        this(symbol, side, quantity, entryPrice, entryTime, clientTag, null);
     }
 
     public Position(String symbol, Order.Side side, double quantity, double entryPrice, java.time.Instant entryTime) {
@@ -49,6 +55,7 @@ public class Position {
     public double takeProfit() { return takeProfit; }
     public java.time.Instant entryTime() { return entryTime; }
     public String clientTag() { return clientTag; }
+    public String brokerTradeId() { return brokerTradeId; }
     public Position withStopLoss(double sl) { this.stopLoss = sl; return this; }
     public Position withTakeProfit(double tp) { this.takeProfit = tp; return this; }
 

@@ -51,6 +51,8 @@ export interface RunResult {
     commissionPerTrade?: number
     slippagePct?: number
     barsSource?: string
+    strategyTimeframe?: string
+    dataTimeframe?: string
   }
   result?: {
     totalTrades: number

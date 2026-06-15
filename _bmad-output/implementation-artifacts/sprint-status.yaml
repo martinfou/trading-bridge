@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: "2026-06-06"
-last_updated: "2026-06-14T04:07:00Z"
+last_updated: "2026-06-15T18:21:00Z"
 project: trading-bridge
 project_key: NOKEY
 tracking_system: file-system
@@ -267,6 +267,7 @@ development_status:
   26-3-backtest-query-cli-api: done
   26-4-desktop-backtest-history-view: done
   26-5-desktop-parameter-heatmap-pareto-drift: done
+  26-6-promote-strategy-from-backtest-results: done
   epic-26-retrospective: optional
 
   epic-27: backlog

@@ -4,6 +4,7 @@ import com.martinfou.trading.core.Order;
 
 /** Open position row from OANDA open trades. */
 public record OandaPositionSnapshot(
+    String tradeId,
     String instrument,
     Order.Side side,
     double units,
