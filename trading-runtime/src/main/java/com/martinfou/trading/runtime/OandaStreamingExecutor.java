@@ -332,13 +332,14 @@ public final class OandaStreamingExecutor implements AutoCloseable {
         // Fetch account equity — treat transient network errors as non-fatal for a single tick.
         // A GOAWAY / connection reset from the OANDA REST API must not crash the streaming run;
         // we simply skip the risk check for this tick and rely on the next tick to retry.
-        // We only catch IOException and IllegalStateException (broker-layer wrappers for network errors).
+        // We only catch IllegalStateException — the unchecked wrapper the broker layer uses for
+        // all network errors (IOException → IllegalStateException("Failed to fetch OANDA account summary")).
         // Programming errors (NPE, ClassCastException, etc.) are intentionally left to propagate so
         // they surface in processTick's catch and terminate the run as FAILED.
         double currentEquity;
         try {
             currentEquity = broker.getAccountState().equity();
-        } catch (java.io.IOException | IllegalStateException e) {
+        } catch (IllegalStateException e) {
             log.warn("Run {} — transient error fetching account equity; skipping risk check for this tick: {}",
                 runId, e.getMessage());
             return;
