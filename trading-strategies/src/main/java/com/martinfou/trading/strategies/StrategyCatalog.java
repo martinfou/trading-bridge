@@ -21,7 +21,7 @@ import java.util.function.Function;
 public final class StrategyCatalog {
 
     public enum Family {
-        PROP, SQ_IMPORTED, GENERATED, LLM_WEEKLY, NEWS_WEEKLY, HARNESS, EXAMPLE
+        PROP, SQ_IMPORTED, GENERATED, LLM_WEEKLY, NEWS_WEEKLY, HARNESS, LONG_TERM, EXAMPLE
     }
 
     public record Entry(
