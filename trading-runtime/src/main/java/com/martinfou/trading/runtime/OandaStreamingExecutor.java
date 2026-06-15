@@ -59,6 +59,8 @@ public final class OandaStreamingExecutor implements AutoCloseable {
     private int rejectedCount = 0;
     
     private final CountDownLatch stopLatch = new CountDownLatch(1);
+    /** Non-null when the run was stopped due to an internal error (set before stop() is called). */
+    private final java.util.concurrent.atomic.AtomicReference<String> pendingFailure = new java.util.concurrent.atomic.AtomicReference<>();
 
     // Advanced Risk Fields
     private double dailyStartEquity;
@@ -181,6 +183,14 @@ public final class OandaStreamingExecutor implements AutoCloseable {
         return active.get();
     }
 
+    /**
+     * Returns the error message that caused an error-driven stop, or {@code null} if the stop
+     * was operator-initiated. Set before {@link #stop()} is called; safe to read after stop.
+     */
+    public String getPendingFailure() {
+        return pendingFailure.get();
+    }
+
     public void liquidateAndStop() {
         triggerActiveLiquidation();
     }
@@ -270,9 +280,12 @@ public final class OandaStreamingExecutor implements AutoCloseable {
                 eventStore.publishEphemeral(runId, barEvent);
             }
         } catch (Exception e) {
+            String errorMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             log.error("Run {} failed during tick processing", runId, e);
-            RunEvent errorEvent = RunEvent.error(runId, config.strategyId(), config.symbol(), runMode, e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+            RunEvent errorEvent = RunEvent.error(runId, config.strategyId(), config.symbol(), runMode, errorMsg);
             eventStore.append(runId, errorEvent);
+            // Signal the failure to RunManager via pendingFailure — RunManager owns all status transitions.
+            pendingFailure.compareAndSet(null, errorMsg);
             Thread.ofVirtual().start(this::stop);
         }
     }
@@ -316,7 +329,21 @@ public final class OandaStreamingExecutor implements AutoCloseable {
     }
 
     private void checkRiskCircuitBreakers(Instant now) {
-        double currentEquity = broker.getAccountState().equity();
+        // Fetch account equity — treat transient network errors as non-fatal for a single tick.
+        // A GOAWAY / connection reset from the OANDA REST API must not crash the streaming run;
+        // we simply skip the risk check for this tick and rely on the next tick to retry.
+        // We only catch IOException and IllegalStateException (broker-layer wrappers for network errors).
+        // Programming errors (NPE, ClassCastException, etc.) are intentionally left to propagate so
+        // they surface in processTick's catch and terminate the run as FAILED.
+        double currentEquity;
+        try {
+            currentEquity = broker.getAccountState().equity();
+        } catch (java.io.IOException | IllegalStateException e) {
+            log.warn("Run {} — transient error fetching account equity; skipping risk check for this tick: {}",
+                runId, e.getMessage());
+            return;
+        }
+
         if (currentEquity > peakEquity) {
             peakEquity = currentEquity;
         }

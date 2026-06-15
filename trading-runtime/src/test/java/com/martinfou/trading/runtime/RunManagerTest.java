@@ -114,6 +114,42 @@ class RunManagerTest {
         }
     }
 
+    @Test
+    void startRun_rejectsDuplicateActiveRun() throws Exception {
+        try (EventStore store = EventStores.inMemory();
+             RunManager manager = new RunManager(store)) {
+            String runId = manager.startRun(new RunManager.StartRunRequest(
+                "LondonOpenRangeBreakout",
+                "EUR_USD",
+                "PAPER",
+                new BarSourceResolver.BarsSource("sample", 50, null),
+                10_000.0,
+                1.0,
+                0.0,
+                0.0,
+                ExecutionLabel.PAPER_STUB.name(),
+                "default"
+            ));
+
+            assertThrows(IllegalArgumentException.class, () -> manager.startRun(
+                new RunManager.StartRunRequest(
+                    "LondonOpenRangeBreakout",
+                    "EUR_USD",
+                    "PAPER",
+                    new BarSourceResolver.BarsSource("sample", 50, null),
+                    10_000.0,
+                    1.0,
+                    0.0,
+                    0.0,
+                    ExecutionLabel.PAPER_STUB.name(),
+                    "default"
+                )
+            ));
+
+            manager.stop(runId);
+        }
+    }
+
     private static RunRecord waitForCompletion(RunManager manager, String runId) throws InterruptedException {
         for (int i = 0; i < 200; i++) {
             RunRecord record = manager.getRun(runId).orElseThrow();
