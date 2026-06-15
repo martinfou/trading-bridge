@@ -54,6 +54,7 @@ public final class TuiCommandHandler {
                 case "status" -> status(parts);
                 case "backtest", "bt" -> backtest(parts, reader, liveOutput);
                 case "promote" -> promote(parts);
+                case "trade", "t" -> trade(parts, reader, liveOutput);
                 case "configure-oanda", "oanda-setup" -> configureOanda(reader, liveOutput);
                 case "run" -> showRun(parts);
                 case "events" -> showEvents(parts);
@@ -86,6 +87,7 @@ public final class TuiCommandHandler {
             "      args: <id> [SYMBOL YEAR | SYMBOL 2006-2012 | --sample | --ci | file.csv]",
             "            [--capital 1000] [--lots 0.01]",
             "  /promote <id> PAPER|LIVE [runId]",
+            "  /trade             Start a live/paper trading run (interactive wizard)",
             "  /configure-oanda   Interactive wizard to configure OANDA token and account ID",
             "  /run <runId>       Run status + full backtest report",
             "  /events <runId>    Last 20 run events",
@@ -227,6 +229,14 @@ public final class TuiCommandHandler {
             }
         }
         return lines;
+    }
+
+    private List<String> trade(List<String> parts, LineReader reader, java.util.function.Consumer<String> liveOutput)
+        throws IOException, InterruptedException {
+        if (reader == null) {
+            return List.of("Usage: /trade (interactive) requires a terminal.");
+        }
+        return TuiInteractiveTrade.run(this, client, reader, liveOutput);
     }
 
     private List<String> showRun(List<String> parts) throws IOException, InterruptedException {

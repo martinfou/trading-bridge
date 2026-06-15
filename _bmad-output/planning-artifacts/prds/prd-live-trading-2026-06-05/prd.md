@@ -2,7 +2,7 @@
 title: Live & Paper Trading Dashboard (Live Room)
 status: final
 created: 2026-06-05
-updated: 2026-06-05
+updated: 2026-06-15
 author: John (Product Manager)
 ---
 
@@ -33,7 +33,7 @@ Provide a world-class, institutional-grade ("prop-shop quality") control center 
   - Total Active Paper Strategies
   - Net Capital Allocated
   - Combined Realized PnL (today)
-  - Active Alerts (Count of stale runs or database gaps)
+  - Active Alerts (Count of stale runs, database gaps, or active drift signals)
 - **FR-2.2 (Active Strategy Cards):** A responsive grid displaying individual cards for each strategy currently executing in `LIVE` or `PAPER` mode.
 - **FR-2.3 (Card Details):** Each strategy card must display:
   - Strategy ID and Asset/Symbol
@@ -42,6 +42,7 @@ Provide a world-class, institutional-grade ("prop-shop quality") control center 
   - Telemetry Details: Running duration, event count, and latest event timestamp.
   - Risk Metrics: Live daily drawdown % and max daily drawdown % with a warning indicator if close to limits.
 - **FR-2.4 (Action Triggers):** Each card must feature a prominent **Inspect** button and a secondary **Kill Switch** button.
+- **FR-2.9 (Drift Status Badge):** If a running strategy has a non-`HOLD` drift evaluation recommendation (e.g. `SUSPEND` or `RETUNE`), the strategy card must display a highly visible, color-coded badge indicating the drift recommendation (e.g., orange for retune, red for suspend).
 
 ### Advanced Risk Controls (Circuit Breakers & Locks)
 - **FR-2.5 (Daily Loss Limit - DLL):** Hard stop at a configurable percentage (e.g., default 5.0% for prop-shops or 2.0% conservative) of starting daily equity. Upon breach, the system must immediately close all open positions, cancel all active orders, and transition the strategy status to `SUSPENDED_DAILY` (lockout active until next calendar day's 5:00 PM EST/UTC rollover).
@@ -56,7 +57,12 @@ Provide a world-class, institutional-grade ("prop-shop quality") control center 
     - Entry time, Side (BUY/SELL), Quantity, Entry Price, Current Price, and Floating P&L.
   - **Trades Tab:** Scrollable table of completed trades (derived dynamically from fill events) containing Entry/Exit timestamps, exit price, and realized P&L.
   - **Price Chart Tab:** Lightweight-charts candlestick visualization showing OHLC price bars and mapping trade execution markers (Entry/Exit arrows and labels) on the corresponding bar timestamps.
+  - **Drift Analysis Tab:** Displays active model drift metrics, including:
+    - Overall recommendation state (e.g., HOLD, SUSPEND, RETUNE), source of comparison data, and evaluation timestamp.
+    - An explanatory reason summary for the drift.
+    - A detailed metrics table: Metric Name, Observed Value, Allowed Threshold, Dimension (e.g., Drawdown, Win Rate), and Breached status (true/false).
 - **FR-3.2 (Administrative Kill Switch):** A critical administrative panel featuring a highly visible **Kill Strategy** trigger. Clicking this de-registers and cleanly stops order submission for the selected strategy.
+- **FR-3.3 (TUI Status Drift Section):** The `/status` command in the terminal client must include a dedicated **"Drift Alerts"** section when active runs are present. This section lists any running strategies whose drift recommendation is not `HOLD`, showing the strategy ID, recommendation, and reason.
 
 ## 5. Non-Functional Requirements & Performance
 - **NFR-4.1 (Low Latency Updates):** The active runs list and status stats must refresh automatically every 10 seconds or utilize the WebSocket event channel for real-time telemetry updates.

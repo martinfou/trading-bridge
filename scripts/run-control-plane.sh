@@ -8,6 +8,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+if [ -f .env ]; then
+  echo "Loading environment variables from .env"
+  export $(grep -v '^#' .env | xargs)
+fi
+
 export TRADING_BRIDGE_ROOT="${TRADING_BRIDGE_ROOT:-$ROOT}"
 export CONTROL_PLANE_PORT="${CONTROL_PLANE_PORT:-8080}"
 

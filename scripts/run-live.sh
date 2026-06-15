@@ -32,11 +32,15 @@ INTERVAL_SEC="${3:-60}"
 # Source OANDA credentials from .env
 # ────────────────────────────────────────────
 ENV_FILE="$HOME/projects/trading-dashboard/.env"
+if [ ! -f "$ENV_FILE" ] && [ -f "$SCRIPT_DIR/.env" ]; then
+    ENV_FILE="$SCRIPT_DIR/.env"
+fi
+
 if [ -f "$ENV_FILE" ]; then
     # shellcheck source=/dev/null
     source <(grep -E '^OANDA_' "$ENV_FILE" | sed 's/ //g' 2>/dev/null)
 else
-    echo -e "${RED}❌ .env file not found at $ENV_FILE${NC}"
+    echo -e "${RED}❌ .env file not found at $ENV_FILE or $SCRIPT_DIR/.env${NC}"
     echo "Create it with:"
     echo "  OANDA_API_KEY=your_key"
     echo "  OANDA_ACCOUNT_ID=101-002-4729622-008"

@@ -223,6 +223,35 @@ public final class ControlPlaneClient {
         return postJson("/api/strategies/" + encodePath(strategyId) + "/kill", body);
     }
 
+    public JsonNode listBrokerAccounts() throws IOException, InterruptedException {
+        return getJson("/api/broker-accounts");
+    }
+
+    public JsonNode startRun(
+        String strategyId,
+        String mode,
+        String symbol,
+        String brokerAccountId,
+        String executionLabel,
+        Double capital,
+        Double lotSize
+    ) throws IOException, InterruptedException {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("strategyId", strategyId);
+        body.put("mode", mode.toUpperCase());
+        body.put("symbol", symbol);
+        body.put("brokerAccountId", brokerAccountId);
+        body.put("executionLabel", executionLabel);
+        body.put("barsSource", Map.of("type", "year", "year", "all"));
+        if (capital != null) {
+            body.put("capital", capital);
+        }
+        if (lotSize != null) {
+            body.put("lotSize", lotSize);
+        }
+        return postJson("/api/runs", body);
+    }
+
     public String baseUrl() {
         return baseUrl;
     }
