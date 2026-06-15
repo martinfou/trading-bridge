@@ -22,16 +22,26 @@ const tradeChartRef = ref<any>(null)
 
 const { connect, disconnect, lastEvent } = useRunWebSocket()
 
-watch(lastEvent, (event) => {
+watch(lastEvent, async (event) => {
   if (!event) return
   if (event.type === 'BAR' && event.payload && event.payload.bar) {
+    const newBar = event.payload.bar as Bar
+    const lastBar = inspectBars.value[inspectBars.value.length - 1]
+    if (lastBar && lastBar.time === newBar.time) {
+      lastBar.open = newBar.open
+      lastBar.high = newBar.high
+      lastBar.low = newBar.low
+      lastBar.close = newBar.close
+    } else {
+      inspectBars.value.push(newBar)
+    }
+
     if (tradeChartRef.value) {
-      tradeChartRef.value.updateBar(event.payload.bar)
+      tradeChartRef.value.updateBar(newBar)
     }
   }
   if (event.type === 'FILL' || event.type === 'ORDER_SUBMITTED') {
-    updateInspectTelemetry()
-    fetchSummary()
+    await fetchSummary()
   }
 })
 
@@ -123,7 +133,7 @@ async function fetchSummary() {
     summary.value = data
     error.value = null
     if (selectedRunId.value) {
-      await updateInspectTelemetry()
+      await updateInspectTelemetry(true, true)
     }
     await fetchBalances()
   } catch (e: any) {
@@ -334,7 +344,7 @@ async function selectRun(runId: string) {
   updateInspectTelemetry()
 }
 
-async function updateInspectTelemetry(background = false) {
+async function updateInspectTelemetry(background = false, skipBars = false) {
   if (!selectedRunId.value) return
   const runId = selectedRunId.value
 
@@ -345,12 +355,14 @@ async function updateInspectTelemetry(background = false) {
 
   try {
     const [barsData, tradesData, equityData] = await Promise.all([
-      getBars(runId).catch(() => []),
+      skipBars ? Promise.resolve([] as Bar[]) : getBars(runId).catch(() => []),
       getTrades(runId).catch(() => []),
       getEquityCurve(runId).catch(() => [])
     ])
     if (selectedRunId.value === runId) {
-      inspectBars.value = barsData
+      if (!skipBars) {
+        inspectBars.value = barsData
+      }
       inspectTrades.value = tradesData
       inspectEquity.value = equityData
     }
@@ -605,7 +617,7 @@ onUnmounted(() => {
         <span class="stat-value text-info">{{ stats.activePaper }}</span>
       </div>
       <div class="stat-card">
-        <span class="stat-label">Total Allocation</span>
+        <span class="stat-label" title="The total amount of capital allocated across all active strategies. This is an internal configuration value, independent of your actual broker balance.">Allocated Capital ℹ️</span>
         <span class="stat-value">${{ stats.totalAllocated.toLocaleString() }}</span>
       </div>
       <div class="stat-card">

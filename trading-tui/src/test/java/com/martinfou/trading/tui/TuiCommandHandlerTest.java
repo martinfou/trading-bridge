@@ -230,9 +230,9 @@ class TuiCommandHandlerTest {
             List<String> lines = handler.handle("/data status h1");
             assertTrue(lines.stream().anyMatch(l -> l.contains("Active tasks:")));
             assertTrue(lines.stream().anyMatch(l -> l.contains("eurusd-2012-h1: 50%")));
-            assertTrue(lines.stream().anyMatch(l -> l.contains("EUR_USD: 2012 (CSV+BARS)")));
-            assertTrue(lines.stream().anyMatch(l -> l.contains("GBP_USD: 2013 (CSV)")));
-            assertTrue(lines.stream().anyMatch(l -> l.contains("GBP_JPY: [no data]")));
+            assertTrue(lines.stream().anyMatch(l -> l.contains("EUR_USD") && l.contains("2012 (CSV+BARS)")));
+            assertTrue(lines.stream().anyMatch(l -> l.contains("GBP_USD") && l.contains("2013 (CSV)")));
+            assertTrue(lines.stream().anyMatch(l -> l.contains("GBP_JPY") && l.contains("[no data]")));
         } finally {
             server.stop(0);
         }

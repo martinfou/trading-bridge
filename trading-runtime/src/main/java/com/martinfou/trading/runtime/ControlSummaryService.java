@@ -103,6 +103,27 @@ public final class ControlSummaryService {
             }
             item.put("status", displayStatus);
             item.put("isStale", isStale);
+
+            String brokerAccountId = record.configSnapshot().containsKey("brokerAccountId")
+                ? String.valueOf(record.configSnapshot().get("brokerAccountId"))
+                : null;
+            if (label.isBrokerBacked() && brokerAccountId != null && runManager != null) {
+                var registry = runManager.brokerAccountRegistry();
+                if (registry != null) {
+                    var creds = registry.credentials(brokerAccountId);
+                    if (creds.isPresent()) {
+                        item.put("resolvedAccountId", creds.get().accountId());
+                        item.put("maskedAccountId", BrokerAccountRegistry.maskAccountId(creds.get().accountId()));
+                    } else if (label.isIbkrBroker()) {
+                        var ibkr = registry.ibkrConnection(brokerAccountId);
+                        ibkr.ifPresent(cfg -> {
+                            item.put("resolvedAccountId", cfg.accountId());
+                            item.put("maskedAccountId", BrokerAccountRegistry.maskAccountId(cfg.accountId()));
+                        });
+                    }
+                }
+            }
+
             lastEventAt.ifPresent(t -> item.put("lastEventAt", t.toString()));
             item.put("configSnapshot", record.configSnapshot());
             item.put("configHash", record.configHash());
