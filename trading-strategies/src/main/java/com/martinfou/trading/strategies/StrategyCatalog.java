@@ -203,6 +203,50 @@ public final class StrategyCatalog {
         bootstrapBuiltIn();
     }
 
+    /**
+     * Query strategies by criteria. All filters are optional — pass null to skip.
+     *
+     * @param family   filter by family (null = any)
+     * @param type     filter by type/category (null = any)
+     * @param text     search name, description, indicators (case-insensitive, null = any)
+     * @return filtered list of entries
+     */
+    public static List<Entry> query(Family family, String type, String text) {
+        return entries().stream()
+            .filter(e -> family == null || e.family() == family)
+            .filter(e -> type == null || type.isBlank() || e.type().equalsIgnoreCase(type))
+            .filter(e -> {
+                if (text == null || text.isBlank()) return true;
+                String lower = text.toLowerCase();
+                return e.id().toLowerCase().contains(lower)
+                    || e.description().toLowerCase().contains(lower)
+                    || e.indicators().stream().anyMatch(i -> i.toLowerCase().contains(lower));
+            })
+            .collect(java.util.stream.Collectors.toList());
+    }
+
+    /**
+     * Print the catalog to stdout in a structured format.
+     */
+    public static void printCatalog() {
+        System.out.println("╔══════════════════════════════════════════════════════════════╗");
+        System.out.println("║  Strategy Catalog — " + ENTRIES.size() + " strategies                          ║");
+        System.out.println("╚══════════════════════════════════════════════════════════════╝");
+        System.out.println();
+
+        Map<Family, List<Entry>> byFamily = entries().stream()
+            .collect(java.util.stream.Collectors.groupingBy(Entry::family));
+
+        for (var family : byFamily.keySet()) {
+            System.out.println("── " + family + " (" + byFamily.get(family).size() + ") ──");
+            for (var e : byFamily.get(family)) {
+                System.out.printf("  %-30s %-20s %s%n",
+                    e.id(), e.type(), e.description());
+            }
+            System.out.println();
+        }
+    }
+
     private static synchronized void put(String id, Family family, String defaultSymbol, Function<String, Strategy> factory) {
         if (ENTRIES.containsKey(id)) {
             throw new IllegalStateException("Duplicate strategy id: " + id);
