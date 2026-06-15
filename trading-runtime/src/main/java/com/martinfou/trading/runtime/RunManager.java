@@ -286,6 +286,10 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
                 notifyTransition(before, record, RunTransition.STOP);
                 yield record;
             }
+            // Already terminal — stopping again is a no-op; return the record silently.
+            case COMPLETED, FAILED, ARCHIVED -> {
+                yield record;
+            }
             default -> throw new IllegalStateException(
                 "Cannot stop run " + runId + " from status " + record.status());
         };
@@ -399,6 +403,9 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
         try {
             RunMode runMode = RunMode.valueOf(configSnapshot.mode().toUpperCase());
             com.martinfou.trading.backtest.BacktestResult result;
+            // Captures a failure message from OandaStreamingExecutor when the stop was error-driven.
+            // Null for operator-initiated stops and all non-OANDA-streaming paths.
+            String oandaStreamError = null;
             if (configSnapshot.resolvedExecutionLabel().isOandaBroker() && System.getProperty("trading.bridge.test") == null) {
                 Broker broker = brokerFactory.create(configSnapshot);
                 Strategy strategy = StrategyCatalog.create(
@@ -459,6 +466,7 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
                     }
                 }
                 oandaExecutor.stop();
+                oandaStreamError = oandaExecutor.getPendingFailure();
                 activeExecutors.remove(runId);
 
                 double finalEquity = broker.getAccountState().equity();
@@ -497,7 +505,15 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
                 result = context.run();
             }
             requireTerminalEvent(runId, RunEventType.RUN_ENDED);
-            if (record.status() == RunRecord.Status.RUNNING) {
+            if (oandaStreamError != null) {
+                // Error-driven stop from OandaStreamingExecutor: drive FAILED through RunManager's
+                // state machine so all transition listeners are properly notified.
+                record.noteEventAt(latestEventTimestamp(runId).orElse(Instant.now()));
+                if (record.status() == RunRecord.Status.RUNNING || record.status() == RunRecord.Status.PAUSED) {
+                    record.markFailed(oandaStreamError);
+                }
+                notifyTransition(before, record, RunTransition.FAIL);
+            } else if (record.status() == RunRecord.Status.RUNNING) {
                 record.noteEventAt(latestEventTimestamp(runId).orElse(Instant.now()));
                 record.markCompleted(BacktestResultPayload.toEndedPayload(result));
                 notifyTransition(before, record, RunTransition.COMPLETE);
@@ -781,6 +797,28 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
         RunMode mode = RunMode.valueOf(request.mode().toUpperCase());
         validateExecutionLabelForMode(mode, configSnapshot.resolvedExecutionLabel());
         validateBrokerCredentials(configSnapshot);
+
+        if (mode == RunMode.PAPER || mode == RunMode.LIVE) {
+            String strategyId = configSnapshot.strategyId();
+            String symbol = configSnapshot.symbol();
+            String accountId = configSnapshot.resolvedBrokerAccountId();
+
+            boolean duplicate = runs.values().stream()
+                .filter(r -> r.status() == RunRecord.Status.RUNNING || r.status() == RunRecord.Status.PAUSED)
+                .filter(r -> r.mode() == mode)
+                .filter(r -> r.strategyId().equalsIgnoreCase(strategyId))
+                .filter(r -> r.symbol().equalsIgnoreCase(symbol))
+                .anyMatch(r -> {
+                    String existingAccount = r.configSnapshot() != null
+                        ? BrokerAccountRegistry.resolveId((String) r.configSnapshot().get("brokerAccountId"))
+                        : BrokerAccountRegistry.DEFAULT_ID;
+                    return existingAccount.equalsIgnoreCase(accountId);
+                });
+
+            if (duplicate) {
+                throw new IllegalArgumentException("Strategy " + strategyId + " is already running on account " + accountId + " for symbol " + symbol);
+            }
+        }
     }
 
     private static void validateExecutionLabelForMode(RunMode mode, ExecutionLabel label) {
