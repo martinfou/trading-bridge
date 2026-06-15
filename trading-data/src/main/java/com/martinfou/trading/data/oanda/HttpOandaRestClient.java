@@ -25,7 +25,7 @@ public final class HttpOandaRestClient implements OandaRestClient {
     private final String apiToken;
     private final String accountId;
     private final String baseUrl;
-    private final HttpClient client;
+    private volatile HttpClient client;
     private final ObjectMapper mapper = new ObjectMapper();
     private final Map<String, OandaInstrument> instrumentCache = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -63,7 +63,43 @@ public final class HttpOandaRestClient implements OandaRestClient {
         this.apiToken = apiToken;
         this.accountId = accountId;
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl : baseUrl + "/";
-        this.client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+        this.client = buildHttpClient();
+    }
+
+    private static HttpClient buildHttpClient() {
+        return HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+    }
+
+    /**
+     * Sends {@code request} using the shared {@link HttpClient}, with one automatic retry if the
+     * connection is closed by an HTTP/2 GOAWAY frame (or equivalent TCP reset) from an intermediate
+     * proxy or from OANDA itself.
+     *
+     * <p>On a GOAWAY the existing HTTP/2 connection pool is no longer usable. We recreate the
+     * {@link HttpClient} (which opens a fresh TCP + TLS connection on the next call) and replay the
+     * request exactly once.  Any other {@link IOException} — or a second consecutive failure — is
+     * rethrown so the caller can decide how to handle it.
+     */
+    private <T> HttpResponse<T> sendWithRetry(
+            HttpRequest request, HttpResponse.BodyHandler<T> handler) throws Exception {
+        try {
+            return client.send(request, handler);
+        } catch (java.io.IOException e) {
+            String msg = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
+            boolean isConnectionReset = msg.contains("goaway")
+                || msg.contains("reset")
+                || msg.contains("connection")
+                || msg.contains("eof")
+                || msg.contains("closed");
+            if (!isConnectionReset) {
+                throw e; // not a transient connection error — propagate immediately
+            }
+            log.warn("OANDA REST — HTTP/2 connection error ({}); rebuilding HttpClient and retrying request",
+                e.getMessage());
+            this.client = buildHttpClient();
+            // Second attempt on the fresh client — let any exception propagate to the caller.
+            return client.send(request, handler);
+        }
     }
 
     @Override
@@ -87,7 +123,7 @@ public final class HttpOandaRestClient implements OandaRestClient {
                 .timeout(Duration.ofSeconds(15))
                 .build();
 
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendWithRetry(request, HttpResponse.BodyHandlers.ofString());
             JsonNode json = mapper.readTree(response.body());
             if (response.statusCode() != 201) {
                 String err = json.has("errorMessage") ? json.get("errorMessage").asText() : response.body();
@@ -158,7 +194,7 @@ public final class HttpOandaRestClient implements OandaRestClient {
                 .timeout(Duration.ofSeconds(15))
                 .build();
 
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendWithRetry(request, HttpResponse.BodyHandlers.ofString());
             JsonNode json = mapper.readTree(response.body());
             if (response.statusCode() != 201) {
                 String err = json.has("errorMessage") ? json.get("errorMessage").asText() : response.body();
@@ -194,7 +230,7 @@ public final class HttpOandaRestClient implements OandaRestClient {
                 .timeout(Duration.ofSeconds(15))
                 .build();
 
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendWithRetry(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 200) {
                 return true;
             }
@@ -223,7 +259,7 @@ public final class HttpOandaRestClient implements OandaRestClient {
                 .timeout(Duration.ofSeconds(15))
                 .build();
 
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendWithRetry(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 200) {
                 return true;
             }
@@ -327,7 +363,7 @@ public final class HttpOandaRestClient implements OandaRestClient {
             .GET()
             .timeout(Duration.ofSeconds(15))
             .build();
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = sendWithRetry(request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() != 200) {
             throw new IllegalStateException(
                 "OANDA API error " + response.statusCode() + ": " + response.body());
