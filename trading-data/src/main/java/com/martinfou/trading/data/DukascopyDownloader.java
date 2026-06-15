@@ -40,28 +40,45 @@ public class DukascopyDownloader {
 
     public record Candle(long timestampMs, double open, double high, double low, double close) {}
 
+    @FunctionalInterface
+    public interface ProgressListener {
+        void onProgress(int completed, int total);
+    }
+
     /**
      * Downloads data for a specific pair, year, and timeframe, and writes the CSV to outputDir.
      */
     public Path download(String pair, int year, String timeframe, Path outputDir) throws IOException {
+        return download(pair, year, timeframe, outputDir, null);
+    }
+
+    public Path download(String pair, int year, String timeframe, Path outputDir, ProgressListener listener) throws IOException {
         LocalDate start = LocalDate.of(year, 1, 1);
         LocalDate end = LocalDate.of(year, 12, 31);
         LocalDate today = LocalDate.now(ZoneOffset.UTC);
         if (end.isAfter(today)) {
             end = today;
         }
-        return downloadRange(pair, start, end, timeframe, outputDir);
+        return downloadRange(pair, start, end, timeframe, outputDir, listener);
     }
 
     /**
      * Downloads data for a specific pair and date range in parallel, and writes the CSV to outputDir.
      */
     public Path downloadRange(String pair, LocalDate start, LocalDate end, String timeframe, Path outputDir) throws IOException {
+        return downloadRange(pair, start, end, timeframe, outputDir, null);
+    }
+
+    public Path downloadRange(String pair, LocalDate start, LocalDate end, String timeframe, Path outputDir, ProgressListener listener) throws IOException {
         String symbol = pair.toUpperCase().replace("_", "").replace("/", "");
         String tfLower = timeframe.toLowerCase();
         long barDurationMs = tfLower.equals("m1") ? 60 * 1000L : 3600 * 1000L;
 
-        log.info("Downloading Dukascopy data for {} ({}) from {} to {} in parallel", symbol, timeframe, start, end);
+        long days = java.time.temporal.ChronoUnit.DAYS.between(start, end) + 1;
+        int totalTasks = (int) days * 24;
+        java.util.concurrent.atomic.AtomicInteger completedCount = new java.util.concurrent.atomic.AtomicInteger(0);
+
+        log.info("Downloading Dukascopy data for {} ({}) from {} to {} in parallel ({} hours)", symbol, timeframe, start, end, totalTasks);
 
         List<CompletableFuture<List<Candle>>> futures = new ArrayList<>();
 
@@ -77,6 +94,16 @@ public class DukascopyDownloader {
                         } catch (Exception e) {
                             log.warn("Failed to download or parse data for date: {} Hour: {}. Error: {}", date, h, e.getMessage());
                             return Collections.emptyList();
+                        } finally {
+                            int completed = completedCount.incrementAndGet();
+                            if (listener != null) {
+                                listener.onProgress(completed, totalTasks);
+                            }
+                            if (completed % 1000 == 0 || completed == totalTasks) {
+                                double pct = (completed * 100.0) / totalTasks;
+                                log.info("  [{}] Download progress: {}/{} hours ({})", 
+                                    symbol, completed, totalTasks, String.format(java.util.Locale.ROOT, "%.1f%%", pct));
+                            }
                         }
                     }, executor));
                 }
