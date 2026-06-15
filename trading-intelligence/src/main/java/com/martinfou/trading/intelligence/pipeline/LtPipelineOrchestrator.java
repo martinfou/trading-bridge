@@ -11,6 +11,7 @@ import com.martinfou.trading.core.agent.PipelineResult;
 import com.martinfou.trading.core.agent.StrategyProfile;
 import com.martinfou.trading.core.agent.StrategySpec;
 import com.martinfou.trading.core.agent.ValidationProfile;
+import com.martinfou.trading.data.HistoricalDataLoader;
 import com.martinfou.trading.intelligence.agent.AgenticModelFactory;
 import com.martinfou.trading.intelligence.experience.ExperienceStore;
 import com.martinfou.trading.strategies.StrategyCatalog;
@@ -376,16 +377,22 @@ public class LtPipelineOrchestrator {
 
     /**
      * Run a single backtest for a strategy on a given pair.
-     * Uses synthetic sample bars for MVP; real historical data loading
-     * will be added when the data pipeline is connected.
+     * Uses real historical bars from data/historical/bars/ (2010-2025 range).
      */
     private PairResult backtestStrategy(String strategyName, String pair) {
         try {
             String oandaSymbol = pair.replace("_", "/");
             Strategy strategy = StrategyCatalog.create(strategyName, oandaSymbol);
 
-            // Use sample bars for MVP (3000 bars of synthetic data)
-            List<Bar> bars = SampleBarGenerator.generate(oandaSymbol, 3000);
+            // Load real historical H1 bars (2010-2025)
+            var barsDir = HistoricalDataLoader.DEFAULT_BARS_DIR;
+            List<Bar> bars = HistoricalDataLoader.loadYearRange(
+                pair, 2010, 2025, "H1", barsDir);
+
+            if (bars == null || bars.isEmpty()) {
+                System.err.println("  No data for " + pair + " — trying sample bars");
+                bars = SampleBarGenerator.generate(oandaSymbol, 3000);
+            }
 
             if (bars == null || bars.isEmpty()) {
                 System.err.println("  No data for " + pair);
