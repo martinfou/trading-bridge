@@ -1927,6 +1927,7 @@ So that the agent learns from its past prediction mistakes.
 **And** if an error is detected, it generates a JSON "Lesson Learned" under `data/experience-store/`
 **And** on subsequent runs, it queries similar context lessons and injects them as few-shot examples into the system prompt
 
+
 ### Story 25.8: Intégration du control plane HTTP, écriture JSON et tests unitaires
 
 As a Martin,
@@ -1939,5 +1940,46 @@ So that the agent is integrated into the platform runtime and CLI.
 **Then** it triggers the agentic strategist and returns the JSON `WeeklyStrategyOutlook`
 **And** it caches the result under `data/agentic-outlooks/outlook-{year}-W{week}.json`
 **And** unit tests verify the entire pipeline, including tool mocks, timeout recovery, and lookahead protection
+
+
+## Epic 27: Drift Signal GUI & TUI Observability
+
+### Story 27.1: Active Strategy Card Drift Badge (Desktop GUI)
+
+As a Martin,
+I want to see the active drift recommendation on strategy cards in the Live Room,
+So that I immediately identify strategies showing parameter or model divergence.
+
+**Acceptance Criteria:**
+**Given** an active run returning a non-`HOLD` recommendation from `/api/control/summary`
+**When** the Live Room overview loads in the desktop app
+**Then** the corresponding strategy card displays a color-coded badge indicating the drift recommendation (e.g., orange for `RETUNE`, red for `SUSPEND`)
+**And** the tooltip or badge label shows the summary reason.
+
+### Story 27.2: Drift Analysis Tab in Inspect View (Desktop GUI)
+
+As a Martin,
+I want to inspect a strategy's detailed drift metrics from the Inspect Drawer,
+So that I understand which specific metrics (like Drawdown, Win Rate, or Trade Count) are breaching limits.
+
+**Acceptance Criteria:**
+**Given** an active strategy card in the Live Room
+**When** I click "Inspect" and open the drawer
+**Then** a new tab named **"Drift Analysis"** is available
+**And** it displays the overall drift status (recommendation, evaluation source, evaluatedAt timestamp, and summary reason)
+**And** it displays a structured table of individual drift metrics detailing: Metric Name, Observed Value, Allowed Threshold, Dimension, and Breached state.
+
+### Story 27.3: TUI Status Drift Alerts Section
+
+As a Martin,
+I want to see active drift warnings in the terminal,
+So that I monitor platform health without loading the web or desktop GUI.
+
+**Acceptance Criteria:**
+**Given** active runs on the control plane
+**When** I execute the `/status` command in the `trading-tui`
+**Then** the terminal output displays a dedicated **"Drift Alerts"** section at the bottom
+**And** it lists each running strategy currently flagging a non-`HOLD` recommendation, showing the strategy ID, recommendation, and reason.
+
 
 

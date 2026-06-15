@@ -269,3 +269,10 @@ development_status:
   26-5-desktop-parameter-heatmap-pareto-drift: done
   epic-26-retrospective: optional
 
+  epic-27: backlog
+  27-1-active-strategy-card-drift-badge-desktop-gui: backlog
+  27-2-drift-analysis-tab-in-inspect-view-desktop-gui: backlog
+  27-3-tui-status-drift-alerts-section: backlog
+  epic-27-retrospective: optional
+
+
