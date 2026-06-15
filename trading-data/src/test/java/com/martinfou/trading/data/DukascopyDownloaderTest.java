@@ -20,18 +20,21 @@ class DukascopyDownloaderTest {
             @Override
             byte[] downloadFile(String url) {
                 try {
-                    // Generate 1 dummy tick for this hour (20 bytes: timeOffsetMs, ask, bid, askVol, bidVol)
-                    ByteArrayOutputStream tickBuf = new ByteArrayOutputStream();
-                    java.io.DataOutputStream dos = new java.io.DataOutputStream(tickBuf);
-                    dos.writeInt(1000); // timeOffsetMs
-                    dos.writeInt(105000); // ask = 1.05000
-                    dos.writeInt(104000); // bid = 1.04000
-                    dos.writeFloat(1.0f); // askVol
-                    dos.writeFloat(1.0f); // bidVol
+                    // Generate 1440 dummy minutes for a full day (24 bytes: timeOffsetSec, open, close, low, high, vol)
+                    ByteArrayOutputStream candleBuf = new ByteArrayOutputStream();
+                    java.io.DataOutputStream dos = new java.io.DataOutputStream(candleBuf);
+                    for (int min = 0; min < 1440; min++) {
+                        dos.writeInt(min * 60); // timeOffsetSec
+                        dos.writeInt(105000);   // open = 1.05000
+                        dos.writeInt(104000);   // close = 1.04000
+                        dos.writeInt(103000);   // low = 1.03000
+                        dos.writeInt(106000);   // high = 1.06000
+                        dos.writeFloat(1.0f);   // volume
+                    }
                     dos.flush();
-                    byte[] raw = tickBuf.toByteArray();
+                    byte[] raw = candleBuf.toByteArray();
 
-                    // Compress to legacy LZMA format using the org.tukaani.xz library
+                    // Compress to LZMA format using the org.tukaani.xz library
                     ByteArrayOutputStream out = new ByteArrayOutputStream();
                     org.tukaani.xz.LZMA2Options options = new org.tukaani.xz.LZMA2Options();
                     try (org.tukaani.xz.LZMAOutputStream lzma = new org.tukaani.xz.LZMAOutputStream(out, options, raw.length)) {
@@ -57,3 +60,4 @@ class DukascopyDownloaderTest {
         assertTrue(lines.size() >= 24, "Should have 24 lines of data");
     }
 }
+

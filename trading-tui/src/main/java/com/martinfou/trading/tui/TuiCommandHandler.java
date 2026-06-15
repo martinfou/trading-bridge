@@ -602,6 +602,9 @@ public final class TuiCommandHandler {
             if (parts.size() >= 4) {
                 tf = parts.get(3).toLowerCase(Locale.ROOT);
             }
+            if (!tf.equalsIgnoreCase("h1") && !tf.equalsIgnoreCase("m1")) {
+                return List.of("Invalid timeframe: '" + tf + "'. Supported timeframes are h1 and m1.");
+            }
             JsonNode resp = client.downloadHistoricalData(null, null, null, null, tf, true);
             return List.of(resp.path("accepted").asBoolean(false) ? "Sync download started" : "Sync download busy/already running");
         }
@@ -611,39 +614,15 @@ public final class TuiCommandHandler {
         }
 
         String pair = normalizePair(p2);
-        String yearSpec = parts.get(3);
-        String tf = "h1";
-        if (parts.size() >= 5) {
-            tf = parts.get(4).toLowerCase(Locale.ROOT);
+        ParsedDataArgs parsed = parseDataArgs(parts);
+        if (parsed.error != null) {
+            return List.of(parsed.error);
         }
 
-        Integer startYear = null;
-        Integer endYear = null;
-        Integer year = null;
-
-        if (yearSpec.contains("-")) {
-            String[] split = yearSpec.split("-");
-            if (split.length != 2) {
-                return List.of("Invalid year range: " + yearSpec);
-            }
-            try {
-                startYear = Integer.parseInt(split[0]);
-                endYear = Integer.parseInt(split[1]);
-            } catch (NumberFormatException e) {
-                return List.of("Invalid year range values: " + yearSpec);
-            }
-        } else {
-            try {
-                year = Integer.parseInt(yearSpec);
-            } catch (NumberFormatException e) {
-                return List.of("Invalid year: " + yearSpec);
-            }
-        }
-
-        JsonNode resp = client.downloadHistoricalData(pair, year, startYear, endYear, tf, false);
-        String label = (startYear != null && endYear != null) ? (startYear + "-" + endYear) : String.valueOf(year);
+        JsonNode resp = client.downloadHistoricalData(pair, parsed.year, parsed.startYear, parsed.endYear, parsed.tf, false);
+        String label = (parsed.startYear != null && parsed.endYear != null) ? (parsed.startYear + "-" + parsed.endYear) : String.valueOf(parsed.year);
         return List.of(resp.path("accepted").asBoolean(false)
-            ? "Download started for " + toSymbol(pair) + " " + label + " (" + tf.toUpperCase(Locale.ROOT) + ")"
+            ? "Download started for " + toSymbol(pair) + " " + label + " (" + parsed.tf.toUpperCase(Locale.ROOT) + ")"
             : "Download busy/already running");
     }
 
@@ -652,41 +631,86 @@ public final class TuiCommandHandler {
             return List.of("Usage: /data delete <pair> <year-or-range> [tf]");
         }
         String pair = normalizePair(parts.get(2));
-        String yearSpec = parts.get(3);
-        String tf = "h1";
-        if (parts.size() >= 5) {
-            tf = parts.get(4).toLowerCase(Locale.ROOT);
+        ParsedDataArgs parsed = parseDataArgs(parts);
+        if (parsed.error != null) {
+            return List.of(parsed.error);
         }
 
         List<Integer> yearsToDelete = new ArrayList<>();
-        if (yearSpec.contains("-")) {
-            String[] split = yearSpec.split("-");
-            if (split.length != 2) {
-                return List.of("Invalid year range: " + yearSpec);
-            }
-            try {
-                int start = Integer.parseInt(split[0]);
-                int end = Integer.parseInt(split[1]);
-                for (int y = start; y <= end; y++) {
-                    yearsToDelete.add(y);
-                }
-            } catch (NumberFormatException e) {
-                return List.of("Invalid year range values: " + yearSpec);
+        if (parsed.startYear != null && parsed.endYear != null) {
+            for (int y = parsed.startYear; y <= parsed.endYear; y++) {
+                yearsToDelete.add(y);
             }
         } else {
-            try {
-                yearsToDelete.add(Integer.parseInt(yearSpec));
-            } catch (NumberFormatException e) {
-                return List.of("Invalid year: " + yearSpec);
-            }
+            yearsToDelete.add(parsed.year);
         }
 
         List<String> lines = new ArrayList<>();
         for (int y : yearsToDelete) {
-            client.deleteHistoricalData(pair, y, tf);
-            lines.add("Deleted " + toSymbol(pair) + " " + y + " (" + tf.toUpperCase(Locale.ROOT) + ")");
+            client.deleteHistoricalData(pair, y, parsed.tf);
+            lines.add("Deleted " + toSymbol(pair) + " " + y + " (" + parsed.tf.toUpperCase(Locale.ROOT) + ")");
         }
         return lines;
+    }
+
+    private static class ParsedDataArgs {
+        Integer year;
+        Integer startYear;
+        Integer endYear;
+        String tf = "h1";
+        String error;
+    }
+
+    private static boolean looksLikeYear(String s) {
+        return s != null && s.matches("\\d{4}");
+    }
+
+    private static ParsedDataArgs parseDataArgs(List<String> parts) {
+        ParsedDataArgs args = new ParsedDataArgs();
+        if (parts.size() < 4) {
+            args.error = "Missing year or range";
+            return args;
+        }
+
+        if (parts.size() >= 5 && looksLikeYear(parts.get(3)) && looksLikeYear(parts.get(4))) {
+            args.startYear = Integer.parseInt(parts.get(3));
+            args.endYear = Integer.parseInt(parts.get(4));
+            if (parts.size() >= 6) {
+                args.tf = parts.get(5).toLowerCase(Locale.ROOT);
+            }
+        } else {
+            String yearSpec = parts.get(3);
+            if (parts.size() >= 5) {
+                args.tf = parts.get(4).toLowerCase(Locale.ROOT);
+            }
+            if (yearSpec.contains("-")) {
+                String[] split = yearSpec.split("-");
+                if (split.length != 2) {
+                    args.error = "Invalid year range: " + yearSpec;
+                    return args;
+                }
+                try {
+                    args.startYear = Integer.parseInt(split[0]);
+                    args.endYear = Integer.parseInt(split[1]);
+                } catch (NumberFormatException e) {
+                    args.error = "Invalid year range values: " + yearSpec;
+                    return args;
+                }
+            } else {
+                try {
+                    args.year = Integer.parseInt(yearSpec);
+                } catch (NumberFormatException e) {
+                    args.error = "Invalid year: " + yearSpec;
+                    return args;
+                }
+            }
+        }
+
+        if (!args.tf.equalsIgnoreCase("h1") && !args.tf.equalsIgnoreCase("m1")) {
+            args.error = "Invalid timeframe: '" + args.tf + "'. Supported timeframes are h1 and m1.";
+        }
+
+        return args;
     }
 
     private static String toSymbol(String pair) {

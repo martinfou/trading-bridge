@@ -72,41 +72,37 @@ public class DukascopyDownloader {
     public Path downloadRange(String pair, LocalDate start, LocalDate end, String timeframe, Path outputDir, ProgressListener listener) throws IOException {
         String symbol = pair.toUpperCase().replace("_", "").replace("/", "");
         String tfLower = timeframe.toLowerCase();
-        long barDurationMs = tfLower.equals("m1") ? 60 * 1000L : 3600 * 1000L;
 
         long days = java.time.temporal.ChronoUnit.DAYS.between(start, end) + 1;
-        int totalTasks = (int) days * 24;
+        int totalTasks = (int) days;
         java.util.concurrent.atomic.AtomicInteger completedCount = new java.util.concurrent.atomic.AtomicInteger(0);
 
-        log.info("Downloading Dukascopy data for {} ({}) from {} to {} in parallel ({} hours)", symbol, timeframe, start, end, totalTasks);
+        log.info("Downloading Dukascopy data for {} ({}) from {} to {} in parallel ({} days)", symbol, timeframe, start, end, totalTasks);
 
         List<CompletableFuture<List<Candle>>> futures = new ArrayList<>();
 
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             LocalDate current = start;
             while (!current.isAfter(end)) {
-                for (int hour = 0; hour < 24; hour++) {
-                    final LocalDate date = current;
-                    final int h = hour;
-                    futures.add(CompletableFuture.supplyAsync(() -> {
-                        try {
-                            return downloadAndParseHour(symbol, date, h, barDurationMs);
-                        } catch (Exception e) {
-                            log.warn("Failed to download or parse data for date: {} Hour: {}. Error: {}", date, h, e.getMessage());
-                            return Collections.emptyList();
-                        } finally {
-                            int completed = completedCount.incrementAndGet();
-                            if (listener != null) {
-                                listener.onProgress(completed, totalTasks);
-                            }
-                            if (completed % 1000 == 0 || completed == totalTasks) {
-                                double pct = (completed * 100.0) / totalTasks;
-                                log.info("  [{}] Download progress: {}/{} hours ({})", 
-                                    symbol, completed, totalTasks, String.format(java.util.Locale.ROOT, "%.1f%%", pct));
-                            }
+                final LocalDate date = current;
+                futures.add(CompletableFuture.supplyAsync(() -> {
+                    try {
+                        return downloadAndParseDay(symbol, date);
+                    } catch (Exception e) {
+                        log.warn("Failed to download or parse data for date: {}. Error: {}", date, e.getMessage());
+                        return Collections.emptyList();
+                    } finally {
+                        int completed = completedCount.incrementAndGet();
+                        if (listener != null) {
+                            listener.onProgress(completed, totalTasks);
                         }
-                    }, executor));
-                }
+                        if (completed % 10 == 0 || completed == totalTasks) {
+                            double pct = (completed * 100.0) / totalTasks;
+                            log.info("  [{}] Download progress: {}/{} days ({})", 
+                                symbol, completed, totalTasks, String.format(java.util.Locale.ROOT, "%.1f%%", pct));
+                        }
+                    }
+                }, executor));
                 current = current.plusDays(1);
             }
         } // try-with-resources auto-closes the executor, waiting for all virtual threads to complete
@@ -119,6 +115,14 @@ public class DukascopyDownloader {
 
         if (allCandles.isEmpty()) {
             throw new IOException("No data downloaded for " + symbol + " in range " + start + " to " + end);
+        }
+
+        // Sort candles chronologically to be robust
+        allCandles.sort(java.util.Comparator.comparingLong(Candle::timestampMs));
+
+        // If timeframe is H1, aggregate the 1-minute candles to 1-hour candles
+        if (tfLower.equals("h1")) {
+            allCandles = aggregateToHourly(allCandles);
         }
 
         // Save as CSV
@@ -141,64 +145,81 @@ public class DukascopyDownloader {
         return csvPath;
     }
 
-    private List<Candle> downloadAndParseHour(String symbol, LocalDate date, int hour, long barDurationMs) throws IOException, InterruptedException {
+    private List<Candle> downloadAndParseDay(String symbol, LocalDate date) throws IOException, InterruptedException {
         // Dukascopy month is 0-indexed: 00 to 11
-        String url = String.format("https://datafeed.dukascopy.com/datafeed/%s/%d/%02d/%02d/%02dh_ticks.bi5",
-                symbol, date.getYear(), date.getMonthValue() - 1, date.getDayOfMonth(), hour);
+        String url = String.format("https://datafeed.dukascopy.com/datafeed/%s/%d/%02d/%02d/BID_candles_min_1.bi5",
+                symbol, date.getYear(), date.getMonthValue() - 1, date.getDayOfMonth());
 
         byte[] data = downloadFile(url);
         if (data == null || data.length == 0) {
             return Collections.emptyList();
         }
 
-        long baseHourMs = LocalDateTime.of(date.getYear(), date.getMonthValue(), date.getDayOfMonth(), hour, 0, 0)
-                .toInstant(ZoneOffset.UTC).toEpochMilli();
+        long baseDayStartMs = date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli();
 
         try (LZMAInputStream lzma = new LZMAInputStream(new ByteArrayInputStream(data))) {
             byte[] decompressed = lzma.readAllBytes();
-            return parseTicksToCandles(decompressed, baseHourMs, barDurationMs);
+            return parseCandles(decompressed, baseDayStartMs);
         }
     }
 
-    private List<Candle> parseTicksToCandles(byte[] decompressed, long baseHourMs, long barDurationMs) {
-        List<Candle> hourCandles = new ArrayList<>();
+    private List<Candle> parseCandles(byte[] decompressed, long baseDayStartMs) {
+        List<Candle> dayCandles = new ArrayList<>();
         ByteBuffer wrap = ByteBuffer.wrap(decompressed);
-        long currentBarStartMs = -1;
+
+        while (wrap.remaining() >= 24) {
+            int timeOffsetSec = wrap.getInt();
+            int openInt = wrap.getInt();
+            int closeInt = wrap.getInt();
+            int lowInt = wrap.getInt();
+            int highInt = wrap.getInt();
+            float vol = wrap.getFloat();
+
+            long barTimeMs = baseDayStartMs + (timeOffsetSec * 1000L);
+            double open = openInt / 100000.0;
+            double close = closeInt / 100000.0;
+            double low = lowInt / 100000.0;
+            double high = highInt / 100000.0;
+
+            dayCandles.add(new Candle(barTimeMs, open, high, low, close));
+        }
+        return dayCandles;
+    }
+
+    private List<Candle> aggregateToHourly(List<Candle> minCandles) {
+        if (minCandles.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<Candle> hourlyCandles = new ArrayList<>();
+        long currentHourStartMs = -1;
         double open = 0, high = 0, low = 0, close = 0;
 
-        while (wrap.remaining() >= 20) {
-            int timeOffsetMs = wrap.getInt();
-            double ask = wrap.getInt() / 100000.0;
-            double bid = wrap.getInt() / 100000.0;
-            float askVol = wrap.getFloat();
-            float bidVol = wrap.getFloat();
-
-            long tickTimeMs = baseHourMs + timeOffsetMs;
-            long barStartMs = (tickTimeMs / barDurationMs) * barDurationMs;
-
-            if (currentBarStartMs == -1) {
-                currentBarStartMs = barStartMs;
-                open = bid;
-                high = bid;
-                low = bid;
-                close = bid;
-            } else if (barStartMs == currentBarStartMs) {
-                high = Math.max(high, bid);
-                low = Math.min(low, bid);
-                close = bid;
+        for (Candle c : minCandles) {
+            long hourStartMs = (c.timestampMs() / 3600000L) * 3600000L;
+            if (currentHourStartMs == -1) {
+                currentHourStartMs = hourStartMs;
+                open = c.open();
+                high = c.high();
+                low = c.low();
+                close = c.close();
+            } else if (hourStartMs == currentHourStartMs) {
+                high = Math.max(high, c.high());
+                low = Math.min(low, c.low());
+                close = c.close();
             } else {
-                hourCandles.add(new Candle(currentBarStartMs, open, high, low, close));
-                currentBarStartMs = barStartMs;
-                open = bid;
-                high = bid;
-                low = bid;
-                close = bid;
+                hourlyCandles.add(new Candle(currentHourStartMs, open, high, low, close));
+                currentHourStartMs = hourStartMs;
+                open = c.open();
+                high = c.high();
+                low = c.low();
+                close = c.close();
             }
         }
-        if (currentBarStartMs != -1) {
-            hourCandles.add(new Candle(currentBarStartMs, open, high, low, close));
+        if (currentHourStartMs != -1) {
+            hourlyCandles.add(new Candle(currentHourStartMs, open, high, low, close));
         }
-        return hourCandles;
+        return hourlyCandles;
     }
 
     byte[] downloadFile(String url) throws IOException, InterruptedException {
