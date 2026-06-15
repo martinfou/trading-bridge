@@ -12,6 +12,7 @@ import com.martinfou.trading.core.agent.StrategyProfile;
 import com.martinfou.trading.core.agent.StrategySpec;
 import com.martinfou.trading.core.agent.ValidationProfile;
 import com.martinfou.trading.intelligence.agent.AgenticModelFactory;
+import com.martinfou.trading.intelligence.experience.ExperienceStore;
 import com.martinfou.trading.strategies.StrategyCatalog;
 import dev.langchain4j.model.chat.ChatLanguageModel;
 
@@ -45,18 +46,28 @@ public class LtPipelineOrchestrator {
     private final LtTemplateCodeGenerator codegen;
     private final ChatLanguageModel llm;
     private final String baseDir;
+    private final ExperienceStore experienceStore;
 
     private final List<String> sessionLessons = new ArrayList<>();
 
     public LtPipelineOrchestrator(ValidationProfile profile) {
-        this(profile, AgenticModelFactory.createChatModel(), System.getProperty("user.dir"));
+        this(profile, AgenticModelFactory.createChatModel(), System.getProperty("user.dir"), new ExperienceStore());
+    }
+
+    public LtPipelineOrchestrator(ValidationProfile profile, ExperienceStore experienceStore) {
+        this(profile, AgenticModelFactory.createChatModel(), System.getProperty("user.dir"), experienceStore);
     }
 
     public LtPipelineOrchestrator(ValidationProfile profile, ChatLanguageModel llm, String baseDir) {
+        this(profile, llm, baseDir, new ExperienceStore());
+    }
+
+    public LtPipelineOrchestrator(ValidationProfile profile, ChatLanguageModel llm, String baseDir, ExperienceStore experienceStore) {
         this.profile = profile;
         this.codegen = new LtTemplateCodeGenerator();
         this.llm = llm;
         this.baseDir = baseDir;
+        this.experienceStore = experienceStore;
     }
 
     /**
@@ -137,7 +148,9 @@ public class LtPipelineOrchestrator {
                 // Register in StrategyCatalog
                 registerStrategy(spec);
                 // Save experience
-                sessionLessons.add(spec.name() + ": QUALIFIED — PF avg " + String.format("%.2f", result.averagePf()));
+                String lesson = spec.name() + ": QUALIFIED — PF avg " + String.format("%.2f", result.averagePf());
+                sessionLessons.add(lesson);
+                experienceStore.record(spec, result, List.of(lesson));
                 return new PipelineResult(spec, result.profile(), true, pairResults,
                     "", sessionLessons, System.currentTimeMillis() - startTime, Instant.now());
             }
@@ -147,9 +160,10 @@ public class LtPipelineOrchestrator {
             System.out.println("\n❌ Rejected: " + spec.name());
             System.out.println(whyRejected);
 
-            // Build feedback message for LLM
+            // Build feedback message for LLM and persist
             String feedback = buildFeedback(spec, result, whyRejected);
             sessionLessons.add(feedback);
+            experienceStore.record(spec, result, List.of(feedback));
         }
 
         long duration = System.currentTimeMillis() - startTime;
@@ -202,10 +216,16 @@ public class LtPipelineOrchestrator {
         sb.append("- Simple SMA crossover = too basic, add filter\n\n");
 
         // Inject session lessons
+        String experienceContext = experienceStore.buildContext();
+        if (!experienceContext.isEmpty()) {
+            sb.append(experienceContext).append("\n");
+        }
+
+        // Inject current session lessons (most recent first)
         if (!sessionLessons.isEmpty()) {
-            sb.append("LESSONS LEARNED FROM PREVIOUS ATTEMPTS (do not repeat these):\n");
-            for (String lesson : sessionLessons) {
-                sb.append("- ").append(lesson).append("\n");
+            sb.append("CURRENT SESSION FEEDBACK (most recent first):\n");
+            for (int i = sessionLessons.size() - 1; i >= 0; i--) {
+                sb.append("- ").append(sessionLessons.get(i)).append("\n");
             }
             sb.append("\n");
         }
