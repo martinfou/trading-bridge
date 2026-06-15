@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useControlPlane } from '../composables/useControlPlane'
 import { useRunWebSocket } from '../composables/useRunWebSocket'
 import TradeChart from '../components/TradeChart.vue'
@@ -12,6 +12,7 @@ import type { Bar, Trade } from '@/types/control-plane'
 
 const { getControlSummary, killStrategy, getBars, getTrades, getEquityCurve, getBrokerAccounts, getBrokerBalances, saveBrokerAccounts, testBrokerAccount } = useControlPlane()
 const route = useRoute()
+const router = useRouter()
 
 const summary = ref<any>(null)
 const loading = ref(true)
@@ -19,25 +20,35 @@ const error = ref<string | null>(null)
 const selectedRunId = ref<string | null>(null)
 const activeTab = ref<'overview' | 'chart' | 'trades' | 'positions' | 'sentiment'>('chart')
 const tradeChartRef = ref<any>(null)
+const currentBid = ref<number | null>(null)
+const currentAsk = ref<number | null>(null)
 
 const { connect, disconnect, lastEvent } = useRunWebSocket()
 
 watch(lastEvent, async (event) => {
   if (!event) return
-  if (event.type === 'BAR' && event.payload && event.payload.bar) {
-    const newBar = event.payload.bar as Bar
-    const lastBar = inspectBars.value[inspectBars.value.length - 1]
-    if (lastBar && lastBar.time === newBar.time) {
-      lastBar.open = newBar.open
-      lastBar.high = newBar.high
-      lastBar.low = newBar.low
-      lastBar.close = newBar.close
-    } else {
-      inspectBars.value.push(newBar)
+  if (event.type === 'BAR' && event.payload) {
+    if (event.payload.bid !== undefined) {
+      currentBid.value = event.payload.bid as number
     }
+    if (event.payload.ask !== undefined) {
+      currentAsk.value = event.payload.ask as number
+    }
+    if (event.payload.bar) {
+      const newBar = event.payload.bar as Bar
+      const lastBar = inspectBars.value[inspectBars.value.length - 1]
+      if (lastBar && lastBar.time === newBar.time) {
+        lastBar.open = newBar.open
+        lastBar.high = newBar.high
+        lastBar.low = newBar.low
+        lastBar.close = newBar.close
+      } else {
+        inspectBars.value.push(newBar)
+      }
 
-    if (tradeChartRef.value) {
-      tradeChartRef.value.updateBar(newBar)
+      if (tradeChartRef.value) {
+        tradeChartRef.value.updateBar(newBar)
+      }
     }
   }
   if (event.type === 'FILL' || event.type === 'ORDER_SUBMITTED') {
@@ -133,7 +144,12 @@ async function fetchSummary() {
     summary.value = data
     error.value = null
     if (selectedRunId.value) {
-      await updateInspectTelemetry(true, true)
+      const exists = liveRuns.value.some((r: any) => r.runId === selectedRunId.value)
+      if (!exists) {
+        deselectRun()
+      } else {
+        await updateInspectTelemetry(true, true)
+      }
     }
     await fetchBalances()
   } catch (e: any) {
@@ -341,7 +357,27 @@ async function selectRun(runId: string) {
   selectedRunId.value = runId
   disconnect()
   connect(runId)
-  updateInspectTelemetry()
+  currentBid.value = null
+  currentAsk.value = null
+  
+  // Push runId to query parameters to sync URL
+  router.replace({ query: { ...route.query, runId } })
+
+  await updateInspectTelemetry()
+  if (selectedRun.value) {
+    currentBid.value = selectedRun.value.lastBid || null
+    currentAsk.value = selectedRun.value.lastAsk || null
+  }
+}
+
+function deselectRun() {
+  selectedRunId.value = null
+  disconnect()
+  currentBid.value = null
+  currentAsk.value = null
+  
+  // Clean runId from query parameters
+  router.replace({ query: { ...route.query, runId: undefined } })
 }
 
 async function updateInspectTelemetry(background = false, skipBars = false) {
@@ -365,6 +401,10 @@ async function updateInspectTelemetry(background = false, skipBars = false) {
       }
       inspectTrades.value = tradesData
       inspectEquity.value = equityData
+      if (selectedRun.value) {
+        currentBid.value = selectedRun.value.lastBid || null
+        currentAsk.value = selectedRun.value.lastAsk || null
+      }
     }
   } catch (e: any) {
     if (!background) {
@@ -721,9 +761,18 @@ onUnmounted(() => {
       <div class="workspace-header">
         <div>
           <h3>Monitoring: {{ selectedRun.strategyId }}</h3>
-          <p class="run-meta">ID: {{ selectedRun.runId }} | Symbol: {{ selectedRun.symbol }} | Mode: {{ selectedRun.mode }}</p>
+          <p class="run-meta">
+            ID: {{ selectedRun.runId }} | Symbol: {{ selectedRun.symbol }} | Mode: {{ selectedRun.mode }}
+            <template v-if="selectedRun.configSnapshot?.strategyTimeframe">
+              | Strategy TF: {{ selectedRun.configSnapshot.strategyTimeframe }}
+              | Candle TF: {{ selectedRun.configSnapshot.strategyTimeframe }}
+              <template v-if="selectedRun.configSnapshot.dataTimeframe && selectedRun.configSnapshot.dataTimeframe !== selectedRun.configSnapshot.strategyTimeframe">
+                (from {{ selectedRun.configSnapshot.dataTimeframe }} data)
+              </template>
+            </template>
+          </p>
         </div>
-        <button class="btn-close" @click="selectedRunId = null">×</button>
+        <button class="btn-close" @click="deselectRun">×</button>
       </div>
 
       <div class="tab-bar">
@@ -830,7 +879,18 @@ onUnmounted(() => {
 
         <!-- Price Chart tab -->
         <div v-if="activeTab === 'chart'" class="tab-panel">
-          <TradeChart ref="tradeChartRef" :bars="inspectBars" :trades="inspectTrades" :positions="selectedRun?.positions" :height="400" @loadMoreBars="handleLoadMoreBars" />
+          <TradeChart
+            ref="tradeChartRef"
+            :bars="inspectBars"
+            :trades="inspectTrades"
+            :positions="selectedRun?.positions"
+            :height="400"
+            :bid="currentBid"
+            :ask="currentAsk"
+            :symbol="selectedRun?.symbol"
+            :timeframe="selectedRun?.configSnapshot?.strategyTimeframe"
+            @loadMoreBars="handleLoadMoreBars"
+          />
         </div>
 
         <!-- Trades History tab -->

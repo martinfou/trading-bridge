@@ -68,8 +68,8 @@ class OandaBrokerTest {
         }
 
         @Override
-        public boolean closeTrade(String tradeId, String units) {
-            return true;
+        public double closeTrade(String tradeId, String units) {
+            return 1.1001;
         }
 
         @Override

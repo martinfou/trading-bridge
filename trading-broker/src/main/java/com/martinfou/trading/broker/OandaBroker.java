@@ -63,6 +63,61 @@ public final class OandaBroker implements Broker {
             return OrderSubmitResult.rejected("Broker not connected");
         }
 
+        if (order.isCloseOnly()) {
+            double remainingQty = order.quantity();
+            String instrument = toOandaInstrument(order.symbol());
+            List<Position> openPositions = getPositions();
+            List<Position> oppositePositions = new ArrayList<>();
+            for (Position p : openPositions) {
+                if (p.symbol().equalsIgnoreCase(order.symbol()) && p.side() != order.side()) {
+                    oppositePositions.add(p);
+                }
+            }
+            oppositePositions.sort(java.util.Comparator.comparing(Position::entryTime));
+
+            double closedTotal = 0;
+            boolean success = true;
+            String errorMsg = null;
+            double avgClosePrice = 0.0;
+
+            for (Position p : oppositePositions) {
+                if (remainingQty <= 0) break;
+                
+                String tradeId = p.brokerTradeId();
+                if (tradeId == null || tradeId.isBlank()) {
+                    log.warn("Cannot close OANDA position/trade: missing trade ID");
+                    continue;
+                }
+                double qtyToClose = Math.min(p.quantity(), remainingQty);
+
+                log.info("Closing OANDA trade {} (quantity: {})", tradeId, qtyToClose);
+                double fillPrice = client.closeTrade(tradeId, String.valueOf(Math.round(qtyToClose)));
+                if (fillPrice >= 0.0) {
+                    remainingQty -= qtyToClose;
+                    closedTotal += qtyToClose;
+                    avgClosePrice = fillPrice;
+                } else {
+                    success = false;
+                    errorMsg = "Failed to close trade: " + tradeId;
+                    log.error("Failed to close OANDA trade: {}", tradeId);
+                }
+            }
+
+            if (closedTotal > 0) {
+                order.fill();
+                emit(BrokerEvent.fill(order, avgClosePrice));
+                return OrderSubmitResult.filled("CLOSE_MULTIPLE");
+            } else if (!success) {
+                emit(BrokerEvent.reject(order, errorMsg));
+                return OrderSubmitResult.rejected(errorMsg);
+            } else {
+                log.info("No opposite positions found to close for closeOnly order {}", order.id());
+                order.fill();
+                // Do NOT emit a BrokerEvent.fill because no execution occurred on the broker
+                return OrderSubmitResult.filled("NO_OP_CLOSE");
+            }
+        }
+
         long units = Math.round(order.quantity());
         if (order.side() == Order.Side.SELL) {
             units = -units;
@@ -112,7 +167,7 @@ public final class OandaBroker implements Broker {
         List<Position> out = new ArrayList<>();
         for (OandaPositionSnapshot row : client.fetchOpenPositions()) {
             java.time.Instant entryTime = row.entryTime() != null ? row.entryTime() : java.time.Instant.EPOCH;
-            out.add(new Position(row.instrument(), row.side(), row.units(), row.averagePrice(), entryTime, row.clientTag()));
+            out.add(new Position(row.instrument(), row.side(), row.units(), row.averagePrice(), entryTime, row.clientTag(), row.tradeId()));
         }
         return List.copyOf(out);
     }

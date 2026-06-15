@@ -9,6 +9,7 @@ import EquityChart from '@/components/EquityChart.vue'
 import TradeTable from '@/components/TradeTable.vue'
 import TradeChart from '@/components/TradeChart.vue'
 import MonteCarloChart from '@/components/MonteCarloChart.vue'
+import PromoteModal from '@/components/PromoteModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -24,6 +25,19 @@ const barsError = ref<string | null>(null)
 const loading = ref(true)
 const viewError = ref<string | null>(null)
 const activeTab = ref<'overview' | 'chart' | 'monte-carlo' | 'trades'>('overview')
+
+const showPromoteModal = ref(false)
+const promotionSuccessMessage = ref<string | null>(null)
+let promoTimeoutId: any = null
+
+function onPromoted() {
+  promotionSuccessMessage.value = 'Strategy promoted successfully!'
+  if (promoTimeoutId) clearTimeout(promoTimeoutId)
+  promoTimeoutId = setTimeout(() => {
+    promotionSuccessMessage.value = null
+    promoTimeoutId = null
+  }, 5000)
+}
 
 const monteCarloStats = ref<any | null>(null)
 const loadingMc = ref(false)
@@ -201,11 +215,15 @@ onMounted(loadRun)
 
 onUnmounted(() => {
   ws.disconnect()
+  if (promoTimeoutId) clearTimeout(promoTimeoutId)
 })
 </script>
 
 <template>
   <div class="view">
+    <!-- Success Notification -->
+    <div v-if="promotionSuccessMessage" class="banner success">{{ promotionSuccessMessage }}</div>
+
     <!-- No run selected -->
     <template v-if="!runId">
       <h1>Results</h1>
@@ -240,6 +258,7 @@ onUnmounted(() => {
         </div>
         <div class="header-actions">
           <button class="action-btn" @click="reRun">↻ Re-run</button>
+          <button v-if="run.status === 'COMPLETED'" class="action-btn" @click="showPromoteModal = true">🚀 Promote</button>
         </div>
       </div>
 
@@ -264,6 +283,19 @@ onUnmounted(() => {
         <div v-if="run.result" class="info-item">
           <span class="info-label">Slippage</span>
           <span class="info-value">${{ run.result.totalSlippage?.toFixed(2) || '0.00' }}</span>
+        </div>
+        <div v-if="run.configSnapshot?.strategyTimeframe" class="info-item">
+          <span class="info-label">Strategy TF</span>
+          <span class="info-value">{{ run.configSnapshot.strategyTimeframe }}</span>
+        </div>
+        <div v-if="run.configSnapshot?.strategyTimeframe" class="info-item">
+          <span class="info-label">Candle TF</span>
+          <span class="info-value">
+            {{ run.configSnapshot.strategyTimeframe }}
+            <span v-if="run.configSnapshot.dataTimeframe && run.configSnapshot.dataTimeframe !== run.configSnapshot.strategyTimeframe" style="font-size: 0.75rem; color: #9CA3AF;">
+              (from {{ run.configSnapshot.dataTimeframe }})
+            </span>
+          </span>
         </div>
       </div>
 
@@ -322,7 +354,13 @@ onUnmounted(() => {
         </div>
         <div v-else-if="barsError" class="banner error">{{ barsError }}</div>
         <template v-else>
-          <TradeChart :bars="bars" :trades="trades" :height="450" @loadMoreBars="handleLoadMoreBars" />
+          <TradeChart
+            :bars="bars"
+            :trades="trades"
+            :height="450"
+            :timeframe="run.configSnapshot?.strategyTimeframe"
+            @loadMoreBars="handleLoadMoreBars"
+          />
         </template>
       </div>
 
@@ -402,6 +440,15 @@ onUnmounted(() => {
       <div v-if="activeTab === 'trades'" class="section">
         <TradeTable :trades="trades" />
       </div>
+
+      <!-- Promote Modal -->
+      <PromoteModal
+        v-if="run && showPromoteModal"
+        :strategyId="run.strategyId"
+        :show="showPromoteModal"
+        @close="showPromoteModal = false"
+        @promoted="onPromoted"
+      />
     </template>
   </div>
 </template>
@@ -454,6 +501,12 @@ h3 { font-size: 0.9rem; margin-bottom: 0.5rem; color: var(--text-secondary); }
   background: #2d1212;
   color: #fca5a5;
   border: 1px solid #7f1d1d;
+}
+
+.banner.success {
+  background: rgba(34, 197, 94, 0.05);
+  border: 1px solid rgba(34, 197, 94, 0.15);
+  color: #a7f3d0;
 }
 
 .result-header {

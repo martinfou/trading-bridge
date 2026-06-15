@@ -243,7 +243,7 @@ public final class HttpOandaRestClient implements OandaRestClient {
     }
 
     @Override
-    public boolean closeTrade(String tradeId, String units) {
+    public double closeTrade(String tradeId, String units) {
         try {
             Map<String, Object> bodyMap = new LinkedHashMap<>();
             if (units != null && !units.isBlank() && !units.equalsIgnoreCase("ALL")) {
@@ -261,13 +261,24 @@ public final class HttpOandaRestClient implements OandaRestClient {
 
             HttpResponse<String> response = sendWithRetry(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 200) {
-                return true;
+                try {
+                    JsonNode root = mapper.readTree(response.body());
+                    if (root.has("orderFillTransaction") && !root.get("orderFillTransaction").isNull()) {
+                        JsonNode fill = root.get("orderFillTransaction");
+                        if (fill.has("price")) {
+                            return Double.parseDouble(fill.get("price").asText());
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to parse OANDA close trade response: {}", e.getMessage());
+                }
+                return 0.0;
             }
             log.warn("Failed to close OANDA trade {}. HTTP status: {}, Response: {}", tradeId, response.statusCode(), response.body());
-            return false;
+            return -1.0;
         } catch (Exception e) {
             log.warn("OANDA trade close failed for trade {}: {}", tradeId, e.getMessage());
-            return false;
+            return -1.0;
         }
     }
 
@@ -319,6 +330,7 @@ public final class HttpOandaRestClient implements OandaRestClient {
             for (JsonNode trade : json.get("trades")) {
                 double units = Double.parseDouble(trade.get("currentUnits").asText());
                 Order.Side side = units >= 0 ? Order.Side.BUY : Order.Side.SELL;
+                String tradeId = trade.get("id").asText();
                 String clientTag = null;
                 if (trade.has("clientExtensions") && !trade.get("clientExtensions").isNull()) {
                     JsonNode ext = trade.get("clientExtensions");
@@ -331,6 +343,7 @@ public final class HttpOandaRestClient implements OandaRestClient {
                     entryTime = java.time.Instant.parse(trade.get("openTime").asText());
                 }
                 positions.add(new OandaPositionSnapshot(
+                    tradeId,
                     trade.get("instrument").asText(),
                     side,
                     Math.abs(units),

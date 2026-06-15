@@ -33,6 +33,7 @@ public final class StubOandaRestClient implements OandaRestClient {
         String orderId = String.valueOf(nextOrderId++);
         String tradeId = "T-" + orderId;
         positions.add(new OandaPositionSnapshot(
+            tradeId,
             instrument,
             units >= 0 ? Order.Side.BUY : Order.Side.SELL,
             Math.abs(units),
@@ -52,6 +53,7 @@ public final class StubOandaRestClient implements OandaRestClient {
         String tradeId = type.equalsIgnoreCase("MARKET") ? "T-" + orderId : null;
         if (type.equalsIgnoreCase("MARKET")) {
             positions.add(new OandaPositionSnapshot(
+                tradeId,
                 instrument,
                 units >= 0 ? Order.Side.BUY : Order.Side.SELL,
                 Math.abs(units),
@@ -68,8 +70,38 @@ public final class StubOandaRestClient implements OandaRestClient {
     }
 
     @Override
-    public boolean closeTrade(String tradeId, String units) {
-        return true;
+    public double closeTrade(String tradeId, String units) {
+        for (OandaPositionSnapshot snap : positions) {
+            if (snap.tradeId().equals(tradeId)) {
+                double price = snap.averagePrice();
+                double qty = snap.units();
+                if (units != null && !units.equalsIgnoreCase("ALL")) {
+                    try {
+                        double toClose = Double.parseDouble(units);
+                        if (toClose < qty) {
+                            positions.remove(snap);
+                            positions.add(new OandaPositionSnapshot(
+                                snap.tradeId(),
+                                snap.instrument(),
+                                snap.side(),
+                                qty - toClose,
+                                snap.averagePrice(),
+                                snap.clientTag(),
+                                snap.entryTime()
+                            ));
+                        } else {
+                            positions.remove(snap);
+                        }
+                    } catch (NumberFormatException e) {
+                        positions.remove(snap);
+                    }
+                } else {
+                    positions.remove(snap);
+                }
+                return price;
+            }
+        }
+        return 1.10;
     }
 
     @Override

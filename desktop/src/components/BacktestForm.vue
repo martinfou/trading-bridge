@@ -14,6 +14,13 @@ const emit = defineEmits<{
   error: [message: string, context?: { symbol: string, year: string, tf: string }]
 }>()
 
+const years = Array.from({ length: 17 }, (_, i) => 2010 + i)
+const symbolOptions = [
+  'EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF',
+  'AUD/USD', 'NZD/USD', 'USD/CAD', 'EUR/JPY',
+  'GBP/JPY', 'XAU/USD',
+]
+
 const { getStrategies, startRun, loading, error, getBrokerAccounts } = useControlPlane()
 
 const isSubmitting = ref(false)
@@ -99,15 +106,28 @@ onMounted(async () => {
     const savedRunMode = localStorage.getItem('bt_runMode')
     if (savedRunMode) runMode.value = savedRunMode as any
 
-    const savedStrategy = localStorage.getItem('bt_selectedStrategy')
-    if (savedStrategy && filteredStrategies.value.some(s => s.id === savedStrategy)) {
-      selectedStrategy.value = savedStrategy
+    // If preselectedStrategy is passed, default execution mode to BACKTEST so it's not filtered out
+    if (props.preselectedStrategy) {
+      runMode.value = 'BACKTEST'
+    } else {
+      const savedStrategy = localStorage.getItem('bt_selectedStrategy')
+      if (savedStrategy && filteredStrategies.value.some(s => s.id === savedStrategy)) {
+        selectedStrategy.value = savedStrategy
+      }
     }
-    const savedSymbols = localStorage.getItem('bt_selectedSymbols')
-    if (savedSymbols) {
-      try {
-        selectedSymbols.value = JSON.parse(savedSymbols)
-      } catch {}
+
+    if (props.preselectedSymbol) {
+      const formatted = props.preselectedSymbol.replace(/_/g, '/')
+      if (symbolOptions.includes(formatted)) {
+        selectedSymbols.value = [formatted]
+      }
+    } else {
+      const savedSymbols = localStorage.getItem('bt_selectedSymbols')
+      if (savedSymbols) {
+        try {
+          selectedSymbols.value = JSON.parse(savedSymbols)
+        } catch {}
+      }
     }
     const savedYearMode = localStorage.getItem('bt_yearSelectionMode')
     if (savedYearMode) {
@@ -171,25 +191,24 @@ onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
 })
 
-watch(() => props.preselectedStrategy, (val) => {
-  if (val && strategies.value.some((s) => s.id === val)) {
+watch([() => props.preselectedStrategy, strategies], ([val, list]) => {
+  if (val && list.some((s) => s.id === val)) {
     selectedStrategy.value = val
-    onStrategyChange()
+    // Only automatically select the default symbol if a preselected symbol is not explicitly provided
+    if (!props.preselectedSymbol) {
+      onStrategyChange()
+    }
   }
 }, { immediate: true })
 
 watch(() => props.preselectedSymbol, (val) => {
-  if (val && symbolOptions.includes(val)) {
-    selectedSymbols.value = [val]
+  if (val) {
+    const formatted = val.replace(/_/g, '/')
+    if (symbolOptions.includes(formatted)) {
+      selectedSymbols.value = [formatted]
+    }
   }
 }, { immediate: true })
-
-const years = Array.from({ length: 17 }, (_, i) => 2010 + i)
-const symbolOptions = [
-  'EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF',
-  'AUD/USD', 'NZD/USD', 'USD/CAD', 'EUR/JPY',
-  'GBP/JPY', 'XAU/USD',
-]
 
 function toggleSymbol(sym: string) {
   const idx = selectedSymbols.value.indexOf(sym)

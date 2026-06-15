@@ -147,6 +147,19 @@ public record RunEvent(
         Bar bar,
         Instant timestamp
     ) {
+        return bar(runId, strategyId, symbol, mode, bar, timestamp, null, null);
+    }
+
+    public static RunEvent bar(
+        String runId,
+        String strategyId,
+        String symbol,
+        RunMode mode,
+        Bar bar,
+        Instant timestamp,
+        Double bid,
+        Double ask
+    ) {
         var barMap = new java.util.LinkedHashMap<String, Object>();
         barMap.put("time", bar.timestamp().toString());
         barMap.put("open", bar.open());
@@ -157,6 +170,12 @@ public record RunEvent(
 
         var payload = new java.util.LinkedHashMap<String, Object>();
         payload.put("bar", barMap);
+        if (bid != null) {
+            payload.put("bid", bid);
+        }
+        if (ask != null) {
+            payload.put("ask", ask);
+        }
 
         return new RunEvent(
             SCHEMA_VERSION,

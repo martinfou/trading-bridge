@@ -6,6 +6,7 @@ import com.martinfou.trading.core.Bar;
 public final class BuyThenCloseNextBarStrategy extends HarnessScriptedStrategy {
 
     private int barIndex;
+    private boolean liveModeStarted;
 
     public BuyThenCloseNextBarStrategy(String symbol) {
         super(symbol);
@@ -22,9 +23,17 @@ public final class BuyThenCloseNextBarStrategy extends HarnessScriptedStrategy {
         if (!symbolMatches(bar)) {
             return;
         }
-        if (barIndex == 0) {
+
+        // Detect transition from historical warm-up to live trading
+        long diffSeconds = java.time.Instant.now().getEpochSecond() - bar.timestamp().getEpochSecond();
+        if (diffSeconds <= 300 && !liveModeStarted) {
+            barIndex = 0;
+            liveModeStarted = true;
+        }
+
+        if (barIndex % 2 == 0) {
             emit(marketBuy(bar));
-        } else if (barIndex == 1) {
+        } else {
             emit(marketSellClose(bar));
         }
         barIndex++;
@@ -33,5 +42,6 @@ public final class BuyThenCloseNextBarStrategy extends HarnessScriptedStrategy {
     @Override
     protected void onReset() {
         barIndex = 0;
+        liveModeStarted = false;
     }
 }

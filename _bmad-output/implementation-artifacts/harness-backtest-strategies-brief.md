@@ -60,7 +60,7 @@ Quantité par défaut dans les stratégies harness : **10_000** unités (aligné
 |--------------|--------|-------|-----------------|
 | `Harness_NeverTrade` | `NeverTradeStrategy` | `onBar` no-op, `getPendingOrders()` vide | **0** |
 | `Harness_BuyOnceHold` | `BuyOnceHoldStrategy` | 1× `MARKET BUY` au premier bar du symbole, rien après | **1** (flatten fin) |
-| `Harness_BuyThenCloseNextBar` | `BuyThenCloseNextBarStrategy` | Bar 0: BUY ; bar 1: `SELL` `closeOnly()` (ou SELL traité comme close par le moteur) | **1** |
+| `Harness_BuyThenCloseNextBar` | `BuyThenCloseNextBarStrategy` | Bar paire: BUY ; bar impaire: `SELL` `closeOnly()` (alternance) | `ceil(barCount / 2)` |
 | `Harness_LimitNeverFills` | `LimitNeverFillsStrategy` | 1× `LIMIT BUY` à `lowMin - 1` sur toute la série (calculé au reset ou 1er bar) | **0** |
 
 ### 4.2 Tier 2 — Calendrier (besoins utilisateur)
@@ -128,7 +128,7 @@ Ne pas ré-entrer mardi–jeudi. Utiliser `PropSessions.weekKey(bar)`.
 ### AC-3 — BuyThenCloseNextBar
 
 - **Given** ≥ 2 barres  
-- **Then** `totalTrades() == 1` ; pas de position ouverte en fin si sortie bar 1 OK
+- **Then** `totalTrades() == ceil(barCount / 2.0)`
 
 ### AC-4 — DailyRoundTrip (synthétique)
 
