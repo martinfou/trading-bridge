@@ -48,6 +48,7 @@ Trading Bridge est un projet multi-parties organisé en monorepo :
 *   **[VISION.md](./VISION.md)** – Feuille de route produit et philosophie de la plateforme.
 *   **[contributing.md](./contributing.md)** – Guide d'accueil des contributeurs techniques.
 *   **[specs.md](./specs.md)** – Spécifications formelles de l'API de stratégie.
+*   **[calendar-mood-strategy-guide.md](./calendar-mood-strategy-guide.md)** – Guide de création de stratégies basées sur le calendrier macroéconomique et le sentiment (mood).
 *   **[conversion-guide.md](./conversion-guide.md)** – Guide de portage JForex vers Java.
 *   **[sq-xml-format.md](./sq-xml-format.md)** – Structure et tags du format XML StrategyQuant.
 *   **[testing.md](./testing.md)** – Stratégie de tests et Golden Baseline.

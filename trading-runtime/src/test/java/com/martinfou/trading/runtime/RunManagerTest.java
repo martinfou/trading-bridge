@@ -126,6 +126,7 @@ class RunManagerTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled("Disabled to prevent unit tests from relying on external network data sources (Dukascopy)")
     void startRun_triggersJavaNativeDownloadAndConvertsSuccessfully() throws Exception {
         String original = System.getProperty("trading.bridge.test");
         System.clearProperty("trading.bridge.test");

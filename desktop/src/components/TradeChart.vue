@@ -425,7 +425,7 @@ onUnmounted(() => {
 watch(() => props.bars, async () => {
   await nextTick()
   render()
-}, { deep: true })
+})
 
 watch(() => props.trades, async () => {
   await nextTick()

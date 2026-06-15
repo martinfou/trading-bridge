@@ -434,6 +434,7 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
 
                 OandaStreamingExecutor oandaExecutor = new OandaStreamingExecutor(
                     runId,
+                    record,
                     configSnapshot,
                     strategy,
                     broker,
@@ -451,6 +452,9 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
                     try {
                         Thread.sleep(1000);
                     } catch (InterruptedException e) {
+                        break;
+                    }
+                    if (!oandaExecutor.isActive()) {
                         break;
                     }
                 }

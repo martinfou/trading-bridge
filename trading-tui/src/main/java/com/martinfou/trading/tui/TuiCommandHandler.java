@@ -124,13 +124,20 @@ public final class TuiCommandHandler {
         if (summary.has("runs") && summary.get("runs").size() > 0) {
             for (JsonNode run : summary.get("runs")) {
                 String id = run.path("strategyId").asText();
-                String mode = run.path("mode").asText();
                 String status = run.path("status").asText();
                 String runId = run.path("runId").asText();
                 double pnl = run.path("totalPnL").asDouble(0.0);
                 int openTrades = run.path("openTrades").asInt(0);
-                lines.add(String.format("  %-25s %-5s %-10s (PnL: $%7.2f, Open: %d) [%s]", 
-                    id, mode, status, pnl, openTrades, runId));
+
+                String execLabel = run.path("executionLabel").asText(run.path("mode").asText());
+                String accountId = run.path("resolvedAccountId").asText("");
+                String envStr = execLabel;
+                if (!accountId.isEmpty()) {
+                    envStr = execLabel + " (" + accountId + ")";
+                }
+
+                lines.add(String.format("  %-25s %-35s %-10s (PnL: $%7.2f, Open: %d) [%s]", 
+                    id, envStr, status, pnl, openTrades, runId));
             }
         } else {
             lines.add("  No active runs currently in the Trading Desk.");
@@ -551,44 +558,145 @@ public final class TuiCommandHandler {
         }
 
         lines.add("Historical Data status (" + tf.toUpperCase(Locale.ROOT) + "):");
-        
+        lines.add("Legend: \u2588 CSV+BARS  \u2592 CSV only  \u2591 BARS only  \u00B7 No Data");
+        lines.add("");
+
         List<String> supportedPairs = List.of("EUR_USD", "GBP_USD", "GBP_JPY", "USD_CAD", "USD_JPY", "AUD_USD", "NZD_USD", "USD_CHF");
-        Map<String, List<String>> pairYears = new LinkedHashMap<>();
+        Map<String, Map<Integer, String>> pairYearStates = new LinkedHashMap<>();
         for (String sp : supportedPairs) {
-            pairYears.put(sp, new ArrayList<>());
+            pairYearStates.put(sp, new java.util.TreeMap<>());
         }
+
+        int minYear = 2006;
+        int maxYear = 2026;
+        boolean foundAny = false;
 
         JsonNode statusList = root.path("status");
         if (statusList.isArray()) {
             for (JsonNode item : statusList) {
                 String sym = item.path("symbol").asText();
+                if (!pairYearStates.containsKey(sym)) {
+                    continue;
+                }
                 boolean csvExists = item.path("csvExists").asBoolean(false);
                 boolean barsExists = item.path("barsExists").asBoolean(false);
                 if (csvExists || barsExists) {
                     int year = item.path("year").asInt();
                     String state;
                     if (csvExists && barsExists) {
-                        state = year + " (CSV+BARS)";
+                        state = "CSV+BARS";
                     } else if (csvExists) {
-                        state = year + " (CSV)";
+                        state = "CSV";
                     } else {
-                        state = year + " (BARS)";
+                        state = "BARS";
                     }
-                    pairYears.computeIfAbsent(sym, k -> new ArrayList<>()).add(state);
+                    pairYearStates.get(sym).put(year, state);
+
+                    if (!foundAny) {
+                        minYear = year;
+                        maxYear = year;
+                        foundAny = true;
+                    } else {
+                        if (year < minYear) minYear = year;
+                        if (year > maxYear) maxYear = year;
+                    }
                 }
             }
         }
 
-        for (Map.Entry<String, List<String>> entry : pairYears.entrySet()) {
-            String sym = entry.getKey();
-            List<String> years = entry.getValue();
-            if (years.isEmpty()) {
-                lines.add("  " + sym + ": [no data]");
-            } else {
-                Collections.sort(years);
-                lines.add("  " + sym + ": " + String.join(", ", years));
-            }
+        int totalYears = maxYear - minYear + 1;
+        String headerText;
+        if (minYear == maxYear) {
+            headerText = String.format(Locale.ROOT, "Timeline (%02d)", minYear % 100);
+        } else {
+            headerText = String.format(Locale.ROOT, "Timeline (%02d-%02d)", minYear % 100, maxYear % 100);
         }
+
+        int col0Width = 8; // "Pair"
+        int col1Width = Math.max(totalYears, headerText.length());
+        int col2Width = 7; // "Years"
+        int col3Width = 6; // "Detail"
+
+        Map<String, Integer> pairDownloadedCount = new LinkedHashMap<>();
+        Map<String, String> pairDetailStr = new LinkedHashMap<>();
+
+        for (String sym : supportedPairs) {
+            Map<Integer, String> yearMap = pairYearStates.get(sym);
+            if (yearMap.isEmpty()) {
+                pairDownloadedCount.put(sym, 0);
+                pairDetailStr.put(sym, "[no data]");
+            } else {
+                pairDownloadedCount.put(sym, yearMap.size());
+                List<String> segments = new ArrayList<>();
+                List<Integer> sortedYears = new ArrayList<>(yearMap.keySet());
+                int start = sortedYears.get(0);
+                int prev = start;
+                String state = yearMap.get(start);
+                for (int i = 1; i < sortedYears.size(); i++) {
+                    int currentYear = sortedYears.get(i);
+                    String currentState = yearMap.get(currentYear);
+                    if (currentYear == prev + 1 && currentState.equals(state)) {
+                        prev = currentYear;
+                    } else {
+                        if (start == prev) {
+                            segments.add(start + " (" + state + ")");
+                        } else {
+                            segments.add(start + "-" + prev + " (" + state + ")");
+                        }
+                        start = currentYear;
+                        prev = start;
+                        state = currentState;
+                    }
+                }
+                if (start == prev) {
+                    segments.add(start + " (" + state + ")");
+                } else {
+                    segments.add(start + "-" + prev + " (" + state + ")");
+                }
+                pairDetailStr.put(sym, String.join(", ", segments));
+            }
+            col3Width = Math.max(col3Width, pairDetailStr.get(sym).length());
+        }
+
+        String separator = "+" + "-".repeat(col0Width + 2) + "+" + "-".repeat(col1Width + 2) + "+" + "-".repeat(col2Width + 2) + "+" + "-".repeat(col3Width + 2) + "+";
+        String headerLine = String.format(Locale.ROOT,
+            "| %-" + col0Width + "s | %-" + col1Width + "s | %-" + col2Width + "s | %-" + col3Width + "s |",
+            "Pair", headerText, "Years", "Detail");
+
+        lines.add(separator);
+        lines.add(headerLine);
+        lines.add(separator);
+
+        for (String sym : supportedPairs) {
+            Map<Integer, String> yearMap = pairYearStates.get(sym);
+            StringBuilder timeline = new StringBuilder();
+            for (int y = minYear; y <= maxYear; y++) {
+                String state = yearMap.get(y);
+                if (state == null) {
+                    timeline.append("\u00B7");
+                } else if ("CSV+BARS".equals(state)) {
+                    timeline.append("\u2588");
+                } else if ("CSV".equals(state)) {
+                    timeline.append("\u2592");
+                } else {
+                    timeline.append("\u2591");
+                }
+            }
+
+            String timelineStr = timeline.toString();
+            if (timelineStr.length() < col1Width) {
+                timelineStr = timelineStr + " ".repeat(col1Width - timelineStr.length());
+            }
+
+            int downloaded = pairDownloadedCount.get(sym);
+            String yearsStr = String.format(Locale.ROOT, "%d/%d", downloaded, totalYears);
+
+            String row = String.format(Locale.ROOT,
+                "| %-" + col0Width + "s | %s | %-" + col2Width + "s | %-" + col3Width + "s |",
+                sym, timelineStr, yearsStr, pairDetailStr.get(sym));
+            lines.add(row);
+        }
+        lines.add(separator);
         return lines;
     }
 

@@ -847,6 +847,27 @@ public final class ControlPlaneServer implements AutoCloseable {
         ExecutionLabel label = ControlSummaryService.executionLabel(record);
         json.put("executionLabelMeta", ExecutionLabelCatalog.of(label).toMap());
         json.put("status", record.status().name());
+
+        String brokerAccountId = record.configSnapshot().containsKey("brokerAccountId")
+            ? String.valueOf(record.configSnapshot().get("brokerAccountId"))
+            : null;
+        if (label.isBrokerBacked() && brokerAccountId != null && runManager != null) {
+            var registry = runManager.brokerAccountRegistry();
+            if (registry != null) {
+                var creds = registry.credentials(brokerAccountId);
+                if (creds.isPresent()) {
+                    json.put("resolvedAccountId", creds.get().accountId());
+                    json.put("maskedAccountId", BrokerAccountRegistry.maskAccountId(creds.get().accountId()));
+                } else if (label.isIbkrBroker()) {
+                    var ibkr = registry.ibkrConnection(brokerAccountId);
+                    ibkr.ifPresent(cfg -> {
+                        json.put("resolvedAccountId", cfg.accountId());
+                        json.put("maskedAccountId", BrokerAccountRegistry.maskAccountId(cfg.accountId()));
+                    });
+                }
+            }
+        }
+
         json.put("startedAt", record.startedAt().toString());
         json.put("configSnapshot", record.configSnapshot());
         json.put("configHash", record.configHash());

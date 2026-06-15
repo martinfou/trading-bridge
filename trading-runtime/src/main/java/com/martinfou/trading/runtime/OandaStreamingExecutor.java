@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -36,6 +37,7 @@ public final class OandaStreamingExecutor implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(OandaStreamingExecutor.class);
 
     private final String runId;
+    private final RunRecord record;
     private final RunConfigSnapshot config;
     private final Strategy strategy;
     private final Broker broker;
@@ -55,6 +57,8 @@ public final class OandaStreamingExecutor implements AutoCloseable {
     private int filledCount = 0;
     private int submittedCount = 0;
     private int rejectedCount = 0;
+    
+    private final CountDownLatch stopLatch = new CountDownLatch(1);
 
     // Advanced Risk Fields
     private double dailyStartEquity;
@@ -72,6 +76,7 @@ public final class OandaStreamingExecutor implements AutoCloseable {
 
     public OandaStreamingExecutor(
         String runId,
+        RunRecord record,
         RunConfigSnapshot config,
         Strategy strategy,
         Broker broker,
@@ -82,6 +87,7 @@ public final class OandaStreamingExecutor implements AutoCloseable {
         RunRiskContext riskContext
     ) {
         this.runId = runId;
+        this.record = record;
         this.config = config;
         this.strategy = strategy;
         this.broker = broker;
@@ -154,14 +160,25 @@ public final class OandaStreamingExecutor implements AutoCloseable {
     }
 
     public void stop() {
-        if (!active.getAndSet(false)) return;
+        if (!active.getAndSet(false)) {
+            try { stopLatch.await(); } catch (InterruptedException e) {}
+            return;
+        }
 
-        streamingClient.removeListener(tickListener);
-        streamingClient.unsubscribe(config.symbol());
-        broker.disconnect();
+        try {
+            streamingClient.removeListener(tickListener);
+            streamingClient.unsubscribe(config.symbol());
+            broker.disconnect();
 
-        emitEnded();
-        log.info("OandaStreamingExecutor stopped for strategy {} on symbol {} in mode {}", config.strategyId(), config.symbol(), runMode);
+            emitEnded();
+            log.info("OandaStreamingExecutor stopped for strategy {} on symbol {} in mode {}", config.strategyId(), config.symbol(), runMode);
+        } finally {
+            stopLatch.countDown();
+        }
+    }
+
+    public boolean isActive() {
+        return active.get();
     }
 
     public void liquidateAndStop() {
@@ -211,41 +228,52 @@ public final class OandaStreamingExecutor implements AutoCloseable {
     }
 
     private void processTick(Instant timestamp, double bid, double ask) {
-        if (isWeekend(timestamp)) {
-            return;
-        }
+        try {
+            if (isWeekend(timestamp)) {
+                return;
+            }
 
-        lastMidPrice = (bid + ask) / 2.0;
+            if (record != null) {
+                record.noteEventAt(timestamp);
+            }
 
-        // 1. Perform rollover checks
-        checkRollovers(timestamp);
+            lastMidPrice = (bid + ask) / 2.0;
 
-        // 2. Perform risk circuit checks (DLL, WLL, Drawdown)
-        checkRiskCircuitBreakers(timestamp);
+            // 1. Perform rollover checks
+            checkRollovers(timestamp);
 
-        double mid = (bid + ask) / 2.0;
-        Bar tickBar = new Bar(config.symbol(), timestamp, mid, mid, mid, mid, 1);
+            // 2. Perform risk circuit checks (DLL, WLL, Drawdown)
+            checkRiskCircuitBreakers(timestamp);
 
-        if (aggregator.isNewPeriod(tickBar)) {
-            aggregator.completePeriod();
-            Bar completed = aggregator.getLastCompletedBar();
-            if (completed != null) {
-                HeartbeatEvents.emitBarHeartbeat(runId, config, runMode, eventStore, completed, 0);
-                if (!suspendedDaily && !suspendedWeekly && (cooldownUntil == null || timestamp.isAfter(cooldownUntil))) {
-                    strategy.onBar(completed);
-                    executePendingOrders(completed);
-                } else {
-                    // Discard pending orders
-                    strategy.getPendingOrders();
+            double mid = (bid + ask) / 2.0;
+            Bar tickBar = new Bar(config.symbol(), timestamp, mid, mid, mid, mid, 1);
+
+            if (aggregator.isNewPeriod(tickBar)) {
+                aggregator.completePeriod();
+                Bar completed = aggregator.getLastCompletedBar();
+                if (completed != null) {
+                    HeartbeatEvents.emitBarHeartbeat(runId, config, runMode, eventStore, completed, 0);
+                    if (!suspendedDaily && !suspendedWeekly && (cooldownUntil == null || timestamp.isAfter(cooldownUntil))) {
+                        strategy.onBar(completed);
+                        executePendingOrders(completed);
+                    } else {
+                        // Discard pending orders
+                        strategy.getPendingOrders();
+                    }
                 }
             }
-        }
-        aggregator.add(tickBar);
+            aggregator.add(tickBar);
 
-        Bar currentBar = aggregator.getInProgressBar();
-        if (currentBar != null) {
-            RunEvent barEvent = RunEvent.bar(runId, config.strategyId(), config.symbol(), runMode, currentBar, timestamp);
-            eventStore.publishEphemeral(runId, barEvent);
+            Bar currentBar = aggregator.getInProgressBar();
+            if (currentBar != null) {
+                RunEvent barEvent = RunEvent.bar(runId, config.strategyId(), config.symbol(), runMode, currentBar, timestamp);
+                eventStore.publishEphemeral(runId, barEvent);
+            }
+        } catch (Exception e) {
+            log.error("Run {} failed during tick processing", runId, e);
+            RunEvent errorEvent = RunEvent.error(runId, config.strategyId(), config.symbol(), runMode, e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+            eventStore.append(runId, errorEvent);
+            Thread.ofVirtual().start(this::stop);
         }
     }
 
