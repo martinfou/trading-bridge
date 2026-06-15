@@ -151,9 +151,15 @@ public final class HistoricalDataService implements AutoCloseable {
 
             for (int y = startYearVal; y <= endYearVal; y++) {
                 for (String p : PAIRS) {
+                    final int stepIndex = completedOperations;
                     completedOperations++;
-                    int pct = (completedOperations * 100) / totalOperations;
-                    activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(pct, 1, 99), "Syncing " + pairToSym(p) + " " + y + "..."));
+                    final int basePct = (stepIndex * 100) / totalOperations;
+                    final int nextBasePct = (completedOperations * 100) / totalOperations;
+                    final int range = nextBasePct - basePct;
+                    final int downloadRange = Math.max(1, range * 9 / 10);
+                    final int convertBase = basePct + downloadRange;
+
+                    activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(basePct, 1, 99), "Syncing " + pairToSym(p) + " " + y + "..."));
 
                     Path csv = findCsvFile(p, tf, y);
                     Path bars = barsDir.resolve(pairToSym(p) + "_" + tf.toUpperCase() + "_" + y + ".bars");
@@ -169,7 +175,14 @@ public final class HistoricalDataService implements AutoCloseable {
 
                     if (shouldDownload) {
                         try {
-                            Path downloadedCsv = downloader.download(p, y, tf, dukascopyDir);
+                            final int currentYear = y;
+                            final String currentPair = p;
+                            Path downloadedCsv = downloader.download(p, y, tf, dukascopyDir, (completed, total) -> {
+                                int subPct = (completed * downloadRange) / total;
+                                activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(basePct + subPct, 1, 99), 
+                                    "Syncing " + pairToSym(currentPair) + " " + currentYear + " (" + completed + "/" + total + ")..."));
+                            });
+                            activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(convertBase, 1, 99), "Converting " + pairToSym(p) + " " + y + " to binary..."));
                             var store = new BarStore(pairToSym(p), tf.toUpperCase() + "_" + y, barsDir);
                             store.writeFromCSV(downloadedCsv);
                         } catch (Exception e) {
@@ -177,6 +190,7 @@ public final class HistoricalDataService implements AutoCloseable {
                         }
                     } else if (!Files.exists(bars) && csv != null) {
                         try {
+                            activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(convertBase, 1, 99), "Converting " + pairToSym(p) + " " + y + " to binary..."));
                             var store = new BarStore(pairToSym(p), tf.toUpperCase() + "_" + y, barsDir);
                             store.writeFromCSV(csv);
                         } catch (Exception e) {
@@ -187,24 +201,36 @@ public final class HistoricalDataService implements AutoCloseable {
             }
         } else {
             log.info("Starting Java-native download from {} to {} for pair: {} timeframe: {}", startYearVal, endYearVal, pair, tf);
-            int totalYears = endYearVal - startYearVal + 1;
-            int processedYears = 0;
+            int totalSteps = (endYearVal - startYearVal + 1) * pairsToDownload.size();
+            int completedSteps = 0;
 
             for (int y = startYearVal; y <= endYearVal; y++) {
                 for (String p : pairsToDownload) {
-                    int pct = (processedYears * 100) / totalYears + 5;
-                    activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(pct, 1, 99), "Downloading " + pairToSym(p) + " " + y + "..."));
+                    final int stepIndex = completedSteps;
+                    completedSteps++;
+                    final int basePct = (stepIndex * 100) / totalSteps;
+                    final int nextBasePct = (completedSteps * 100) / totalSteps;
+                    final int range = nextBasePct - basePct;
+                    final int downloadRange = Math.max(1, range * 9 / 10);
+                    final int convertBase = basePct + downloadRange;
+
+                    activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(basePct, 1, 99), "Downloading " + pairToSym(p) + " " + y + "..."));
                     
                     try {
-                        Path downloadedCsv = downloader.download(p, y, tf, dukascopyDir);
-                        activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(pct + 5, 1, 99), "Converting " + pairToSym(p) + " " + y + " to binary..."));
+                        final int currentYear = y;
+                        final String currentPair = p;
+                        Path downloadedCsv = downloader.download(p, y, tf, dukascopyDir, (completed, total) -> {
+                            int subPct = (completed * downloadRange) / total;
+                            activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(basePct + subPct, 1, 99), 
+                                "Downloading " + pairToSym(currentPair) + " " + currentYear + " (" + completed + "/" + total + ")..."));
+                        });
+                        activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(convertBase, 1, 99), "Converting " + pairToSym(p) + " " + y + " to binary..."));
                         var store = new BarStore(pairToSym(p), tf.toUpperCase() + "_" + y, barsDir);
                         store.writeFromCSV(downloadedCsv);
                     } catch (Exception e) {
                         log.error("Failed to download or convert pair {} for year {}", p, y, e);
                     }
                 }
-                processedYears++;
             }
         }
         log.info("Download process completed for key: {}", key);
