@@ -298,4 +298,34 @@ class TuiCommandHandlerTest {
             server.stop(0);
         }
     }
+
+    @Test
+    void dataCommand_downloadSpaceSeparatedRange() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/api/historical-data/download", exchange -> {
+            byte[] body = "{\"accepted\":true}".getBytes();
+            exchange.sendResponseHeaders(202, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.start();
+        try {
+            var handler = new TuiCommandHandler(new ControlPlaneClient("http://127.0.0.1:" + server.getAddress().getPort()));
+            List<String> lines = handler.handle("/data download eurusd 2010 2026 m1");
+            assertTrue(lines.getFirst().contains("Download started for EUR_USD 2010-2026 (M1)"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void dataCommand_invalidTimeframeRejected() throws Exception {
+        var handler = new TuiCommandHandler(new ControlPlaneClient("http://127.0.0.1:1"));
+        List<String> lines = handler.handle("/data download eurusd 2010 2026 invalid_tf");
+        assertTrue(lines.getFirst().contains("Invalid timeframe"));
+        
+        List<String> lines2 = handler.handle("/data download --sync 123");
+        assertTrue(lines2.getFirst().contains("Invalid timeframe"));
+    }
 }
