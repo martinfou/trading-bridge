@@ -11,7 +11,15 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 
-/** OpenAI-compatible DeepSeek chat completions client (Epic 22.2). */
+/**
+ * Legacy HTTP client for DeepSeek API calls.
+ *
+ * @deprecated Use {@link com.martinfou.trading.intelligence.agent.AgenticModelFactory}
+ *             instead, which supports both DeepSeek (via LangChain4j OpenAI compatibility)
+ *             and local Ollama models through a unified interface.
+ *             This class will be removed in a future release.
+ */
+@Deprecated(since = "2026-06-14", forRemoval = false)
 public final class HttpDeepSeekClient implements LlmClient {
 
     public static final String DEFAULT_BASE_URL = "https://api.deepseek.com";

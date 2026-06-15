@@ -45,6 +45,10 @@ public class RunStrategyPipeline {
                         catch (NumberFormatException e) { /* ignore */ }
                     }
                 }
+                case "--list", "-l" -> {
+                    com.martinfou.trading.strategies.StrategyCatalog.printCatalog();
+                    return;
+                }
                 case "--help", "-h" -> {
                     printUsage();
                     return;
