@@ -4,6 +4,8 @@ import com.martinfou.trading.core.agent.PipelineResult;
 import com.martinfou.trading.core.agent.StrategyProfile;
 import com.martinfou.trading.intelligence.pipeline.LongTermValidator;
 import com.martinfou.trading.intelligence.pipeline.LtPipelineOrchestrator;
+import com.martinfou.trading.intelligence.pipeline.NewsWeeklyValidator;
+import com.martinfou.trading.intelligence.pipeline.PropShopValidator;
 
 /**
  * CLI entry point for the Unified Strategy Engine pipeline.
@@ -57,9 +59,12 @@ public class RunStrategyPipeline {
         // Select validation profile
         var validator = switch (profile.toUpperCase()) {
             case "LONG_TERM" -> new LongTermValidator();
+            case "PROP_SHOP" -> new PropShopValidator();
+            case "NEWS_WEEKLY" -> new NewsWeeklyValidator();
             default -> {
-                System.err.println("Unknown profile: " + profile + ". Using LONG_TERM.");
-                yield new LongTermValidator();
+                System.err.println("Unknown profile: " + profile + ". Options: LONG_TERM, PROP_SHOP, NEWS_WEEKLY");
+                System.exit(1);
+                yield null; // unreachable
             }
         };
 
