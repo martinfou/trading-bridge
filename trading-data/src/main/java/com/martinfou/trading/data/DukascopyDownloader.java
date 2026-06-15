@@ -29,7 +29,7 @@ public class DukascopyDownloader {
     private static final Logger log = LoggerFactory.getLogger(DukascopyDownloader.class);
 
     private final HttpClient httpClient;
-    private final Semaphore httpSemaphore = new Semaphore(50);
+    private final Semaphore httpSemaphore = new Semaphore(5);
 
     public DukascopyDownloader() {
         this.httpClient = HttpClient.newBuilder()
@@ -225,8 +225,8 @@ public class DukascopyDownloader {
     byte[] downloadFile(String url) throws IOException, InterruptedException {
         httpSemaphore.acquire();
         try {
-            int maxRetries = 3;
-            long backoffMs = 500;
+            int maxRetries = 5;
+            long backoffMs = 1000;
 
             for (int attempt = 1; attempt <= maxRetries; attempt++) {
                 try {
