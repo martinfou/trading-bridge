@@ -36,6 +36,7 @@ public final class OandaStreamingClient implements AutoCloseable {
     private Thread connectionThread;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private volatile Instant lastHeartbeatOrTick = Instant.now();
+    private volatile java.io.InputStream activeInputStream;
 
     public interface OandaTickListener {
         void onTick(String instrument, Instant timestamp, double bid, double ask);
@@ -79,11 +80,20 @@ public final class OandaStreamingClient implements AutoCloseable {
         if (running.get()) return;
         running.set(true);
         startConnectionThread();
+        startWatchdogThread();
     }
 
     public synchronized void stop() {
         if (!running.get()) return;
         running.set(false);
+        if (activeInputStream != null) {
+            try {
+                activeInputStream.close();
+            } catch (java.io.IOException e) {
+                // ignore
+            }
+            activeInputStream = null;
+        }
         if (connectionThread != null) {
             connectionThread.interrupt();
             connectionThread = null;
@@ -102,10 +112,45 @@ public final class OandaStreamingClient implements AutoCloseable {
 
     private synchronized void reconnectStream() {
         if (!running.get()) return;
+        if (activeInputStream != null) {
+            try {
+                activeInputStream.close();
+            } catch (java.io.IOException e) {
+                // ignore
+            }
+            activeInputStream = null;
+        }
         if (connectionThread != null) {
             connectionThread.interrupt();
         }
         startConnectionThread();
+    }
+
+    private void startWatchdogThread() {
+        Thread.ofVirtual().start(() -> {
+            while (running.get()) {
+                try {
+                    Thread.sleep(5000);
+                } catch (InterruptedException e) {
+                    break;
+                }
+                if (activeInputStream != null && Instant.now().isAfter(lastHeartbeatOrTick.plus(Duration.ofSeconds(20)))) {
+                    log.warn("OANDA pricing stream heartbeat timeout (no ticks/heartbeats for 20s) for account {}. Triggering reconnect...", accountId);
+                    closeActiveStream();
+                }
+            }
+        });
+    }
+
+    private synchronized void closeActiveStream() {
+        if (activeInputStream != null) {
+            try {
+                activeInputStream.close();
+            } catch (java.io.IOException e) {
+                // ignore
+            }
+            activeInputStream = null;
+        }
     }
 
     private void startConnectionThread() {
@@ -150,12 +195,15 @@ public final class OandaStreamingClient implements AutoCloseable {
                 backoffSecs = 1;
                 notifyConnectionState(true);
                 lastHeartbeatOrTick = Instant.now();
+                activeInputStream = response.body();
 
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(response.body()))) {
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(activeInputStream))) {
                     String line;
                     while (running.get() && (line = reader.readLine()) != null) {
                         parseLine(line);
                     }
+                } finally {
+                    activeInputStream = null;
                 }
             } catch (Exception e) {
                 notifyConnectionState(false);
