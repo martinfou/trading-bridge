@@ -40,7 +40,7 @@ public class StaleRunWatchdog implements AutoCloseable {
         log.info("StaleRunWatchdog started. Checking for stale runs every 60 seconds.");
     }
 
-    private void checkStaleRuns() {
+    void checkStaleRuns() {
         try {
             if (Duration.between(currentHour, Instant.now()).toHours() >= 1) {
                 restartsPerHour.clear();
@@ -51,11 +51,11 @@ public class StaleRunWatchdog implements AutoCloseable {
             if (summary == null) return;
             
             @SuppressWarnings("unchecked")
-            Map<String, Object> freshness = (Map<String, Object>) summary.get("freshness");
-            if (freshness == null) return;
+            Map<String, Object> signals = (Map<String, Object>) summary.get("signals");
+            if (signals == null) return;
 
             @SuppressWarnings("unchecked")
-            List<Map<String, Object>> staleSignals = (List<Map<String, Object>>) freshness.get("stale");
+            List<Map<String, Object>> staleSignals = (List<Map<String, Object>>) signals.get("stale");
             if (staleSignals == null || staleSignals.isEmpty()) return;
 
             for (Map<String, Object> signal : staleSignals) {

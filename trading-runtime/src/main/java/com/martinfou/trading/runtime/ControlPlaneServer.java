@@ -22,11 +22,25 @@ import com.martinfou.trading.core.Order;
 import com.martinfou.trading.backtest.MonteCarloSimulation;
 import com.martinfou.trading.backtest.BacktestResult;
 import java.util.Arrays;
+import java.util.Optional;
+import java.nio.file.Path;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.martinfou.trading.backtest.persistence.BacktestPersistenceService;
+import com.martinfou.trading.backtest.persistence.SqliteBacktestRunStore;
+import com.martinfou.trading.backtest.persistence.BacktestRunDetails;
+import com.martinfou.trading.backtest.persistence.BacktestRunSummary;
+import com.martinfou.trading.backtest.persistence.BacktestQueryFilters;
 
 /**
  * Javalin HTTP control plane — health, strategies, runs, event replay, and WebSocket stream.
  */
 public final class ControlPlaneServer implements AutoCloseable {
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ControlPlaneServer.class);
+
+    private static final ObjectMapper MAPPER = new ObjectMapper()
+        .registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
 
     public static final String VERSION = "1.0.0-SNAPSHOT";
 
@@ -38,6 +52,8 @@ public final class ControlPlaneServer implements AutoCloseable {
     private final SqBridgeService sqBridgeService;
     private final WeeklyBuilderService weeklyBuilderService;
     private final HistoricalDataService historicalDataService;
+    private final SqliteBacktestRunStore backtestRunStore;
+    private final StaleRunWatchdog watchdog;
     private final Javalin app;
 
     public ControlPlaneServer(
@@ -108,8 +124,11 @@ public final class ControlPlaneServer implements AutoCloseable {
         this.sqBridgeService = sqBridgeService;
         this.weeklyBuilderService = weeklyBuilderService;
         this.historicalDataService = historicalDataService != null ? historicalDataService : new HistoricalDataService();
+        this.backtestRunStore = new SqliteBacktestRunStore(BacktestPersistenceService.resolveDefaultDbPath());
+        this.watchdog = new StaleRunWatchdog(runManager, summaryService);
+        this.watchdog.start();
         this.app = createApp(runManager, eventHub, promoteService, killSwitchService, summaryService,
-            sqBridgeService, weeklyBuilderService, this.historicalDataService);
+            sqBridgeService, weeklyBuilderService, this.historicalDataService, this.backtestRunStore);
         app.start(port);
     }
 
@@ -168,8 +187,16 @@ public final class ControlPlaneServer implements AutoCloseable {
     @Override
     public void close() {
         app.stop();
+        if (watchdog != null) {
+            watchdog.close();
+        }
         sqBridgeService.close();
         weeklyBuilderService.close();
+        try {
+            backtestRunStore.close();
+        } catch (Exception e) {
+            log.error("Failed to close BacktestRunStore database connection", e);
+        }
     }
 
     private static Javalin createApp(
@@ -180,7 +207,8 @@ public final class ControlPlaneServer implements AutoCloseable {
         ControlSummaryService summaryService,
         SqBridgeService sqBridgeService,
         WeeklyBuilderService weeklyBuilderService,
-        HistoricalDataService historicalDataService
+        HistoricalDataService historicalDataService,
+        SqliteBacktestRunStore backtestRunStore
     ) {
         DataAvailabilityService dataAvailability = new DataAvailabilityService();
         BacktestController backtestController = new BacktestController();
@@ -574,24 +602,66 @@ public final class ControlPlaneServer implements AutoCloseable {
                     "status", RunRecord.Status.RUNNING.name()));
             })
             .get("/api/runs", ctx -> {
-                List<Map<String, Object>> items = runManager.list(null).stream()
-                    .map(r -> {
-                        Map<String, Object> m = new LinkedHashMap<>();
-                        m.put("runId", r.runId());
-                        m.put("strategyId", r.strategyId());
-                        m.put("symbol", r.symbol());
-                        m.put("status", r.status().name());
-                        m.put("completedAt", r.completedAt().map(Instant::toString).orElse(null));
-                        return m;
-                    })
-                    .toList();
+                List<Map<String, Object>> items = new ArrayList<>();
+                java.util.Set<String> seenIds = new java.util.HashSet<>();
+
+                runManager.list(null).forEach(r -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("runId", r.runId());
+                    m.put("strategyId", r.strategyId());
+                    m.put("symbol", r.symbol());
+                    m.put("status", r.status().name());
+                    m.put("completedAt", r.completedAt().map(Instant::toString).orElse(null));
+                    items.add(m);
+                    seenIds.add(r.runId());
+                });
+
+                try {
+                    List<BacktestRunSummary> historical = backtestRunStore.list(BacktestQueryFilters.builder().sortBy("created_at").sortOrder("DESC").build());
+                    for (BacktestRunSummary h : historical) {
+                        if (!seenIds.contains(h.runId())) {
+                            Map<String, Object> m = new LinkedHashMap<>();
+                            m.put("runId", h.runId());
+                            m.put("strategyId", h.strategyId());
+                            m.put("symbol", h.symbol());
+                            m.put("status", RunRecord.Status.COMPLETED.name());
+                            m.put("completedAt", h.createdAt() != null ? h.createdAt().toString() : null);
+                            items.add(m);
+                            seenIds.add(h.runId());
+                        }
+                    }
+                } catch (Exception e) {
+                    log.error("Failed to fetch historical backtest runs from SQLite", e);
+                }
+
+                items.sort((a, b) -> {
+                    String timeA = (String) a.get("completedAt");
+                    String timeB = (String) b.get("completedAt");
+                    if (timeA == null && timeB == null) return 0;
+                    if (timeA == null) return -1;
+                    if (timeB == null) return 1;
+                    try {
+                        return Instant.parse(timeB).compareTo(Instant.parse(timeA));
+                    } catch (Exception e) {
+                        return timeB.compareTo(timeA); // fallback
+                    }
+                });
+
                 ctx.json(Map.of("runs", items));
             })
             .get("/api/runs/{runId}", ctx -> {
                 String runId = ctx.pathParam("runId");
-                RunRecord record = runManager.getRun(runId)
-                    .orElseThrow(() -> new NotFoundException("Run not found: " + runId));
-                ctx.json(toRunJson(runManager, record));
+                Optional<RunRecord> recordOpt = runManager.getRun(runId);
+                if (recordOpt.isPresent()) {
+                    ctx.json(toRunJson(runManager, recordOpt.get()));
+                } else {
+                    Optional<BacktestRunDetails> detailsOpt = backtestRunStore.get(runId);
+                    if (detailsOpt.isPresent()) {
+                        ctx.json(toRunJsonFromDetails(detailsOpt.get()));
+                    } else {
+                        throw new NotFoundException("Run not found: " + runId);
+                    }
+                }
             })
             .get("/api/runs/{runId}/export", ctx -> {
                 String runId = ctx.pathParam("runId");
@@ -609,35 +679,58 @@ public final class ControlPlaneServer implements AutoCloseable {
             })
             .get("/api/runs/{runId}/trades", ctx -> {
                 String runId = ctx.pathParam("runId");
-                RunRecord record = runManager.getRun(runId)
-                    .orElseThrow(() -> new NotFoundException("Run not found: " + runId));
+                Optional<RunRecord> recordOpt = runManager.getRun(runId);
                 List<?> trades;
-                if (record.endedPayload().isPresent()) {
-                    trades = (List<?>) record.endedPayload().get().get("trades");
+                if (recordOpt.isPresent()) {
+                    RunRecord record = recordOpt.get();
+                    if (record.endedPayload().isPresent()) {
+                        trades = (List<?>) record.endedPayload().get().get("trades");
+                    } else {
+                        trades = reconstructTradesFromFills(runManager.eventStore().replayAll(runId));
+                    }
                 } else {
-                    trades = reconstructTradesFromFills(runManager.eventStore().replayAll(runId));
+                    Optional<BacktestRunDetails> detailsOpt = backtestRunStore.get(runId);
+                    if (detailsOpt.isPresent()) {
+                        trades = reconstructTradesFromFills(runManager.eventStore().replayAll(runId));
+                    } else {
+                        throw new NotFoundException("Run not found: " + runId);
+                    }
                 }
                 ctx.json(Map.of("runId", runId, "trades", trades != null ? trades : List.of()));
             })
             .get("/api/runs/{runId}/equity-curve", ctx -> {
                 String runId = ctx.pathParam("runId");
-                RunRecord record = runManager.getRun(runId)
-                    .orElseThrow(() -> new NotFoundException("Run not found: " + runId));
-                List<?> curve;
-                if (record.endedPayload().isPresent()) {
-                    curve = (List<?>) record.endedPayload().get().get("equityCurveSample");
-                } else {
-                    List<Map<String, Object>> recTrades = reconstructTradesFromFills(runManager.eventStore().replayAll(runId));
-                    double eq = record.configSnapshot().containsKey("capital")
-                        ? ((Number) record.configSnapshot().get("capital")).doubleValue()
-                        : 1000.0;
-                    List<Double> sample = new ArrayList<>();
-                    sample.add(eq);
-                    for (var t : recTrades) {
-                        eq += ((Number) t.get("pnl")).doubleValue();
+                Optional<RunRecord> recordOpt = runManager.getRun(runId);
+                List<?> curve = null;
+                if (recordOpt.isPresent()) {
+                    RunRecord record = recordOpt.get();
+                    if (record.endedPayload().isPresent()) {
+                        curve = (List<?>) record.endedPayload().get().get("equityCurveSample");
+                    } else {
+                        List<Map<String, Object>> recTrades = reconstructTradesFromFills(runManager.eventStore().replayAll(runId));
+                        double eq = record.configSnapshot().containsKey("capital")
+                            ? ((Number) record.configSnapshot().get("capital")).doubleValue()
+                            : 1000.0;
+                        List<Double> sample = new ArrayList<>();
                         sample.add(eq);
+                        for (var t : recTrades) {
+                            eq += ((Number) t.get("pnl")).doubleValue();
+                            sample.add(eq);
+                        }
+                        curve = sample;
                     }
-                    curve = sample;
+                } else {
+                    Optional<BacktestRunDetails> detailsOpt = backtestRunStore.get(runId);
+                    if (detailsOpt.isPresent()) {
+                        try {
+                            curve = MAPPER.readValue(detailsOpt.get().equityCurve(), new TypeReference<List<Double>>() {});
+                        } catch (Exception e) {
+                            log.error("Failed to parse equity curve JSON from SQLite for run " + runId, e);
+                            curve = List.of();
+                        }
+                    } else {
+                        throw new NotFoundException("Run not found: " + runId);
+                    }
                 }
                 ctx.json(Map.of("runId", runId, "equityCurve", curve != null ? curve : List.of()));
             })
@@ -963,6 +1056,75 @@ public final class ControlPlaneServer implements AutoCloseable {
         }
         json.put("positions", positions);
 
+        return json;
+    }
+
+    private static Map<String, Object> toRunJsonFromDetails(BacktestRunDetails details) {
+        Map<String, Object> json = new LinkedHashMap<>();
+        json.put("runId", details.runId());
+        json.put("strategyId", details.strategyId());
+        json.put("symbol", details.symbol());
+        json.put("mode", "BACKTEST");
+        json.put("executionLabel", "BACKTEST");
+        json.put("executionLabelMeta", ExecutionLabelCatalog.of(ExecutionLabel.BACKTEST).toMap());
+        json.put("status", "COMPLETED");
+        json.put("startedAt", details.createdAt() != null ? details.createdAt().toString() : Instant.now().toString());
+        json.put("completedAt", details.createdAt() != null ? details.createdAt().toString() : Instant.now().toString());
+        
+        Map<String, Object> config = new LinkedHashMap<>();
+        config.put("strategyId", details.strategyId());
+        config.put("symbol", details.symbol());
+        config.put("mode", "BACKTEST");
+        config.put("capital", details.initialCapital());
+
+        Map<String, Object> paramsMap = null;
+        try {
+            if (details.parameters() != null && !details.parameters().isBlank()) {
+                paramsMap = MAPPER.readValue(details.parameters(), new TypeReference<Map<String, Object>>() {});
+            }
+        } catch (Exception ignored) {}
+
+        Double commissionVal = 0.0;
+        Double slippageVal = 0.0;
+        if (paramsMap != null) {
+            config.put("parameters", paramsMap);
+            if (paramsMap.containsKey("commissionPerTrade")) {
+                commissionVal = ((Number) paramsMap.get("commissionPerTrade")).doubleValue();
+            }
+            if (paramsMap.containsKey("slippagePct")) {
+                slippageVal = ((Number) paramsMap.get("slippagePct")).doubleValue();
+            }
+        }
+        config.put("commissionPerTrade", commissionVal);
+        config.put("slippagePct", slippageVal);
+
+        json.put("configSnapshot", config);
+        json.put("configHash", details.parameterHash());
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("totalTrades", details.totalTrades());
+        result.put("totalReturnPct", details.totalReturnPct());
+        result.put("finalEquity", details.finalEquity());
+        result.put("initialCapital", details.initialCapital());
+        result.put("totalPnl", details.totalPnl());
+        result.put("winningTrades", details.winningTrades());
+        result.put("losingTrades", details.losingTrades());
+        result.put("winRatePct", details.winRatePct());
+        result.put("avgTradePnl", details.avgTradePnl());
+        result.put("maxDrawdownPct", details.maxDrawdownPct());
+        result.put("sharpeRatio", details.sharpeRatio());
+        result.put("sortinoRatio", details.sortinoRatio());
+        result.put("profitFactor", details.profitFactor());
+        result.put("calmarRatio", details.calmarRatio());
+        result.put("totalCommission", details.totalCommission());
+        result.put("totalSlippage", details.totalSlippage());
+        result.put("periodStart", details.periodStart().toString());
+        result.put("periodEnd", details.periodEnd().toString());
+        
+        json.put("result", result);
+        json.put("lastEventAt", details.periodEnd().toString());
+        json.put("eventCount", 0L);
+        json.put("positions", List.of());
         return json;
     }
 
