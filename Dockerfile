@@ -10,6 +10,7 @@ COPY trading-broker/pom.xml trading-broker/
 COPY trading-parser/pom.xml trading-parser/
 COPY trading-examples/pom.xml trading-examples/
 COPY trading-runtime/pom.xml trading-runtime/
+COPY trading-intelligence/pom.xml trading-intelligence/
 COPY trading-tui/pom.xml trading-tui/
 RUN mvn dependency:go-offline -q
 
