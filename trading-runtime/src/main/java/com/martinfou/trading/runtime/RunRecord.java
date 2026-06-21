@@ -17,7 +17,7 @@ public final class RunRecord {
     private final String strategyId;
     private final String symbol;
     private final RunMode mode;
-    private final Instant startedAt;
+    private volatile Instant startedAt;
     private final Map<String, Object> configSnapshot;
     private final String configHash;
     private volatile Status status;
@@ -91,6 +91,7 @@ public final class RunRecord {
 
     void markRunning() {
         this.status = Status.RUNNING;
+        this.startedAt = Instant.now();
     }
 
     void markPaused() {
