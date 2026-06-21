@@ -29,7 +29,7 @@ public class DukascopyDownloader {
     private static final Logger log = LoggerFactory.getLogger(DukascopyDownloader.class);
 
     private final HttpClient httpClient;
-    private final Semaphore httpSemaphore = new Semaphore(5);
+    private final Semaphore httpSemaphore = new Semaphore(3);
 
     public DukascopyDownloader() {
         this.httpClient = HttpClient.newBuilder()
@@ -90,7 +90,10 @@ public class DukascopyDownloader {
                         return downloadAndParseDay(symbol, date);
                     } catch (Exception e) {
                         log.warn("Failed to download or parse data for date: {}. Error: {}", date, e.getMessage());
-                        return Collections.emptyList();
+                        if (e instanceof InterruptedException) {
+                            Thread.currentThread().interrupt();
+                        }
+                        throw new RuntimeException("Failed to download data for date: " + date, e);
                     } finally {
                         int completed = completedCount.incrementAndGet();
                         if (listener != null) {
@@ -225,6 +228,7 @@ public class DukascopyDownloader {
     byte[] downloadFile(String url) throws IOException, InterruptedException {
         httpSemaphore.acquire();
         try {
+            Thread.sleep(100);
             int maxRetries = 5;
             long backoffMs = 1000;
 
