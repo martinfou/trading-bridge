@@ -7,7 +7,7 @@ REPO_ROOT="$(dirname "$DIR")"
 PORT=8010
 
 echo "🚀 Starting BMad Project Board server..."
-python3 "$REPO_ROOT/_bmad/scripts/project_board_server.py" --project-root "$REPO_ROOT" &
+python3 "/Users/martinfou/.gemini/config/skills/bmad-sprint-status-ui/scripts/project_board_server.py" --project-root "$REPO_ROOT" &
 SERVER_PID=$!
 
 # Trap SIGINT (Ctrl+C) and SIGTERM to terminate the python server cleanly
