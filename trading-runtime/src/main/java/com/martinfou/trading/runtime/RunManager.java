@@ -14,6 +14,9 @@ import com.martinfou.trading.data.BarStore;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -111,6 +114,10 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
     private final Map<String, AutoCloseable> activeExecutors = new ConcurrentHashMap<>();
     private final CopyOnWriteArrayList<RunTransitionListener> listeners = new CopyOnWriteArrayList<>();
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    private final com.martinfou.trading.backtest.persistence.SqliteTradeAlignmentStore alignmentStore;
+    private final Map<String, List<com.martinfou.trading.core.Order>> btOrdersByRun = new ConcurrentHashMap<>();
+    private final Map<String, List<com.martinfou.trading.core.Order>> liveOrdersByRun = new ConcurrentHashMap<>();
+    private final Map<String, Integer> consecutiveTimeDrifts = new ConcurrentHashMap<>();
 
     public RunManager(EventStore eventStore) {
         this(eventStore, BrokerFactory.fromRegistry(BrokerAccountRegistry.loadDefault()), true,
@@ -160,7 +167,7 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
         if (brokerFactory == null) {
             throw new IllegalArgumentException("brokerFactory must not be null");
         }
-        this.eventStore = eventStore;
+        this.eventStore = new ReconcilingEventStore(eventStore);
         this.brokerFactory = brokerFactory;
         this.requireOandaCredentials = requireOandaCredentials;
         this.killSwitchRegistry = killSwitchRegistry != null ? killSwitchRegistry : new KillSwitchRegistry();
@@ -168,6 +175,38 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
         this.brokerAccountRegistry = brokerAccountRegistry != null
             ? brokerAccountRegistry
             : BrokerAccountRegistry.loadDefault();
+        this.alignmentStore = createAlignmentStore(eventStore);
+    }
+
+    private com.martinfou.trading.backtest.persistence.SqliteTradeAlignmentStore createAlignmentStore(EventStore eventStore) {
+        EventStore unwrapped = eventStore;
+        while (unwrapped != null) {
+            if (unwrapped instanceof ReconcilingEventStore) {
+                unwrapped = ((ReconcilingEventStore) unwrapped).delegate;
+            } else if (unwrapped.getClass().getSimpleName().equals("BroadcastingEventStore")) {
+                try {
+                    java.lang.reflect.Field field = unwrapped.getClass().getDeclaredField("delegate");
+                    field.setAccessible(true);
+                    unwrapped = (EventStore) field.get(unwrapped);
+                } catch (Exception e) {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        
+        if (unwrapped instanceof SqliteEventStore) {
+            Connection conn = ((SqliteEventStore) unwrapped).connection();
+            return new com.martinfou.trading.backtest.persistence.SqliteTradeAlignmentStore(conn, false);
+        }
+        
+        try {
+            Connection inMemoryConnection = DriverManager.getConnection("jdbc:sqlite::memory:");
+            return new com.martinfou.trading.backtest.persistence.SqliteTradeAlignmentStore(inMemoryConnection, true);
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to create in-memory SQLite connection for alignment store", e);
+        }
     }
 
     public KillSwitchRegistry killSwitchRegistry() {
@@ -184,6 +223,79 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
 
     public Optional<AutoCloseable> getActiveExecutor(String runId) {
         return Optional.ofNullable(activeExecutors.get(runId));
+    }
+
+    public Map<String, Object> getAlignmentDetails(String runId) {
+        List<com.martinfou.trading.backtest.reconciliation.ReconciliationAnomaly> anomalies = alignmentStore.getAnomalies(runId);
+        
+        List<com.martinfou.trading.core.Order> btOrders = btOrdersByRun.get(runId);
+        List<com.martinfou.trading.core.Order> liveOrders = liveOrdersByRun.get(runId);
+        
+        if (btOrders == null || liveOrders == null) {
+            List<com.martinfou.trading.core.Order> tempBt = new ArrayList<>();
+            List<com.martinfou.trading.core.Order> tempLive = new ArrayList<>();
+            for (com.martinfou.trading.backtest.events.RunEvent event : eventStore.replayAll(runId)) {
+                if (event.mode() != null && (event.mode().equalsIgnoreCase("PAPER") || event.mode().equalsIgnoreCase("LIVE"))) {
+                    if (event.type() == com.martinfou.trading.backtest.events.RunEventType.ORDER_SUBMITTED) {
+                        Map<String, Object> payload = event.payload();
+                        if (payload != null) {
+                            try {
+                                String symbol = String.valueOf(payload.get("symbol"));
+                                String sideStr = String.valueOf(payload.get("side"));
+                                com.martinfou.trading.core.Order.Side side = com.martinfou.trading.core.Order.Side.valueOf(sideStr);
+                                double quantity = toDouble(payload.get("quantity"));
+                                double price = toDouble(payload.get("price"));
+                                String correlationId = payload.containsKey("correlationId") && payload.get("correlationId") != null 
+                                    ? String.valueOf(payload.get("correlationId")) 
+                                    : null;
+                                String orderId = payload.containsKey("orderId") && payload.get("orderId") != null 
+                                    ? String.valueOf(payload.get("orderId")) 
+                                    : null;
+                                com.martinfou.trading.core.Order btOrder = new com.martinfou.trading.core.Order(symbol, side, com.martinfou.trading.core.Order.Type.MARKET, quantity, price)
+                                    .withCorrelationId(correlationId)
+                                    .withStatus(com.martinfou.trading.core.Order.Status.FILLED)
+                                    .withFilledAt(event.timestamp());
+                                if (orderId != null) btOrder.withId(orderId);
+                                tempBt.add(btOrder);
+                            } catch (Exception ignored) {}
+                        }
+                    } else if (event.type() == com.martinfou.trading.backtest.events.RunEventType.FILL) {
+                        Map<String, Object> payload = event.payload();
+                        if (payload != null) {
+                            try {
+                                String symbol = String.valueOf(payload.get("symbol"));
+                                String sideStr = String.valueOf(payload.get("side"));
+                                com.martinfou.trading.core.Order.Side side = com.martinfou.trading.core.Order.Side.valueOf(sideStr);
+                                double quantity = toDouble(payload.get("quantity"));
+                                double price = toDouble(payload.get("price"));
+                                String correlationId = payload.containsKey("correlationId") && payload.get("correlationId") != null 
+                                    ? String.valueOf(payload.get("correlationId")) 
+                                    : null;
+                                String orderId = payload.containsKey("orderId") && payload.get("orderId") != null 
+                                    ? String.valueOf(payload.get("orderId")) 
+                                    : null;
+                                com.martinfou.trading.core.Order liveOrder = new com.martinfou.trading.core.Order(symbol, side, com.martinfou.trading.core.Order.Type.MARKET, quantity, price)
+                                    .withCorrelationId(correlationId)
+                                    .withStatus(com.martinfou.trading.core.Order.Status.FILLED)
+                                    .withFilledAt(event.timestamp());
+                                if (orderId != null) liveOrder.withId(orderId);
+                                tempLive.add(liveOrder);
+                            } catch (Exception ignored) {}
+                        }
+                    }
+                }
+            }
+            btOrders = tempBt;
+            liveOrders = tempLive;
+            btOrdersByRun.put(runId, btOrders);
+            liveOrdersByRun.put(runId, liveOrders);
+        }
+        
+        return Map.of(
+            "anomalies", anomalies,
+            "backtestOrders", btOrders,
+            "liveOrders", liveOrders
+        );
     }
 
     @Override
@@ -247,6 +359,7 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
             record.markRunning();
             notifyTransition(before, record, RunTransition.RESUME);
         }
+        loadHistoricalOrders(runId);
         return record;
     }
 
@@ -256,6 +369,7 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
     }
 
     public RunRecord stop(String runId, boolean liquidate) {
+        consecutiveTimeDrifts.remove(runId);
         RunRecord record = requireRun(runId);
         RunRecord before = record;
         return switch (record.status()) {
@@ -383,6 +497,31 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
             .max(Comparator.comparing(r -> r.completedAt().orElse(r.startedAt())));
     }
 
+    /**
+     * Evict completed, failed, or archived runs from the in-memory map
+     * if they have been in a terminal state for more than 10 minutes (600 seconds).
+     */
+    public void pruneTerminalRuns() {
+        Instant cutoff = Instant.now().minusSeconds(600);
+        java.util.Set<String> toPrune = new java.util.HashSet<>();
+        for (RunRecord r : runs.values()) {
+            if (r.isTerminal() && r.completedAt().map(t -> t.isBefore(cutoff)).orElse(false)) {
+                toPrune.add(r.runId());
+            }
+        }
+        if (!toPrune.isEmpty()) {
+            log.info("Pruning {} terminal runs older than 10 minutes from memory: {}", toPrune.size(), toPrune);
+            for (String runId : toPrune) {
+                runs.remove(runId);
+                snapshots.remove(runId);
+                dailyDrawdownByRun.remove(runId);
+                btOrdersByRun.remove(runId);
+                liveOrdersByRun.remove(runId);
+                consecutiveTimeDrifts.remove(runId);
+            }
+        }
+    }
+
     public EventStore eventStore() {
         return eventStore;
     }
@@ -390,6 +529,11 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
     @Override
     public void close() {
         executor.close();
+        try {
+            alignmentStore.close();
+        } catch (Exception e) {
+            log.error("Failed to close SqliteTradeAlignmentStore", e);
+        }
     }
 
     private void executeRun(
@@ -449,7 +593,11 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
                     eventStore,
                     killSwitchRegistry,
                     streamClient,
-                    riskContext
+                    riskContext,
+                    () -> this.list(null).stream()
+                        .filter(r -> r.status() == RunRecord.Status.RUNNING)
+                        .map(RunRecord::symbol)
+                        .toList()
                 );
 
                 activeExecutors.put(runId, oandaExecutor);
@@ -491,7 +639,11 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
                     },
                     metrics -> dailyDrawdownByRun.put(runId, metrics));
                 result = BrokerRunExecutor.execute(
-                    runId, configSnapshot, bars, capital, strategy, broker, eventStore, killSwitchRegistry, null, riskContext);
+                    runId, configSnapshot, bars, capital, strategy, broker, eventStore, killSwitchRegistry, null, riskContext,
+                    () -> this.list(null).stream()
+                        .filter(r -> r.status() == RunRecord.Status.RUNNING)
+                        .map(RunRecord::symbol)
+                        .toList());
             } else {
                 var context = RunLauncher.create(
                     runId,
@@ -847,5 +999,210 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
             sampled.add(curve.get(index));
         }
         return sampled;
+    }
+
+    private final class ReconcilingEventStore implements EventStore {
+        private final EventStore delegate;
+
+        public ReconcilingEventStore(EventStore delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public long append(String runId, RunEvent event) {
+            long sequence = delegate.append(runId, event);
+            processEventForReconciliation(runId, event, true);
+            return sequence;
+        }
+
+        @Override
+        public List<RunEvent> query(String runId, long afterSequence, int limit) {
+            return delegate.query(runId, afterSequence, limit);
+        }
+
+        @Override
+        public long count(String runId) {
+            return delegate.count(runId);
+        }
+
+        @Override
+        public List<RunEvent> replayAll(String runId) {
+            return delegate.replayAll(runId);
+        }
+
+        @Override
+        public List<StoredRunEvent> queryWithSequence(String runId, long afterSequence, int limit) {
+            return delegate.queryWithSequence(runId, afterSequence, limit);
+        }
+
+        @Override
+        public void publishEphemeral(String runId, RunEvent event) {
+            delegate.publishEphemeral(runId, event);
+        }
+
+        @Override
+        public void close() {
+            delegate.close();
+        }
+    }
+
+    private void loadHistoricalOrders(String runId) {
+        List<com.martinfou.trading.core.Order> btOrders = btOrdersByRun.computeIfAbsent(runId, k -> new CopyOnWriteArrayList<>());
+        List<com.martinfou.trading.core.Order> liveOrders = liveOrdersByRun.computeIfAbsent(runId, k -> new CopyOnWriteArrayList<>());
+        btOrders.clear();
+        liveOrders.clear();
+        for (RunEvent event : eventStore.replayAll(runId)) {
+            processEventForReconciliation(runId, event, false);
+        }
+        runReconciliation(runId, false);
+    }
+
+    private void processEventForReconciliation(String runId, RunEvent event, boolean triggerActions) {
+        if (event.mode() == null || (!event.mode().equalsIgnoreCase("PAPER") && !event.mode().equalsIgnoreCase("LIVE"))) {
+            return;
+        }
+
+        if (event.type() == RunEventType.ORDER_SUBMITTED) {
+            Map<String, Object> payload = event.payload();
+            if (payload == null) return;
+            try {
+                String symbol = String.valueOf(payload.get("symbol"));
+                String sideStr = String.valueOf(payload.get("side"));
+                com.martinfou.trading.core.Order.Side side = com.martinfou.trading.core.Order.Side.valueOf(sideStr);
+                double quantity = toDouble(payload.get("quantity"));
+                double price = toDouble(payload.get("price"));
+                String correlationId = payload.containsKey("correlationId") && payload.get("correlationId") != null 
+                    ? String.valueOf(payload.get("correlationId")) 
+                    : null;
+                String orderId = payload.containsKey("orderId") && payload.get("orderId") != null 
+                    ? String.valueOf(payload.get("orderId")) 
+                    : null;
+                
+                com.martinfou.trading.core.Order btOrder = new com.martinfou.trading.core.Order(symbol, side, com.martinfou.trading.core.Order.Type.MARKET, quantity, price)
+                    .withCorrelationId(correlationId)
+                    .withStatus(com.martinfou.trading.core.Order.Status.FILLED)
+                    .withFilledAt(event.timestamp());
+                if (orderId != null) {
+                    btOrder.withId(orderId);
+                }
+                
+                btOrdersByRun.computeIfAbsent(runId, k -> new CopyOnWriteArrayList<>()).add(btOrder);
+            } catch (Exception e) {
+                log.error("Failed to parse ORDER_SUBMITTED event for reconciliation", e);
+            }
+        } else if (event.type() == RunEventType.FILL) {
+            Map<String, Object> payload = event.payload();
+            if (payload == null) return;
+            try {
+                String symbol = String.valueOf(payload.get("symbol"));
+                String sideStr = String.valueOf(payload.get("side"));
+                com.martinfou.trading.core.Order.Side side = com.martinfou.trading.core.Order.Side.valueOf(sideStr);
+                double quantity = toDouble(payload.get("quantity"));
+                double price = toDouble(payload.get("price"));
+                String correlationId = payload.containsKey("correlationId") && payload.get("correlationId") != null 
+                    ? String.valueOf(payload.get("correlationId")) 
+                    : null;
+                String orderId = payload.containsKey("orderId") && payload.get("orderId") != null 
+                    ? String.valueOf(payload.get("orderId")) 
+                    : null;
+                
+                com.martinfou.trading.core.Order liveOrder = new com.martinfou.trading.core.Order(symbol, side, com.martinfou.trading.core.Order.Type.MARKET, quantity, price)
+                    .withCorrelationId(correlationId)
+                    .withStatus(com.martinfou.trading.core.Order.Status.FILLED)
+                    .withFilledAt(event.timestamp());
+                if (orderId != null) {
+                    liveOrder.withId(orderId);
+                }
+                
+                liveOrdersByRun.computeIfAbsent(runId, k -> new CopyOnWriteArrayList<>()).add(liveOrder);
+                
+                // Trigger reconciliation check!
+                if (triggerActions) {
+                    runReconciliation(runId, triggerActions);
+                }
+            } catch (Exception e) {
+                log.error("Failed to parse FILL event for reconciliation", e);
+            }
+        }
+    }
+
+    private void runReconciliation(String runId, boolean triggerActions) {
+        List<com.martinfou.trading.core.Order> btOrders = btOrdersByRun.get(runId);
+        List<com.martinfou.trading.core.Order> liveOrders = liveOrdersByRun.get(runId);
+        if ((btOrders == null || btOrders.isEmpty()) && (liveOrders == null || liveOrders.isEmpty())) {
+            return;
+        }
+
+        List<com.martinfou.trading.core.Order> btList = btOrders != null ? btOrders : List.of();
+        List<com.martinfou.trading.core.Order> liveList = liveOrders != null ? liveOrders : List.of();
+
+        try {
+            com.martinfou.trading.backtest.reconciliation.TradeReconciler reconciler = new com.martinfou.trading.backtest.reconciliation.TradeReconciler();
+            com.martinfou.trading.backtest.reconciliation.ReconciliationConfig config = com.martinfou.trading.backtest.reconciliation.ReconciliationConfig.DEFAULT;
+            
+            List<com.martinfou.trading.backtest.reconciliation.ReconciliationAnomaly> anomalies = reconciler.reconcile(btList, liveList, config);
+            
+            // Clear previous anomalies for this run and persist newly detected ones
+            alignmentStore.deleteForRun(runId);
+            if (!anomalies.isEmpty()) {
+                alignmentStore.insertAll(runId, anomalies);
+            }
+            
+            if (!triggerActions) {
+                return;
+            }
+
+            // Check consecutive TIME_DRIFT and logic anomalies (MISSING_LIVE / GHOST_LIVE)
+            boolean hasLogicAnomaly = false;
+            boolean hasTimeDriftOnLatest = false;
+            
+            for (com.martinfou.trading.backtest.reconciliation.ReconciliationAnomaly anomaly : anomalies) {
+                if (anomaly.type() == com.martinfou.trading.backtest.reconciliation.ReconciliationAnomaly.AnomalyType.MISSING_LIVE ||
+                    anomaly.type() == com.martinfou.trading.backtest.reconciliation.ReconciliationAnomaly.AnomalyType.GHOST_LIVE) {
+                    hasLogicAnomaly = true;
+                }
+            }
+            
+            if (!liveOrders.isEmpty()) {
+                com.martinfou.trading.core.Order latestLive = liveOrders.getLast();
+                for (com.martinfou.trading.backtest.reconciliation.ReconciliationAnomaly anomaly : anomalies) {
+                    if (anomaly.type() == com.martinfou.trading.backtest.reconciliation.ReconciliationAnomaly.AnomalyType.TIME_DRIFT &&
+                        java.util.Objects.equals(latestLive.id(), anomaly.orderId())) {
+                        hasTimeDriftOnLatest = true;
+                        break;
+                    }
+                }
+            }
+            
+            if (hasLogicAnomaly) {
+                log.error("CRITICAL: Logic discrepancy detected for run {} (MISSING_LIVE or GHOST_LIVE). Triggering kill-switch and liquidating open positions.", runId);
+                stop(runId, true);
+            } else if (hasTimeDriftOnLatest) {
+                int count = consecutiveTimeDrifts.merge(runId, 1, Integer::sum);
+                log.warn("Execution TIME_DRIFT detected for run {} (consecutive count: {})", runId, count);
+                if (count >= 3) {
+                    log.error("CRITICAL: 3 consecutive TIME_DRIFT anomalies detected for run {}. Autopausing strategy.", runId);
+                    pause(runId);
+                }
+            } else {
+                consecutiveTimeDrifts.put(runId, 0);
+            }
+        } catch (Exception e) {
+            log.error("Error during real-time trade reconciliation for run " + runId, e);
+        }
+    }
+
+    private static double toDouble(Object obj) {
+        if (obj == null) {
+            return 0.0;
+        }
+        if (obj instanceof Number) {
+            return ((Number) obj).doubleValue();
+        }
+        try {
+            return Double.parseDouble(obj.toString());
+        } catch (NumberFormatException e) {
+            return 0.0;
+        }
     }
 }
