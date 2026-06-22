@@ -1,6 +1,9 @@
+---
+baseline_commit: 1a6b5445db92fc46d77a3b05ecd9abadcf31bb22
+---
 # Story 16.13: Watchdog Weekend Close and Memory Cleanup
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -22,19 +25,19 @@ So that I do not get a massive wall of completed strategies on my Trading Desk d
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Market Session Resolver Implementation (AC: 1)
-  - [ ] Create `MarketSessionResolver.java` under `com.martinfou.trading.runtime`.
-  - [ ] Implement detection based on symbol patterns (e.g. standard 6-character forex symbols like `EUR_USD`, stock symbols like `AAPL`, and futures formats).
-- [ ] Task 2: Suspend Watchdog on Market Close (AC: 2)
-  - [ ] Update `checkStaleRuns` in [StaleRunWatchdog.java](file:///Volumes/T7/src/trading-bridge/trading-runtime/src/main/java/com/martinfou/trading/runtime/StaleRunWatchdog.java) to skip a run if `MarketSessionResolver.isClosed(run.symbol(), run.executionLabel())` is true.
-- [ ] Task 3: Thread-Safe Pruning in RunManager (AC: 3, 4, 5)
-  - [ ] Implement `pruneTerminalRuns()` using `runs.values().removeIf(...)` in [RunManager.java](file:///Volumes/T7/src/trading-bridge/trading-runtime/src/main/java/com/martinfou/trading/runtime/RunManager.java).
-  - [ ] Call `runManager.pruneTerminalRuns()` inside the `StaleRunWatchdog` schedule loop (which runs every 60 seconds) to decouple pruning from core tick execution.
-- [ ] Task 4: Tests and Verification
-  - [ ] Add unit tests in `MarketSessionResolverTest.java` verifying the closed/open state across different days/times for Forex, stocks, and futures.
-  - [ ] Add unit tests in [StaleRunWatchdogTest.java](file:///Volumes/T7/src/trading-bridge/trading-runtime/src/test/java/com/martinfou/trading/runtime/StaleRunWatchdogTest.java) to verify watchdog skips stale checks when the resolver returns closed.
-  - [ ] Add unit tests in [RunManagerTest.java](file:///Volumes/T7/src/trading-bridge/trading-runtime/src/test/java/com/martinfou/trading/runtime/RunManagerTest.java) verifying thread-safe terminal run pruning.
-  - [ ] Run full project build: `mvn clean install`.
+- [x] Task 1: Market Session Resolver Implementation (AC: 1)
+  - [x] Create `MarketSessionResolver.java` under `com.martinfou.trading.runtime`.
+  - [x] Implement detection based on symbol patterns (e.g. standard 6-character forex symbols like `EUR_USD`, stock symbols like `AAPL`, and futures formats).
+- [x] Task 2: Suspend Watchdog on Market Close (AC: 2)
+  - [x] Update `checkStaleRuns` in [StaleRunWatchdog.java](file:///Volumes/T7/src/trading-bridge/trading-runtime/src/main/java/com/martinfou/trading/runtime/StaleRunWatchdog.java) to skip a run if `MarketSessionResolver.isClosed(run.symbol(), run.executionLabel())` is true.
+- [x] Task 3: Thread-Safe Pruning in RunManager (AC: 3, 4, 5)
+  - [x] Implement `pruneTerminalRuns()` using `runs.values().removeIf(...)` in [RunManager.java](file:///Volumes/T7/src/trading-bridge/trading-runtime/src/main/java/com/martinfou/trading/runtime/RunManager.java).
+  - [x] Call `runManager.pruneTerminalRuns()` inside the `StaleRunWatchdog` schedule loop (which runs every 60 seconds) to decouple pruning from core tick execution.
+- [x] Task 4: Tests and Verification
+  - [x] Add unit tests in `MarketSessionResolverTest.java` verifying the closed/open state across different days/times for Forex, stocks, and futures.
+  - [x] Add unit tests in [StaleRunWatchdogTest.java](file:///Volumes/T7/src/trading-bridge/trading-runtime/src/test/java/com/martinfou/trading/runtime/StaleRunWatchdogTest.java) to verify watchdog skips stale checks when the resolver returns closed.
+  - [x] Add unit tests in [RunManagerTest.java](file:///Volumes/T7/src/trading-bridge/trading-runtime/src/test/java/com/martinfou/trading/runtime/RunManagerTest.java) verifying thread-safe terminal run pruning.
+  - [x] Run full project build: `mvn clean install`.
 
 ## Dev Notes
 
@@ -51,10 +54,25 @@ So that I do not get a massive wall of completed strategies on my Trading Desk d
 
 ### Agent Model Used
 
-Gemini 3.5 Flash
+Gemini 3.5 Flash (High)
 
 ### Debug Log References
 
+N/A
+
 ### Completion Notes List
 
+- Verified that `MarketSessionResolver` correctly classifies Forex, US Stocks, and Futures from Eastern time zone (America/Toronto) with Daylight Saving Time handling.
+- Checked that `StaleRunWatchdog` correctly skips checks for stale runs during market-close periods.
+- Checked that `RunManager` implements thread-safe `pruneTerminalRuns()` to remove old ended runs from memory.
+- Ensured all tests run and pass, and that the Maven reactor build completes successfully.
+
 ### File List
+
+- `trading-runtime/src/main/java/com/martinfou/trading/runtime/MarketSessionResolver.java`
+- `trading-runtime/src/main/java/com/martinfou/trading/runtime/StaleRunWatchdog.java`
+- `trading-runtime/src/main/java/com/martinfou/trading/runtime/RunManager.java`
+- `trading-runtime/src/test/java/com/martinfou/trading/runtime/MarketSessionResolverTest.java`
+- `trading-runtime/src/test/java/com/martinfou/trading/runtime/StaleRunWatchdogTest.java`
+- `trading-runtime/src/test/java/com/martinfou/trading/runtime/RunManagerTest.java`
+

@@ -1,5 +1,5 @@
 # generated: 2026-06-06
-# last_updated: 2026-06-14T04:04:00Z
+# last_updated: 2026-06-17T03:01:00Z
 # project: trading-bridge
 # project_key: NOKEY
 # tracking_system: file-system
@@ -20,6 +20,7 @@
 #   - backlog: Story only exists in epic file
 #   - ready-for-dev: Story file created in stories folder
 #   - in-progress: Developer actively working on implementation
+#   - blocked: Story is blocked by dependencies or issues
 #   - review: Ready for code review (via Dev's code-review workflow)
 #   - done: Story completed
 #
@@ -35,7 +36,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: "2026-06-06"
-last_updated: "2026-06-15T18:21:00Z"
+last_updated: "2026-06-22T03:47:00Z"
 project: trading-bridge
 project_key: NOKEY
 tracking_system: file-system
@@ -83,7 +84,7 @@ development_status:
   4-4-real-time-market-data: backlog
   4-5-live-market-order-execution: backlog
   4-6-live-limit-and-stop-orders: backlog
-  4-7-position-synchronization: backlog
+  4-7-position-synchronization: review
   4-8-paper-trading-mode: backlog
   epic-4-retrospective: optional
 
@@ -142,7 +143,7 @@ development_status:
   15-9-exception-de-promotion-pour-les-strategies-harness: done
   epic-15-retrospective: done
 
-  epic-16: done
+  epic-16: in-progress
   16-1-runner-paper-stub-labellise: backlog
   16-2-broker-interface-skeleton: done
   16-3-paper-oanda-demo: done
@@ -154,7 +155,9 @@ development_status:
   16-9-multi-account-broker: done
   16-10-ibkr-broker-connector: done
   16-11-harness-test-strategies: backlog
-  epic-16-retrospective: done
+  16-12-fix-oanda-position-client-tag-matching: done
+  16-13-watchdog-weekend-close-and-memory-cleanup: review
+  epic-16-retrospective: optional
 
 
   epic-17: done
@@ -226,12 +229,12 @@ development_status:
   epic-21-retrospective: optional
 
   epic-22: in-progress
-  22-1-weekly-intel-brief-ingest: review
-  22-2-weekly-plan-job-deepseek: review
-  22-3-template-registry-risk-envelope: review
-  22-4-weekly-compile-watcher: review
-  22-5-codegen-templates-t2-t7: review
-  22-6-weekly-deploy-watcher: review
+  22-1-weekly-intel-brief-ingest: done
+  22-2-weekly-plan-job-deepseek: done
+  22-3-template-registry-risk-envelope: done
+  22-4-weekly-compile-watcher: done
+  22-5-codegen-templates-t2-t7: done
+  22-6-weekly-deploy-watcher: done
   22-7-cron-scheduler-strategy-ttl: review
   22-8-tui-weekly-build-status: review
   epic-22-retrospective: optional
@@ -242,12 +245,9 @@ development_status:
   23-3-gate-de-promotion-monte-carlo-var: backlog
   epic-23-retrospective: optional
 
-  epic-24: backlog
-  24-1-moteur-de-decoupe-de-donnees-is-oos-et-boucle-d-optimisation-wfa: backlog
-  24-2-purge-des-frontieres-wfa-et-reconstruction-de-courbe-oos: backlog
-  24-3-api-wfa-et-lanceur-cli: backlog
-  24-4-vue-timeline-is-oos-et-calibration-dans-la-gui: backlog
-  24-5-suivi-de-fraicheur-et-alertes-de-recalibration-wf-due: backlog
+  epic-24: in-progress
+  24-1-wfa-core-engine-and-calibration-metadata: done
+  24-2-cli-launcher-and-export-json: done
   epic-24-retrospective: optional
 
   epic-25: in-progress
@@ -268,12 +268,37 @@ development_status:
   26-4-desktop-backtest-history-view: done
   26-5-desktop-parameter-heatmap-pareto-drift: done
   26-6-promote-strategy-from-backtest-results: done
-  epic-26-retrospective: optional
+  26-7-compare-persistent-backtests: done
+  26-8-pending-orders-sl-tp-on-price-chart: done
+  26-9-compare-runs-by-weeks-and-drift: done
+  epic-26-retrospective: done
 
-  epic-27: backlog
+  epic-27: in-progress
   27-1-active-strategy-card-drift-badge-desktop-gui: backlog
   27-2-drift-analysis-tab-in-inspect-view-desktop-gui: backlog
   27-3-tui-status-drift-alerts-section: backlog
+  27-4-open-positions-pnl-ticket-metadata: ready-for-dev
   epic-27-retrospective: optional
+
+  epic-28: backlog
+  28-1-endpoints-rest-api-and-persistance: backlog
+  28-2-interface-graphique-desktop-timeline-et-stabilite: backlog
+  28-3-suivi-de-la-fraicheur-de-calibration-et-alertes-tuigui: backlog
+  epic-28-retrospective: optional
+
+  epic-29: backlog
+  29-1-refactoring-de-valorisation-d-actifs-et-multiplicateur-mes-pnl: backlog
+  29-2-simulation-des-marges-et-liquidation-forcee: backlog
+  29-3-serie-de-prix-continue-et-execution-de-rollover: backlog
+  29-4-ingesteur-de-donnees-historiques-via-tws-api: backlog
+  epic-29-retrospective: optional
+
+  epic-30: backlog
+  30-1-resolution-de-contrat-et-soumission-d-ordres-market-fut: backlog
+  30-2-interception-des-fills-et-reconciliation-double-barriere-des-commissions: backlog
+  30-3-resume-de-compte-et-metriques-de-marge-api-rest-generique-cache: backlog
+  30-4-heartbeat-de-connexion-cache-de-fraicheur-et-notifications-temps-reel-websocket-ui: backlog
+  epic-30-retrospective: optional
+
 
 
