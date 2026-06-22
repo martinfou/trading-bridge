@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BMad Project Board</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        slate: {
+                            850: '#151b26',
+                            900: '#0d1117',
+                            950: '#0b0e14',
+                        },
+                        dracula: {
+                            bg: '#282a36',
+                            current: '#44475a',
+                            fg: '#f8f8f2',
+                            comment: '#6272a4',
+                            cyan: '#8be9fd',
+                            green: '#50fa7b',
+                            orange: '#ffb86c',
+                            pink: '#ff79c6',
+                            purple: '#bd93f9',
+                            red: '#ff5555',
+                            yellow: '#f1fa8c'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'Fira Code', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0b0e14;
+        }
+        .glass {
+            background: rgba(22, 27, 38, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .kanban-col {
+            min-height: calc(100vh - 12rem);
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(11, 14, 20, 0.5);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        .epic-pointer {
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+        .blocked-stripe {
+            background-image: repeating-linear-gradient(
+                -45deg,
+                rgba(245, 158, 11, 0.03),
+                rgba(245, 158, 11, 0.03) 10px,
+                transparent 10px,
+                transparent 20px
+            );
+        }
+        .pinned-glow {
+            box-shadow: 0 0 15px rgba(244, 63, 94, 0.25);
+            border-color: rgba(244, 63, 94, 0.4) !important;
+        }
+    </style>
+</head>
+<body class="text-slate-200 min-h-screen flex flex-col antialiased">
+
+    <!-- Top HUD / Navbar -->
+    <header class="glass sticky top-0 z-40 border-b border-white/5 py-4 px-6 flex justify-between items-center shadow-lg">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-dracula-purple to-dracula-pink flex items-center justify-center shadow-md">
+                <i class="fa-solid fa-layer-group text-slate-900"></i>
+            </div>
+            <div>
+                <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+                    BMad Project Board
+                    <span id="health-badge" class="text-xs px-2.5 py-0.5 rounded-full font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-sm flex items-center gap-1.5">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                        HEALTHY
+                    </span>
+                </h1>
+                <p id="project-meta" class="text-xs text-slate-400 font-mono">Project: trading-bridge | Updated: --</p>
+            </div>
+        </div>
+
+        <!-- Overall Progress Ring -->
+        <div class="flex items-center gap-6">
+            <div class="flex items-center gap-4">
+                <div class="text-right">
+                    <span class="text-xs text-slate-400 block font-medium">Sprint Completion</span>
+                    <span id="completion-text" class="text-lg font-bold text-white font-mono">0.0%</span>
+                </div>
+                <div class="relative w-12 h-12 flex items-center justify-center">
+                    <svg class="w-full h-full transform -rotate-90">
+                        <circle cx="24" cy="24" r="20" class="stroke-slate-800" stroke-width="4" fill="transparent"/>
+                        <circle id="progress-circle" cx="24" cy="24" r="20" class="stroke-dracula-purple transition-all duration-500 ease-out" stroke-width="4" fill="transparent" stroke-dasharray="125.6" stroke-dashoffset="125.6"/>
+                    </svg>
+                    <span id="progress-ring-text" class="absolute text-[10px] font-bold font-mono">0%</span>
+                </div>
+            </div>
+            <button onclick="loadBoardData()" class="px-3 py-1.5 rounded-lg bg-slate-800 border border-white/5 text-slate-300 hover:text-white hover:bg-slate-700 transition flex items-center gap-1.5 text-xs font-medium">
+                <i class="fa-solid fa-arrows-rotate"></i> Reload
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Tri-Pane Workspace -->
+    <main class="flex-1 flex overflow-hidden">
+        
+        <!-- Left Pane: Epic Roadmap -->
+        <aside id="epic-pane" class="w-80 border-r border-white/5 bg-slate-950 flex flex-col transition-all duration-300 relative shrink-0">
+            <div class="p-4 border-b border-white/5 flex justify-between items-center bg-slate-900/50">
+                <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    <i class="fa-solid fa-map"></i> Epic Roadmap
+                </h2>
+                <button onclick="toggleEpicPane()" class="text-slate-400 hover:text-white transition text-xs">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
+            </div>
+            <div id="epic-list" class="flex-1 overflow-y-auto p-3 space-y-2">
+                <!-- Epics dynamically rendered here -->
+                <div class="animate-pulse space-y-3 p-2">
+                    <div class="h-10 bg-slate-800 rounded-lg w-full"></div>
+                    <div class="h-10 bg-slate-800 rounded-lg w-full"></div>
+                </div>
+            </div>
+        </aside>
+        
+        <!-- Center Pane: Kanban Board -->
+        <section class="flex-1 flex flex-col bg-slate-900/30 overflow-x-auto min-w-0">
+            <!-- Kanban Columns Container -->
+            <div class="flex-1 p-6 flex gap-4 min-h-0 overflow-y-auto">
+                
+                <!-- Backlog Column -->
+                <div class="flex-1 min-w-[280px] max-w-[340px] flex flex-col bg-slate-950/40 rounded-xl border border-white/5">
+                    <div class="p-3 border-b border-white/5 flex justify-between items-center bg-slate-950/20">
+                        <div class="flex items-center gap-2">
+                            <span class="w-2.5 h-2.5 rounded-full bg-slate-500"></span>
+                            <h3 class="font-bold text-sm text-slate-300">Backlog</h3>
+                        </div>
+                        <span id="count-backlog" class="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-bold">0</span>
+                    </div>
+                    <div id="col-backlog" data-status="backlog" ondragover="allowDrop(event)" ondrop="drop(event)" class="kanban-col flex-1 p-2 space-y-2 overflow-y-auto">
+                        <!-- Cards -->
+                    </div>
+                </div>
+
+                <!-- Ready for Dev Column -->
+                <div class="flex-1 min-w-[280px] max-w-[340px] flex flex-col bg-slate-950/40 rounded-xl border border-white/5">
+                    <div class="p-3 border-b border-white/5 flex justify-between items-center bg-slate-950/20">
+                        <div class="flex items-center gap-2">
+                            <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
+                            <h3 class="font-bold text-sm text-slate-300">Ready for Dev</h3>
+                        </div>
+                        <span id="count-ready-for-dev" class="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-bold">0</span>
+                    </div>
+                    <div id="col-ready-for-dev" data-status="ready-for-dev" ondragover="allowDrop(event)" ondrop="drop(event)" class="kanban-col flex-1 p-2 space-y-2 overflow-y-auto">
+                        <!-- Cards -->
+                    </div>
+                </div>
+
+                <!-- In Progress Column -->
+                <div class="flex-1 min-w-[280px] max-w-[340px] flex flex-col bg-slate-950/40 rounded-xl border border-white/5">
+                    <div class="p-3 border-b border-white/5 flex justify-between items-center bg-slate-950/20">
+                        <div class="flex items-center gap-2">
+                            <span class="w-2.5 h-2.5 rounded-full bg-orange-400"></span>
+                            <h3 class="font-bold text-sm text-slate-300">In Progress</h3>
+                        </div>
+                        <span id="count-in-progress" class="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-bold">0</span>
+                    </div>
+                    <div id="col-in-progress" data-status="in-progress" ondragover="allowDrop(event)" ondrop="drop(event)" class="kanban-col flex-1 p-2 space-y-2 overflow-y-auto">
+                        <!-- Cards -->
+                    </div>
+                </div>
+
+                <!-- Blocked Column -->
+                <div class="flex-1 min-w-[280px] max-w-[340px] flex flex-col bg-slate-950/40 rounded-xl border border-amber-500/20 blocked-stripe">
+                    <div class="p-3 border-b border-white/5 flex justify-between items-center bg-slate-950/20">
+                        <div class="flex items-center gap-2">
+                            <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+                            <h3 class="font-bold text-sm text-slate-300">Blocked</h3>
+                        </div>
+                        <span id="count-blocked" class="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-bold">0</span>
+                    </div>
+                    <div id="col-blocked" data-status="blocked" ondragover="allowDrop(event)" ondrop="drop(event)" class="kanban-col flex-1 p-2 space-y-2 overflow-y-auto">
+                        <!-- Cards -->
+                    </div>
+                </div>
+
+                <!-- Review Column -->
+                <div class="flex-1 min-w-[280px] max-w-[340px] flex flex-col bg-slate-950/40 rounded-xl border border-white/5">
+                    <div class="p-3 border-b border-white/5 flex justify-between items-center bg-slate-950/20">
+                        <div class="flex items-center gap-2">
+                            <span class="w-2.5 h-2.5 rounded-full bg-purple-400"></span>
+                            <h3 class="font-bold text-sm text-slate-300">Review</h3>
+                        </div>
+                        <span id="count-review" class="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-bold">0</span>
+                    </div>
+                    <div id="col-review" data-status="review" ondragover="allowDrop(event)" ondrop="drop(event)" class="kanban-col flex-1 p-2 space-y-2 overflow-y-auto">
+                        <!-- Cards -->
+                    </div>
+                </div>
+
+                <!-- Done Column -->
+                <div class="flex-1 min-w-[280px] max-w-[340px] flex flex-col bg-slate-950/40 rounded-xl border border-white/5">
+                    <div class="p-3 border-b border-white/5 flex justify-between items-center bg-slate-950/20">
+                        <div class="flex items-center gap-2">
+                            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+                            <h3 class="font-bold text-sm text-slate-300">Done</h3>
+                        </div>
+                        <span id="count-done" class="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-bold">0</span>
+                    </div>
+                    <div id="col-done" data-status="done" ondragover="allowDrop(event)" ondrop="drop(event)" class="kanban-col flex-1 p-2 space-y-2 overflow-y-auto">
+                        <!-- Cards -->
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- Right Pane: Task Inspector -->
+        <aside id="task-pane" class="w-96 border-l border-white/5 bg-slate-950 flex flex-col translate-x-full transition-transform duration-300 relative shrink-0">
+            <div class="p-4 border-b border-white/5 flex justify-between items-center bg-slate-900/50">
+                <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    <i class="fa-solid fa-list-check"></i> Task Inspector
+                </h2>
+                <button onclick="closeTaskPane()" class="text-slate-400 hover:text-white transition text-xs">
+                    <i class="fa-solid fa-chevron-right"></i>
+                </button>
+            </div>
+            
+            <!-- Inspector Contents -->
+            <div id="task-pane-content" class="flex-1 overflow-y-auto p-4 space-y-4">
+                <!-- Dynamically updated -->
+                <div class="text-slate-500 text-center py-12">
+                    <i class="fa-solid fa-circle-info text-2xl mb-2 block"></i>
+                    Select a story card to inspect tasks
+                </div>
+            </div>
+        </aside>
+
+    </main>
+
+    <!-- Local board frontend logic -->
+    <script src="app.js"></script>
+</body>
+</html>
