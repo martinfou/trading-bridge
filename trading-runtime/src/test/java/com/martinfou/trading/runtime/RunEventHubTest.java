@@ -45,6 +45,37 @@ class RunEventHubTest {
         assertEquals(0, runB.size());
     }
 
+    @Test
+    void publish_toleratesSubscriberException() {
+        RunEventHub hub = new RunEventHub();
+        List<String> messages = new ArrayList<>();
+        int[] throwCount = new int[1];
+
+        // Subscriber that throws an exception
+        hub.subscribe("run-a", msg -> {
+            throwCount[0]++;
+            throw new RuntimeException("Simulated send failure");
+        });
+
+        // Normal subscriber
+        hub.subscribe("run-a", messages::add);
+
+        RunEvent event = sampleEvent("run-a", RunEventType.RUN_STARTED);
+
+        // First publish: should not throw, and deliver to both
+        hub.publish("run-a", new StoredRunEvent(1L, event));
+
+        assertEquals(1, messages.size());
+        assertTrue(messages.getFirst().contains("RUN_STARTED"));
+        assertEquals(1, throwCount[0]);
+
+        // Second publish: throwing subscriber should be unsubscribed and not called
+        hub.publish("run-a", new StoredRunEvent(2L, event));
+
+        assertEquals(2, messages.size());
+        assertEquals(1, throwCount[0]); // Still 1, confirming it was unsubscribed
+    }
+
     private static RunEvent sampleEvent(String runId, RunEventType type) {
         return new RunEvent(
             RunEvent.SCHEMA_VERSION,
