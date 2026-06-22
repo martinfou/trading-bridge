@@ -23,7 +23,6 @@ import com.martinfou.trading.backtest.MonteCarloSimulation;
 import com.martinfou.trading.backtest.BacktestResult;
 import java.util.Arrays;
 import java.util.Optional;
-import java.nio.file.Path;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.martinfou.trading.backtest.persistence.BacktestPersistenceService;
@@ -31,6 +30,11 @@ import com.martinfou.trading.backtest.persistence.SqliteBacktestRunStore;
 import com.martinfou.trading.backtest.persistence.BacktestRunDetails;
 import com.martinfou.trading.backtest.persistence.BacktestRunSummary;
 import com.martinfou.trading.backtest.persistence.BacktestQueryFilters;
+import com.martinfou.trading.backtest.PerformanceMetrics;
+import java.time.ZonedDateTime;
+import java.time.ZoneOffset;
+import java.time.temporal.IsoFields;
+import java.util.TreeMap;
 
 /**
  * Javalin HTTP control plane — health, strategies, runs, event replay, and WebSocket stream.
@@ -55,6 +59,8 @@ public final class ControlPlaneServer implements AutoCloseable {
     private final SqliteBacktestRunStore backtestRunStore;
     private final StaleRunWatchdog watchdog;
     private final Javalin app;
+    private final Map<String, CachedStats> weeklyStatsCache = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<String, AutoCloseable> activeSubscriptions = new java.util.concurrent.ConcurrentHashMap<>();
 
     public ControlPlaneServer(
         RunManager runManager,
@@ -126,10 +132,57 @@ public final class ControlPlaneServer implements AutoCloseable {
         this.historicalDataService = historicalDataService != null ? historicalDataService : new HistoricalDataService();
         this.backtestRunStore = new SqliteBacktestRunStore(BacktestPersistenceService.resolveDefaultDbPath());
         this.watchdog = new StaleRunWatchdog(runManager, summaryService);
-        this.watchdog.start();
         this.app = createApp(runManager, eventHub, promoteService, killSwitchService, summaryService,
-            sqBridgeService, weeklyBuilderService, this.historicalDataService, this.backtestRunStore);
-        app.start(port);
+            sqBridgeService, weeklyBuilderService, this.historicalDataService, this.backtestRunStore, this.weeklyStatsCache, this.activeSubscriptions);
+
+        runManager.addTransitionListener((before, after, cause) -> {
+            if (after.status() == RunRecord.Status.COMPLETED || 
+                after.status() == RunRecord.Status.FAILED || 
+                after.status() == RunRecord.Status.ARCHIVED) {
+                String rId = after.runId();
+                weeklyStatsCache.remove(rId);
+                AutoCloseable sub = activeSubscriptions.remove(rId);
+                if (sub != null) {
+                    try {
+                        sub.close();
+                    } catch (Exception ex) {
+                        log.error("Failed to close active subscription for transitioned run " + rId, ex);
+                    }
+                }
+            }
+        });
+
+        try {
+            this.watchdog.start();
+            app.start(port);
+        } catch (Exception e) {
+            try {
+                app.stop();
+            } catch (Exception ex) {
+                log.error("Failed to stop Javalin app during constructor cleanup", ex);
+            }
+            try {
+                watchdog.close();
+            } catch (Exception ex) {
+                log.error("Failed to close watchdog during constructor cleanup", ex);
+            }
+            try {
+                sqBridgeService.close();
+            } catch (Exception ex) {
+                log.error("Failed to close sqBridgeService during constructor cleanup", ex);
+            }
+            try {
+                weeklyBuilderService.close();
+            } catch (Exception ex) {
+                log.error("Failed to close weeklyBuilderService during constructor cleanup", ex);
+            }
+            try {
+                backtestRunStore.close();
+            } catch (Exception ex) {
+                log.error("Failed to close backtestRunStore during constructor cleanup", ex);
+            }
+            throw e;
+        }
     }
 
     /** Package-private for tests that inject a custom {@link ControlSummaryService}. */
@@ -186,17 +239,43 @@ public final class ControlPlaneServer implements AutoCloseable {
 
     @Override
     public void close() {
-        app.stop();
-        if (watchdog != null) {
-            watchdog.close();
-        }
-        sqBridgeService.close();
-        weeklyBuilderService.close();
         try {
-            backtestRunStore.close();
+            app.stop();
         } catch (Exception e) {
-            log.error("Failed to close BacktestRunStore database connection", e);
+            log.error("Failed to stop Javalin app", e);
         }
+        if (watchdog != null) {
+            try {
+                watchdog.close();
+            } catch (Exception e) {
+                log.error("Failed to close watchdog", e);
+            }
+        }
+        try {
+            sqBridgeService.close();
+        } catch (Exception e) {
+            log.error("Failed to close sqBridgeService", e);
+        }
+        try {
+            weeklyBuilderService.close();
+        } catch (Exception e) {
+            log.error("Failed to close weeklyBuilderService", e);
+        }
+        if (backtestRunStore != null) {
+            try {
+                backtestRunStore.close();
+            } catch (Exception e) {
+                log.error("Failed to close BacktestRunStore database connection", e);
+            }
+        }
+        for (var sub : activeSubscriptions.values()) {
+            try {
+                sub.close();
+            } catch (Exception e) {
+                // ignore
+            }
+        }
+        activeSubscriptions.clear();
     }
 
     private static Javalin createApp(
@@ -208,7 +287,9 @@ public final class ControlPlaneServer implements AutoCloseable {
         SqBridgeService sqBridgeService,
         WeeklyBuilderService weeklyBuilderService,
         HistoricalDataService historicalDataService,
-        SqliteBacktestRunStore backtestRunStore
+        SqliteBacktestRunStore backtestRunStore,
+        Map<String, CachedStats> weeklyStatsCache,
+        Map<String, AutoCloseable> activeSubscriptions
     ) {
         DataAvailabilityService dataAvailability = new DataAvailabilityService();
         BacktestController backtestController = new BacktestController();
@@ -611,7 +692,12 @@ public final class ControlPlaneServer implements AutoCloseable {
                     m.put("strategyId", r.strategyId());
                     m.put("symbol", r.symbol());
                     m.put("status", r.status().name());
+                    m.put("startedAt", r.startedAt().toString());
                     m.put("completedAt", r.completedAt().map(Instant::toString).orElse(null));
+                    m.put("mode", r.mode().name());
+                    ExecutionLabel label = ControlSummaryService.executionLabel(r);
+                    m.put("executionLabel", label.name());
+                    m.put("executionLabelMeta", ExecutionLabelCatalog.of(label).toMap());
                     items.add(m);
                     seenIds.add(r.runId());
                 });
@@ -625,7 +711,11 @@ public final class ControlPlaneServer implements AutoCloseable {
                             m.put("strategyId", h.strategyId());
                             m.put("symbol", h.symbol());
                             m.put("status", RunRecord.Status.COMPLETED.name());
+                            m.put("startedAt", h.createdAt() != null ? h.createdAt().toString() : null);
                             m.put("completedAt", h.createdAt() != null ? h.createdAt().toString() : null);
+                            m.put("mode", "BACKTEST");
+                            m.put("executionLabel", "BACKTEST");
+                            m.put("executionLabelMeta", ExecutionLabelCatalog.of(ExecutionLabel.BACKTEST).toMap());
                             items.add(m);
                             seenIds.add(h.runId());
                         }
@@ -635,15 +725,23 @@ public final class ControlPlaneServer implements AutoCloseable {
                 }
 
                 items.sort((a, b) -> {
-                    String timeA = (String) a.get("completedAt");
-                    String timeB = (String) b.get("completedAt");
-                    if (timeA == null && timeB == null) return 0;
-                    if (timeA == null) return -1;
-                    if (timeB == null) return 1;
+                    String timeAStr = (String) a.get("completedAt");
+                    if (timeAStr == null) {
+                        timeAStr = (String) a.get("startedAt");
+                    }
+                    String timeBStr = (String) b.get("completedAt");
+                    if (timeBStr == null) {
+                        timeBStr = (String) b.get("startedAt");
+                    }
+                    if (timeAStr == null && timeBStr == null) return 0;
+                    if (timeAStr == null) return 1;
+                    if (timeBStr == null) return -1;
                     try {
-                        return Instant.parse(timeB).compareTo(Instant.parse(timeA));
+                        Instant tA = Instant.parse(timeAStr);
+                        Instant tB = Instant.parse(timeBStr);
+                        return tB.compareTo(tA);
                     } catch (Exception e) {
-                        return timeB.compareTo(timeA); // fallback
+                        return timeBStr.compareTo(timeAStr);
                     }
                 });
 
@@ -709,12 +807,12 @@ public final class ControlPlaneServer implements AutoCloseable {
                     } else {
                         List<Map<String, Object>> recTrades = reconstructTradesFromFills(runManager.eventStore().replayAll(runId));
                         double eq = record.configSnapshot().containsKey("capital")
-                            ? ((Number) record.configSnapshot().get("capital")).doubleValue()
+                            ? toDouble(record.configSnapshot().get("capital"))
                             : 1000.0;
                         List<Double> sample = new ArrayList<>();
                         sample.add(eq);
                         for (var t : recTrades) {
-                            eq += ((Number) t.get("pnl")).doubleValue();
+                            eq += toDouble(t.get("pnl"));
                             sample.add(eq);
                         }
                         curve = sample;
@@ -733,6 +831,83 @@ public final class ControlPlaneServer implements AutoCloseable {
                     }
                 }
                 ctx.json(Map.of("runId", runId, "equityCurve", curve != null ? curve : List.of()));
+            })
+            .get("/api/runs/{runId}/weekly-stats", ctx -> {
+                String runId = ctx.pathParam("runId");
+                Optional<RunRecord> recordOpt = runManager.getRun(runId);
+                List<Map<String, Object>> trades = null;
+                double initialCapital = 10000.0;
+                
+                if (recordOpt.isPresent()) {
+                    RunRecord record = recordOpt.get();
+                    initialCapital = record.configSnapshot().containsKey("capital")
+                        ? toDouble(record.configSnapshot().get("capital"))
+                        : 10000.0;
+                    if (record.endedPayload().isPresent()) {
+                        Object tradesObj = record.endedPayload().get().get("trades");
+                        if (tradesObj instanceof List<?>) {
+                            trades = new ArrayList<>();
+                            for (Object item : (List<?>) tradesObj) {
+                                if (item instanceof Map<?, ?>) {
+                                    @SuppressWarnings("unchecked")
+                                    Map<String, Object> map = (Map<String, Object>) item;
+                                    trades.add(map);
+                                }
+                            }
+                        }
+                    }
+                    if (trades == null) {
+                        trades = reconstructTradesFromFills(runManager.eventStore().replayAll(runId));
+                    }
+                } else {
+                    Optional<BacktestRunDetails> detailsOpt = backtestRunStore.get(runId);
+                    if (detailsOpt.isPresent()) {
+                        initialCapital = detailsOpt.get().initialCapital();
+                        trades = reconstructTradesFromFills(runManager.eventStore().replayAll(runId));
+                    } else {
+                        throw new NotFoundException("Run not found: " + runId);
+                    }
+                }
+                
+                if (trades == null) {
+                    trades = List.of();
+                }
+                
+                // Subscribe to eventHub to clear cache on FILL events only if the run is active (RUNNING)
+                if (recordOpt.isPresent() && recordOpt.get().status() == RunRecord.Status.RUNNING) {
+                    activeSubscriptions.computeIfAbsent(runId, id -> {
+                        return eventHub.subscribe(id, eventJson -> {
+                            if (eventJson != null && eventJson.contains("\"FILL\"")) {
+                                weeklyStatsCache.remove(id);
+                            }
+                        });
+                    });
+                } else {
+                    AutoCloseable sub = activeSubscriptions.remove(runId);
+                    if (sub != null) {
+                        try {
+                            sub.close();
+                        } catch (Exception e) {
+                            log.error("Failed to close active subscription for ended run " + runId, e);
+                        }
+                    }
+                }
+                
+                int tradeCount = trades.size();
+                CachedStats cached = weeklyStatsCache.get(runId);
+                Map<String, Object> stats;
+                if (cached != null && cached.tradeCount == tradeCount) {
+                    stats = cached.stats;
+                } else {
+                    stats = calculateWeeklyStats(trades, initialCapital);
+                    weeklyStatsCache.put(runId, new CachedStats(tradeCount, stats));
+                }
+                
+                ctx.json(Map.of("runId", runId, "weeklyStats", stats.get("weeks")));
+            })
+            .get("/api/runs/{runId}/alignment", ctx -> {
+                String runId = ctx.pathParam("runId");
+                ctx.json(runManager.getAlignmentDetails(runId));
             })
             .get("/api/runs/{runId}/monte-carlo", ctx -> {
                 String runId = ctx.pathParam("runId");
@@ -901,8 +1076,22 @@ public final class ControlPlaneServer implements AutoCloseable {
             return;
         }
 
-        for (StoredRunEvent stored : runManager.eventStore().queryWithSequence(runId, 0, 1000)) {
-            ctx.send(RunEventMessages.toJson(stored));
+        List<StoredRunEvent> backlog;
+        try {
+            backlog = runManager.eventStore().queryWithSequence(runId, 0, 1000);
+        } catch (Exception e) {
+            log.error("Failed to query event backlog for runId {}", runId, e);
+            ctx.closeSession(1011, "Internal server error");
+            return;
+        }
+
+        for (StoredRunEvent stored : backlog) {
+            try {
+                ctx.send(RunEventMessages.toJson(stored));
+            } catch (Exception e) {
+                log.debug("WebSocket client disconnected during initial event backlog delivery for runId {}: {}", runId, e.getMessage());
+                return;
+            }
         }
 
         Consumer<String> listener = ctx::send;
@@ -990,50 +1179,56 @@ public final class ControlPlaneServer implements AutoCloseable {
                 if (runManager != null && runManager.brokerAccountRegistry() != null) {
                     var brokerOpt = runManager.brokerAccountRegistry().broker(accountId, label);
                     if (brokerOpt.isPresent()) {
-                        try (var broker = brokerOpt.get()) {
-                            broker.connect();
-                            java.util.Set<String> runOrderIds = new java.util.HashSet<>();
-                            if (runManager.eventStore() != null) {
-                                for (var e : runManager.eventStore().replayAll(record.runId())) {
-                                    if (e.type() == RunEventType.FILL && e.payload() != null && e.payload().containsKey("orderId")) {
-                                        runOrderIds.add(String.valueOf(e.payload().get("orderId")));
-                                    }
+                        var broker = brokerOpt.get();
+                        broker.connect();
+                        java.util.Set<String> runOrderIds = new java.util.HashSet<>();
+                        if (runManager.eventStore() != null) {
+                            for (var e : runManager.eventStore().replayAll(record.runId())) {
+                                if ((e.type() == RunEventType.FILL || e.type() == RunEventType.ORDER_SUBMITTED) && e.payload() != null && e.payload().containsKey("orderId")) {
+                                    runOrderIds.add(String.valueOf(e.payload().get("orderId")));
                                 }
                             }
-                            var journalPositions = JournalPositions.fromFills(runManager.eventStore().replayAll(record.runId()));
-                            for (var pos : broker.getPositions()) {
-                                if (pos.symbol().equalsIgnoreCase(record.symbol()) || pos.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(record.symbol().replace("/", "_").replace("-", "_"))) {
-                                    java.time.Instant resolvedEntryTime = pos.entryTime();
-                                    if (resolvedEntryTime == null || resolvedEntryTime.equals(java.time.Instant.EPOCH)) {
-                                        String journalKey = pos.symbol() + ":" + pos.side().name();
-                                        var jp = journalPositions.get(journalKey);
-                                        if (jp != null && jp.entryTime() != null) {
-                                            resolvedEntryTime = jp.entryTime();
+                        }
+                        var journalPositions = JournalPositions.fromFills(runManager.eventStore().replayAll(record.runId()));
+                        for (var pos : broker.getPositions()) {
+                            if (pos.symbol().equalsIgnoreCase(record.symbol()) || pos.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(record.symbol().replace("/", "_").replace("-", "_"))) {
+                                java.time.Instant resolvedEntryTime = pos.entryTime();
+                                if (resolvedEntryTime == null || resolvedEntryTime.equals(java.time.Instant.EPOCH)) {
+                                    String journalKey = pos.symbol() + ":" + pos.side().name();
+                                    var jp = journalPositions.get(journalKey);
+                                    if (jp != null && jp.entryTime() != null) {
+                                        resolvedEntryTime = jp.entryTime();
+                                    }
+                                }
+                                boolean match = false;
+                                if (pos.clientTag() != null && !pos.clientTag().isBlank()) {
+                                    if (runOrderIds.contains(pos.clientTag())) {
+                                        match = true;
+                                    }
+                                } else {
+                                    int activeRuns = 0;
+                                    for (RunRecord r : runManager.list(null)) {
+                                        if (r.status() == RunRecord.Status.RUNNING) {
+                                            String rs = r.symbol();
+                                            if (pos.symbol().equalsIgnoreCase(rs) || pos.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(rs.replace("/", "_").replace("-", "_"))) {
+                                                activeRuns++;
+                                            }
                                         }
                                     }
-                                    if (pos.clientTag() != null && !pos.clientTag().isBlank()) {
-                                        if (runOrderIds.contains(pos.clientTag())) {
-                                            positions.add(Map.of(
-                                                "symbol", pos.symbol(),
-                                                "side", pos.side().name(),
-                                                "quantity", pos.quantity(),
-                                                "entryTime", resolvedEntryTime != null ? resolvedEntryTime.toString() : "",
-                                                "entryPrice", pos.entryPrice(),
-                                                "stopLoss", pos.stopLoss(),
-                                                "takeProfit", pos.takeProfit()
-                                            ));
-                                        }
-                                    } else {
-                                        positions.add(Map.of(
-                                            "symbol", pos.symbol(),
-                                            "side", pos.side().name(),
-                                            "quantity", pos.quantity(),
-                                            "entryTime", resolvedEntryTime != null ? resolvedEntryTime.toString() : "",
-                                            "entryPrice", pos.entryPrice(),
-                                            "stopLoss", pos.stopLoss(),
-                                            "takeProfit", pos.takeProfit()
-                                        ));
+                                    if (activeRuns == 1) {
+                                        match = true;
                                     }
+                                }
+                                if (match) {
+                                    positions.add(Map.of(
+                                        "symbol", pos.symbol(),
+                                        "side", pos.side().name(),
+                                        "quantity", pos.quantity(),
+                                        "entryTime", resolvedEntryTime != null ? resolvedEntryTime.toString() : "",
+                                        "entryPrice", pos.entryPrice(),
+                                        "stopLoss", pos.stopLoss(),
+                                        "takeProfit", pos.takeProfit()
+                                    ));
                                 }
                             }
                         }
@@ -1055,6 +1250,23 @@ public final class ControlPlaneServer implements AutoCloseable {
             positions.addAll(journalPositions);
         }
         json.put("positions", positions);
+
+        List<String> indicators = List.of();
+        if (com.martinfou.trading.strategies.StrategyCatalog.contains(record.strategyId())) {
+            var entryOpt = com.martinfou.trading.strategies.StrategyCatalog.entries().stream()
+                .filter(e -> e.id().equals(record.strategyId()))
+                .findFirst();
+            if (entryOpt.isPresent()) {
+                indicators = entryOpt.get().indicators();
+            }
+        }
+        json.put("indicators", indicators);
+
+        if (record.status() == RunRecord.Status.RUNNING && runManager != null) {
+            json.put("pendingOrders", reconstructPendingOrders(runManager.eventStore().replayAll(record.runId())));
+        } else {
+            json.put("pendingOrders", List.of());
+        }
 
         return json;
     }
@@ -1084,16 +1296,12 @@ public final class ControlPlaneServer implements AutoCloseable {
             }
         } catch (Exception ignored) {}
 
-        Double commissionVal = 0.0;
-        Double slippageVal = 0.0;
+        double commissionVal = 0.0;
+        double slippageVal = 0.0;
         if (paramsMap != null) {
             config.put("parameters", paramsMap);
-            if (paramsMap.containsKey("commissionPerTrade")) {
-                commissionVal = ((Number) paramsMap.get("commissionPerTrade")).doubleValue();
-            }
-            if (paramsMap.containsKey("slippagePct")) {
-                slippageVal = ((Number) paramsMap.get("slippagePct")).doubleValue();
-            }
+            commissionVal = toDouble(paramsMap.get("commissionPerTrade"));
+            slippageVal = toDouble(paramsMap.get("slippagePct"));
         }
         config.put("commissionPerTrade", commissionVal);
         config.put("slippagePct", slippageVal);
@@ -1118,14 +1326,41 @@ public final class ControlPlaneServer implements AutoCloseable {
         result.put("calmarRatio", details.calmarRatio());
         result.put("totalCommission", details.totalCommission());
         result.put("totalSlippage", details.totalSlippage());
-        result.put("periodStart", details.periodStart().toString());
-        result.put("periodEnd", details.periodEnd().toString());
+        result.put("periodStart", details.periodStart() != null ? details.periodStart().toString() : null);
+        result.put("periodEnd", details.periodEnd() != null ? details.periodEnd().toString() : null);
         
         json.put("result", result);
-        json.put("lastEventAt", details.periodEnd().toString());
+        json.put("lastEventAt", details.periodEnd() != null ? details.periodEnd().toString() : null);
         json.put("eventCount", 0L);
         json.put("positions", List.of());
+
+        List<String> indicators = List.of();
+        if (com.martinfou.trading.strategies.StrategyCatalog.contains(details.strategyId())) {
+            var entryOpt = com.martinfou.trading.strategies.StrategyCatalog.entries().stream()
+                .filter(e -> e.id().equals(details.strategyId()))
+                .findFirst();
+            if (entryOpt.isPresent()) {
+                indicators = entryOpt.get().indicators();
+            }
+        }
+        json.put("indicators", indicators);
+        json.put("pendingOrders", List.of());
+
         return json;
+    }
+
+    private static double toDouble(Object obj) {
+        if (obj == null) {
+            return 0.0;
+        }
+        if (obj instanceof Number) {
+            return ((Number) obj).doubleValue();
+        }
+        try {
+            return Double.parseDouble(obj.toString());
+        } catch (NumberFormatException e) {
+            return 0.0;
+        }
     }
 
     private static List<Map<String, Object>> reconstructTradesFromFills(List<RunEvent> events) {
@@ -1139,10 +1374,10 @@ public final class ControlPlaneServer implements AutoCloseable {
             Map<String, Object> payload = event.payload();
             String symbol = String.valueOf(payload.get("symbol"));
             String side = String.valueOf(payload.get("side"));
-            double qty = ((Number) payload.get("quantity")).doubleValue();
-            double price = ((Number) payload.get("price")).doubleValue();
-            double stopLoss = payload.containsKey("stopLoss") && payload.get("stopLoss") != null ? ((Number) payload.get("stopLoss")).doubleValue() : 0.0;
-            double takeProfit = payload.containsKey("takeProfit") && payload.get("takeProfit") != null ? ((Number) payload.get("takeProfit")).doubleValue() : 0.0;
+            double qty = toDouble(payload.get("quantity"));
+            double price = toDouble(payload.get("price"));
+            double stopLoss = toDouble(payload.get("stopLoss"));
+            double takeProfit = toDouble(payload.get("takeProfit"));
             Instant timestamp = event.timestamp();
 
             List<Map<String, Object>> list = openFills.computeIfAbsent(symbol, k -> new ArrayList<>());
@@ -1150,10 +1385,10 @@ public final class ControlPlaneServer implements AutoCloseable {
             double remainingQty = qty;
             while (remainingQty > 0 && !list.isEmpty() && !list.get(0).get("side").equals(side)) {
                 Map<String, Object> first = list.get(0);
-                double firstQty = ((Number) first.get("quantity")).doubleValue();
+                double firstQty = toDouble(first.get("quantity"));
                 double matchQty = Math.min(remainingQty, firstQty);
 
-                double entryPrice = ((Number) first.get("price")).doubleValue();
+                double entryPrice = toDouble(first.get("price"));
                 double exitPrice = price;
                 String entrySide = String.valueOf(first.get("side"));
 
@@ -1198,6 +1433,59 @@ public final class ControlPlaneServer implements AutoCloseable {
             }
         }
         return trades;
+    }
+
+    private static List<Map<String, Object>> reconstructPendingOrders(List<RunEvent> events) {
+        Map<String, Map<String, Object>> pending = new LinkedHashMap<>();
+        for (RunEvent event : events) {
+            if (event.type() == RunEventType.ORDER_SUBMITTED) {
+                Map<String, Object> payload = event.payload();
+                if (payload != null && payload.containsKey("orderId")) {
+                    String orderId = String.valueOf(payload.get("orderId"));
+                    Map<String, Object> order = new LinkedHashMap<>(payload);
+                    order.put("timestamp", event.timestamp().toString());
+                    pending.put(orderId, order);
+                }
+            } else if (event.type() == RunEventType.FILL) {
+                Map<String, Object> payload = event.payload();
+                if (payload != null && payload.containsKey("orderId")) {
+                    String orderId = String.valueOf(payload.get("orderId"));
+                    Map<String, Object> pendingOrder = pending.get(orderId);
+                    if (pendingOrder != null) {
+                        double pendingQty = toDouble(pendingOrder.get("quantity"));
+                        if (pendingQty <= 0) {
+                            pendingQty = toDouble(pendingOrder.get("units"));
+                        }
+                        double fillQty = toDouble(payload.get("quantity"));
+                        if (fillQty <= 0) {
+                            fillQty = toDouble(payload.get("units"));
+                        }
+                        if (fillQty > 0 && pendingQty > fillQty) {
+                            double remainingQty = pendingQty - fillQty;
+                            Map<String, Object> updatedOrder = new LinkedHashMap<>(pendingOrder);
+                            if (updatedOrder.containsKey("quantity")) {
+                                updatedOrder.put("quantity", remainingQty);
+                            }
+                            if (updatedOrder.containsKey("units")) {
+                                updatedOrder.put("units", remainingQty);
+                            }
+                            pending.put(orderId, updatedOrder);
+                        } else {
+                            pending.remove(orderId);
+                        }
+                    } else {
+                        pending.remove(orderId);
+                    }
+                }
+            } else if (event.type() == RunEventType.REJECT) {
+                Map<String, Object> payload = event.payload();
+                if (payload != null && payload.containsKey("orderId")) {
+                    String orderId = String.valueOf(payload.get("orderId"));
+                    pending.remove(orderId);
+                }
+            }
+        }
+        return new ArrayList<>(pending.values());
     }
 
     private static Map<String, Object> toEventItem(StoredRunEvent stored) {
@@ -1257,6 +1545,104 @@ public final class ControlPlaneServer implements AutoCloseable {
             return Integer.parseInt(value.trim());
         } catch (NumberFormatException e) {
             throw new BadRequestException("Invalid numeric parameter: " + value);
+        }
+    }
+
+    private static Map<String, Object> calculateWeeklyStats(List<Map<String, Object>> trades, double initialCapital) {
+        Map<String, List<Map<String, Object>>> tradesByWeek = new TreeMap<>();
+        for (var t : trades) {
+            Object exitTimeObj = t.get("exitTime");
+            if (exitTimeObj == null || "null".equals(exitTimeObj.toString()) || exitTimeObj.toString().isBlank()) {
+                continue;
+            }
+            Instant exitTime;
+            try {
+                exitTime = Instant.parse(exitTimeObj.toString());
+            } catch (Exception e) {
+                continue;
+            }
+            ZonedDateTime zdt = exitTime.atZone(ZoneOffset.UTC);
+            int year = zdt.get(IsoFields.WEEK_BASED_YEAR);
+            int week = zdt.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR);
+            String weekId = String.format("%d-W%02d", year, week);
+            tradesByWeek.computeIfAbsent(weekId, k -> new ArrayList<>()).add(t);
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        List<Map<String, Object>> weeksList = new ArrayList<>();
+        result.put("weeks", weeksList);
+
+        List<Double> weeklyReturnsSoFar = new ArrayList<>();
+        double currentCapital = initialCapital;
+        for (var entry : tradesByWeek.entrySet()) {
+            String weekId = entry.getKey();
+            List<Map<String, Object>> weekTrades = entry.getValue();
+
+            double weekPnl = 0.0;
+            int wins = 0;
+            int losses = 0;
+            List<Double> pnlList = new ArrayList<>();
+            List<Double> equityCurve = new ArrayList<>();
+            equityCurve.add(currentCapital);
+
+            double tempEq = currentCapital;
+            for (var t : weekTrades) {
+                double pnl = toDouble(t.get("pnl"));
+                weekPnl += pnl;
+                pnlList.add(pnl);
+                if (pnl > 0.0) {
+                    wins++;
+                } else if (pnl < 0.0) {
+                    losses++;
+                }
+                
+                tempEq += pnl;
+                equityCurve.add(tempEq);
+            }
+
+            double weekReturn = currentCapital <= 0.0 ? 0.0 : weekPnl / currentCapital;
+            weeklyReturnsSoFar.add(weekReturn);
+
+            double profitFactor = PerformanceMetrics.profitFactor(pnlList);
+            double sharpe = PerformanceMetrics.sharpeRatio(weeklyReturnsSoFar, 0.025, 52.0);
+            double maxDdPct = PerformanceMetrics.maxDrawdownPct(equityCurve);
+
+            double roundedPnl = Math.round(weekPnl * 100.0) / 100.0;
+            double roundedStartCapital = Math.round(currentCapital * 100.0) / 100.0;
+            double roundedEndCapital = Math.round(tempEq * 100.0) / 100.0;
+            
+            double roundedProfitFactor = Double.isNaN(profitFactor) || Double.isInfinite(profitFactor) ? 0.0 : Math.round(profitFactor * 100.0) / 100.0;
+            double roundedSharpe = Double.isNaN(sharpe) || Double.isInfinite(sharpe) ? 0.0 : Math.round(sharpe * 100.0) / 100.0;
+            double roundedMaxDd = Double.isNaN(maxDdPct) || Double.isInfinite(maxDdPct) ? 0.0 : Math.round(maxDdPct * 100.0) / 100.0;
+            double roundedWinRate = weekTrades.isEmpty() ? 0.0 : Math.round((wins * 100.0 / weekTrades.size()) * 100.0) / 100.0;
+
+            Map<String, Object> weekData = new LinkedHashMap<>();
+            weekData.put("weekId", weekId);
+            weekData.put("totalPnl", roundedPnl);
+            weekData.put("totalTrades", weekTrades.size());
+            weekData.put("winningTrades", wins);
+            weekData.put("losingTrades", losses);
+            weekData.put("winRatePct", roundedWinRate);
+            weekData.put("profitFactor", roundedProfitFactor);
+            weekData.put("sharpeRatio", roundedSharpe);
+            weekData.put("maxDrawdownPct", roundedMaxDd);
+            weekData.put("startCapital", roundedStartCapital);
+            weekData.put("endCapital", roundedEndCapital);
+
+            weeksList.add(weekData);
+            currentCapital = tempEq;
+        }
+
+        return result;
+    }
+
+    private static final class CachedStats {
+        final int tradeCount;
+        final Map<String, Object> stats;
+
+        CachedStats(int tradeCount, Map<String, Object> stats) {
+            this.tradeCount = tradeCount;
+            this.stats = stats;
         }
     }
 

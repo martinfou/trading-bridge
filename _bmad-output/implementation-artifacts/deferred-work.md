@@ -120,3 +120,51 @@ Items deferred during code reviews — not blocking current stories.
 - **Double vérification de timeframe et rendu incorrect de Candle TF** — Double vérification du strategyTimeframe présente dans le template et affichage de strategyTimeframe à la place de dataTimeframe ou équivalent pour le Candle TF.
 - **Styles CSS en ligne (Inlined Styles)** — Utilisation de styles CSS inline pour le span Candle TF dans le template HTML.
 
+## Deferred from: code review of 24-2-cli-launcher-and-export-json (2026-06-15)
+
+- **Boundary Trades Purging is Ineffective on OOS Performance Metrics** — Although overlapping/boundary trades are identified, their performance impact is not removed from `combinedResult.equityCurve()`, meaning floating/realized P&L of these trades still affects the OOS Sharpe, drawdown, and return statistics.
+
+## Deferred from: code review of 24-1-wfa-core-engine-and-calibration-metadata (2026-06-16)
+
+- **Filtrage inefficace O(N) des barres chronologiques** — `filterBars` effectue un parcours complet linéaire pour chaque fold; une recherche dichotomique (binary search) puis un `subList` serait en O(log N).
+- **Absence de mise à jour de la courbe d'équité en fin de backtest dans BacktestEngine** — La clôture forcée finale est prise en compte dans les trades mais n'ajoute pas le point correspondant de fin dans `equityCurve`, créant une légère divergence visuelle.
+- **Annotation @CalibrationPolicy ignorée par le moteur WfaEngine** — C'est normal. L'annotation n'a pas vocation à guider le calcul du Grid Search de WFA lui-même. Elle sera exploitée dans les futures stories liées au Control Plane / Promote Gates (drift).
+
+## Deferred from: code review of 26-7-compare-persistent-backtests.md (2026-06-20)
+
+- **Unbounded Database Queries in /api/runs** — Querying `backtestRunStore.list(...)` retrieves all historical backtests without page limits, which could degrade performance as the database grows.
+- **Missing Historical Fallback for export, monte-carlo, bars, events endpoints** — Export, Monte Carlo, bars, and event endpoints throw 404 for historical runs because they only check active `RunManager` memory.
+- **NullPointerException Risk in SqliteBacktestRunStore.insert()** — Calls to `periodStart().toString()`, etc. are executed without null checks in the database insert query.
+
+## Deferred from: code review of 26-9-compare-runs-by-weeks-and-drift.md (2026-06-20)
+
+- **Mapping Broker Correlation ID complet (AC2)** — L'association et le masquage automatique du `correlationId` lors des appels d'ordres réels aux brokers OANDA et IBKR (et leur mapping local vers le `clientOrderId` UUID) sont reportés à une future story d'intégration.
+
+## Deferred from: code review of 24-1-wfa-core-engine-and-calibration-metadata (2026-06-21)
+
+- **Hardcoded strategy delegate field lookup prevents unwrapping other wrapper types** — Unwrapping decorator strategies in `applyParameters` is hardcoded to look for a field named `"delegate"`. Any wrapper using a different field name (e.g. `inner`, `wrapped`) will fail.
+- **Environment-dependent paths and silent test skipping in WfaEngineTest** — `WfaEngineTest` uses relative paths and silently skips tests with `@EnabledIf` if the data directory is not found, making CI failures silent.
+- **RejectedExecutionException if WfaEngine is closed during execution** — If `close()` is called on another thread during `execute()`, the executor shuts down and `supplyAsync` will crash with `RejectedExecutionException`.
+
+## Deferred from: code review of inspect-strategy-disconnect (2026-06-22)
+
+- **Concurrency Race Condition in `RunEventHub.unsubscribe`** — Under simultaneous unsubscribe and subscribe operations, new subscribers can be silently dropped and orphaned.
+- **Synchronous WebSocket Writes on Strategy Thread** — `RunEventHub` publishes events synchronously, causing any slow or contention-heavy WebSocket writes (`ctx.send`) to block the strategy execution thread.
+- **Performance Hazard (Pending Orders)** — Replaying all events via `eventStore().replayAll()` to reconstruct pending orders is a major O(N) performance bottleneck in the `/api/runs/{runId}` endpoint.
+- **Performance Hazard (Equity Curves)** — Replaying all events for equity curves in `/api/runs/{runId}/equity-curve` causes similar performance degradation.
+- **Memory Leak (`weeklyStatsCache`)** — Cache uses a standard `ConcurrentHashMap` with no size limit or eviction policy.
+- **Resource/Subscription Leak** — In `/weekly-stats`, the `eventHub` subscription leaks when a run completes, unless `/weekly-stats` is hit again for that completed run.
+- **Mathematical Bug (Sharpe Ratio)** — Omission of weeks with zero trades distorts the Sharpe calculation, inflating results.
+- **NullPointerException Hazard (Position Matching)** — String operations on potentially null symbols in `toRunJson` can crash the positions/runs endpoint.
+- **Lifecycle Violation** — `ControlPlaneServer` constructor closes passed-in service dependencies on startup failure, preventing caller retry/reuse.
+- **Data Quality Error (Persisted Backtests)** — Setting `startedAt` and `completedAt` to `h.createdAt()` reports simulated duration as 0.
+- **Precision Errors (Pending Orders)** — Floating-point precision differences can leave infinitesimal order quantities (e.g. `1e-15`) hanging in the pending orders list in `reconstructPendingOrders`.
+
+## Deferred from: code review of 16-12-fix-oanda-position-client-tag-matching (2026-06-22)
+
+- **`RunManager` does not submit resumed run to executor** — Resume does not submit `executeRun` to the executor thread pool, leaving strategy stalled.
+- **`RunManager` connection leak for Broker** — `RunManager.java` does not close `Broker` instances created via `brokerFactory.create(...)` in `executeRun(...)` (pre-existing connection leak).
+- **consecutiveTimeDrifts persistence on pause/restart** — Historical time-drift counts persist across pauses and restarts instead of being cleared.
+- **ControlPlaneServer pending orders dust comparison** — Floating-point comparison `pendingQty > fillQty` without epsilon can leave residuals in pending orders.
+
+

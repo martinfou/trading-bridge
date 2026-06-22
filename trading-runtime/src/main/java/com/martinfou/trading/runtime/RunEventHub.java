@@ -1,5 +1,8 @@
 package com.martinfou.trading.runtime;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
@@ -9,6 +12,8 @@ import java.util.function.Consumer;
  * In-process pub/sub for live {@link StoredRunEvent} broadcast per run id.
  */
 public final class RunEventHub {
+
+    private static final Logger log = LoggerFactory.getLogger(RunEventHub.class);
 
     private final Map<String, CopyOnWriteArraySet<Consumer<String>>> subscribers = new ConcurrentHashMap<>();
 
@@ -33,7 +38,12 @@ public final class RunEventHub {
             return;
         }
         for (Consumer<String> listener : listeners) {
-            listener.accept(json);
+            try {
+                listener.accept(json);
+            } catch (Exception e) {
+                log.debug("Failed to publish event to subscriber for runId {}, unsubscribing listener: {}", runId, e.getMessage());
+                unsubscribe(runId, listener);
+            }
         }
     }
 
