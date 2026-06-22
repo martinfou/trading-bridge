@@ -77,6 +77,19 @@
         .epic-pointer {
             transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
         }
+        .blocked-stripe {
+            background-image: repeating-linear-gradient(
+                -45deg,
+                rgba(245, 158, 11, 0.03),
+                rgba(245, 158, 11, 0.03) 10px,
+                transparent 10px,
+                transparent 20px
+            );
+        }
+        .pinned-glow {
+            box-shadow: 0 0 15px rgba(244, 63, 94, 0.25);
+            border-color: rgba(244, 63, 94, 0.4) !important;
+        }
     </style>
 </head>
 <body class="text-slate-200 min-h-screen flex flex-col antialiased">
@@ -185,6 +198,20 @@
                         <span id="count-in-progress" class="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-bold">0</span>
                     </div>
                     <div id="col-in-progress" data-status="in-progress" ondragover="allowDrop(event)" ondrop="drop(event)" class="kanban-col flex-1 p-2 space-y-2 overflow-y-auto">
+                        <!-- Cards -->
+                    </div>
+                </div>
+
+                <!-- Blocked Column -->
+                <div class="flex-1 min-w-[280px] max-w-[340px] flex flex-col bg-slate-950/40 rounded-xl border border-amber-500/20 blocked-stripe">
+                    <div class="p-3 border-b border-white/5 flex justify-between items-center bg-slate-950/20">
+                        <div class="flex items-center gap-2">
+                            <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+                            <h3 class="font-bold text-sm text-slate-300">Blocked</h3>
+                        </div>
+                        <span id="count-blocked" class="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-bold">0</span>
+                    </div>
+                    <div id="col-blocked" data-status="blocked" ondragover="allowDrop(event)" ondrop="drop(event)" class="kanban-col flex-1 p-2 space-y-2 overflow-y-auto">
                         <!-- Cards -->
                     </div>
                 </div>
