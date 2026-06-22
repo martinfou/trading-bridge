@@ -3,6 +3,7 @@ package com.martinfou.trading.runtime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -22,12 +23,19 @@ public class StaleRunWatchdog implements AutoCloseable {
     private final RunManager runManager;
     private final ControlSummaryService summaryService;
     private final ScheduledExecutorService executor;
+    private final Clock clock;
     private final Map<String, Integer> restartsPerHour = new ConcurrentHashMap<>();
-    private Instant currentHour = Instant.now();
+    private Instant currentHour;
 
     public StaleRunWatchdog(RunManager runManager, ControlSummaryService summaryService) {
+        this(runManager, summaryService, Clock.systemUTC());
+    }
+
+    StaleRunWatchdog(RunManager runManager, ControlSummaryService summaryService, Clock clock) {
         this.runManager = runManager;
         this.summaryService = summaryService;
+        this.clock = clock;
+        this.currentHour = Instant.now(clock);
         this.executor = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "stale-run-watchdog");
             t.setDaemon(true);
@@ -42,9 +50,12 @@ public class StaleRunWatchdog implements AutoCloseable {
 
     void checkStaleRuns() {
         try {
-            if (Duration.between(currentHour, Instant.now()).toHours() >= 1) {
+            // Prune old completed/failed runs from memory
+            runManager.pruneTerminalRuns();
+
+            if (Duration.between(currentHour, Instant.now(clock)).toHours() >= 1) {
                 restartsPerHour.clear();
-                currentHour = Instant.now();
+                currentHour = Instant.now(clock);
             }
 
             Map<String, Object> summary = summaryService.buildSummary();
@@ -66,6 +77,20 @@ public class StaleRunWatchdog implements AutoCloseable {
                     continue;
                 }
 
+                var recordOpt = runManager.getRun(runId);
+                if (recordOpt.isEmpty()) {
+                    continue;
+                }
+                RunRecord record = recordOpt.get();
+
+                // Skip stale check if the market is closed
+                ExecutionLabel label = ControlSummaryService.executionLabel(record);
+                if (MarketSessionResolver.isClosed(record.symbol(), label, Instant.now(clock))) {
+                    log.debug("Market is closed for symbol {} ({}). Skipping stale check for run {}.",
+                        record.symbol(), label, runId);
+                    continue;
+                }
+
                 String strategyId = (String) signal.get("strategyId");
                 int restarts = restartsPerHour.getOrDefault(strategyId, 0);
 
@@ -78,11 +103,6 @@ public class StaleRunWatchdog implements AutoCloseable {
                 
                 try {
                     // 1. Get original config before killing
-                    var recordOpt = runManager.getRun(runId);
-                    if (recordOpt.isEmpty()) {
-                        continue;
-                    }
-                    RunRecord record = recordOpt.get();
                     RunConfigSnapshot config = RunConfigSnapshot.fromRecord(record);
 
                     // 2. Stop the dead run
