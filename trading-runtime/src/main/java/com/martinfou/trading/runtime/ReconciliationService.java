@@ -67,6 +67,16 @@ public final class ReconciliationService {
         Broker broker,
         EventStore eventStore
     ) {
+        return reconcile(runId, config, broker, eventStore, null);
+    }
+
+    public ReconcileResult reconcile(
+        String runId,
+        RunConfigSnapshot config,
+        Broker broker,
+        EventStore eventStore,
+        java.util.function.Supplier<List<String>> activeSymbolsSupplier
+    ) {
         ExecutionLabel label = config.resolvedExecutionLabel();
         if (!isBrokerBacked(label)) {
             return ReconcileResult.ofSkipped();
@@ -76,7 +86,7 @@ public final class ReconciliationService {
 
         java.util.Set<String> runOrderIds = new java.util.HashSet<>();
         for (var e : eventStore.replayAll(runId)) {
-            if (e.type() == RunEventType.FILL && e.payload() != null && e.payload().containsKey("orderId")) {
+            if ((e.type() == RunEventType.FILL || e.type() == RunEventType.ORDER_SUBMITTED) && e.payload() != null && e.payload().containsKey("orderId")) {
                 runOrderIds.add(String.valueOf(e.payload().get("orderId")));
             }
         }
@@ -90,7 +100,24 @@ public final class ReconciliationService {
                         filteredBrokerPositions.add(pos);
                     }
                 } else {
-                    filteredBrokerPositions.add(pos);
+                    int activeRuns = 0;
+                    if (activeSymbolsSupplier != null) {
+                        List<String> activeSymbols = activeSymbolsSupplier.get();
+                        if (activeSymbols == null || activeSymbols.isEmpty()) {
+                            activeRuns = 1;
+                        } else {
+                            for (String rs : activeSymbols) {
+                                if (pos.symbol().equalsIgnoreCase(rs) || pos.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(rs.replace("/", "_").replace("-", "_"))) {
+                                    activeRuns++;
+                                }
+                            }
+                        }
+                    } else {
+                        activeRuns = 1;
+                    }
+                    if (activeRuns == 1) {
+                        filteredBrokerPositions.add(pos);
+                    }
                 }
             }
         }

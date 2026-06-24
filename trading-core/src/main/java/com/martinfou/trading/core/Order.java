@@ -8,7 +8,7 @@ public class Order {
     public enum Type { MARKET, LIMIT, STOP }
     public enum Status { PENDING, FILLED, PARTIAL, CANCELLED, REJECTED }
 
-    private final String id = UUID.randomUUID().toString();
+    private String id = UUID.randomUUID().toString();
     private final String symbol;
     private final Side side;
     private final Type type;
@@ -22,6 +22,9 @@ public class Order {
     private Status status = Status.PENDING;
     private Instant createdAt = TimeConventions.now();
     private Instant filledAt;
+    private String strategyId;
+    private String correlationId;
+    private double priceDriftLimit;
 
     public Order(String symbol, Side side, Type type, double quantity, double price) {
         this.symbol = symbol;
@@ -45,11 +48,26 @@ public class Order {
     public Status status() { return status; }
     public Instant createdAt() { return createdAt; }
     public Instant filledAt() { return filledAt; }
+    public String strategyId() { return strategyId; }
+    public String correlationId() { return correlationId; }
+    public double priceDriftLimit() { return priceDriftLimit; }
 
     public Order withStopLoss(double sl) { this.stopLoss = sl; return this; }
     public Order withTakeProfit(double tp) { this.takeProfit = tp; return this; }
     public Order withTrailingStop(double ts) { this.trailingStop = ts; return this; }
     public Order withGuaranteed(boolean g) { this.guaranteed = g; return this; }
+    public Order withStrategyId(String strategyId) { this.strategyId = strategyId; return this; }
+    public Order withCorrelationId(String correlationId) { this.correlationId = correlationId; return this; }
+    public Order withPrice(double price) { this.price = price; return this; }
+    public Order withFilledAt(Instant filledAt) { this.filledAt = filledAt; return this; }
+    public Order withStatus(Status status) { this.status = status; return this; }
+    public Order withPriceDriftLimit(double limit) { this.priceDriftLimit = limit; return this; }
+    public Order withId(String id) {
+        if (id != null && !id.isBlank()) {
+            this.id = id;
+        }
+        return this;
+    }
 
     /** Updates quantity in place so strategy and engine share the same order instance. */
     public Order rescaleQuantity(double quantity) {

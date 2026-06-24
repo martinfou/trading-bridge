@@ -19,6 +19,16 @@ import java.util.Optional;
  */
 public final class BrokerProvider {
 
+    private static volatile java.util.function.Supplier<Broker> mockSupplier = null;
+
+    public static void setMockSupplier(java.util.function.Supplier<Broker> supplier) {
+        mockSupplier = supplier;
+    }
+
+    public static java.util.function.Supplier<Broker> getMockSupplier() {
+        return mockSupplier;
+    }
+
     private BrokerProvider() {}
 
     /** Dev/test broker — not connected to any external venue. */

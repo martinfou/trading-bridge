@@ -74,6 +74,42 @@ class PlanValidatorTest {
         assertTrue(validator.validateApprovedPlan(plan).valid());
     }
 
+    @Test
+    void validateApprovedPlan_acceptsCaseInsensitivePair() {
+        WeeklyPlan plan = samplePlan(List.of(
+            new WeeklyPlan.Pick("T4", "eur_usd", "LONG", Map.of(), List.of("src"), "rationale")
+        ));
+        assertTrue(validator.validateApprovedPlan(plan).valid());
+    }
+
+    @Test
+    void validateApprovedPlan_guardsAgainstNullPicks() {
+        WeeklyPlan plan = new WeeklyPlan(
+            "2026-W24",
+            null,
+            ReviewerStatus.APPROVED,
+            "brief-2026-06-06.json",
+            RiskBudgetEnvelope.defaults(List.of("EUR_USD"))
+        );
+        assertFalse(validator.validateApprovedPlan(plan).valid());
+    }
+
+    @Test
+    void validateApprovedPlan_guardsAgainstNullPickElement() {
+        java.util.List<WeeklyPlan.Pick> picks = new java.util.ArrayList<>();
+        picks.add(null);
+        WeeklyPlan plan = samplePlan(picks);
+        assertTrue(validator.validateApprovedPlan(plan).valid());
+    }
+
+    @Test
+    void validateApprovedPlan_guardsAgainstNullTemplateId() {
+        WeeklyPlan plan = samplePlan(List.of(
+            new WeeklyPlan.Pick(null, "EUR_USD", "LONG", Map.of(), List.of("src"), "rationale")
+        ));
+        assertFalse(validator.validateApprovedPlan(plan).valid());
+    }
+
     private static WeeklyPlan samplePlan(List<WeeklyPlan.Pick> picks) {
         return new WeeklyPlan(
             "2026-W24",

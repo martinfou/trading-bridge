@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, nextTick, computed } from 'vue'
-import { createChart, type IChartApi, type ISeriesApi, ColorType, CandlestickSeries, createSeriesMarkers, LineStyle } from 'lightweight-charts'
+import { createChart, type IChartApi, type ISeriesApi, ColorType, CandlestickSeries, LineSeries, createSeriesMarkers, LineStyle } from 'lightweight-charts'
 import type { Bar, Trade } from '@/types/control-plane'
 
 const props = defineProps<{
   bars: Bar[]
   trades: Trade[]
   positions?: any[]
+  pendingOrders?: any[]
+  indicators?: string[]
   height?: number
   bid?: number | null
   ask?: number | null
@@ -29,6 +31,13 @@ let stopLossLine: any = null
 let takeProfitLine: any = null
 let bidLine: any = null
 let askLine: any = null
+
+const showPendingOrders = ref(true)
+const showSlTp = ref(true)
+const showIndicators = ref(true)
+
+let pendingOrderLines: any[] = []
+let indicatorSeries: ISeriesApi<'Line'>[] = []
 
 function formatSpread(bid: number, ask: number, symbol?: string): string {
   const diff = ask - bid
@@ -112,6 +121,10 @@ function updatePriceLines() {
     askLine = null
   }
 
+  // Clean pending order lines
+  pendingOrderLines.forEach(line => candlestickSeries!.removePriceLine(line))
+  pendingOrderLines = []
+
   // Draw current live bid and ask lines
   if (props.bid !== undefined && props.bid !== null && props.bid > 0) {
     bidLine = candlestickSeries.createPriceLine({
@@ -131,6 +144,50 @@ function updatePriceLines() {
       lineStyle: LineStyle.Dashed,
       axisLabelVisible: true,
       title: 'Ask',
+    })
+  }
+
+  // Draw pending orders
+  if (showPendingOrders.value && props.pendingOrders) {
+    props.pendingOrders.forEach(order => {
+      const targetPrice = order.price || order.limitPrice || order.stopPrice
+      if (targetPrice && targetPrice > 0) {
+        const orderLine = candlestickSeries!.createPriceLine({
+          price: targetPrice,
+          color: '#F59E0B', // Amber
+          lineWidth: 2,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: `Pending ${order.side} (${order.orderId || order.id || 'Order'})`,
+        })
+        pendingOrderLines.push(orderLine)
+
+        // SL
+        if (showSlTp.value && order.stopLoss && order.stopLoss > 0) {
+          const slLine = candlestickSeries!.createPriceLine({
+            price: order.stopLoss,
+            color: '#EF4444', // Red
+            lineWidth: 1,
+            lineStyle: LineStyle.Dotted,
+            axisLabelVisible: true,
+            title: `SL (${order.orderId || order.id || 'Order'})`,
+          })
+          pendingOrderLines.push(slLine)
+        }
+
+        // TP
+        if (showSlTp.value && order.takeProfit && order.takeProfit > 0) {
+          const tpLine = candlestickSeries!.createPriceLine({
+            price: order.takeProfit,
+            color: '#10B981', // Green
+            lineWidth: 1,
+            lineStyle: LineStyle.Dotted,
+            axisLabelVisible: true,
+            title: `TP (${order.orderId || order.id || 'Order'})`,
+          })
+          pendingOrderLines.push(tpLine)
+        }
+      }
     })
   }
 
@@ -193,27 +250,307 @@ function updatePriceLines() {
     })
   }
 
-  if (sl !== null && sl > 0) {
-    stopLossLine = candlestickSeries.createPriceLine({
-      price: sl,
-      color: '#EF4444', // Red
-      lineWidth: 1,
-      lineStyle: LineStyle.Dashed,
-      axisLabelVisible: true,
-      title: `SL (${label})`,
+  if (showSlTp.value) {
+    if (sl !== null && sl > 0) {
+      stopLossLine = candlestickSeries.createPriceLine({
+        price: sl,
+        color: '#EF4444', // Red
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: `SL (${label})`,
+      })
+    }
+
+    if (tp !== null && tp > 0) {
+      takeProfitLine = candlestickSeries.createPriceLine({
+        price: tp,
+        color: '#10B981', // Green
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: `TP (${label})`,
+      })
+    }
+  }
+}
+function calculateSMA(bars: Bar[], period: number): { time: any; value: number }[] {
+  const result: { time: any; value: number }[] = []
+  if (period <= 0 || !bars || bars.length < period) return result
+  let sum = 0
+  for (let i = 0; i < period; i++) {
+    sum += bars[i].close
+  }
+  result.push({
+    time: Math.floor(new Date(bars[period - 1].time).getTime() / 1000),
+    value: sum / period
+  })
+  for (let i = period; i < bars.length; i++) {
+    sum = sum - bars[i - period].close + bars[i].close
+    result.push({
+      time: Math.floor(new Date(bars[i].time).getTime() / 1000),
+      value: sum / period
+    })
+  }
+  return result
+}
+
+function calculateEMA(bars: Bar[], period: number): { time: any; value: number }[] {
+  const result: { time: any; value: number }[] = []
+  if (period <= 0 || !bars || bars.length === 0) return result
+  const k = 2 / (period + 1)
+  let ema = bars[0].close
+  result.push({
+    time: Math.floor(new Date(bars[0].time).getTime() / 1000),
+    value: ema
+  })
+  for (let i = 1; i < bars.length; i++) {
+    ema = (bars[i].close - ema) * k + ema
+    result.push({
+      time: Math.floor(new Date(bars[i].time).getTime() / 1000),
+      value: ema
+    })
+  }
+  return result
+}
+
+function calculateBollingerBands(bars: Bar[], period: number, multiplier: number) {
+  const basis: { time: any; value: number }[] = []
+  const upper: { time: any; value: number }[] = []
+  const lower: { time: any; value: number }[] = []
+
+  if (period <= 0 || !bars || bars.length < period) return { basis, upper, lower }
+
+  for (let i = period - 1; i < bars.length; i++) {
+    let sum = 0
+    for (let j = 0; j < period; j++) {
+      sum += bars[i - j].close
+    }
+    const mean = sum / period
+    let varianceSum = 0
+    for (let j = 0; j < period; j++) {
+      varianceSum += Math.pow(bars[i - j].close - mean, 2)
+    }
+    const stdDev = Math.sqrt(varianceSum / period)
+    const timeSec = Math.floor(new Date(bars[i].time).getTime() / 1000)
+
+    basis.push({ time: timeSec, value: mean })
+    upper.push({ time: timeSec, value: mean + multiplier * stdDev })
+    lower.push({ time: timeSec, value: mean - multiplier * stdDev })
+  }
+
+  return { basis, upper, lower }
+}
+
+function calculateRSI(bars: Bar[], period: number): { time: any; value: number }[] {
+  const result: { time: any; value: number }[] = []
+  if (period <= 0 || !bars || bars.length <= period) return result
+
+  let avgGain = 0
+  let avgLoss = 0
+
+  for (let i = 1; i <= period; i++) {
+    const diff = bars[i].close - bars[i - 1].close
+    if (diff > 0) {
+      avgGain += diff
+    } else {
+      avgLoss -= diff
+    }
+  }
+
+  avgGain /= period
+  avgLoss /= period
+
+  const initialRsi = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss)
+  result.push({
+    time: Math.floor(new Date(bars[period].time).getTime() / 1000),
+    value: initialRsi
+  })
+
+  for (let i = period + 1; i < bars.length; i++) {
+    const diff = bars[i].close - bars[i - 1].close
+    const gain = diff > 0 ? diff : 0
+    const loss = diff < 0 ? -diff : 0
+
+    avgGain = (avgGain * (period - 1) + gain) / period
+    avgLoss = (avgLoss * (period - 1) + loss) / period
+
+    const rsi = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss)
+    result.push({
+      time: Math.floor(new Date(bars[i].time).getTime() / 1000),
+      value: rsi
     })
   }
 
-  if (tp !== null && tp > 0) {
-    takeProfitLine = candlestickSeries.createPriceLine({
-      price: tp,
-      color: '#10B981', // Green
-      lineWidth: 1,
-      lineStyle: LineStyle.Dashed,
-      axisLabelVisible: true,
-      title: `TP (${label})`,
+  return result
+}
+
+function calculateATR(bars: Bar[], period: number): { time: any; value: number }[] {
+  const result: { time: any; value: number }[] = []
+  if (period <= 0 || !bars || bars.length === 0) return result
+
+  const trs: number[] = []
+  trs.push(bars[0].high - bars[0].low)
+
+  for (let i = 1; i < bars.length; i++) {
+    const tr = Math.max(
+      bars[i].high - bars[i].low,
+      Math.abs(bars[i].high - bars[i - 1].close),
+      Math.abs(bars[i].low - bars[i - 1].close)
+    )
+    trs.push(tr)
+  }
+
+  if (bars.length < period) return result
+
+  let sum = 0
+  for (let i = 0; i < period; i++) {
+    sum += trs[i]
+  }
+  let atr = sum / period
+  result.push({
+    time: Math.floor(new Date(bars[period - 1].time).getTime() / 1000),
+    value: atr
+  })
+
+  for (let i = period; i < bars.length; i++) {
+    atr = (atr * (period - 1) + trs[i]) / period
+    result.push({
+      time: Math.floor(new Date(bars[i].time).getTime() / 1000),
+      value: atr
     })
   }
+
+  return result
+}
+
+function updateIndicators() {
+  if (!chart || !props.bars || !props.bars.length) return
+
+  // Nettoyage des anciennes séries d'indicateurs
+  indicatorSeries.forEach(series => chart!.removeSeries(series))
+  indicatorSeries = []
+
+  if (!showIndicators.value || !props.indicators) return
+
+  const barsData = props.bars
+  const overlayColors = [
+    '#8B5CF6', // Violet
+    '#F59E0B', // Amber
+    '#10B981', // Emerald/Green
+    '#EF4444', // Red
+    '#3B82F6', // Blue
+    '#EC4899', // Pink
+    '#06B6D4', // Cyan
+  ]
+  let overlayCount = 0
+
+  props.indicators.forEach(ind => {
+    const name = ind.trim().toUpperCase()
+    if (name.includes('SMA')) {
+      const match = name.match(/\d+/)
+      const period = match ? parseInt(match[0]) : 20
+      const smaData = calculateSMA(barsData, period)
+      
+      const color = overlayColors[overlayCount % overlayColors.length]
+      overlayCount++
+
+      const series = chart!.addSeries(LineSeries, {
+        color: color,
+        lineWidth: 2,
+        title: `SMA(${period})`,
+      })
+      series.setData(smaData)
+      indicatorSeries.push(series)
+    } else if (name.includes('EMA')) {
+      const match = name.match(/\d+/)
+      const period = match ? parseInt(match[0]) : 20
+      const emaData = calculateEMA(barsData, period)
+      
+      const color = overlayColors[overlayCount % overlayColors.length]
+      overlayCount++
+
+      const series = chart!.addSeries(LineSeries, {
+        color: color,
+        lineWidth: 2,
+        title: `EMA(${period})`,
+      })
+      series.setData(emaData)
+      indicatorSeries.push(series)
+    } else if (name.includes('BOLLINGER')) {
+      const match = name.match(/\d+/)
+      const period = match ? parseInt(match[0]) : 20
+      const multiplier = 2
+      const bbData = calculateBollingerBands(barsData, period, multiplier)
+      
+      const basisSeries = chart!.addSeries(LineSeries, {
+        color: '#9CA3AF',
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        title: `BB Basis(${period})`,
+      })
+      basisSeries.setData(bbData.basis)
+      indicatorSeries.push(basisSeries)
+
+      const upperSeries = chart!.addSeries(LineSeries, {
+        color: '#4B5563',
+        lineWidth: 1,
+        title: `BB Upper`,
+      })
+      upperSeries.setData(bbData.upper)
+      indicatorSeries.push(upperSeries)
+
+      const lowerSeries = chart!.addSeries(LineSeries, {
+        color: '#4B5563',
+        lineWidth: 1,
+        title: `BB Lower`,
+      })
+      lowerSeries.setData(bbData.lower)
+      indicatorSeries.push(lowerSeries)
+    } else if (name.includes('RSI')) {
+      const match = name.match(/\d+/)
+      const period = match ? parseInt(match[0]) : 14
+      const rsiData = calculateRSI(barsData, period)
+      
+      const series = chart!.addSeries(LineSeries, {
+        color: '#EC4899',
+        lineWidth: 2,
+        priceScaleId: 'rsi-scale',
+        title: `RSI(${period})`,
+      })
+      series.setData(rsiData)
+      indicatorSeries.push(series)
+
+      chart!.priceScale('rsi-scale').applyOptions({
+        scaleMargins: {
+          top: 0.8,
+          bottom: 0.05,
+        },
+        borderVisible: false,
+      })
+    } else if (name.includes('ATR')) {
+      const match = name.match(/\d+/)
+      const period = match ? parseInt(match[0]) : 14
+      const atrData = calculateATR(barsData, period)
+      
+      const series = chart!.addSeries(LineSeries, {
+        color: '#10B981',
+        lineWidth: 2,
+        priceScaleId: 'atr-scale',
+        title: `ATR(${period})`,
+      })
+      series.setData(atrData)
+      indicatorSeries.push(series)
+
+      chart!.priceScale('atr-scale').applyOptions({
+        scaleMargins: {
+          top: 0.85,
+          bottom: 0,
+        },
+        borderVisible: false,
+      })
+    }
+  })
 }
 
 function render() {
@@ -446,6 +783,7 @@ function render() {
 
   // Draw take profit & stop loss lines
   updatePriceLines()
+  updateIndicators()
 }
 
 function resize() {
@@ -463,6 +801,9 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener('resize', resize)
   if (chart) {
+    indicatorSeries.forEach(series => chart!.removeSeries(series))
+    indicatorSeries = []
+    pendingOrderLines = []
     chart.remove()
     chart = null
     candlestickSeries = null
@@ -496,8 +837,26 @@ watch(() => [props.bid, props.ask], () => {
   updatePriceLines()
 })
 
+watch(() => props.pendingOrders, () => {
+  updatePriceLines()
+}, { deep: true })
+
+watch(() => props.indicators, () => {
+  updateIndicators()
+}, { deep: true })
+
+watch([showPendingOrders, showSlTp], () => {
+  updatePriceLines()
+})
+
+watch(showIndicators, () => {
+  updateIndicators()
+})
+
 watch(timezone, () => {
   if (chart) {
+    indicatorSeries = []
+    pendingOrderLines = []
     chart.remove()
     chart = null
     candlestickSeries = null
@@ -540,6 +899,20 @@ defineExpose({ updateBar, updatePriceLines })
         <span class="live-price-item"><span class="price-lbl">Spread</span> <span class="price-val spread font-mono">{{ formatSpread(props.bid, props.ask, props.symbol) }}</span></span>
       </div>
       <div style="flex-grow: 1;"></div>
+      <div class="legend-toggles">
+        <label class="toggle-container">
+          <input type="checkbox" v-model="showPendingOrders" />
+          <span>Ordres</span>
+        </label>
+        <label class="toggle-container">
+          <input type="checkbox" v-model="showSlTp" />
+          <span>SL / TP</span>
+        </label>
+        <label class="toggle-container" v-if="props.indicators && props.indicators.length > 0">
+          <input type="checkbox" v-model="showIndicators" />
+          <span>Indicateurs</span>
+        </label>
+      </div>
       <div style="display: flex; gap: 1rem; align-items: center;">
         <div class="timezone-select-container">
           <label for="line-select" class="tz-label">Afficher SL/TP :</label>
@@ -672,5 +1045,32 @@ defineExpose({ updateBar, updatePriceLines })
 
 .price-val.spread {
   color: #F59E0B;
+}
+
+.legend-toggles {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  margin-right: 1.5rem;
+}
+
+.toggle-container {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: #9CA3AF;
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.15s ease;
+}
+
+.toggle-container:hover {
+  color: #E5E7EB;
+}
+
+.toggle-container input[type="checkbox"] {
+  accent-color: #f59e0b;
+  cursor: pointer;
 }
 </style>

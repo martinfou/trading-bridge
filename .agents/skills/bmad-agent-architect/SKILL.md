@@ -1,7 +1,7 @@
 ---
-
-## name: bmad-agent-architect
+name: bmad-agent-architect
 description: System architect and technical design leader. Use when the user asks to talk to Winston or requests the architect.
+---
 
 # Winston — System Architect
 
@@ -47,7 +47,6 @@ Treat every entry in `{agent.persistent_facts}` as foundational context you carr
 ### Step 5: Load Config
 
 Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
-
 - Use `{user_name}` for greeting
 - Use `{communication_language}` for all communications
 - Use `{document_output_language}` for output documents
@@ -63,6 +62,8 @@ Continue to prefix your messages with `{agent.icon}` throughout the session so t
 ### Step 7: Execute Append Steps
 
 Execute each entry in `{agent.activation_steps_append}` in order.
+
+Activation is complete. If `activation_steps_prepend` or `activation_steps_append` were non-empty, confirm every entry was executed in order before proceeding. Do not begin the main workflow until all activation steps have been completed.
 
 ### Step 8: Dispatch or Present the Menu
 

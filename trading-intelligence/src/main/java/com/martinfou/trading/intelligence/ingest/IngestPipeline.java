@@ -63,14 +63,20 @@ public final class IngestPipeline {
         return new IngestPipeline(clock, calendarStep, cotStep, oandaStep, newsStep, contradictionDetector);
     }
 
+    public WeeklyIntelBrief run() throws Exception {
+        return run(WeekBounds.nextWeekMonday(clock));
+    }
+
     /**
-     * Runs ingest for the week starting {@link WeekBounds#nextWeekMonday(LocalDate)}.
+     * Runs ingest for the week starting at the specified {@code weekStart}.
      *
      * @throws CalendarIngestException when calendar scrape fails (no LLM handoff)
      */
-    public WeeklyIntelBrief run() throws Exception {
+    public WeeklyIntelBrief run(LocalDate weekStart) throws Exception {
+        if (weekStart == null) {
+            weekStart = WeekBounds.nextWeekMonday(clock);
+        }
         Instant generatedAt = clock.instant();
-        LocalDate weekStart = WeekBounds.nextWeekMonday(clock);
         boolean partial = false;
 
         List<WeeklyIntelBrief.CalendarEventEntry> calendar;
@@ -81,7 +87,7 @@ public final class IngestPipeline {
         } catch (Exception ex) {
             throw new CalendarIngestException("Calendar ingest failed", ex);
         }
-        if (calendar.isEmpty()) {
+        if (calendar == null || calendar.isEmpty()) {
             throw new CalendarIngestException("Calendar ingest returned no events");
         }
 
@@ -95,28 +101,58 @@ public final class IngestPipeline {
         }
 
         Optional<List<WeeklyIntelBrief.OandaRetailEntry>> oandaOptional = oandaStep.fetchOptional();
-        if (oandaOptional.isEmpty()) {
+        if (oandaOptional == null || oandaOptional.isEmpty()) {
             partial = true;
         }
-        List<WeeklyIntelBrief.OandaRetailEntry> oandaRetail =
-            new ArrayList<>(oandaOptional.orElse(List.of()));
+        List<WeeklyIntelBrief.OandaRetailEntry> oandaRetail = new ArrayList<>();
+        if (oandaOptional != null && oandaOptional.isPresent() && oandaOptional.get() != null) {
+            for (WeeklyIntelBrief.OandaRetailEntry entry : oandaOptional.get()) {
+                if (entry != null) {
+                    oandaRetail.add(entry);
+                }
+            }
+        }
 
-        List<WeeklyIntelBrief.NewsItemEntry> news = newsStep.fetch();
+        List<WeeklyIntelBrief.NewsItemEntry> news = null;
+        try {
+            news = newsStep.fetch();
+        } catch (Exception ex) {
+            log.warn("News ingest failed — continuing: {}", ex.getMessage());
+            partial = true;
+        }
 
-        List<WeeklyIntelBrief.ContradictionEntry> contradictions =
-            contradictionDetector.detect(cot, oandaRetail);
+        List<WeeklyIntelBrief.ContradictionEntry> contradictions = null;
+        try {
+            contradictions = contradictionDetector.detect(cot, oandaRetail);
+        } catch (Exception ex) {
+            log.warn("Contradiction detection failed — continuing: {}", ex.getMessage());
+            partial = true;
+        }
 
         IngestStatus status = partial ? IngestStatus.PARTIAL : IngestStatus.OK;
 
         return new WeeklyIntelBrief(
             generatedAt,
             weekStart,
-            List.copyOf(calendar),
-            List.copyOf(news),
-            List.copyOf(cot),
-            new WeeklyIntelBrief.SentimentBlock(List.copyOf(oandaRetail), List.of()),
-            List.copyOf(contradictions),
+            safeCopy(calendar),
+            safeCopy(news),
+            safeCopy(cot),
+            new WeeklyIntelBrief.SentimentBlock(safeCopy(oandaRetail), List.of()),
+            safeCopy(contradictions),
             status
         );
+    }
+
+    private <T> List<T> safeCopy(List<T> list) {
+        if (list == null) {
+            return List.of();
+        }
+        List<T> copy = new ArrayList<>();
+        for (T item : list) {
+            if (item != null) {
+                copy.add(item);
+            }
+        }
+        return List.copyOf(copy);
     }
 }

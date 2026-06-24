@@ -231,7 +231,7 @@ Exigences extraites de PRD §8d, addendum, validation 2026-05-30, stories 12-10/
 
 PS-GR1: **Paper OANDA réel (FR-8 gap)** — Martin exécute en PAPER via REST OANDA demo ; ordres, fills et rejets journalisés comme RunEvents ; le stub `PAPER_STUB` (replay `BacktestEngine`) reste dev-only et **ne compte pas** pour gate 30j. Realise critère §8d « paper/live broker prouvé ».
 
-PS-GR2: **Live OANDA sur worker (FR-9 gap)** — Martin exécute LIVE ; ordres sur nœud worker via `LiveExecutor`, pas control plane ; kill switch stop nouveaux ordres ; `RunManager` accepte mode LIVE. Realise UJ-2 climax (tag Phase Epic 4).
+PS-GR2: **Live OANDA sur worker (FR-9 gap)** — Martin exécute LIVE ; ordres sur nœud worker via `LiveExecutor`, pas control plane ; kill switch stop nouveaux ordres ; `RunManager` accepte mode LIVE. Realise UJ-2 climax (tag Phase Epic 16).
 
 PS-GR3: **Gates promote numériques (FR-7 gap)** — `POST /api/strategies/{id}/promote` enforce : golden backtest pass, min trades (seuil configurable), bande max drawdown, validation modules pass ; 422 avec raisons structurées si échec. Paramètres documentés dans PRD/Epic 15.
 
@@ -241,7 +241,7 @@ PS-GR5: **Validation OOS rigoureuse (FR-6 Phase 2)** — Pipeline purged walk-fo
 
 PS-GR6: **Modèle d'exécution réaliste (§8d gap)** — Backtest/paper supporte commission, slippage configurable, rejets/latence simulés ; stress spread/slippage dégradés ; fills ne supposent pas uniquement `bar.open()` pour scénarios stress. Sprint 3 + addendum stress testing.
 
-PS-GR7: **Risk limits temps réel (§8d gap)** — Guards daily drawdown, perte journalière max, taille position ; circuit breaker pause auto ; signaux avant violation ; intégration `RunLifecycle` + dashboard alertes. Non calculable MVP sans events broker (FR-15 tag post-Epic 4).
+PS-GR7: **Risk limits temps réel (§8d gap)** — Guards daily drawdown, perte journalière max, taille position ; circuit breaker pause auto ; signaux avant violation ; intégration `RunLifecycle` + dashboard alertes. Non calculable MVP sans events broker (FR-15 tag post-Epic 16).
 
 PS-GR8: **Réconciliation broker ↔ journal** — Positions et fills OANDA réconciliés avec EventStore ; détection ghost journal ; alerte OPERATOR_ACTION si divergence. Addendum Phase 2 live.
 
@@ -253,7 +253,7 @@ PS-GR11: **Distinction stub vs broker (communication)** — Toute UI/API/rapport
 
 PS-GR12: **Interface Broker commune** — `trading-broker` : contrat `Broker` pour MARKET/LIMIT/STOP, sync positions, reconnect ; OANDA v20 REST demo en premier, IBKR ensuite. Sprint 4 + architecture Epic 13 § LiveExecutor.
 
-PS-GR13: **Parité BACKTEST/PAPER stub documentée** — Parité métriques stub = replay backtest (12-11) ; **non** parité avec OANDA/IBKR ; tests séparés pour paper broker. Story 12-11 AC5 LIVE guard jusqu'à Epic 4.
+PS-GR13: **Parité BACKTEST/PAPER stub documentée** — Parité métriques stub = replay backtest (12-11) ; **non** parité avec OANDA/IBKR ; tests séparés pour paper broker. Story 12-11 AC5 LIVE guard jusqu'à Epic 16.
 
 PS-GR14: **Drift signals post-broker (FR-15)** — Seuils drift (30j glissants, min 14j ou 20 trades) applicables uniquement quand events paper/live broker existent ; recommandations HOLD/REVIEW/PAUSE/RETIRE. Epic 17 Phase B après Epic 16.
 
@@ -424,6 +424,16 @@ Martin peut effectuer des analyses Walk-Forward en divisant l'historique en fen�
 
 Martin peut exécuter un agent d'orchestration basé sur LangChain4j et DeepSeek/Ollama pour classifier le régime de marché en ingérant des indicateurs macro, sentiment et saisonnalité temporels de façon sécurisée (sans lookahead bias) et bénéficier d'une mémoire de feedback (Experience Store) pour l'apprentissage continu.
 **FRs covered:** FR21, FR22, FR23, FR24, FR25, FR26, FR27, FR28, FR29, FR30, FR31, FR32, FR33 | **NFRs:** NFR13, NFR14, NFR15 | **Sprint:** S7
+
+### Epic 29 : Moteur de Backtest Futures & Simulation des Risques (MES)
+
+Martin peut effectuer des simulations de contrats Futures (MES) hors-ligne : calcul de PnL basé sur le multiplicateur (5$ par point), levier de marge (initiale 1500$, maintenance 1200$), liquidation forcée, transition glissante automatique (rollover à T-10) et ingestion historique des bougies via l'API TWS d'IBKR.
+**FRs covered:** FR-1, FR-2, FR-3, FR-4, FR-5, FR-10 | **Sprint:** S7 (IBKR Phase 1)
+
+### Epic 30 : Exécution Réelle/Paper & Dashboard Temps Réel (IBKR)
+
+Martin peut exécuter ses stratégies sur contrats Futures (MES) en Paper/Live via le connecteur IBKR asynchrone (TWS API) : soumission d'ordres MARKET, interception asynchrone des fills, réconciliation double barrière des commissions et visualisation des métriques de marges temps réel sur le dashboard.
+**FRs covered:** FR-6, FR-7, FR-8, FR-9 | **Sprint:** S7 (IBKR Phase 2)
 
 ### Synthèse prop-shop (enrichissement Epic 13–20)
 
@@ -1982,4 +1992,141 @@ So that I monitor platform health without loading the web or desktop GUI.
 **And** it lists each running strategy currently flagging a non-`HOLD` recommendation, showing the strategy ID, recommendation, and reason.
 
 
+## Epic 29: Moteur de Backtest Futures & Simulation des Risques (MES)
 
+### Story 29.1: Refactoring de valorisation d'actifs et Multiplicateur MES (PnL)
+
+As a quantitative trader,
+I want to configure the MES point value to 5.0 and calculate PnL correctly in backtests,
+So that my strategy returns are accurate.
+
+**Acceptance Criteria:**
+
+**Given** a configuration file `data/runtime/futures-contracts.json` containing the multiplier `5.0` for `MES`.
+**When** the backtest engine starts for `MES`.
+**Then** the `FuturesRegistry` loads the configurations and validates its JSON schema.
+**Given** the `AssetValuationModel` interface and its implementations `ForexValuationModel` and `FuturesValuationModel`.
+**When** a position on `MES` is closed (e.g., BUY 1 at 4500, SELL 1 at 4510).
+**Then** the PnL is calculated as `50.0` USD.
+**When** the existing `GoldenBacktestTest` is run.
+**Then** the PnL delta on Forex is strictly `0.0`.
+
+### Story 29.2: Simulation des marges et Liquidation forcée
+
+As a risk manager,
+I want to simulate Initial and Maintenance margin requirements and enforce liquidation,
+So that leverage risk is realistically simulated.
+
+**Acceptance Criteria:**
+
+**Given** an open position on `MES` with `1500` USD Initial Margin and `1200` USD Maintenance Margin requirements.
+**When** the initial account equity is `2000` USD and an order is submitted.
+**Then** the `MarginTracker` allows the order.
+**When** the initial equity is `1000` USD.
+**Then** the order is rejected.
+**When** the simulated account equity drops to `1100` USD (below `1200` USD Maintenance Margin requirement).
+**Then** the `BacktestEngine` triggers a market order to close the position at the next bar's open price, and logs a `LIQUIDATION` event in the report.
+
+### Story 29.3: Série de prix continue et exécution de Rollover
+
+As a long-term position trader,
+I want to stitch trimestral contracts at T-10 and simulate rollover with double commissions,
+So that my multi-year backtests are realistic.
+
+**Acceptance Criteria:**
+
+**Given** separate historical data files for `MESM6.csv` and `MESU6.csv`.
+**When** the `DataLoader` loads the `MES` symbol.
+**Then** it stitches them together at T-10 of ESM6 contract expiry, creating a raw price transition.
+**Given** an open position on the expiring contract at T-10.
+**When** the transition bar is processed.
+**Then** the engine closes the position on Leg A, opens a position in the same direction on Leg B, links both transactions with a single `rolloverGroupId` (UUID), and charges double commission (flat 0.87 USD x 2).
+**When** final trade reports are generated.
+**Then** the two legs of the rollover are consolidated into a single logical trade line to prevent skewing trade count and win rate statistics.
+
+### Story 29.4: Ingesteur de données historiques via TWS API
+
+As a developer,
+I want to download historical MES data directly from IBKR,
+So that I can run backtests offline without manual CSV files.
+
+**Acceptance Criteria:**
+
+**Given** an active local IB Gateway or TWS connection.
+**When** historical data is requested for `MES`.
+**Then** the client calls `reqHistoricalData` for the resolved contract.
+**When** callbacks `historicalData` and `historicalDataEnd` are received.
+**Then** the returned candles are parsed and written under `data/historical/`.
+**When** the gateway is not reachable.
+**Then** the system fails-fast and logs `IllegalStateException: Failed to connect to IB Gateway`.
+
+## Epic 30: Exécution Réelle/Paper & Dashboard Temps Réel (IBKR)
+
+### Story 30.1: Résolution de contrat et soumission d'ordres MARKET FUT
+
+As a trader,
+I want to submit MARKET orders for Futures contracts (like MES) to IBKR CME,
+So that my trading signals are executed immediately in the market.
+
+**Acceptance Criteria:**
+
+**Given** a running local `MockTcpGatewayServer` listening on an ephemeral port.
+**When** `IbkrBroker` connects and sends a MARKET order request for `MES`.
+**Then** the contract details are resolved as type `FUT` and exchange `CME`, and an order ID is requested via TWS API.
+**When** the `MockTcpGatewayServer` receives a market order submission.
+**Then** `IbkrBroker` records the order state as `SUBMITTED` internally without blocking the execution thread.
+**And** no OANDA Forex components are modified or impacted (Forex delta remains strictly 0.0).
+
+### Story 30.2: Interception des Fills et Réconciliation double barrière des commissions
+
+As a portfolio manager,
+I want to capture execution details (fills) and correlate them with exact commission reports,
+So that my actual trading costs are precisely logged.
+
+**Acceptance Criteria:**
+
+**Given** a market order submitted via `IbkrBroker`.
+**When** the TWS callback `execDetails` is triggered with a unique `execId`.
+**Then** the engine maps it to a `BrokerEvent.fill` event.
+**When** the corresponding `commissionReport` callback is received with the same `execId` within 500ms.
+**Then** the broker reconciles the actual commission (e.g., 0.87 USD) and commits the fill with the exact fee to the database.
+**When** the `commissionReport` is delayed by more than 500ms.
+**Then** the reconciliation registry times out, logs a warning, falls back to a default fee (0.0 USD or a configured standard rate), and commits the fill without blocking the execution thread.
+**And** unit tests verify the timeout asynchronously using a virtual clock/time mock.
+
+### Story 30.3: Résumé de compte et Métriques de marge (API REST générique & cache)
+
+As a risk manager,
+I want to view margin requirements and account equity via generic API endpoints,
+So that I can monitor account health from the Live Room.
+
+**Acceptance Criteria:**
+
+**Given** an active connection to TWS.
+**When** TWS streams account summary events (`accountSummary`).
+**Then** the values (Net Liquidation, Initial Margin, Maintenance Margin, Free Margin) are stored in an in-memory cache (`IbkrAccountCache`).
+**When** a client queries the generic REST endpoint `/api/brokers/{brokerId}/account-summary` or `/api/portfolio/margins`.
+**Then** the controller returns the cached values in a unified JSON DTO containing the account summary fields.
+**And** the data structure decouples IBKR specifics from the control plane core.
+
+### Story 30.4: Heartbeat de connexion, cache de fraîcheur et notifications temps réel (WebSocket & UI)
+
+As a trader,
+I want to be immediately warned when the connection to IBKR is lost or when account data is stale,
+So that I do not make trading decisions based on outdated margin information.
+
+**Acceptance Criteria:**
+
+**Given** `IbkrAccountCache` tracking updates with UTC `Instant` timestamps.
+**When** no EWrapper callback is received for more than 10 seconds.
+**Then** the backend scheduled service triggers a liveness probe (`reqCurrentTime()`).
+**When** the probe fails or no message is received within 5 seconds (total 15 seconds of silence), the status transitions to `DISCONNECTED`.
+**When** the status changes, the backend immediately pushes a disconnection event via WebSocket to the desktop UI.
+**Given** the Vue 3 Live Room dashboard header.
+**When** the connection state is `CONNECTED` (latency < 2s).
+**Then** a green badge is displayed.
+**When** the connection state is `STALE` (no update > 5s).
+**Then** an orange badge is displayed and margin values are grayed out with a warning message "Données figées il y a X secondes".
+**When** the connection state is `DISCONNECTED`.
+**Then** a red badge is displayed, manual order buttons are disabled, and warnings are shown.
+**And** JUnit 5 tests verify the status transitions (`CONNECTED` -> `STALE` -> `DISCONNECTED`) deterministically using a mockable `Clock`.

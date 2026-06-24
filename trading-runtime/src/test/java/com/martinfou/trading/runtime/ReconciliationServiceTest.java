@@ -1,6 +1,7 @@
 package com.martinfou.trading.runtime;
 
 import com.martinfou.trading.backtest.events.RunEventType;
+import com.martinfou.trading.backtest.events.RunEvent;
 import com.martinfou.trading.broker.AccountState;
 import com.martinfou.trading.broker.Broker;
 import com.martinfou.trading.broker.FakeBroker;
@@ -233,6 +234,61 @@ class ReconciliationServiceTest {
         assertEquals(Order.Side.SELL, gbpPos.side());
         assertEquals(1000.0, gbpPos.quantity(), 0.001);
     }
+
+    @Test
+    void reconcile_emitsAlertOnPositionMissingAtBroker() {
+        try (EventStore store = EventStores.inMemory()) {
+            store.append("run-div-missing", new RunEvent(
+                RunEvent.SCHEMA_VERSION,
+                RunEventType.FILL,
+                Instant.now(),
+                "run-div-missing",
+                "Test",
+                "EUR_USD",
+                "LIVE",
+                Map.of("symbol", "EUR_USD", "side", "BUY", "quantity", 1000.0, "price", 1.10)
+            ));
+
+            RunConfigSnapshot config = new RunConfigSnapshot(
+                "Test",
+                "EUR_USD",
+                "LIVE",
+                "sample",
+                1,
+                null,
+                100_000.0,
+                null,
+                null,
+                ExecutionLabel.LIVE_OANDA.name());
+
+            Broker broker = new Broker() {
+                @Override public boolean isConnected() { return true; }
+                @Override public void connect() {}
+                @Override public void disconnect() {}
+                @Override public void reconnect() {}
+                @Override public OrderSubmitResult submitOrder(Order order) { return null; }
+                @Override public OrderSubmitResult cancelOrder(String id) { return null; }
+                @Override public List<Position> getPositions() { return List.of(); }
+                @Override public AccountState getAccountState() { return new AccountState(100000, 100000, "USD"); }
+                @Override public void addEventListener(java.util.function.Consumer<com.martinfou.trading.broker.BrokerEvent> l) {}
+            };
+
+            ReconciliationService.ReconcileResult result = service.reconcile(
+                "run-div-missing",
+                config,
+                broker,
+                store);
+
+            assertFalse(result.skipped());
+            assertFalse(result.aligned());
+            assertEquals(1, result.divergences().size());
+            assertTrue(result.divergences().getFirst().reason().contains("position missing at broker"));
+
+            var events = store.replayAll("run-div-missing");
+            assertTrue(events.stream().anyMatch(e -> e.type() == RunEventType.RECONCILIATION_ALERT));
+        }
+    }
+
     /** After first fill, reports inflated quantity at broker vs journal. */
     private static final class InflatingBroker implements Broker {
         private final FakeBroker delegate = new FakeBroker(100_000.0);
@@ -369,6 +425,54 @@ class ReconciliationServiceTest {
         public void reset() {
             ordered = false;
             pending.clear();
+        }
+    }
+
+    @Test
+    void reconcile_unTaggedPositionWithMultipleActiveRuns_ignoresBrokerPosition() {
+        try (EventStore store = EventStores.inMemory()) {
+            RunConfigSnapshot config = new RunConfigSnapshot(
+                "Test",
+                "EUR_USD",
+                "LIVE",
+                "sample",
+                1,
+                null,
+                100_000.0,
+                null,
+                null,
+                ExecutionLabel.LIVE_OANDA.name());
+
+            Broker broker = new Broker() {
+                @Override public void connect() {}
+                @Override public void disconnect() {}
+                @Override public boolean isConnected() { return true; }
+                @Override public void reconnect() {}
+                @Override public com.martinfou.trading.broker.OrderSubmitResult submitOrder(Order order) { return null; }
+                @Override public com.martinfou.trading.broker.OrderSubmitResult cancelOrder(String orderId) { return null; }
+                @Override public List<Position> getPositions() {
+                    return List.of(new Position("EUR_USD", Order.Side.BUY, 1000, 1.10, null, null));
+                }
+                @Override public com.martinfou.trading.broker.AccountState getAccountState() { return new com.martinfou.trading.broker.AccountState(100_000, 100_000, "USD"); }
+                @Override public void addEventListener(java.util.function.Consumer<com.martinfou.trading.broker.BrokerEvent> l) {}
+            };
+
+            {
+                ReconciliationService.ReconcileResult result = service.reconcile(
+                    "run-1", config, broker, store, () -> List.of("EUR_USD"));
+                assertFalse(result.skipped());
+                assertFalse(result.aligned());
+                assertEquals(1, result.divergences().size());
+                assertTrue(result.divergences().getFirst().reason().contains("position missing in journal"));
+            }
+
+            {
+                ReconciliationService.ReconcileResult result = service.reconcile(
+                    "run-1", config, broker, store, () -> List.of("EUR_USD", "EUR_USD"));
+                assertFalse(result.skipped());
+                assertTrue(result.aligned());
+                assertTrue(result.divergences().isEmpty());
+            }
         }
     }
 }

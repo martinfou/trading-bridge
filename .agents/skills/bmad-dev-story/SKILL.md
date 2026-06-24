@@ -10,7 +10,7 @@ description: 'Execute story implementation following a context filled story spec
 **Your Role:** Developer implementing the story.
 - Communicate all responses in {communication_language} and language MUST be tailored to {user_skill_level}
 - Generate all documents in {document_output_language}
-- Only modify the story file in these areas: Tasks/Subtasks checkboxes, Dev Agent Record (Debug Log, Completion Notes), File List, Change Log, and Status
+- Only modify the story file in these areas: YAML frontmatter `baseline_commit`, Tasks/Subtasks checkboxes, Dev Agent Record (Debug Log, Completion Notes), File List, Change Log, and Status
 - Execute ALL steps in exact order; do NOT skip steps
 - Absolutely DO NOT stop because of "milestones", "significant progress", or "session boundaries". Continue in a single execution until the story is COMPLETE (all ACs satisfied and all tasks/subtasks checked) UNLESS a HALT condition is triggered or the USER gives other instruction.
 - Do NOT schedule a "next session" or request review pauses unless a HALT condition applies. Only Step 9 decides completion.
@@ -54,6 +54,7 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
 - `user_skill_level`
 - `implementation_artifacts`
 - `date` as system-generated current datetime
+- `project_context` = `**/project-context.md` (load if exists)
 
 ### Step 5: Greet the User
 
@@ -63,7 +64,7 @@ Greet `{user_name}`, speaking in `{communication_language}`.
 
 Execute each entry in `{workflow.activation_steps_append}` in order.
 
-Activation is complete. Begin the workflow below.
+Activation is complete. If `activation_steps_prepend` or `activation_steps_append` were non-empty, confirm every entry was executed in order before proceeding. Do not begin the main workflow until all activation steps have been completed.
 
 ## Paths
 
@@ -75,7 +76,7 @@ Activation is complete. Begin the workflow below.
 <workflow>
   <critical>Communicate all responses in {communication_language} and language MUST be tailored to {user_skill_level}</critical>
   <critical>Generate all documents in {document_output_language}</critical>
-  <critical>Only modify the story file in these areas: Tasks/Subtasks checkboxes, Dev Agent Record (Debug Log, Completion Notes), File List,
+  <critical>Only modify the story file in these areas: YAML frontmatter `baseline_commit`, Tasks/Subtasks checkboxes, Dev Agent Record (Debug Log, Completion Notes), File List,
     Change Log, and Status</critical>
   <critical>Execute ALL steps in exact order; do NOT skip steps</critical>
   <critical>Absolutely DO NOT stop because of "milestones", "significant progress", or "session boundaries". Continue in a single execution
@@ -90,6 +91,18 @@ Activation is complete. Begin the workflow below.
       <action>Read COMPLETE story file</action>
       <action>Extract story_key from filename or metadata</action>
       <goto anchor="task_check" />
+    </check>
+
+    <!-- Auto-detect active story from trace file if path is not explicitly given -->
+    <check if="{{story_path}} is not provided">
+      <check if="_bmad-output/last-active-story.txt exists">
+        <action>Read active story key from `_bmad-output/last-active-story.txt` and store as {{story_key}}</action>
+        <action>Set {{story_path}} to `{implementation_artifacts}/{{story_key}}.md`</action>
+        <check if="{{story_path}} file exists">
+          <action>Read COMPLETE story file from {{story_path}}</action>
+          <goto anchor="task_check" />
+        </check>
+      </check>
     </check>
 
     <!-- Sprint-based story discovery -->
@@ -191,6 +204,31 @@ Activation is complete. Begin the workflow below.
 
     <anchor id="task_check" />
 
+    <!-- Git Branch Mismatch Guard -->
+    <check if="git version control is available (git rev-parse --is-inside-work-tree passes)">
+      <action>Run `git rev-parse --abbrev-ref HEAD` to get the current Git branch name and store in {{git_branch}}</action>
+      <action>Extract numeric pattern \d+-\d+ (or prefix pattern like dg-\d+, dbj-\d+, dci-\d+) from {{story_key}} as story identifier</action>
+      <check if="current Git branch name contains a story identifier pattern (e.g. \d+-\d+ or prefix pattern)">
+        <check if="current Git branch name does NOT contain the story identifier of {{story_key}}">
+          <check if="sys.stdin.isatty() is true (interactive TTY session)">
+            <output>⚠️ **Git Branch Mismatch Warning**
+              You are developing story **{{story_key}}** but your current Git branch is **{{git_branch}}**.
+            </output>
+            <ask>Do you want to proceed developing {{story_key}} on branch {{git_branch}}? (yes/no):</ask>
+            <check if="user says 'no'">
+              <action>HALT - Please switch branches or checkout a branch for story {{story_key}}</action>
+            </check>
+          </check>
+          <check if="sys.stdin.isatty() is false (headless/CI or non-interactive)">
+            <output>ℹ️ Git branch mismatch detected in non-interactive environment. Bypassing mismatch prompt.</output>
+          </check>
+        </check>
+      </check>
+      <check if="current Git branch name does NOT match any story identifier pattern (e.g. 'main', 'master', 'dev')">
+        <output>ℹ️ Active branch '{{git_branch}}' is a mainline branch. Bypassing mismatch prompt.</output>
+      </check>
+    </check>
+
     <action>Parse sections: Story, Acceptance Criteria, Tasks/Subtasks, Dev Notes, Dev Agent Record, File List, Change Log, Status</action>
 
     <action>Load comprehensive context from story file's Dev Notes section</action>
@@ -260,26 +298,40 @@ Activation is complete. Begin the workflow below.
   </step>
 
   <step n="4" goal="Mark story in-progress" tag="sprint-status">
+    <action>If story file YAML frontmatter already contains `baseline_commit`, preserve the existing value and do not overwrite it</action>
+
     <check if="{{sprint_status}} file exists">
       <action>Load the FULL file: {{sprint_status}}</action>
       <action>Read all development_status entries to find {{story_key}}</action>
-      <action>Get current status value for development_status[{{story_key}}]</action>
+      <action>Set {{current_status}} to development_status[{{story_key}}]</action>
+    </check>
 
-      <check if="current status == 'ready-for-dev' OR review_continuation == true">
+    <check if="{{sprint_status}} file does NOT exist">
+      <action>Set {{current_status}} to the story file Status section value</action>
+    </check>
+
+    <check if="{{current_status}} == 'ready-for-dev' AND story file YAML frontmatter does NOT contain baseline_commit">
+      <action>Run `git rev-parse HEAD` to capture current commit into {{baseline_commit}}; if git/version control is unavailable, set {{baseline_commit}} = `NO_VCS`</action>
+      <action>If story file YAML frontmatter exists, add `baseline_commit: {{baseline_commit}}` to the frontmatter</action>
+      <action>If story file has no YAML frontmatter, create frontmatter at the top containing only `baseline_commit: {{baseline_commit}}`</action>
+    </check>
+
+    <check if="{{sprint_status}} file exists">
+      <check if="{{current_status}} == 'ready-for-dev' OR (review_continuation == true AND {{current_status}} != 'in-progress')">
         <action>Update the story in the sprint status report to = "in-progress"</action>
         <action>Update last_updated field to current date</action>
         <output>🚀 Starting work on story {{story_key}}
-          Status updated: ready-for-dev → in-progress
+          Status updated: {{current_status}} → in-progress
         </output>
       </check>
 
-      <check if="current status == 'in-progress'">
+      <check if="{{current_status}} == 'in-progress'">
         <output>⏯️ Resuming work on story {{story_key}}
           Story is already marked in-progress
         </output>
       </check>
 
-      <check if="current status is neither ready-for-dev nor in-progress">
+      <check if="{{current_status}} is neither ready-for-dev nor in-progress">
         <output>⚠️ Unexpected story status: {{current_status}}
           Expected ready-for-dev or in-progress. Continuing anyway...
         </output>

@@ -109,3 +109,7 @@ data/weekly-builder/archive/*
 deploy/active-strategy.txt
 deployments/deploy-log.json
 deployments/
+
+# Walk-Forward Analysis reports
+data/reports/wfa/
+

@@ -13,9 +13,9 @@ public final class StubLlmClient implements LlmClient {
 
     @Override
     public String complete(String systemPrompt, String userPrompt, double temperature) {
-        if (temperature >= 0.5) {
-            return plannerResponse;
+        if (systemPrompt != null && systemPrompt.contains("Reviewer")) {
+            return reviewerResponse;
         }
-        return reviewerResponse;
+        return plannerResponse;
     }
 }

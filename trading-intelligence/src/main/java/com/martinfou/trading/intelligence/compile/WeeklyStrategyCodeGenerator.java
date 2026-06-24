@@ -52,8 +52,8 @@ public final class WeeklyStrategyCodeGenerator {
         WeeklyPlan.Pick pick,
         TemplateRegistry.TemplateEntry entry
     ) {
-        String className = toClassName(weekId, pick.templateId(), pick.pair());
-        String strategyId = toStrategyId(weekId, pick.templateId(), pick.pair());
+        String className = toClassName(weekId, pick.templateId(), pick.pair(), pick.direction());
+        String strategyId = toStrategyId(weekId, pick.templateId(), pick.pair(), pick.direction());
         String source = switch (entry.codegenHandler()) {
             case NO_TRADE -> generateNoTrade(className, strategyId, pick);
             case DELEGATE_LORB -> generateDelegateLorb(className, strategyId, pick);
@@ -263,13 +263,34 @@ public final class WeeklyStrategyCodeGenerator {
     }
 
     public static String toStrategyId(String weekId, String templateId, String pair) {
+        return toStrategyId(weekId, templateId, pair, null);
+    }
+
+    public static String toStrategyId(String weekId, String templateId, String pair, String direction) {
+        String cleanWeek = weekId == null ? "NONE" : weekId;
+        String cleanTemplate = templateId == null ? "NONE" : templateId;
         String pairPart = pair == null || pair.isBlank() ? "NONE" : pair;
-        return "LLM_WEEKLY_" + weekId + "_" + templateId + "_" + pairPart;
+        String dirPart = direction == null || direction.isBlank() ? "" : "_" + direction.replaceAll("[^a-zA-Z0-9]", "").toUpperCase(Locale.ROOT);
+        return "LLM_WEEKLY_" + cleanWeek + "_" + cleanTemplate + "_" + pairPart + dirPart;
     }
 
     public static String toClassName(String weekId, String templateId, String pair) {
-        String pairPart = pair == null ? "None" : pair.replace("_", "");
-        return "Weekly" + weekId.replace("-", "") + templateId + pairPart;
+        return toClassName(weekId, templateId, pair, null);
+    }
+
+    public static String toClassName(String weekId, String templateId, String pair, String direction) {
+        String cleanWeek = weekId == null ? "" : weekId.replaceAll("[^a-zA-Z0-9]", "");
+        String cleanTemplate = templateId == null ? "" : templateId.replaceAll("[^a-zA-Z0-9]", "");
+        String pairPart = pair == null ? "None" : pair.replaceAll("[^a-zA-Z0-9]", "");
+        String dirPart = direction == null || direction.isBlank() ? "" : capitalize(direction.replaceAll("[^a-zA-Z0-9]", "").toLowerCase(Locale.ROOT));
+        return "Weekly" + cleanWeek + cleanTemplate + pairPart + dirPart;
+    }
+
+    private static String capitalize(String str) {
+        if (str == null || str.isEmpty()) {
+            return "";
+        }
+        return Character.toUpperCase(str.charAt(0)) + str.substring(1);
     }
 
     private static void clearGeneratedDir(Path generatedDir) throws IOException {
@@ -293,7 +314,16 @@ public final class WeeklyStrategyCodeGenerator {
     }
 
     private static String escapeJava(String value) {
-        return value.replace("\\", "\\\\").replace("\"", "\\\"");
+        if (value == null) {
+            return "";
+        }
+        return value.replace("\\", "\\\\")
+                    .replace("\"", "\\\"")
+                    .replace("\n", "\\n")
+                    .replace("\r", "\\r")
+                    .replace("\t", "\\t")
+                    .replace("\b", "\\b")
+                    .replace("\f", "\\f");
     }
 
     private static String toJavaLiteral(Object value) {

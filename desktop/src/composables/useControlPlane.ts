@@ -1,7 +1,7 @@
 import { ref, reactive } from 'vue'
 import { useControlPlaneConfig } from './controlPlaneConfig'
 import { useStatusBar } from './useStatusBar'
-import type { Strategy, RunConfig, RunResult, Trade, RunSummary, Bar, BrokerAccount, PromoteGateThresholds } from '@/types/control-plane'
+import type { Strategy, RunConfig, RunResult, Trade, RunSummary, Bar, BrokerAccount, PromoteGateThresholds, WeeklyStat, ReconciliationAnomaly } from '@/types/control-plane'
 
 interface StartRunResponse {
   runId: string
@@ -347,9 +347,20 @@ export function useControlPlane() {
     return apiDelete<any>('/api/backtests', controlPlaneUrl.value)
   }
 
+  async function getWeeklyStats(runId: string): Promise<WeeklyStat[]> {
+    const data = await apiGet<{ weeklyStats: WeeklyStat[] }>(`/api/runs/${runId}/weekly-stats`, controlPlaneUrl.value)
+    return data.weeklyStats
+  }
+
+  async function getAlignment(runId: string): Promise<{ anomalies: ReconciliationAnomaly[]; backtestOrders: any[]; liveOrders: any[] }> {
+    return apiGet<{ anomalies: ReconciliationAnomaly[]; backtestOrders: any[]; liveOrders: any[] }>(`/api/runs/${runId}/alignment`, controlPlaneUrl.value)
+  }
+
   return {
     startRun,
     getRun,
+    getWeeklyStats,
+    getAlignment,
     getStrategies,
     getTrades,
     getEquityCurve,

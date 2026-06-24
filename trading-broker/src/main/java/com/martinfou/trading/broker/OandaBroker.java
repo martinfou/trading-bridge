@@ -157,6 +157,7 @@ public final class OandaBroker implements Broker {
         }
         boolean ok = client.cancelOrder(brokerOrderId);
         if (ok) {
+            emit(BrokerEvent.reject(brokerOrderId, "", "", 0.0, 0.0, "CANCELLED", null, null));
             return OrderSubmitResult.filled(brokerOrderId);
         }
         return OrderSubmitResult.rejected("Failed to cancel order on OANDA");

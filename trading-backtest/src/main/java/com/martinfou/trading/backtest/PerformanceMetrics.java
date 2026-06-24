@@ -264,6 +264,10 @@ public final class PerformanceMetrics {
         return Math.max(periodsPerYear, PERIODS_PER_YEAR);
     }
 
+    public static double maxDrawdownPct(List<Double> equityCurve) {
+        return maxDrawdownDecimal(equityCurve) * 100.0;
+    }
+
     // ---------------------------------------------------------------
     //  Internal helpers
     // ---------------------------------------------------------------

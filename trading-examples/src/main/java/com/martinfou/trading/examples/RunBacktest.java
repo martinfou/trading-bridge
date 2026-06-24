@@ -14,7 +14,14 @@ import com.martinfou.trading.backtest.persistence.BacktestPersistenceService;
 import com.martinfou.trading.backtest.persistence.BacktestQueryFilters;
 import com.martinfou.trading.backtest.persistence.BacktestRunSummary;
 import com.martinfou.trading.backtest.persistence.SqliteBacktestRunStore;
+import com.martinfou.trading.backtest.wfa.WfaConfig;
+import com.martinfou.trading.backtest.wfa.WfaEngine;
+import com.martinfou.trading.backtest.wfa.WfaReport;
+import com.martinfou.trading.backtest.wfa.WfaFoldResult;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
+import java.io.File;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -64,6 +71,11 @@ public class RunBacktest {
         if (args[0].equals("--sample")) {
             CliFlags flags = stripCliFlags(args);
             runBareSample(flags);
+            return;
+        }
+
+        if (args[0].equals("--wfa")) {
+            runWfa(args);
             return;
         }
 
@@ -254,6 +266,7 @@ public class RunBacktest {
               RunBacktest --help
               RunBacktest --sample
               RunBacktest --query [--symbol <sym>] [--strategy <id>] [--min-sharpe <val>] [--min-pf <val>] [--sort-by <col>] [--limit <n>]
+              RunBacktest --wfa <strategyId> <symbol> <yearSpec> --config <config-file.json>
               RunBacktest <strategyId> --sample
               RunBacktest <strategyId> EUR_USD 2012 [capital]
               RunBacktest <strategyId> EUR_USD 2012 --json
@@ -365,6 +378,106 @@ public class RunBacktest {
         } catch (Exception e) {
             System.err.println("Error querying database: " + e.getMessage());
             e.printStackTrace();
+        }
+    }
+
+    private static void runWfa(String[] args) {
+        if (args.length < 6 || !args[4].equals("--config")) {
+            System.err.println("Usage: mvn exec:java -pl trading-examples -Dexec.mainClass=\"com.martinfou.trading.examples.RunBacktest\" -Dexec.args=\"--wfa <strategyId> <symbol> <yearSpec> --config <config-file.json>\"");
+            System.exit(1);
+        }
+
+        String strategyId = args[1];
+        String symbol = args[2];
+        String yearSpec = args[3];
+        String configFile = args[5];
+
+        System.out.println("Starting WFA with strategy: " + strategyId + ", symbol: " + symbol + ", data spec: " + yearSpec + ", config: " + configFile);
+
+        // 1. Load configuration from JSON
+        ObjectMapper mapper = new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .setVisibility(com.fasterxml.jackson.annotation.PropertyAccessor.FIELD, com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility.ANY);
+
+        WfaConfig config;
+        try {
+            config = mapper.readValue(new File(configFile), WfaConfig.class);
+        } catch (Exception e) {
+            System.err.println("Error reading config file: " + e.getMessage());
+            e.printStackTrace();
+            System.exit(1);
+            return;
+        }
+
+        // 2. Load historical bars
+        List<Bar> bars;
+        try {
+            if (isFilePath(yearSpec)) {
+                var loaded = HistoricalDataLoader.loadFile(Path.of(yearSpec), symbol);
+                bars = loaded.bars();
+            } else {
+                bars = HistoricalDataLoader.loadYearSpec(symbol, yearSpec, HistoricalDataLoader.DEFAULT_BARS_DIR);
+            }
+        } catch (Exception e) {
+            System.err.println("Error loading historical data: " + e.getMessage());
+            e.printStackTrace();
+            System.exit(1);
+            return;
+        }
+
+        if (bars.isEmpty()) {
+            System.err.println("No bars loaded. Check path/year spec.");
+            System.exit(1);
+            return;
+        }
+
+        System.out.println("Loaded " + bars.size() + " bars.");
+
+        // 3. Setup Strategy supplier
+        if (!StrategyCatalog.contains(strategyId)) {
+            System.err.println("Unknown strategy: " + strategyId);
+            System.exit(1);
+            return;
+        }
+        java.util.function.Supplier<Strategy> supplier = () -> StrategyCatalog.create(strategyId, symbol);
+
+        // 4. Run WfaEngine
+        try (WfaEngine engine = new WfaEngine(config, supplier, bars)) {
+            WfaReport report = engine.execute();
+
+            // 5. Save report JSON to data/reports/wfa/wfa-{id}.json
+            File reportDir = new File("data/reports/wfa");
+            if (!reportDir.exists()) {
+                if (!reportDir.mkdirs()) {
+                    throw new java.io.IOException("Failed to create directory: " + reportDir.getAbsolutePath());
+                }
+            }
+            File reportFile = new File(reportDir, "wfa-" + report.wfaId() + ".json");
+            mapper.writerWithDefaultPrettyPrinter().writeValue(reportFile, report);
+
+            // 6. Display console summary of metrics
+            double avgIsSharpe = report.folds().stream().mapToDouble(WfaFoldResult::isSharpe).average().orElse(0.0);
+            double avgOosSharpe = report.folds().stream().mapToDouble(WfaFoldResult::oosSharpe).average().orElse(0.0);
+
+            System.out.println("========================================================================");
+            System.out.println("Walk-Forward Analysis (WFA) Execution Summary");
+            System.out.println("========================================================================");
+            System.out.printf("WFA Run ID:          %s%n", report.wfaId());
+            System.out.printf("Strategy:            %s%n", report.strategyName());
+            System.out.printf("Instrument:          %s%n", report.instrument());
+            System.out.printf("Global OOS Sharpe:   %.4f%n", report.oosSharpe());
+            System.out.printf("Average IS Sharpe:   %.4f%n", avgIsSharpe);
+            System.out.printf("Average OOS Sharpe:  %.4f%n", avgOosSharpe);
+            System.out.printf("WFE (Efficiency):    %.4f%n", report.wfe());
+            System.out.printf("Total OOS Trades:    %d%n", report.oosTradesCount());
+            System.out.println("------------------------------------------------------------------------");
+            System.out.println("Complete WFA report saved to: " + reportFile.getPath());
+            System.out.println("========================================================================");
+
+        } catch (Exception e) {
+            System.err.println("Error executing WFA: " + e.getMessage());
+            e.printStackTrace();
+            System.exit(1);
         }
     }
 }

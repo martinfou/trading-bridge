@@ -71,7 +71,14 @@ public final class WeeklyCompileWatcher {
         }
 
         Path planFile = pendingPlan.get();
-        WeeklyPlan plan = WeeklyPlanIO.read(planFile);
+        WeeklyPlan plan;
+        try {
+            plan = WeeklyPlanIO.read(planFile);
+        } catch (Exception ex) {
+            log.error("Failed to read pending plan {}: {}", planFile, ex.getMessage());
+            moveToDlq(planFile, ex);
+            return Result.compileFailed("unknown", "Malformed plan JSON: " + ex.getMessage());
+        }
         if (plan.reviewerStatus() != ReviewerStatus.APPROVED) {
             log.warn("Skipping non-approved plan {}", planFile);
             return Result.skipped(plan.weekId(), "not approved");
@@ -87,7 +94,14 @@ public final class WeeklyCompileWatcher {
     }
 
     private Result compileStuckPlan(Path compilingPlan) throws Exception {
-        WeeklyPlan plan = WeeklyPlanIO.read(compilingPlan);
+        WeeklyPlan plan;
+        try {
+            plan = WeeklyPlanIO.read(compilingPlan);
+        } catch (Exception ex) {
+            log.error("Failed to read stuck plan {}: {}", compilingPlan, ex.getMessage());
+            moveToDlq(compilingPlan, ex);
+            return Result.compileFailed("unknown", "Malformed stuck plan JSON: " + ex.getMessage());
+        }
         if (plan.reviewerStatus() != ReviewerStatus.APPROVED) {
             log.warn("Removing non-approved stuck plan {}", compilingPlan);
             Files.deleteIfExists(compilingPlan);
@@ -143,12 +157,14 @@ public final class WeeklyCompileWatcher {
 
         Path compiledDir = WeeklyBuilderPaths.compiled(repoRoot).resolve(plan.weekId());
         Files.createDirectories(compiledDir);
-        Path compiledPlan = compiledDir.resolve(compilingPlan.getFileName());
-        Files.move(compilingPlan, compiledPlan, StandardCopyOption.REPLACE_EXISTING);
         mapper.writerWithDefaultPrettyPrinter()
             .writeValue(compiledDir.resolve("manifest.json").toFile(), manifest);
 
         WeeklyPlanMarkdownWriter.write(repoRoot.resolve("deploy"), plan, manifest);
+
+        Path compiledPlan = compiledDir.resolve(compilingPlan.getFileName());
+        Files.move(compilingPlan, compiledPlan, StandardCopyOption.REPLACE_EXISTING);
+
         log.info("Compiled weekly plan {} with {} strategies", plan.weekId(), entries.size());
         return Result.success(plan.weekId(), compiledDir, manifest);
     }
@@ -185,6 +201,24 @@ public final class WeeklyCompileWatcher {
     private Path moveToCompiling(Path planFile) throws IOException {
         Path target = WeeklyBuilderPaths.compiling(repoRoot).resolve(planFile.getFileName());
         return Files.move(planFile, target, StandardCopyOption.ATOMIC_MOVE);
+    }
+
+    private void moveToDlq(Path planFile, Exception ex) {
+        try {
+            Path dlqDir = WeeklyBuilderPaths.dlq(repoRoot);
+            Files.createDirectories(dlqDir);
+            Path target = dlqDir.resolve(planFile.getFileName());
+            Files.move(planFile, target, StandardCopyOption.REPLACE_EXISTING);
+            Path reasonFile = dlqDir.resolve(planFile.getFileName().toString() + ".reason.json");
+            var reason = new java.util.LinkedHashMap<String, Object>();
+            reason.put("file", planFile.getFileName().toString());
+            reason.put("error", ex.getMessage());
+            reason.put("at", clock.instant().toString());
+            mapper.writerWithDefaultPrettyPrinter().writeValue(reasonFile.toFile(), reason);
+            log.warn("Moved malformed plan to DLQ: {}", target);
+        } catch (IOException ioEx) {
+            log.error("Failed to move malformed plan to DLQ", ioEx);
+        }
     }
 
     private void moveToFailed(WeeklyPlan plan, Path compilingPlan, String detail, String mavenOutput) throws IOException {

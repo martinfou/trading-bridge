@@ -45,9 +45,9 @@ except ImportError:
         import tomli as tomllib
     except ImportError:
         sys.stderr.write(
-            "error: Python 3.11+ is required (stdlib `tomllib` not found) "
-            "or the `tomli` package must be installed.\n"
-            "Install a newer Python, run `pip install tomli`, or run the resolution manually.\n"
+            "error: Python 3.11+ is required (stdlib `tomllib` or third-party `tomli` not found).\n"
+            "Install a newer Python or run the resolution manually per the\n"
+            "fallback instructions in the skill's SKILL.md.\n"
         )
         sys.exit(3)
 
@@ -180,6 +180,14 @@ def extract_key(data, dotted_key: str):
     return current
 
 
+def write_json_stdout(output):
+    """Write JSON as UTF-8 so Windows cp1252 stdout can carry emoji icons."""
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if reconfigure is not None:
+        reconfigure(encoding="utf-8")
+    sys.stdout.write(json.dumps(output, indent=2, ensure_ascii=False) + "\n")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Resolve customization for a BMad skill using three-layer TOML merge.",
@@ -226,7 +234,7 @@ def main():
     else:
         output = merged
 
-    sys.stdout.write(json.dumps(output, indent=2, ensure_ascii=False) + "\n")
+    write_json_stdout(output)
 
 
 if __name__ == "__main__":

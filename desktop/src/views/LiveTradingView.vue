@@ -18,7 +18,7 @@ const summary = ref<any>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
 const selectedRunId = ref<string | null>(null)
-const activeTab = ref<'overview' | 'chart' | 'trades' | 'positions' | 'sentiment'>('chart')
+const activeTab = ref<'overview' | 'chart' | 'trades' | 'positions' | 'sentiment' | 'pending'>('chart')
 const tradeChartRef = ref<any>(null)
 const currentBid = ref<number | null>(null)
 const currentAsk = ref<number | null>(null)
@@ -466,6 +466,18 @@ function formatPositionAge(entryTimeStr?: string): string {
   }
 }
 
+function formatTime(timeStr?: string): string {
+  if (!timeStr) return '—'
+  try {
+    const d = new Date(timeStr)
+    if (isNaN(d.getTime()) || d.getTime() < 86400000) return '—'
+    const pad = (n: number) => n.toString().padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  } catch {
+    return '—'
+  }
+}
+
 
 onMounted(async () => {
   await fetchSummary()
@@ -783,6 +795,10 @@ onUnmounted(() => {
           Open Positions
           <span class="tab-count">{{ selectedRun.positions ? selectedRun.positions.length : 0 }}</span>
         </button>
+        <button :class="['tab', { active: activeTab === 'pending' }]" @click="activeTab = 'pending'">
+          Pending Orders
+          <span class="tab-count">{{ selectedRun.pendingOrders ? selectedRun.pendingOrders.length : 0 }}</span>
+        </button>
         <button :class="['tab', { active: activeTab === 'chart' }]" @click="activeTab = 'chart'">
           Price Chart
         </button>
@@ -884,6 +900,8 @@ onUnmounted(() => {
             :bars="inspectBars"
             :trades="inspectTrades"
             :positions="selectedRun?.positions"
+            :pending-orders="selectedRun?.pendingOrders"
+            :indicators="selectedRun?.indicators"
             :height="400"
             :bid="currentBid"
             :ask="currentAsk"
@@ -891,6 +909,52 @@ onUnmounted(() => {
             :timeframe="selectedRun?.configSnapshot?.strategyTimeframe"
             @loadMoreBars="handleLoadMoreBars"
           />
+        </div>
+
+        <!-- Pending Orders tab -->
+        <div v-if="activeTab === 'pending'" class="tab-panel">
+          <div v-if="!selectedRun.pendingOrders || selectedRun.pendingOrders.length === 0" class="empty-panel-state">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 text-gray-500 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            <p class="text-lg font-medium text-gray-300">No Pending Orders</p>
+            <p class="text-sm text-gray-500 mt-2">This strategy currently has no pending LIMIT or STOP orders.</p>
+          </div>
+          <div v-else class="glass-table-container">
+            <table class="live-positions-table">
+              <thead>
+                <tr>
+                  <th class="text-left pl-6">ID</th>
+                  <th class="text-left">Type</th>
+                  <th class="text-left">Side</th>
+                  <th class="num">Quantity</th>
+                  <th class="num">Target Price</th>
+                  <th class="num">Stop Loss</th>
+                  <th class="num">Take Profit</th>
+                  <th class="text-right pr-6">Submitted At</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(o, i) in selectedRun.pendingOrders" :key="i" class="position-row">
+                  <td class="pl-6 font-mono text-xs text-gray-400">{{ o.orderId || o.id }}</td>
+                  <td>
+                    <span class="modern-badge secondary">
+                      {{ o.type || 'LIMIT' }}
+                    </span>
+                  </td>
+                  <td>
+                    <span :class="['modern-badge', o.side ? o.side.toLowerCase() : '']">
+                      <span class="dot"></span>
+                      {{ o.side }}
+                    </span>
+                  </td>
+                  <td class="num font-mono text-gray-200">{{ o.quantity?.toLocaleString() || o.units?.toLocaleString() }}</td>
+                  <td class="num font-mono text-yellow-400 font-medium">{{ o.price ? Number(o.price).toFixed(5) : (o.limitPrice ? Number(o.limitPrice).toFixed(5) : '—') }}</td>
+                  <td class="num font-mono text-red-400">{{ o.stopLoss ? Number(o.stopLoss).toFixed(5) : '—' }}</td>
+                  <td class="num font-mono text-green-400">{{ o.takeProfit ? Number(o.takeProfit).toFixed(5) : '—' }}</td>
+                  <td class="text-right pr-6 text-gray-400 font-mono text-sm">{{ formatTime(o.timestamp) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <!-- Trades History tab -->

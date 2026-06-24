@@ -64,6 +64,29 @@ class WeeklyPlanJobTest {
         }
     }
 
+    @Test
+    void run_calendarFailureWithNullMessageDoesNotThrowNpe() throws Exception {
+        setupLayout(tempDir);
+        IngestPipeline pipeline = IngestPipeline.create(
+            Clock.systemUTC(),
+            week -> { throw new CalendarIngestException(null); },
+            List::of,
+            Optional::empty,
+            new com.martinfou.trading.intelligence.ingest.NewsIngestStep(),
+            new com.martinfou.trading.intelligence.ingest.ContradictionDetector()
+        );
+
+        WeeklyPlanJob job = new WeeklyPlanJob(tempDir, pipeline, stubLlmApproved("T8", null));
+        WeeklyPlanJob.Result result = job.run();
+
+        assertEquals(WeeklyPlanJob.Result.Status.CALENDAR_FAILED, result.status());
+        Path failedDir = WeeklyBuilderPaths.failed(tempDir);
+        assertTrue(Files.exists(failedDir));
+        try (var stream = Files.list(failedDir)) {
+            assertTrue(stream.findAny().isPresent());
+        }
+    }
+
     private static void setupLayout(Path repoRoot) throws Exception {
         WeeklyBuilderPaths.ensureLayout(repoRoot);
     }

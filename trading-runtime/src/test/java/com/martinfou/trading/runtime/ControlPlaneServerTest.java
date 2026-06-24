@@ -18,6 +18,8 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeUnit;
+import com.martinfou.trading.backtest.events.RunEvent;
+import com.martinfou.trading.backtest.events.RunEventType;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -31,9 +33,13 @@ class ControlPlaneServerTest {
     private KillSwitchService killSwitchService;
     private ControlPlaneServer server;
     private HttpClient http;
+    private String originalEventStoreProp;
 
     @BeforeEach
-    void setUp() {
+    void setUp(@TempDir Path tempDir) {
+        originalEventStoreProp = System.getProperty("TRADING_BRIDGE_EVENT_STORE");
+        System.setProperty("TRADING_BRIDGE_EVENT_STORE", tempDir.resolve("test-events.db").toAbsolutePath().toString());
+
         stores = RuntimeStores.inMemoryWithBroadcast();
         runManager = new RunManager(
             stores.eventStore(),
@@ -58,9 +64,32 @@ class ControlPlaneServerTest {
 
     @AfterEach
     void tearDown() {
-        server.close();
-        runManager.close();
-        stores.close();
+        try {
+            if (server != null) {
+                server.close();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        try {
+            if (runManager != null) {
+                runManager.close();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        try {
+            if (stores != null) {
+                stores.close();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        if (originalEventStoreProp != null) {
+            System.setProperty("TRADING_BRIDGE_EVENT_STORE", originalEventStoreProp);
+        } else {
+            System.clearProperty("TRADING_BRIDGE_EVENT_STORE");
+        }
         // Force GC to release file locks on Windows
         System.gc();
         System.runFinalization();
@@ -598,6 +627,261 @@ class ControlPlaneServerTest {
             Thread.sleep(50);
         }
         throw new AssertionError("Run did not complete in time: " + runId);
+    }
+
+    @Test
+    void getRun_fallbackToPersistentDb() throws Exception {
+        Path dbPath = com.martinfou.trading.backtest.persistence.BacktestPersistenceService.resolveDefaultDbPath();
+        String runId = "test-fallback-run-123";
+        try (com.martinfou.trading.backtest.persistence.SqliteBacktestRunStore store = new com.martinfou.trading.backtest.persistence.SqliteBacktestRunStore(dbPath)) {
+            store.insert(new com.martinfou.trading.backtest.persistence.BacktestRunDetails(
+                runId,
+                "SmaCrossover",
+                "EUR_USD",
+                Instant.parse("2026-06-01T00:00:00Z"),
+                Instant.parse("2026-06-02T00:00:00Z"),
+                "{}",
+                "hash123",
+                1000.0,
+                1100.0,
+                100.0,
+                10.0,
+                10,
+                6,
+                4,
+                60.0,
+                5.0,
+                10.0,
+                1.5,
+                1.8,
+                1.2,
+                2.0,
+                0.5,
+                0.1,
+                "[1000.0, 1100.0]",
+                Instant.now()
+            ));
+        }
+
+        try {
+            HttpResponse<String> response = get("/api/runs/" + runId);
+            assertEquals(200, response.statusCode());
+            assertTrue(response.body().contains("\"runId\":\"test-fallback-run-123\""));
+            assertTrue(response.body().contains("\"strategyId\":\"SmaCrossover\""));
+            assertTrue(response.body().contains("\"status\":\"COMPLETED\""));
+
+            HttpResponse<String> ecResponse = get("/api/runs/" + runId + "/equity-curve");
+            assertEquals(200, ecResponse.statusCode());
+            assertTrue(ecResponse.body().contains("[1000.0,1100.0]"));
+
+            HttpResponse<String> tradesResponse = get("/api/runs/" + runId + "/trades");
+            assertEquals(200, tradesResponse.statusCode());
+            assertTrue(tradesResponse.body().contains("\"trades\":[]"));
+        } finally {
+            try (com.martinfou.trading.backtest.persistence.SqliteBacktestRunStore store = new com.martinfou.trading.backtest.persistence.SqliteBacktestRunStore(dbPath)) {
+                store.delete(runId);
+            }
+        }
+    }
+
+    @Test
+    void getRun_notFoundFallback() throws Exception {
+        String invalidId = "test-non-existent-run-id-999";
+
+        HttpResponse<String> response = get("/api/runs/" + invalidId);
+        assertEquals(404, response.statusCode());
+
+        HttpResponse<String> ecResponse = get("/api/runs/" + invalidId + "/equity-curve");
+        assertEquals(404, ecResponse.statusCode());
+
+        HttpResponse<String> tradesResponse = get("/api/runs/" + invalidId + "/trades");
+        assertEquals(404, tradesResponse.statusCode());
+    }
+
+    @Test
+    void apiRuns_sortingWithActiveRun() throws Exception {
+        String activeRunId = runManager.startRun(new RunManager.StartRunRequest(
+            "LondonOpenRangeBreakout",
+            "EUR_USD",
+            "BACKTEST",
+            new BarSourceResolver.BarsSource("sample", 50, null),
+            1000.0,
+            1.0,
+            0.0,
+            0.0,
+            null,
+            null
+        ));
+
+        HttpResponse<String> response = get("/api/runs");
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains(activeRunId));
+    }
+
+    @Test
+    void getRun_weeklyStats() throws Exception {
+        String runId = "test-fallback-run-123";
+        Path dbPath = com.martinfou.trading.backtest.persistence.BacktestPersistenceService.resolveDefaultDbPath();
+        try (com.martinfou.trading.backtest.persistence.SqliteBacktestRunStore store = new com.martinfou.trading.backtest.persistence.SqliteBacktestRunStore(dbPath)) {
+            store.insert(new com.martinfou.trading.backtest.persistence.BacktestRunDetails(
+                runId,
+                "SmaCrossover",
+                "EUR_USD",
+                Instant.parse("2026-06-01T12:00:00Z"),
+                Instant.parse("2026-06-07T12:00:00Z"),
+                "{}",
+                "hash",
+                1000.0,
+                1100.0,
+                100.0,
+                10.0,
+                0,
+                0,
+                0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                "[]",
+                Instant.now()
+            ));
+        }
+
+        try {
+            HttpResponse<String> response = get("/api/runs/" + runId + "/weekly-stats");
+            assertEquals(200, response.statusCode());
+            assertTrue(response.body().contains("\"weeklyStats\":[]"));
+        } finally {
+            try (com.martinfou.trading.backtest.persistence.SqliteBacktestRunStore store = new com.martinfou.trading.backtest.persistence.SqliteBacktestRunStore(dbPath)) {
+                store.delete(runId);
+            }
+        }
+    }
+
+    @Test
+    void weeklyStats_calculatesMetricsAndInvalidatesCache() throws Exception {
+        String runId = "test-weekly-stats-cache";
+        
+        stores.eventStore().append(runId, new RunEvent(
+            1,
+            RunEventType.FILL,
+            Instant.parse("2026-06-01T12:00:00Z"),
+            runId,
+            "SmaCrossover",
+            "EUR_USD",
+            "BACKTEST",
+            java.util.Map.of(
+                "symbol", "EUR_USD",
+                "side", "BUY",
+                "quantity", 10000.0,
+                "price", 1.1000,
+                "orderId", "order-1"
+            )
+        ));
+        
+        stores.eventStore().append(runId, new RunEvent(
+            1,
+            RunEventType.FILL,
+            Instant.parse("2026-06-01T12:05:00Z"),
+            runId,
+            "SmaCrossover",
+            "EUR_USD",
+            "BACKTEST",
+            java.util.Map.of(
+                "symbol", "EUR_USD",
+                "side", "SELL",
+                "quantity", 10000.0,
+                "price", 1.1050,
+                "orderId", "order-2"
+            )
+        ));
+        
+        Path dbPath = com.martinfou.trading.backtest.persistence.BacktestPersistenceService.resolveDefaultDbPath();
+        try (com.martinfou.trading.backtest.persistence.SqliteBacktestRunStore store = new com.martinfou.trading.backtest.persistence.SqliteBacktestRunStore(dbPath)) {
+            store.insert(new com.martinfou.trading.backtest.persistence.BacktestRunDetails(
+                runId,
+                "SmaCrossover",
+                "EUR_USD",
+                Instant.parse("2026-06-01T12:00:00Z"),
+                Instant.parse("2026-06-07T12:00:00Z"),
+                "{}",
+                "hash",
+                10000.0,
+                10050.0,
+                50.0,
+                10.0,
+                0,
+                0,
+                0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                "[]",
+                Instant.now()
+            ));
+        }
+        
+        try {
+            HttpResponse<String> response = get("/api/runs/" + runId + "/weekly-stats");
+            assertEquals(200, response.statusCode());
+            assertTrue(response.body().contains("\"totalPnl\":50.0"));
+            assertTrue(response.body().contains("\"totalTrades\":1"));
+            
+            stores.eventStore().append(runId, new RunEvent(
+                1,
+                RunEventType.FILL,
+                Instant.parse("2026-06-01T12:10:00Z"),
+                runId,
+                "SmaCrossover",
+                "EUR_USD",
+                "BACKTEST",
+                java.util.Map.of(
+                    "symbol", "EUR_USD",
+                    "side", "BUY",
+                    "quantity", 10000.0,
+                    "price", 1.1000,
+                    "orderId", "order-3"
+                )
+            ));
+            
+            stores.eventStore().append(runId, new RunEvent(
+                1,
+                RunEventType.FILL,
+                Instant.parse("2026-06-01T12:15:00Z"),
+                runId,
+                "SmaCrossover",
+                "EUR_USD",
+                "BACKTEST",
+                java.util.Map.of(
+                    "symbol", "EUR_USD",
+                    "side", "SELL",
+                    "quantity", 10000.0,
+                    "price", 1.1100,
+                    "orderId", "order-4"
+                )
+            ));
+            
+            response = get("/api/runs/" + runId + "/weekly-stats");
+            assertEquals(200, response.statusCode());
+            assertTrue(response.body().contains("\"totalPnl\":150.0"));
+            assertTrue(response.body().contains("\"totalTrades\":2"));
+            
+        } finally {
+            try (com.martinfou.trading.backtest.persistence.SqliteBacktestRunStore store = new com.martinfou.trading.backtest.persistence.SqliteBacktestRunStore(dbPath)) {
+                store.delete(runId);
+            }
+        }
     }
 
     private static RunRecord waitForManagerCompletion(

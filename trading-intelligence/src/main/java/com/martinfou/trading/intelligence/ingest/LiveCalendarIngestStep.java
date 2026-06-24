@@ -30,20 +30,23 @@ public final class LiveCalendarIngestStep implements CalendarIngestStep {
     @Override
     public List<WeeklyIntelBrief.CalendarEventEntry> fetch(LocalDate weekStart) throws Exception {
         List<ForexFactoryScraper.Event> raw = scraper.fetchWeek(weekStart);
-        if (raw.isEmpty()) {
+        if (raw == null || raw.isEmpty()) {
             throw new CalendarIngestException("ForexFactory returned no calendar events for week " + weekStart);
         }
-        if (!allowFallback && raw.stream().allMatch(LiveCalendarIngestStep::looksLikeFallback)) {
+        if (!allowFallback && raw.stream().allMatch(e -> e != null && looksLikeFallback(e))) {
             throw new CalendarIngestException(
                 "ForexFactory scrape unavailable — only hardcoded fallback events returned");
         }
         List<WeeklyIntelBrief.CalendarEventEntry> mapped = new ArrayList<>();
         for (ForexFactoryScraper.Event event : raw) {
+            if (event == null) {
+                continue;
+            }
             mapped.add(new WeeklyIntelBrief.CalendarEventEntry(
                 eventId(event),
-                event.event(),
-                event.currency(),
-                event.impact(),
+                event.event() != null ? event.event() : "Unknown",
+                event.currency() != null ? event.currency() : "Unknown",
+                event.impact() != null ? event.impact() : "Unknown",
                 event.time(),
                 "forexfactory"
             ));
@@ -53,11 +56,26 @@ public final class LiveCalendarIngestStep implements CalendarIngestStep {
     }
 
     static String eventId(ForexFactoryScraper.Event event) {
-        String slug = (event.currency() + "-" + event.event())
+        if (event == null) {
+            return "ff-unknown";
+        }
+        String currency = event.currency() != null ? event.currency() : "unknown";
+        String name = event.event() != null ? event.event() : "unknown";
+        String slug = (currency + "-" + name)
             .toLowerCase(Locale.ROOT)
             .replaceAll("[^a-z0-9]+", "-")
             .replaceAll("^-|-$", "");
-        return "ff-" + event.time().toString().substring(0, 10) + "-" + slug;
+
+        String timeStr = "unknown-date";
+        if (event.time() != null) {
+            String ts = event.time().toString();
+            if (ts.length() >= 10) {
+                timeStr = ts.substring(0, 10);
+            } else {
+                timeStr = ts;
+            }
+        }
+        return "ff-" + timeStr + "-" + slug;
     }
 
     private static boolean looksLikeFallback(ForexFactoryScraper.Event event) {

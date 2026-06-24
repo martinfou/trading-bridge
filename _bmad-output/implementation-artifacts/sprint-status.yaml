@@ -66,7 +66,7 @@ development_status:
   2-10-utc-timezone-migration: done
   epic-2-retrospective: optional
 
-  epic-3: backlog
+  epic-3: in-progress
   3-1-complete-limit-and-stop-order-simulation: backlog
   3-2-commission-and-slippage: done
   3-3-trade-exit-lifecycle: backlog
@@ -76,27 +76,6 @@ development_status:
   3-7-trade-csv-export: backlog
   3-8-advanced-performance-metrics: backlog
   epic-3-retrospective: optional
-
-  epic-4: backlog
-  4-1-broker-interface: backlog
-  4-2-oanda-v20-rest-broker: backlog
-  4-3-interactive-brokers-api: backlog
-  4-4-real-time-market-data: backlog
-  4-5-live-market-order-execution: backlog
-  4-6-live-limit-and-stop-orders: backlog
-  4-7-position-synchronization: review
-  4-8-paper-trading-mode: backlog
-  epic-4-retrospective: optional
-
-  epic-5: backlog
-  5-1-sqlite-trade-persistence: backlog
-  5-2-structured-logging: backlog
-  5-3-telegram-monitoring-alerts: backlog
-  5-4-web-dashboard: backlog
-  5-5-unit-test-coverage: backlog
-  5-6-broker-reconnect-and-error-handling: backlog
-  5-7-user-documentation: backlog
-  epic-5-retrospective: optional
 
   epic-12: done
   12-1-golden-backtest-stabilization: done
@@ -141,7 +120,7 @@ development_status:
   15-7-html-due-diligence-report: done
   15-8-prop-shop-runbook: done
   15-9-exception-de-promotion-pour-les-strategies-harness: done
-  epic-15-retrospective: done
+  epic-15-retrospective: optional
 
   epic-16: in-progress
   16-1-runner-paper-stub-labellise: backlog
@@ -157,10 +136,10 @@ development_status:
   16-11-harness-test-strategies: backlog
   16-12-fix-oanda-position-client-tag-matching: done
   16-13-watchdog-weekend-close-and-memory-cleanup: review
+  16-14-position-synchronization: review
   epic-16-retrospective: optional
 
-
-  epic-17: done
+  epic-17: in-progress
   17-1-get-control-summary-phase-a-observabilite: backlog
   17-2-websocket-dashboard-patches: backlog
   17-3-dashboard-python-vue-lecture-seule-phase-a: backlog
@@ -183,7 +162,7 @@ development_status:
   18-5-replay-complet-apres-recovery-hub: backlog
   epic-18-retrospective: optional
 
-  epic-19: done
+  epic-19: in-progress
   19-1-interface-modules-de-validation-pluggables: backlog
   19-2-purged-walk-forward-gate: backlog
   19-3-cpcv-et-stress-modules: backlog
