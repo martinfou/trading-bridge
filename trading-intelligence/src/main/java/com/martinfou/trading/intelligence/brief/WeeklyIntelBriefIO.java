@@ -24,13 +24,22 @@ public final class WeeklyIntelBriefIO {
     }
 
     public static void write(WeeklyIntelBrief brief, Path target) throws IOException {
-        Files.createDirectories(target.getParent());
+        Path parent = target.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
         Path temp = target.resolveSibling(target.getFileName() + ".tmp");
-        MAPPER.writerWithDefaultPrettyPrinter().writeValue(temp.toFile(), brief);
         try {
-            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (IOException ex) {
-            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
+            try (var out = Files.newOutputStream(temp)) {
+                MAPPER.writerWithDefaultPrettyPrinter().writeValue(out, brief);
+            }
+            try {
+                Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (IOException ex) {
+                Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(temp);
         }
     }
 

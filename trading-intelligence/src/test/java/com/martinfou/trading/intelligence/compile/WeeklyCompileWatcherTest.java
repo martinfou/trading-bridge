@@ -134,4 +134,32 @@ class WeeklyCompileWatcherTest {
 
         assertEquals(WeeklyCompileWatcher.Result.Status.IDLE, watcher.runOnce().status());
     }
+
+    @Test
+    void runOnce_malformedJsonMovesToDlq() throws Exception {
+        WeeklyBuilderPaths.ensureLayout(tempDir);
+        Path pendingPlan = WeeklyBuilderPaths.pending(tempDir).resolve("weekly-plan-2026-W24.json");
+        Files.writeString(pendingPlan, "{ malformed json: true ");
+
+        WeeklyCompileWatcher watcher = new WeeklyCompileWatcher(
+            tempDir,
+            WeeklyStrategyCodeGenerator.loadDefault(),
+            new CompileGate(tempDir) {
+                @Override
+                public Result compile() {
+                    return new Result(true, "mock ok", null);
+                }
+            },
+            Clock.systemUTC()
+        );
+
+        WeeklyCompileWatcher.Result result = watcher.runOnce();
+        assertEquals(WeeklyCompileWatcher.Result.Status.COMPILE_FAILED, result.status());
+        assertTrue(result.message().contains("Malformed plan JSON"));
+
+        Path dlqDir = WeeklyBuilderPaths.dlq(tempDir);
+        assertTrue(Files.exists(dlqDir.resolve("weekly-plan-2026-W24.json")));
+        assertTrue(Files.exists(dlqDir.resolve("weekly-plan-2026-W24.json.reason.json")));
+        assertFalse(Files.exists(pendingPlan));
+    }
 }

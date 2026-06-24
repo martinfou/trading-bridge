@@ -34,6 +34,18 @@ export interface RunSummary {
   status: string
   startedAt?: string
   completedAt?: string
+  mode?: string
+  executionLabel?: string
+  executionLabelMeta?: {
+    id: string
+    displayName: string
+    category: string
+    badgeBackgroundColor: string
+    badgeTextColor: string
+    brokerBacked: boolean
+    countsTowardPaperPeriod: boolean
+    stubWarning?: boolean
+  }
 }
 
 export interface RunResult {
@@ -69,6 +81,8 @@ export interface RunResult {
   }
   trades?: Trade[]
   equityCurve?: number[]
+  pendingOrders?: any[]
+  indicators?: string[]
 }
 
 export interface Trade {
@@ -107,4 +121,26 @@ export interface PromoteGateThresholds {
   goldenReturnTolerancePct: number
   paperDaysBeforeLive: number
   validationModuleEnabled: boolean
+}
+
+export interface ReconciliationAnomaly {
+  type: 'MISSING_LIVE' | 'GHOST_LIVE' | 'TIME_DRIFT' | 'PRICE_DRIFT'
+  orderId?: string
+  message: string
+  deltaPrice: number
+  deltaTimeMs: number
+}
+
+export interface WeeklyStat {
+  weekId: string
+  totalPnl: number
+  totalTrades: number
+  winningTrades: number
+  losingTrades: number
+  winRatePct: number
+  profitFactor: number
+  sharpeRatio: number
+  maxDrawdownPct: number
+  startCapital: number
+  endCapital: number
 }

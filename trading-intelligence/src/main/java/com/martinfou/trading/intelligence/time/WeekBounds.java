@@ -21,8 +21,10 @@ public final class WeekBounds {
      * Example: Friday 2026-06-06 → weekStart 2026-06-09.
      */
     public static LocalDate nextWeekMonday(LocalDate reference) {
-        LocalDate mondayThisWeek = reference.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
-        return mondayThisWeek.plusWeeks(1);
+        if (reference.getDayOfWeek() == DayOfWeek.MONDAY) {
+            return reference;
+        }
+        return reference.with(TemporalAdjusters.next(DayOfWeek.MONDAY));
     }
 
     public static LocalDate nextWeekMonday(Clock clock) {

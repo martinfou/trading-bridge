@@ -111,9 +111,12 @@ public final class WeeklyPlanJob {
             pendingPlan.getFileName().toString()
         );
         Path manifestPath = WeeklyPlanIO.manifestPath(WeeklyBuilderPaths.pending(repoRoot), plan.weekId());
-        mapper.writerWithDefaultPrettyPrinter().writeValue(manifestPath.toFile(), manifest);
+        try (var out = Files.newOutputStream(manifestPath)) {
+            mapper.writerWithDefaultPrettyPrinter().writeValue(out, manifest);
+        }
 
-        log.info("Approved plan written to {} (picks={})", pendingPlan, plan.picks().size());
+        int picksCount = plan.picks() != null ? plan.picks().size() : 0;
+        log.info("Approved plan written to {} (picks={})", pendingPlan, picksCount);
         return Result.approved(plan.weekId(), pendingPlan);
     }
 
@@ -121,11 +124,13 @@ public final class WeeklyPlanJob {
         Path failedDir = WeeklyBuilderPaths.failed(repoRoot);
         Files.createDirectories(failedDir);
         Path reasonFile = failedDir.resolve("reason-" + clock.instant().toString().replace(':', '-') + ".json");
-        mapper.writerWithDefaultPrettyPrinter().writeValue(reasonFile.toFile(), Map.of(
-            "reason", reason,
-            "detail", detail,
-            "at", clock.instant().toString()
-        ));
+        var map = new java.util.HashMap<String, String>();
+        map.put("reason", reason != null ? reason : "");
+        map.put("detail", detail != null ? detail : "");
+        map.put("at", clock.instant().toString());
+        try (var out = Files.newOutputStream(reasonFile)) {
+            mapper.writerWithDefaultPrettyPrinter().writeValue(out, map);
+        }
         log.warn("Wrote failure reason to {}", reasonFile);
     }
 
@@ -133,19 +138,27 @@ public final class WeeklyPlanJob {
         Path dlqDir = WeeklyBuilderPaths.dlq(repoRoot);
         Files.createDirectories(dlqDir);
         Path reasonFile = dlqDir.resolve("weekly-plan-" + weekId + "-dlq.json");
-        mapper.writerWithDefaultPrettyPrinter().writeValue(reasonFile.toFile(), Map.of(
-            "weekId", weekId,
-            "briefRef", briefRef,
-            "detail", detail,
-            "at", clock.instant().toString()
-        ));
+        var map = new java.util.HashMap<String, String>();
+        map.put("weekId", weekId != null ? weekId : "");
+        map.put("briefRef", briefRef != null ? briefRef : "");
+        map.put("detail", detail != null ? detail : "");
+        map.put("at", clock.instant().toString());
+        try (var out = Files.newOutputStream(reasonFile)) {
+            mapper.writerWithDefaultPrettyPrinter().writeValue(out, map);
+        }
         log.warn("Malformed plan sent to dlq: {}", reasonFile);
     }
 
     private static String sha256(Path file) throws IOException {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            digest.update(Files.readAllBytes(file));
+            try (var in = Files.newInputStream(file)) {
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = in.read(buffer)) != -1) {
+                    digest.update(buffer, 0, read);
+                }
+            }
             return HexFormat.of().formatHex(digest.digest());
         } catch (Exception ex) {
             throw new IOException("SHA-256 failed", ex);

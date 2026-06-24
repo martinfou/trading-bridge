@@ -167,4 +167,17 @@ Items deferred during code reviews — not blocking current stories.
 - **consecutiveTimeDrifts persistence on pause/restart** — Historical time-drift counts persist across pauses and restarts instead of being cleared.
 - **ControlPlaneServer pending orders dust comparison** — Floating-point comparison `pendingQty > fillQty` without epsilon can leave residuals in pending orders.
 
+## Deferred from: code review of spec-duplicate-running-strategies-fix (2026-06-24)
+
+- **Autodestruction circulaire via les événements de correction FILL** — La détection d'écart de position ajoute un événement FILL correctif qui manque d'intégration dans `RunManager.processEventForReconciliation`, déclenchant une anomalie `GHOST_LIVE` et le kill-switch.
+- **Appels réseau/BD bloquants sur le thread de flux de ticks** — `reconcilePositions` effectue des appels REST et des replays d'eventStore directement dans le thread de streaming de prix OANDA, risquant de créer de la latence.
+- **Race conditions de concurrence et double-clôture** — Les délais d'exécution des ordres chez le broker peuvent générer de faux signaux de désalignement de position et doubler la clôture locale.
+- **Désynchronisation de l'état de la stratégie** — Les événements FILL correctifs n'étant pas notifiés à l'instance de la stratégie en mémoire, celle-ci reste désynchronisée.
+- **Risques de NullPointerException (positions et symboles)** — Absence de vérifications de nullité sur les retours de `broker.getPositions()`, les symboles de position et la liste des `activeSymbols` dans `ControlSummaryService` et `OandaStreamingExecutor`.
+- **Exceptions non gérées lors du rollover de l'exécuteur OANDA** — `checkRollovers` effectue des appels bloquants sans gestion d'erreurs sur le thread de ticks.
+- **Échec de la transition terminale de run lors d'erreurs réseau au Stop** — `RunManager.executeRun()` appelle `broker.getAccountState().equity()` sans try-catch après déconnexion, ce qui marque le run comme `FAILED` en cas de problème de connexion.
+- **Lectures redondantes dans l'event store** — `ControlSummaryService.getPositions` appelle `replayAll()` deux fois de suite.
+- **Violation de la contrainte 'Always' en cas d'exception sur le démarrage** — Si `RunManager.executeRun()` lève une exception (erreur d'authentification/historique), aucun événement terminal (`RUN_ENDED` ou `ERROR`) n'est persisté en BD.
+- **Risque d'inexactitude de l'equity finale** — L'appel d'equity post-déconnexion dans `RunManager.executeRun()` lève une exception et empêche l'enregistrement du statut propre de fin de run.
+
 

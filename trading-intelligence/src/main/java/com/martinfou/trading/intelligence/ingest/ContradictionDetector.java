@@ -26,20 +26,37 @@ public final class ContradictionDetector {
         List<WeeklyIntelBrief.OandaRetailEntry> oanda
     ) {
         List<WeeklyIntelBrief.ContradictionEntry> out = new ArrayList<>();
+        if (cot == null || oanda == null) {
+            return out;
+        }
         for (WeeklyIntelBrief.CotSnapshotEntry cotEntry : cot) {
+            if (cotEntry == null || cotEntry.instrument() == null) {
+                continue;
+            }
             String instrumentKey = cotEntry.instrument().toUpperCase(Locale.ROOT);
             String oandaSymbol = COT_TO_OANDA.get(instrumentKey);
             if (oandaSymbol == null) {
                 continue;
             }
             WeeklyIntelBrief.OandaRetailEntry retail = oanda.stream()
-                .filter(o -> oandaSymbol.equals(o.instrument()))
+                .filter(o -> o != null && oandaSymbol.equals(o.instrument()))
                 .findFirst()
                 .orElse(null);
             if (retail == null) {
                 continue;
             }
-            if (cotEntry.longPct() >= EXTREME_COT_LONG && retail.longPct() >= EXTREME_RETAIL_LONG) {
+
+            double cotLong = cotEntry.longPct();
+            double cotShort = cotEntry.shortPct();
+
+            // If USD is the base currency (starts with USD_), COT speculator reports positions on JPY/CAD (the counter currency).
+            // A long COT JPY is equivalent to a short OANDA USD_JPY.
+            if (oandaSymbol.startsWith("USD_")) {
+                cotLong = cotEntry.shortPct();
+                cotShort = cotEntry.longPct();
+            }
+
+            if (cotLong >= EXTREME_COT_LONG && retail.longPct() >= EXTREME_RETAIL_LONG) {
                 out.add(new WeeklyIntelBrief.ContradictionEntry(
                     "COT_RETAIL_CROWDED_LONG",
                     "Speculators and retail both heavily long on " + oandaSymbol
@@ -47,7 +64,7 @@ public final class ContradictionDetector {
                     List.of(oandaSymbol)
                 ));
             }
-            if (cotEntry.shortPct() >= EXTREME_COT_LONG && retail.shortPct() >= EXTREME_RETAIL_LONG) {
+            if (cotShort >= EXTREME_COT_LONG && retail.shortPct() >= EXTREME_RETAIL_LONG) {
                 out.add(new WeeklyIntelBrief.ContradictionEntry(
                     "COT_RETAIL_CROWDED_SHORT",
                     "Speculators and retail both heavily short on " + oandaSymbol

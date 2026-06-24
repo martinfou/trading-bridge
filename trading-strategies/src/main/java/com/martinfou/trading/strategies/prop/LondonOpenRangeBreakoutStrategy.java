@@ -9,6 +9,10 @@ import com.martinfou.trading.core.indicators.Indicators;
  */
 public final class LondonOpenRangeBreakoutStrategy extends AbstractPropStrategy {
 
+    private int emaFastPeriod = 20;
+    private int emaSlowPeriod = 200;
+    private int atrPeriod = 14;
+
     private double rangeHigh = Double.NaN;
     private double rangeLow = Double.NaN;
     private int rangeDay = -1;
@@ -20,7 +24,7 @@ public final class LondonOpenRangeBreakoutStrategy extends AbstractPropStrategy 
 
     @Override
     protected void evaluate(Bar bar) {
-        if (history.size() < 220) return;
+        if (history.size() < Math.max(emaSlowPeriod, emaFastPeriod) + 20) return;
         int dk = PropSessions.dayKey(bar);
         int h = PropSessions.hour(bar);
 
@@ -40,9 +44,9 @@ public final class LondonOpenRangeBreakoutStrategy extends AbstractPropStrategy 
 
         if (!rangeLocked || h < 8 || h > 9) return;
 
-        double ema20 = Indicators.emaLatest(history, 20);
-        double ema200 = Indicators.emaLatest(history, 200);
-        double atr = atr(14);
+        double ema20 = Indicators.emaLatest(history, emaFastPeriod);
+        double ema200 = Indicators.emaLatest(history, emaSlowPeriod);
+        double atr = atr(atrPeriod);
         double pip = Indicators.pipSize(symbol);
         double buffer = Math.max(pip, atr * 0.5);
 

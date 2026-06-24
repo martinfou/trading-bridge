@@ -12,7 +12,7 @@
       "name": "HighImpactNewsBreakout",
       "description": "Event-driven FX breakout around HIGH impact calendar events",
       "codegenHandler": "THIN_PROP",
-      "requiredParams": ["direction", "eventId", "eventTimeUtc"],
+      "requiredParams": ["eventId", "eventTimeUtc"],
       "optionalParams": ["slPips", "tpRatio"],
       "allowedDirections": ["LONG", "SHORT"]
     },
@@ -20,7 +20,7 @@
       "name": "COTContrarianFade",
       "description": "Fade extreme speculator positioning from COT data",
       "codegenHandler": "THIN_PROP",
-      "requiredParams": ["direction", "cotInstrument", "percentile52w"],
+      "requiredParams": ["cotInstrument", "percentile52w"],
       "optionalParams": ["holdBars"],
       "allowedDirections": ["LONG", "SHORT"]
     },
@@ -28,7 +28,7 @@
       "name": "RetailSentimentFade",
       "description": "Contrarian fade when retail positioning is one-sided",
       "codegenHandler": "THIN_PROP",
-      "requiredParams": ["direction", "retailLongPct"],
+      "requiredParams": ["retailLongPct"],
       "optionalParams": ["thresholdPct"],
       "allowedDirections": ["LONG", "SHORT"]
     },
@@ -52,7 +52,7 @@
       "name": "CentralBankWeekBias",
       "description": "Directional bias during central-bank decision week",
       "codegenHandler": "THIN_PROP",
-      "requiredParams": ["direction", "centralBank", "decisionDayUtc"],
+      "requiredParams": ["centralBank", "decisionDayUtc"],
       "optionalParams": ["biasStrength"],
       "allowedDirections": ["LONG", "SHORT"]
     },
@@ -60,7 +60,7 @@
       "name": "PreEventRangeBreakout",
       "description": "Volatility expansion breakout before CPI/NFP",
       "codegenHandler": "THIN_PROP",
-      "requiredParams": ["direction", "eventId", "eventTimeUtc"],
+      "requiredParams": ["eventId", "eventTimeUtc"],
       "optionalParams": ["rangeHours"],
       "allowedDirections": ["LONG", "SHORT"]
     },

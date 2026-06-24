@@ -1,6 +1,10 @@
 package com.martinfou.trading.runtime;
 
 import org.junit.jupiter.api.Test;
+import com.martinfou.trading.core.Order;
+import com.martinfou.trading.core.Position;
+import com.martinfou.trading.backtest.events.RunEvent;
+import com.martinfou.trading.backtest.events.RunEventType;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -125,6 +129,112 @@ class ControlSummaryServiceTest {
             Map<String, Object> freshness = (Map<String, Object>) summary.get("freshness");
             assertEquals(120L, freshness.get("staleThresholdSeconds"));
             assertEquals(1, freshness.get("staleRunCount"));
+        }
+    }
+
+    @Test
+    void getPositions_brokerBackedRun_returnsEmptyWhenQuerySucceedsWithZeroPositions() {
+        var mockBroker = new com.martinfou.trading.broker.Broker() {
+            @Override public boolean isConnected() { return true; }
+            @Override public void connect() {}
+            @Override public void disconnect() {}
+            @Override public void reconnect() {}
+            @Override public com.martinfou.trading.broker.OrderSubmitResult submitOrder(Order order) { return null; }
+            @Override public com.martinfou.trading.broker.OrderSubmitResult cancelOrder(String id) { return null; }
+            @Override public List<Position> getPositions() { return List.of(); }
+            @Override public com.martinfou.trading.broker.AccountState getAccountState() { return new com.martinfou.trading.broker.AccountState(100000, 100000, "USD"); }
+            @Override public void addEventListener(java.util.function.Consumer<com.martinfou.trading.broker.BrokerEvent> l) {}
+        };
+        try (EventStore store = EventStores.inMemory();
+             RunManager manager = new RunManager(store)) {
+
+            manager.brokerAccountRegistry().registerMockBroker("default", mockBroker);
+
+            RunConfigSnapshot config = new RunConfigSnapshot(
+                "LondonOpenRangeBreakout",
+                "EUR_USD",
+                "LIVE",
+                "sample",
+                100,
+                null,
+                100_000.0,
+                null,
+                null,
+                ExecutionLabel.LIVE_OANDA.name());
+
+            RunRecord run = manager.register(config);
+            run.markRunning();
+
+            store.append(run.runId(), new RunEvent(
+                RunEvent.SCHEMA_VERSION,
+                RunEventType.FILL,
+                Instant.now(),
+                run.runId(),
+                "LondonOpenRangeBreakout",
+                "EUR_USD",
+                "LIVE",
+                Map.of("symbol", "EUR_USD", "side", "BUY", "quantity", 1000.0, "price", 1.10)
+            ));
+
+            ControlSummaryService service = new ControlSummaryService(manager);
+            Map<String, Object> summary = service.buildSummary();
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> runs = (List<Map<String, Object>>) summary.get("runs");
+            assertEquals(1, runs.size());
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> positions = (List<Map<String, Object>>) runs.getFirst().get("positions");
+            assertTrue(positions.isEmpty());
+        }
+    }
+
+    @Test
+    void buildSummary_restoredRun_ignoresOldEventsBeforeStartedAt() throws Exception {
+        try (EventStore store = EventStores.inMemory();
+             RunManager manager = new RunManager(store, config -> new com.martinfou.trading.broker.FakeBroker(100_000.0))) {
+            
+            RunConfigSnapshot config = new RunConfigSnapshot(
+                "LondonOpenRangeBreakout",
+                "EUR_USD",
+                "LIVE",
+                "sample",
+                100,
+                null,
+                100_000.0,
+                null,
+                null,
+                ExecutionLabel.LIVE_OANDA.name());
+            
+            String runId = "restored-run-123";
+            RunRecord run = manager.restoreRun(runId, config);
+            run.markRunning();
+            
+            // Append an event from 1 hour before the run started (previous session)
+            Instant oldEventTime = run.startedAt().minus(java.time.Duration.ofHours(1));
+            store.append(run.runId(), new RunEvent(
+                RunEvent.SCHEMA_VERSION,
+                RunEventType.FILL,
+                oldEventTime,
+                run.runId(),
+                "LondonOpenRangeBreakout",
+                "EUR_USD",
+                "LIVE",
+                Map.of("symbol", "EUR_USD", "side", "BUY", "quantity", 1000.0, "price", 1.10)
+            ));
+
+            // Set clock to 30 seconds after the run started
+            Instant testNow = run.startedAt().plus(java.time.Duration.ofSeconds(30));
+            Clock clock = Clock.fixed(testNow, ZoneOffset.UTC);
+
+            ControlSummaryService service = new ControlSummaryService(manager, 120, clock);
+            Map<String, Object> summary = service.buildSummary();
+
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> runs = (List<Map<String, Object>>) summary.get("runs");
+            assertEquals(1, runs.size());
+            Map<String, Object> runItem = runs.getFirst();
+            
+            // The run should NOT be stale because the old event is ignored and it uses the startedAt grace period
+            assertFalse((Boolean) runItem.get("isStale"));
         }
     }
 

@@ -82,6 +82,41 @@ class WeeklyDeployWatcherTest {
     }
 
     @Test
+    void run_pathTraversalWeekId_failsDeployment(@TempDir Path repo) throws Exception {
+        WeeklyBuilderPaths.ensureLayout(repo);
+        Path bundleDir = WeeklyBuilderPaths.compiled(repo).resolve("traversal");
+        Files.createDirectories(bundleDir);
+        CompileManifest manifest = manifest("../../traversal", List.of(
+            new CompileManifest.StrategyEntry(
+                "LondonOpenRangeBreakout", "LondonOpenRangeBreakoutStrategy", "T1", "EUR_USD")));
+        CompileManifestIO.mapper().writerWithDefaultPrettyPrinter()
+            .writeValue(bundleDir.resolve("manifest.json").toFile(), manifest);
+        Files.writeString(bundleDir.resolve("weekly-plan-traversal.json"), "{}");
+
+        WeeklyDeployWatcher watcher = new WeeklyDeployWatcher(repo, unreachableClient());
+        WeeklyDeployResult result = watcher.run();
+
+        assertFalse(result.success());
+        assertTrue(Files.isRegularFile(
+            WeeklyBuilderPaths.failed(repo).resolve("traversal").resolve(WeeklyBuilderPaths.REASON_FILE)));
+    }
+
+    @Test
+    void run_nullManifest_failsDeployment(@TempDir Path repo) throws Exception {
+        WeeklyBuilderPaths.ensureLayout(repo);
+        Path bundleDir = WeeklyBuilderPaths.compiled(repo).resolve("null-manifest-test");
+        Files.createDirectories(bundleDir);
+        Files.writeString(bundleDir.resolve("manifest.json"), "");
+
+        WeeklyDeployWatcher watcher = new WeeklyDeployWatcher(repo, unreachableClient());
+        WeeklyDeployResult result = watcher.run();
+
+        assertFalse(result.success());
+        assertTrue(Files.isRegularFile(
+            WeeklyBuilderPaths.failed(repo).resolve("null-manifest-test").resolve(WeeklyBuilderPaths.REASON_FILE)));
+    }
+
+    @Test
     void isNoTradeWeek_detectsEmptyOrT8() {
         var empty = manifest("W1", List.of());
         assertTrue(WeeklyDeployWatcher.isNoTradeWeek(empty));

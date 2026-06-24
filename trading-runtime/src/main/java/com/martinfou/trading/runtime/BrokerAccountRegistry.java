@@ -104,6 +104,15 @@ public final class BrokerAccountRegistry {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final Map<String, AccountEntry> accountsById;
+    private final Map<String, Broker> mockBrokers = new java.util.concurrent.ConcurrentHashMap<>();
+
+    public void registerMockBroker(String accountId, Broker broker) {
+        mockBrokers.put(resolveId(accountId), broker);
+    }
+
+    public void clearMockBrokers() {
+        mockBrokers.clear();
+    }
 
     BrokerAccountRegistry(Map<String, AccountEntry> accountsById) {
         this.accountsById = new java.util.concurrent.ConcurrentHashMap<>(accountsById);
@@ -280,6 +289,9 @@ public final class BrokerAccountRegistry {
 
     public Optional<Broker> broker(String accountId, ExecutionLabel label) {
         String id = resolveId(accountId);
+        if (mockBrokers.containsKey(id)) {
+            return Optional.of(mockBrokers.get(id));
+        }
         AccountEntry entry = accountsById.get(id);
         if (entry == null) {
             return Optional.empty();

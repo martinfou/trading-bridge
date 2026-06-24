@@ -85,6 +85,7 @@ public final class FakeBroker implements Broker {
 
     @Override
     public OrderSubmitResult cancelOrder(String brokerOrderId) {
+        emit(BrokerEvent.reject(brokerOrderId, "", "", 0.0, 0.0, "CANCELLED", null, null));
         return OrderSubmitResult.filled(brokerOrderId);
     }
 

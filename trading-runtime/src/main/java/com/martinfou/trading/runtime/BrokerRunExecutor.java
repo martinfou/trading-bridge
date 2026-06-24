@@ -46,7 +46,7 @@ final class BrokerRunExecutor {
         KillSwitchRegistry killSwitch,
         RiskEngine riskEngine
     ) {
-        return execute(runId, config, bars, initialCapital, strategy, broker, eventStore, killSwitch, riskEngine, null);
+        return execute(runId, config, bars, initialCapital, strategy, broker, eventStore, killSwitch, riskEngine, null, java.util.Collections::emptyList);
     }
 
     static BacktestResult execute(
@@ -60,6 +60,22 @@ final class BrokerRunExecutor {
         KillSwitchRegistry killSwitch,
         RiskEngine riskEngine,
         RunRiskContext riskContext
+    ) {
+        return execute(runId, config, bars, initialCapital, strategy, broker, eventStore, killSwitch, riskEngine, riskContext, java.util.Collections::emptyList);
+    }
+
+    static BacktestResult execute(
+        String runId,
+        RunConfigSnapshot config,
+        List<Bar> bars,
+        double initialCapital,
+        Strategy strategy,
+        Broker broker,
+        EventStore eventStore,
+        KillSwitchRegistry killSwitch,
+        RiskEngine riskEngine,
+        RunRiskContext riskContext,
+        java.util.function.Supplier<List<String>> activeSymbolsSupplier
     ) {
         RunMode runMode = RunMode.valueOf(config.mode().toUpperCase());
         ExecutionLabel label = config.resolvedExecutionLabel();
@@ -123,7 +139,7 @@ final class BrokerRunExecutor {
                     rejected++;
                 }
             }
-            reconciliation.reconcile(runId, config, broker, eventStore);
+            reconciliation.reconcile(runId, config, broker, eventStore, activeSymbolsSupplier);
         }
 
         var account = broker.getAccountState();

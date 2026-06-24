@@ -39,28 +39,54 @@ public class CompileGate {
 
         log.info("Running compile gate: {}", String.join(" ", command));
         Process process = pb.start();
-        String output = readOutput(process);
+
+        StringBuilder outputBuilder = new StringBuilder();
+        Thread outputThread = new Thread(() -> {
+            try (var reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    synchronized (outputBuilder) {
+                        outputBuilder.append(line).append("\n");
+                    }
+                }
+            } catch (IOException e) {
+                // Ignore
+            }
+        });
+        outputThread.setDaemon(true);
+        outputThread.start();
+
         boolean finished = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
         if (!finished) {
             process.destroyForcibly();
+            try {
+                outputThread.join(500);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            String output;
+            synchronized (outputBuilder) {
+                output = outputBuilder.toString();
+            }
             return new Result(false, output, "Compile gate timed out after " + timeout);
         }
+
+        try {
+            outputThread.join(1000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        String output;
+        synchronized (outputBuilder) {
+            output = outputBuilder.toString();
+        }
+
         int exit = process.exitValue();
         if (exit == 0) {
             return new Result(true, output, null);
         }
         return new Result(false, output, excerpt(output, 2000));
-    }
-
-    private static String readOutput(Process process) throws IOException {
-        var lines = new ArrayList<String>();
-        try (var reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                lines.add(line);
-            }
-        }
-        return String.join("\n", lines);
     }
 
     private static String excerpt(String text, int max) {

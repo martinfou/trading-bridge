@@ -45,6 +45,7 @@ public final class WeeklyDeployWatcher {
         try {
             bundle = CompileManifestIO.findNextBundle(repoRoot).orElse(null);
         } catch (IOException e) {
+            log.error("Failed to scan compiled/: " + e.getMessage(), e);
             return WeeklyDeployResult.skipped("Failed to scan compiled/: " + e.getMessage());
         }
         if (bundle == null) {
@@ -55,39 +56,43 @@ public final class WeeklyDeployWatcher {
         try {
             manifest = CompileManifestIO.read(bundle.manifestPath());
         } catch (IOException e) {
-            return failBundle(bundle.bundleDir(), null, null, "Failed to read manifest: " + e.getMessage());
+            return failBundle(bundle.bundleDir(), null, null, "Failed to read manifest: " + e.getMessage(), e);
+        }
+        if (manifest == null) {
+            return failBundle(bundle.bundleDir(), null, null, "Manifest is null", new IOException("Manifest is null"));
         }
 
-        String weekId = manifest.weekId() != null ? manifest.weekId() : bundle.bundleDir().getFileName().toString();
+        Path fn = bundle.bundleDir().getFileName();
+        String defaultWeekId = fn != null ? fn.toString() : "unknown";
+        String weekId = manifest.weekId() != null ? manifest.weekId().trim() : "";
+        if (weekId.isBlank()) {
+            weekId = defaultWeekId;
+        }
+
+        // Security check: prevent Path Traversal
+        if (weekId.contains("..") || weekId.contains("/") || weekId.contains("\\")) {
+            return failBundle(bundle.bundleDir(), defaultWeekId, null, "Invalid weekId detected: " + weekId, new IllegalArgumentException("Path traversal attempt"));
+        }
+
         String correlationId = manifest.correlationId() != null && !manifest.correlationId().isBlank()
             ? manifest.correlationId()
             : UUID.randomUUID().toString();
 
-        if (isNoTradeWeek(manifest)) {
-            log.info("NoTradeWeek for {} — skipping broker (T8 or empty strategies)", weekId);
-            try {
-                moveBundle(bundle.bundleDir(), WeeklyBuilderPaths.deployed(repoRoot).resolve(weekId));
-                return WeeklyDeployResult.noTradeWeek(weekId, correlationId);
-            } catch (IOException e) {
-                return failBundle(bundle.bundleDir(), weekId, correlationId, "NoTradeWeek move failed: " + e.getMessage());
-            }
-        }
-
         List<CompileManifest.StrategyEntry> brokerStrategies = brokerStrategies(manifest);
-        if (brokerStrategies.isEmpty()) {
-            log.info("No broker strategies in manifest for {} — treating as NoTradeWeek", weekId);
+        if (isNoTradeWeek(manifest) || brokerStrategies.isEmpty()) {
+            log.info("NoTradeWeek or no broker strategies for {} — skipping broker (T8 or empty strategies)", weekId);
             try {
                 moveBundle(bundle.bundleDir(), WeeklyBuilderPaths.deployed(repoRoot).resolve(weekId));
                 return WeeklyDeployResult.noTradeWeek(weekId, correlationId);
             } catch (IOException e) {
-                return failBundle(bundle.bundleDir(), weekId, correlationId, "NoTradeWeek move failed: " + e.getMessage());
+                return failBundle(bundle.bundleDir(), weekId, correlationId, "NoTradeWeek move failed: " + e.getMessage(), e);
             }
         }
 
         try {
             controlPlane.health();
         } catch (Exception e) {
-            return failBundle(bundle.bundleDir(), weekId, correlationId, "Control plane unreachable: " + e.getMessage());
+            return failBundle(bundle.bundleDir(), weekId, correlationId, "Control plane unreachable: " + e.getMessage(), e);
         }
 
         double lotSize = manifest.resolvedLotSize();
@@ -97,15 +102,18 @@ public final class WeeklyDeployWatcher {
         try {
             for (CompileManifest.StrategyEntry entry : brokerStrategies) {
                 var response = controlPlane.startPaperRun(entry.strategyId(), entry.pair(), lotSize, capital);
+                if (response == null || !response.has("runId")) {
+                    throw new IOException("Missing 'runId' in control plane response: " + response);
+                }
                 String runId = response.get("runId").asText();
                 startedRunIds.add(runId);
-                log.info("Started PAPER_OANDA run {} for {} ({})", runId, entry.strategyId(), entry.pair());
+                log.info("Started run {} for {} ({})", runId, entry.strategyId(), entry.pair());
             }
             moveBundle(bundle.bundleDir(), WeeklyBuilderPaths.deployed(repoRoot).resolve(weekId));
             return WeeklyDeployResult.deployed(weekId, correlationId, startedRunIds);
         } catch (Exception e) {
             String message = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            log.warn("Weekly deploy failed for {} after {} runs started: {}", weekId, startedRunIds.size(), message);
+            log.warn("Weekly deploy failed for {} after {} runs started: {}", weekId, startedRunIds.size(), message, e);
             Map<String, Object> reason = new LinkedHashMap<>();
             reason.put("weekId", weekId);
             reason.put("correlationId", correlationId);
@@ -120,7 +128,7 @@ public final class WeeklyDeployWatcher {
                 REASON_MAPPER.writerWithDefaultPrettyPrinter()
                     .writeValue(failedTarget.resolve(WeeklyBuilderPaths.REASON_FILE).toFile(), reason);
             } catch (IOException io) {
-                log.error("Failed to move bundle to failed/: {}", io.getMessage());
+                log.error("Failed to move bundle to failed/: {}", io.getMessage(), io);
             }
             return WeeklyDeployResult.failed(weekId, correlationId, message);
         }
@@ -130,7 +138,9 @@ public final class WeeklyDeployWatcher {
         if (manifest.strategies() == null || manifest.strategies().isEmpty()) {
             return true;
         }
-        return manifest.strategies().stream().allMatch(s -> isNoTradeTemplate(s.templateId()));
+        return manifest.strategies().stream()
+            .filter(s -> s != null)
+            .allMatch(s -> isNoTradeTemplate(s.templateId()));
     }
 
     static List<CompileManifest.StrategyEntry> brokerStrategies(CompileManifest manifest) {
@@ -138,7 +148,7 @@ public final class WeeklyDeployWatcher {
             return List.of();
         }
         return manifest.strategies().stream()
-            .filter(s -> !isNoTradeTemplate(s.templateId()))
+            .filter(s -> s != null && !isNoTradeTemplate(s.templateId()))
             .toList();
     }
 
@@ -147,13 +157,22 @@ public final class WeeklyDeployWatcher {
             && WeeklyBuilderPaths.NO_TRADE_TEMPLATE.equalsIgnoreCase(templateId.trim());
     }
 
-    private WeeklyDeployResult failBundle(Path bundleDir, String weekId, String correlationId, String error) {
-        String resolvedWeek = weekId != null ? weekId : "unknown";
+    private WeeklyDeployResult failBundle(Path bundleDir, String weekId, String correlationId, String error, Throwable t) {
+        String resolvedWeek = weekId;
+        if (resolvedWeek == null || resolvedWeek.isBlank()) {
+            if (bundleDir != null) {
+                Path fn = bundleDir.getFileName();
+                resolvedWeek = fn != null ? fn.toString() : "unknown";
+            } else {
+                resolvedWeek = "unknown";
+            }
+        }
         String resolvedCorrelation = correlationId != null ? correlationId : UUID.randomUUID().toString();
         Map<String, Object> reason = Map.of(
             "weekId", resolvedWeek,
             "correlationId", resolvedCorrelation,
             "error", error);
+        log.error("Recording deploy failure for weekId " + resolvedWeek + ": " + error, t);
         try {
             if (bundleDir != null && Files.exists(bundleDir)) {
                 Path failedTarget = WeeklyBuilderPaths.failed(repoRoot).resolve(resolvedWeek);
@@ -164,7 +183,7 @@ public final class WeeklyDeployWatcher {
                 writeReason(resolvedWeek, reason);
             }
         } catch (IOException e) {
-            log.error("Failed to record deploy failure: {}", e.getMessage());
+            log.error("Failed to record deploy failure: {}", e.getMessage(), e);
         }
         return WeeklyDeployResult.failed(resolvedWeek, resolvedCorrelation, error);
     }
@@ -177,15 +196,35 @@ public final class WeeklyDeployWatcher {
     }
 
     static void moveBundle(Path sourceDir, Path targetDir) throws IOException {
-        Files.createDirectories(targetDir.getParent());
-        if (Files.exists(targetDir)) {
-            deleteRecursively(targetDir);
+        Path parent = targetDir.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
         }
+        Path backup = null;
+        if (Files.exists(targetDir)) {
+            backup = targetDir.resolveSibling(targetDir.getFileName().toString() + ".bak_" + UUID.randomUUID());
+            Files.move(targetDir, backup);
+        }
+        boolean success = false;
         try {
-            Files.move(sourceDir, targetDir, StandardCopyOption.ATOMIC_MOVE);
-        } catch (IOException ex) {
-            copyRecursively(sourceDir, targetDir);
-            deleteRecursively(sourceDir);
+            try {
+                Files.move(sourceDir, targetDir, StandardCopyOption.ATOMIC_MOVE);
+            } catch (IOException ex) {
+                copyRecursively(sourceDir, targetDir);
+                deleteRecursively(sourceDir);
+            }
+            success = true;
+        } finally {
+            if (backup != null) {
+                if (success) {
+                    deleteRecursively(backup);
+                } else {
+                    if (Files.exists(targetDir)) {
+                        deleteRecursively(targetDir);
+                    }
+                    Files.move(backup, targetDir);
+                }
+            }
         }
     }
 
@@ -209,7 +248,8 @@ public final class WeeklyDeployWatcher {
             return;
         }
         try (Stream<Path> stream = Files.walk(root)) {
-            List<Path> paths = stream.sorted((a, b) -> b.compareTo(a)).toList();
+            // Sort by depth descending so child paths are always deleted before parent paths
+            List<Path> paths = stream.sorted((a, b) -> Integer.compare(b.getNameCount(), a.getNameCount())).toList();
             for (Path path : paths) {
                 Files.deleteIfExists(path);
             }

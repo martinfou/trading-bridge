@@ -144,6 +144,31 @@ public class OandaExecutor {
         return resp.statusCode() == 201 ? "OK" : "FAILED: " + resp.body();
     }
 
+    public java.util.Set<String> getOpenTradeIds() throws Exception {
+        var req = HttpRequest.newBuilder()
+            .uri(URI.create(baseUrl + "accounts/" + accountId + "/openTrades"))
+            .header("Authorization", "Bearer " + apiKey)
+            .timeout(Duration.ofSeconds(10))
+            .GET()
+            .build();
+
+        var resp = client.send(req, HttpResponse.BodyHandlers.ofString());
+        if (resp.statusCode() != 200) {
+            throw new RuntimeException("Failed to fetch open trades: status " + resp.statusCode() + ", body " + resp.body());
+        }
+
+        var json = mapper.readTree(resp.body());
+        java.util.Set<String> ids = new java.util.HashSet<>();
+        if (json.has("trades")) {
+            for (var trade : json.get("trades")) {
+                if (trade.has("id")) {
+                    ids.add(trade.get("id").asText());
+                }
+            }
+        }
+        return ids;
+    }
+
     public static void main(String[] args) throws Exception {
         if (args.length < 3) {
             System.out.println("Usage: OandaExecutor <apiKey> <accountId> <instrument> <units>");

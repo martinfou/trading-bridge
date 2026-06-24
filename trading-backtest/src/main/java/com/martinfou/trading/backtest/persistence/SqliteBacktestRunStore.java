@@ -112,7 +112,7 @@ public final class SqliteBacktestRunStore implements AutoCloseable {
     /**
      * Inserts a detailed backtest run record.
      */
-    public void insert(BacktestRunDetails run) {
+    public synchronized void insert(BacktestRunDetails run) {
         if (run == null) {
             throw new IllegalArgumentException("Run details must not be null");
         }
@@ -161,7 +161,7 @@ public final class SqliteBacktestRunStore implements AutoCloseable {
     /**
      * Retrieves a detailed backtest run by its ID.
      */
-    public Optional<BacktestRunDetails> get(String runId) {
+    public synchronized Optional<BacktestRunDetails> get(String runId) {
         if (runId == null || runId.isBlank()) {
             return Optional.empty();
         }
@@ -191,7 +191,7 @@ public final class SqliteBacktestRunStore implements AutoCloseable {
     /**
      * Lists backtest run summaries matching filters with pagination and sorting.
      */
-    public List<BacktestRunSummary> list(BacktestQueryFilters filters) {
+    public synchronized List<BacktestRunSummary> list(BacktestQueryFilters filters) {
         StringBuilder sql = new StringBuilder("""
             SELECT run_id, strategy_id, symbol, period_start, period_end, parameters, parameter_hash,
                    initial_capital, final_equity, total_pnl, total_return_pct, total_trades,
@@ -236,7 +236,7 @@ public final class SqliteBacktestRunStore implements AutoCloseable {
     /**
      * Counts the total number of backtest runs matching the given filters.
      */
-    public int count(BacktestQueryFilters filters) {
+    public synchronized int count(BacktestQueryFilters filters) {
         StringBuilder sql = new StringBuilder("SELECT COUNT(*) FROM backtest_runs");
         List<Object> params = new ArrayList<>();
         appendWhereClause(sql, filters, params);
@@ -374,7 +374,7 @@ public final class SqliteBacktestRunStore implements AutoCloseable {
     /**
      * Deletes a backtest run by its ID.
      */
-    public void delete(String runId) {
+    public synchronized void delete(String runId) {
         if (runId == null || runId.isBlank()) {
             return;
         }
@@ -390,7 +390,7 @@ public final class SqliteBacktestRunStore implements AutoCloseable {
     /**
      * Deletes all backtest runs.
      */
-    public void deleteAll() {
+    public synchronized void deleteAll() {
         String sql = "DELETE FROM backtest_runs";
         try (Statement stmt = connection.createStatement()) {
             stmt.executeUpdate(sql);
@@ -400,7 +400,7 @@ public final class SqliteBacktestRunStore implements AutoCloseable {
     }
 
     @Override
-    public void close() {
+    public synchronized void close() {
         if (ownsConnection) {
             try {
                 connection.close();

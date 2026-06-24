@@ -70,6 +70,9 @@ public final class PlanValidator {
 
     /** Business rules after reviewer approval. */
     public Result validateBusinessRules(WeeklyPlan plan) {
+        if (plan.picks() == null) {
+            return new Result(Outcome.BUSINESS_RULE_VIOLATION, "Picks list is null");
+        }
         if (plan.picks().size() > envelope.maxPicks()) {
             return new Result(Outcome.BUSINESS_RULE_VIOLATION,
                 "Too many picks: " + plan.picks().size() + " > " + envelope.maxPicks());
@@ -77,14 +80,18 @@ public final class PlanValidator {
 
         Set<String> pairDirectionKeys = new HashSet<>();
         for (WeeklyPlan.Pick pick : plan.picks()) {
+            if (pick == null) {
+                continue;
+            }
             Result pickResult = validatePickBusiness(pick);
             if (!pickResult.valid()) {
                 return pickResult;
             }
-            if (pick.templateId().equals("T8")) {
+            TemplateRegistry.TemplateEntry entry = registry.require(pick.templateId());
+            if (entry.codegenHandler() == TemplateRegistry.CodegenHandler.NO_TRADE) {
                 continue;
             }
-            String key = pick.pair() + "|" + normalizeDirection(pick.direction());
+            String key = normalizePair(pick.pair()) + "|" + normalizeDirection(pick.direction());
             if (!pairDirectionKeys.add(key)) {
                 return new Result(Outcome.BUSINESS_RULE_VIOLATION,
                     "Duplicate pair+direction: " + key);
@@ -114,7 +121,7 @@ public final class PlanValidator {
     }
 
     private Result validatePickBusiness(WeeklyPlan.Pick pick) {
-        if (!registry.templateIds().contains(pick.templateId())) {
+        if (pick.templateId() == null || !registry.templateIds().contains(pick.templateId())) {
             return new Result(Outcome.BUSINESS_RULE_VIOLATION, "Unknown templateId: " + pick.templateId());
         }
         TemplateRegistry.TemplateEntry entry = registry.require(pick.templateId());
@@ -123,10 +130,11 @@ public final class PlanValidator {
             return new Result(Outcome.VALID, "ok");
         }
 
-        if (pick.pair() == null || pick.pair().isBlank()) {
+        String pair = normalizePair(pick.pair());
+        if (pair.isBlank()) {
             return new Result(Outcome.BUSINESS_RULE_VIOLATION, "Pick missing pair for " + pick.templateId());
         }
-        if (!envelope.whitelistPairs().contains(pick.pair())) {
+        if (!envelope.whitelistPairs().contains(pair)) {
             return new Result(Outcome.BUSINESS_RULE_VIOLATION, "Pair not whitelisted: " + pick.pair());
         }
 
@@ -151,5 +159,9 @@ public final class PlanValidator {
 
     private static String normalizeDirection(String direction) {
         return direction == null ? "" : direction.trim().toUpperCase();
+    }
+
+    private static String normalizePair(String pair) {
+        return pair == null ? "" : pair.trim().toUpperCase();
     }
 }

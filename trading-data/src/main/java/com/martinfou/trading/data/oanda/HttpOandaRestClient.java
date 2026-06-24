@@ -18,16 +18,17 @@ import java.util.List;
 import java.util.Map;
 
 /** Live HTTP client for OANDA v20 REST API (practice or live). */
-public final class HttpOandaRestClient implements OandaRestClient {
+public class HttpOandaRestClient implements OandaRestClient {
 
     private static final Logger log = LoggerFactory.getLogger(HttpOandaRestClient.class);
 
     private final String apiToken;
     private final String accountId;
     private final String baseUrl;
-    private volatile HttpClient client;
+    volatile HttpClient client;
     private final ObjectMapper mapper = new ObjectMapper();
     private final Map<String, OandaInstrument> instrumentCache = new java.util.concurrent.ConcurrentHashMap<>();
+    long initialBackoffMs = 1000;
 
     private OandaInstrument getInstrument(String name) {
         if (instrumentCache.isEmpty()) {
@@ -66,7 +67,7 @@ public final class HttpOandaRestClient implements OandaRestClient {
         this.client = buildHttpClient();
     }
 
-    private static HttpClient buildHttpClient() {
+    HttpClient buildHttpClient() {
         return HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
     }
 
@@ -82,24 +83,52 @@ public final class HttpOandaRestClient implements OandaRestClient {
      */
     private <T> HttpResponse<T> sendWithRetry(
             HttpRequest request, HttpResponse.BodyHandler<T> handler) throws Exception {
-        try {
-            return client.send(request, handler);
-        } catch (java.io.IOException e) {
-            String msg = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
-            boolean isConnectionReset = msg.contains("goaway")
-                || msg.contains("reset")
-                || msg.contains("connection")
-                || msg.contains("eof")
-                || msg.contains("closed");
-            if (!isConnectionReset) {
-                throw e; // not a transient connection error — propagate immediately
+        boolean isGet = request.method().equalsIgnoreCase("GET");
+        int maxAttempts = isGet ? 8 : 2;
+        long backoffMs = initialBackoffMs;
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return client.send(request, handler);
+            } catch (java.io.IOException e) {
+                if (attempt == maxAttempts) {
+                    throw e;
+                }
+
+                boolean shouldRetry = false;
+                if (isGet) {
+                    shouldRetry = true;
+                } else {
+                    String msg = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
+                    shouldRetry = msg.contains("goaway")
+                        || msg.contains("reset")
+                        || msg.contains("connection")
+                        || msg.contains("eof")
+                        || msg.contains("closed")
+                        || e instanceof java.net.ConnectException;
+                }
+
+                if (!shouldRetry) {
+                    throw e;
+                }
+
+                log.warn("OANDA REST — HTTP/2 connection error (attempt {}/{}): {}; rebuilding HttpClient and retrying request",
+                    attempt, maxAttempts, e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+
+                this.client = buildHttpClient();
+
+                if (isGet) {
+                    try {
+                        Thread.sleep(backoffMs);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw ie;
+                    }
+                    backoffMs = Math.min(backoffMs * 2, 32000);
+                }
             }
-            log.warn("OANDA REST — HTTP/2 connection error ({}); rebuilding HttpClient and retrying request",
-                e.getMessage());
-            this.client = buildHttpClient();
-            // Second attempt on the fresh client — let any exception propagate to the caller.
-            return client.send(request, handler);
         }
+        throw new java.io.IOException("Request failed after " + maxAttempts + " attempts");
     }
 
     @Override
@@ -111,7 +140,9 @@ public final class HttpOandaRestClient implements OandaRestClient {
             order.put("units", String.valueOf(units));
             order.put("timeInForce", "FOK");
             if (clientTag != null && !clientTag.isBlank()) {
-                order.put("clientExtensions", Map.of("tag", clientTag, "comment", clientTag));
+                Map<String, String> ext = Map.of("tag", clientTag, "comment", clientTag);
+                order.put("clientExtensions", ext);
+                order.put("tradeClientExtensions", ext);
             }
             String body = mapper.writeValueAsString(Map.of("order", order));
 
@@ -182,7 +213,9 @@ public final class HttpOandaRestClient implements OandaRestClient {
                 order.put("trailingStopLossOnFill", ts);
             }
             if (clientTag != null && !clientTag.isBlank()) {
-                order.put("clientExtensions", Map.of("tag", clientTag, "comment", clientTag));
+                Map<String, String> ext = Map.of("tag", clientTag, "comment", clientTag);
+                order.put("clientExtensions", ext);
+                order.put("tradeClientExtensions", ext);
             }
             String body = mapper.writeValueAsString(Map.of("order", order));
 

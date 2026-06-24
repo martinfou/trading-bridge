@@ -88,15 +88,10 @@ public final class WeeklyPlanner {
         }
 
         WeeklyPlan plan = mapper.treeToValue(reviewedNode, WeeklyPlan.class);
-        if (plan.weekId() == null || plan.weekId().isBlank()) {
-            plan = new WeeklyPlan(weekId, plan.picks(), plan.reviewerStatus(), briefRef, envelope);
-        }
-        if (plan.briefRef() == null || plan.briefRef().isBlank()) {
-            plan = new WeeklyPlan(plan.weekId(), plan.picks(), plan.reviewerStatus(), briefRef, envelope);
-        }
-        if (plan.riskEnvelopeSnapshot() == null) {
-            plan = new WeeklyPlan(plan.weekId(), plan.picks(), plan.reviewerStatus(), plan.briefRef(), envelope);
-        }
+        String finalWeekId = (plan.weekId() == null || plan.weekId().isBlank()) ? weekId : plan.weekId();
+        String finalBriefRef = (plan.briefRef() == null || plan.briefRef().isBlank()) ? briefRef : plan.briefRef();
+        RiskBudgetEnvelope finalEnvelope = plan.riskEnvelopeSnapshot() == null ? envelope : plan.riskEnvelopeSnapshot();
+        plan = new WeeklyPlan(finalWeekId, plan.picks(), plan.reviewerStatus(), finalBriefRef, finalEnvelope);
         if (plan.reviewerStatus() == ReviewerStatus.APPROVED) {
             PlanValidator.Result business = validator.validateApprovedPlan(plan);
             if (!business.valid()) {
@@ -111,12 +106,12 @@ public final class WeeklyPlanner {
             .sorted()
             .map(id -> {
                 var entry = registry.require(id);
-                return java.util.Map.of(
-                    "id", id,
-                    "name", entry.name(),
-                    "requiredParams", entry.requiredParams(),
-                    "allowedDirections", entry.allowedDirections()
-                );
+                var map = new java.util.HashMap<String, Object>();
+                map.put("id", id);
+                map.put("name", entry.name() != null ? entry.name() : "");
+                map.put("requiredParams", entry.requiredParams() != null ? entry.requiredParams() : java.util.List.of());
+                map.put("allowedDirections", entry.allowedDirections() != null ? entry.allowedDirections() : java.util.List.of());
+                return map;
             })
             .toList();
     }
@@ -130,16 +125,20 @@ public final class WeeklyPlanner {
     }
 
     static String stripMarkdownFences(String text) {
-        String trimmed = text == null ? "" : text.trim();
-        if (trimmed.startsWith("```")) {
-            int firstNewline = trimmed.indexOf('\n');
-            if (firstNewline > 0) {
-                trimmed = trimmed.substring(firstNewline + 1);
+        if (text == null) {
+            return "";
+        }
+        String trimmed = text.trim();
+        int firstFence = trimmed.indexOf("```");
+        if (firstFence != -1) {
+            int secondFence = trimmed.indexOf("```", firstFence + 3);
+            if (secondFence != -1) {
+                String content = trimmed.substring(firstFence + 3, secondFence);
+                if (content.toLowerCase().startsWith("json")) {
+                    content = content.substring(4);
+                }
+                return content.trim();
             }
-            if (trimmed.endsWith("```")) {
-                trimmed = trimmed.substring(0, trimmed.length() - 3);
-            }
-            trimmed = trimmed.trim();
         }
         return trimmed;
     }

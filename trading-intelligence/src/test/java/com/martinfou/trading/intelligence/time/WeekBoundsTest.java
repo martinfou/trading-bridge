@@ -20,6 +20,11 @@ class WeekBoundsTest {
     }
 
     @Test
+    void nextWeekMonday_fromMonday() {
+        assertEquals(LocalDate.of(2026, 6, 8), WeekBounds.nextWeekMonday(LocalDate.of(2026, 6, 8)));
+    }
+
+    @Test
     void weekId_isoFormat() {
         assertEquals("2026-W24", WeekBounds.weekId(LocalDate.of(2026, 6, 8)));
     }

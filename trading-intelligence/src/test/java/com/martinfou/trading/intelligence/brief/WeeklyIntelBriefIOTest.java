@@ -36,4 +36,33 @@ class WeeklyIntelBriefIOTest {
         WeeklyIntelBrief loaded = WeeklyIntelBriefIO.read(path);
         assertEquals(original, loaded);
     }
+
+    @Test
+    void write_deletesTempFileOnFailure(@TempDir Path tempDir) throws java.io.IOException {
+        WeeklyIntelBrief original = new WeeklyIntelBrief(
+            Instant.parse("2026-06-06T17:00:00Z"),
+            LocalDate.of(2026, 6, 9),
+            List.of(),
+            List.of(),
+            List.of(),
+            WeeklyIntelBrief.SentimentBlock.empty(),
+            List.of(),
+            IngestStatus.OK
+        );
+
+        // Make the directory non-empty so Files.move fails on all platforms
+        java.nio.file.Files.writeString(tempDir.resolve("dummy.txt"), "hello");
+
+        Path tempFile = tempDir.resolveSibling(tempDir.getFileName() + ".tmp");
+        
+        org.junit.jupiter.api.Assertions.assertThrows(
+            java.io.IOException.class,
+            () -> WeeklyIntelBriefIO.write(original, tempDir)
+        );
+
+        org.junit.jupiter.api.Assertions.assertFalse(
+            java.nio.file.Files.exists(tempFile),
+            "Temporary file should have been cleaned up on failure"
+        );
+    }
 }

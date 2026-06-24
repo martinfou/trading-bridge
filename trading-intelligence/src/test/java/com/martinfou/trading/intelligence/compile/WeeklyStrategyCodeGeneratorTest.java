@@ -57,6 +57,103 @@ class WeeklyStrategyCodeGeneratorTest {
             WeeklyStrategyCodeGenerator.toStrategyId("2026-W24", "T4", "EUR_USD"));
     }
 
+    @Test
+    void generate_escapesPhysicalNewlinesInRationale() throws Exception {
+        WeeklyStrategyCodeGenerator generator = WeeklyStrategyCodeGenerator.loadDefault();
+        Path generatedDir = tempDir.resolve("generated");
+        Path registrar = tempDir.resolve("LlmWeeklyStrategyCatalogRegistrar.java");
+        writeRegistrarTemplate(registrar);
+
+        WeeklyPlan plan = new WeeklyPlan(
+            "2026-W24",
+            List.of(
+                new WeeklyPlan.Pick("T8", null, null, Map.of("reason", "test"), List.of(), "rationale\nwith\nnewlines")
+            ),
+            ReviewerStatus.APPROVED,
+            "brief.json",
+            RiskBudgetEnvelope.defaults(TemplateRegistry.loadDefault().whitelistPairs())
+        );
+
+        WeeklyStrategyCodeGenerator.GenerationResult result = generator.generate(plan, generatedDir, registrar);
+        assertEquals(1, result.strategies().size());
+        String source = result.strategies().get(0).source();
+        assertTrue(source.contains("rationale\\nwith\\nnewlines"), "Should contain escaped newlines instead of physical ones");
+    }
+
+    @Test
+    void generate_supportsSameTemplateAndPairWithDifferentDirectionsWithoutCollision() throws Exception {
+        WeeklyStrategyCodeGenerator generator = WeeklyStrategyCodeGenerator.loadDefault();
+        Path generatedDir = tempDir.resolve("generated");
+        Path registrar = tempDir.resolve("LlmWeeklyStrategyCatalogRegistrar.java");
+        writeRegistrarTemplate(registrar);
+
+        WeeklyPlan plan = new WeeklyPlan(
+            "2026-W24",
+            List.of(
+                pick("T3", "EUR_USD", "LONG", Map.of("direction", "LONG")),
+                pick("T3", "EUR_USD", "SHORT", Map.of("direction", "SHORT"))
+            ),
+            ReviewerStatus.APPROVED,
+            "brief.json",
+            RiskBudgetEnvelope.defaults(TemplateRegistry.loadDefault().whitelistPairs())
+        );
+
+        WeeklyStrategyCodeGenerator.GenerationResult result = generator.generate(plan, generatedDir, registrar);
+        assertEquals(2, result.strategies().size());
+        
+        var strats = result.strategies();
+        assertTrue(strats.get(0).className().contains("Long") || strats.get(0).className().contains("Short"));
+        assertTrue(strats.get(1).className().contains("Long") || strats.get(1).className().contains("Short"));
+        assertNotEquals(strats.get(0).className(), strats.get(1).className());
+        assertNotEquals(strats.get(0).strategyId(), strats.get(1).strategyId());
+
+        assertTrue(Files.exists(generatedDir.resolve(strats.get(0).className() + ".java")));
+        assertTrue(Files.exists(generatedDir.resolve(strats.get(1).className() + ".java")));
+    }
+
+    @Test
+    void toClassNameAndStrategyId_sanitizesDirectionWithHyphensAndSpaces() {
+        String weekId = "2026-W24";
+        String templateId = "T3";
+        String pair = "EUR_USD";
+        String direction = "LONG-TERM EXPANDED";
+
+        String className = WeeklyStrategyCodeGenerator.toClassName(weekId, templateId, pair, direction);
+        String strategyId = WeeklyStrategyCodeGenerator.toStrategyId(weekId, templateId, pair, direction);
+
+        assertEquals("Weekly2026W24T3EURUSDLongtermexpanded", className);
+        assertEquals("LLM_WEEKLY_2026-W24_T3_EUR_USD_LONGTERMEXPANDED", strategyId);
+    }
+
+    @Test
+    void toClassNameAndStrategyId_handlesNullWeekIdAndTemplateId() {
+        assertEquals("WeeklyNoneLong", WeeklyStrategyCodeGenerator.toClassName(null, null, null, "LONG"));
+        assertEquals("LLM_WEEKLY_NONE_NONE_EUR_USD_LONG", WeeklyStrategyCodeGenerator.toStrategyId(null, null, "EUR_USD", "LONG"));
+    }
+
+    @Test
+    void generate_escapesOtherControlCharactersInRationale() throws Exception {
+        WeeklyStrategyCodeGenerator generator = WeeklyStrategyCodeGenerator.loadDefault();
+        Path generatedDir = tempDir.resolve("generated");
+        Path registrar = tempDir.resolve("LlmWeeklyStrategyCatalogRegistrar.java");
+        writeRegistrarTemplate(registrar);
+
+        WeeklyPlan plan = new WeeklyPlan(
+            "2026-W24",
+            List.of(
+                new WeeklyPlan.Pick("T8", null, null, Map.of("reason", "test"), List.of(), "rationale\twith\bcontrol\fchars")
+            ),
+            ReviewerStatus.APPROVED,
+            "brief.json",
+            RiskBudgetEnvelope.defaults(TemplateRegistry.loadDefault().whitelistPairs())
+        );
+
+        WeeklyStrategyCodeGenerator.GenerationResult result = generator.generate(plan, generatedDir, registrar);
+        assertEquals(1, result.strategies().size());
+        String source = result.strategies().get(0).source();
+        assertTrue(source.contains("rationale\\twith\\bcontrol\\fchars"), "Should contain escaped control characters");
+    }
+
     private static WeeklyPlan.Pick pick(String templateId, String pair, String direction, Map<String, Object> params) {
         return new WeeklyPlan.Pick(templateId, pair, direction, params, List.of("source-1"), "rationale");
     }

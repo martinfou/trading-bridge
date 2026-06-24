@@ -47,6 +47,7 @@ public final class OandaStreamingExecutor implements AutoCloseable {
     private final RunRiskContext riskContext;
     private final RiskEngine riskEngine;
     private final OandaRestClient restClient;
+    private final java.util.function.Supplier<List<String>> activeSymbolsSupplier;
 
     private final AtomicBoolean active = new AtomicBoolean(false);
     private final BarAggregator aggregator;
@@ -77,6 +78,7 @@ public final class OandaStreamingExecutor implements AutoCloseable {
     private volatile double lastMidPrice = 0.0;
     private volatile double lastBid = 0.0;
     private volatile double lastAsk = 0.0;
+    private Instant lastReconciliationTime = Instant.EPOCH;
 
     public OandaStreamingExecutor(
         String runId,
@@ -89,6 +91,22 @@ public final class OandaStreamingExecutor implements AutoCloseable {
         KillSwitchRegistry killSwitchRegistry,
         OandaStreamingClient streamingClient,
         RunRiskContext riskContext
+    ) {
+        this(runId, record, config, strategy, broker, restClient, eventStore, killSwitchRegistry, streamingClient, riskContext, java.util.Collections::emptyList);
+    }
+
+    public OandaStreamingExecutor(
+        String runId,
+        RunRecord record,
+        RunConfigSnapshot config,
+        Strategy strategy,
+        Broker broker,
+        OandaRestClient restClient,
+        EventStore eventStore,
+        KillSwitchRegistry killSwitchRegistry,
+        OandaStreamingClient streamingClient,
+        RunRiskContext riskContext,
+        java.util.function.Supplier<List<String>> activeSymbolsSupplier
     ) {
         this.runId = runId;
         this.record = record;
@@ -125,6 +143,7 @@ public final class OandaStreamingExecutor implements AutoCloseable {
                 log.info("Pricing stream connection state for run {}: active={}", runId, active);
             }
         };
+        this.activeSymbolsSupplier = activeSymbolsSupplier != null ? activeSymbolsSupplier : java.util.Collections::emptyList;
     }
 
     public void start() {
@@ -270,6 +289,12 @@ public final class OandaStreamingExecutor implements AutoCloseable {
             // 2. Perform risk circuit checks (DLL, WLL, Drawdown)
             checkRiskCircuitBreakers(timestamp);
 
+            // 3. Perform position reconciliation (every 60 seconds)
+            if (lastReconciliationTime == null || java.time.Duration.between(lastReconciliationTime, timestamp).toSeconds() >= 60) {
+                reconcilePositions(timestamp);
+                lastReconciliationTime = timestamp;
+            }
+
             double mid = (bid + ask) / 2.0;
             Bar tickBar = new Bar(config.symbol(), timestamp, mid, mid, mid, mid, 1);
 
@@ -397,13 +422,108 @@ public final class OandaStreamingExecutor implements AutoCloseable {
         }
     }
 
+    private void reconcilePositions(Instant timestamp) {
+        ExecutionLabel label = config.resolvedExecutionLabel();
+        if (label == null || !label.isBrokerBacked()) {
+            return;
+        }
+        try {
+            List<com.martinfou.trading.core.Position> brokerPositions = broker.getPositions();
+            
+            List<RunEvent> allEvents = eventStore.replayAll(runId);
+            var runOrderIds = new java.util.HashSet<String>();
+            for (var e : allEvents) {
+                if ((e.type() == RunEventType.FILL || e.type() == RunEventType.ORDER_SUBMITTED) && e.payload() != null && e.payload().containsKey("orderId")) {
+                    runOrderIds.add(String.valueOf(e.payload().get("orderId")));
+                }
+            }
+            
+            var journalPositions = JournalPositions.fromFills(allEvents);
+            
+            boolean brokerHasPosition = false;
+            boolean canDisambiguate = true;
+            for (var pos : brokerPositions) {
+                boolean matchesSymbol = pos.symbol().equalsIgnoreCase(config.symbol()) 
+                    || pos.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(config.symbol().replace("/", "_").replace("-", "_"));
+                if (matchesSymbol) {
+                    if (pos.clientTag() != null && !pos.clientTag().isBlank()) {
+                        if (runOrderIds.contains(pos.clientTag())) {
+                            brokerHasPosition = true;
+                            break;
+                        }
+                    } else {
+                        int activeRuns = 0;
+                        if (activeSymbolsSupplier != null) {
+                            List<String> activeSymbols = activeSymbolsSupplier.get();
+                            if (activeSymbols == null || activeSymbols.isEmpty()) {
+                                activeRuns = 1;
+                            } else {
+                                for (String rs : activeSymbols) {
+                                    if (pos.symbol().equalsIgnoreCase(rs) || pos.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(rs.replace("/", "_").replace("-", "_"))) {
+                                        activeRuns++;
+                                    }
+                                }
+                            }
+                        } else {
+                            activeRuns = 1;
+                        }
+                        if (activeRuns == 1) {
+                            brokerHasPosition = true;
+                            break;
+                        } else if (activeRuns > 1) {
+                            canDisambiguate = false;
+                        }
+                    }
+                }
+            }
+            
+            if (!brokerHasPosition && canDisambiguate) {
+                for (var jp : journalPositions.values()) {
+                    boolean matchesSymbol = jp.symbol().equalsIgnoreCase(config.symbol()) 
+                        || jp.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(jp.symbol().replace("/", "_").replace("-", "_"));
+                    if (matchesSymbol && jp.quantity() > 0.0) {
+                        Order.Side oppositeSide = jp.side() == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
+                        
+                        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+                        payload.put("type", "FILL");
+                        payload.put("timestamp", timestamp.toString());
+                        payload.put("orderId", "reconciliation-" + System.currentTimeMillis());
+                        payload.put("symbol", config.symbol());
+                        payload.put("side", oppositeSide.name());
+                        payload.put("quantity", jp.quantity());
+                        payload.put("price", lastMidPrice);
+                        payload.put("reconciliation", true);
+                        payload.put("reason", "BROKER_POSITION_CLOSED");
+                        
+                        RunEvent correctiveEvent = new RunEvent(
+                            RunEvent.SCHEMA_VERSION,
+                            RunEventType.FILL,
+                            timestamp,
+                            runId,
+                            config.strategyId(),
+                            config.symbol(),
+                            runMode.name(),
+                            Map.copyOf(payload)
+                        );
+                        
+                        eventStore.append(runId, correctiveEvent);
+                        log.warn("Reconciliation closed open local position of {} {} for run {} since broker reports 0 open positions. Appended corrective FILL.", 
+                            jp.quantity(), jp.side(), runId);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("Failed to run position reconciliation for run {}", runId, e);
+        }
+    }
+
     private void triggerBreachLiquidation(String actionType, String message) {
         // Cancel all pending orders & liquidate active positions
         java.util.Set<String> runOrderIds = new java.util.HashSet<>();
         try {
             if (eventStore != null) {
                 for (var e : eventStore.replayAll(runId)) {
-                    if (e.type() == RunEventType.FILL && e.payload() != null && e.payload().containsKey("orderId")) {
+                    if ((e.type() == RunEventType.FILL || e.type() == RunEventType.ORDER_SUBMITTED) && e.payload() != null && e.payload().containsKey("orderId")) {
                         runOrderIds.add(String.valueOf(e.payload().get("orderId")));
                     }
                 }
@@ -413,21 +533,45 @@ public final class OandaStreamingExecutor implements AutoCloseable {
         }
 
         for (Position pos : broker.getPositions()) {
-            if (pos.symbol().equalsIgnoreCase(config.symbol())) {
+            boolean matchesSymbol = pos.symbol().equalsIgnoreCase(config.symbol())
+                || pos.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(config.symbol().replace("/", "_").replace("-", "_"));
+            if (matchesSymbol) {
+                boolean match = false;
                 if (pos.clientTag() != null && !pos.clientTag().isBlank()) {
-                    if (!runOrderIds.contains(pos.clientTag())) {
-                        continue;
+                    if (runOrderIds.contains(pos.clientTag())) {
+                        match = true;
+                    }
+                } else {
+                    int activeRuns = 0;
+                    if (activeSymbolsSupplier != null) {
+                        List<String> activeSymbols = activeSymbolsSupplier.get();
+                        if (activeSymbols == null || activeSymbols.isEmpty()) {
+                            activeRuns = 1;
+                        } else {
+                            for (String rs : activeSymbols) {
+                                if (pos.symbol().equalsIgnoreCase(rs) || pos.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(rs.replace("/", "_").replace("-", "_"))) {
+                                    activeRuns++;
+                                }
+                            }
+                        }
+                    } else {
+                        activeRuns = 1;
+                    }
+                    if (activeRuns == 1) {
+                        match = true;
                     }
                 }
-                Order marketClose = new Order(
-                    pos.symbol(),
-                    pos.side() == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY,
-                    Order.Type.MARKET,
-                    pos.quantity(),
-                    0.0
-                ).closeOnly();
-                log.info("Submitting emergency close order due to breach: {}", marketClose);
-                broker.submitOrder(marketClose);
+                if (match) {
+                    Order marketClose = new Order(
+                        pos.symbol(),
+                        pos.side() == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY,
+                        Order.Type.MARKET,
+                        pos.quantity(),
+                        0.0
+                    ).closeOnly();
+                    log.info("Submitting emergency close order due to breach: {}", marketClose);
+                    broker.submitOrder(marketClose);
+                }
             }
         }
         emitOperatorAction(actionType, message);
@@ -536,7 +680,7 @@ public final class OandaStreamingExecutor implements AutoCloseable {
         try {
             if (eventStore != null) {
                 for (var e : eventStore.replayAll(runId)) {
-                    if (e.type() == RunEventType.FILL && e.payload() != null && e.payload().containsKey("orderId")) {
+                    if ((e.type() == RunEventType.FILL || e.type() == RunEventType.ORDER_SUBMITTED) && e.payload() != null && e.payload().containsKey("orderId")) {
                         runOrderIds.add(String.valueOf(e.payload().get("orderId")));
                     }
                 }
@@ -547,21 +691,45 @@ public final class OandaStreamingExecutor implements AutoCloseable {
 
         // Cancel all pending orders
         for (Position pos : broker.getPositions()) {
-            if (pos.symbol().equalsIgnoreCase(config.symbol())) {
+            boolean matchesSymbol = pos.symbol().equalsIgnoreCase(config.symbol())
+                || pos.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(config.symbol().replace("/", "_").replace("-", "_"));
+            if (matchesSymbol) {
+                boolean match = false;
                 if (pos.clientTag() != null && !pos.clientTag().isBlank()) {
-                    if (!runOrderIds.contains(pos.clientTag())) {
-                        continue;
+                    if (runOrderIds.contains(pos.clientTag())) {
+                        match = true;
+                    }
+                } else {
+                    int activeRuns = 0;
+                    if (activeSymbolsSupplier != null) {
+                        List<String> activeSymbols = activeSymbolsSupplier.get();
+                        if (activeSymbols == null || activeSymbols.isEmpty()) {
+                            activeRuns = 1;
+                        } else {
+                            for (String rs : activeSymbols) {
+                                if (pos.symbol().equalsIgnoreCase(rs) || pos.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(rs.replace("/", "_").replace("-", "_"))) {
+                                    activeRuns++;
+                                }
+                            }
+                        }
+                    } else {
+                        activeRuns = 1;
+                    }
+                    if (activeRuns == 1) {
+                        match = true;
                     }
                 }
-                Order marketClose = new Order(
-                    pos.symbol(),
-                    pos.side() == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY,
-                    Order.Type.MARKET,
-                    pos.quantity(),
-                    0.0
-                ).closeOnly();
-                log.info("Submitting emergency close order: {}", marketClose);
-                broker.submitOrder(marketClose);
+                if (match) {
+                    Order marketClose = new Order(
+                        pos.symbol(),
+                        pos.side() == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY,
+                        Order.Type.MARKET,
+                        pos.quantity(),
+                        0.0
+                    ).closeOnly();
+                    log.info("Submitting emergency close order: {}", marketClose);
+                    broker.submitOrder(marketClose);
+                }
             }
         }
         emitOperatorAction("DRAWDOWN_BREACH", "Max 10% drawdown exceeded.");
@@ -637,7 +805,13 @@ public final class OandaStreamingExecutor implements AutoCloseable {
     }
 
     private void emitEnded() {
-        double currentEquity = broker.getAccountState().equity();
+        double currentEquity;
+        try {
+            currentEquity = broker.getAccountState().equity();
+        } catch (Exception e) {
+            log.warn("Failed to retrieve broker account state during emitEnded for runId {}, falling back to resolved capital: {}", runId, e.getMessage());
+            currentEquity = config.resolvedCapital();
+        }
         double returnPct = (currentEquity - config.resolvedCapital()) / config.resolvedCapital() * 100.0;
 
         var endedPayload = new LinkedHashMap<String, Object>();

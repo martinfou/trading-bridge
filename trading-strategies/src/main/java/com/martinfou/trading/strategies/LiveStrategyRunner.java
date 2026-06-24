@@ -84,6 +84,7 @@ public class LiveStrategyRunner implements Runnable {
     private int totalExits = 0;
     private double totalPnl = 0.0;
     private Instant lastStateSave = Instant.MIN;
+    private Instant lastReconciliationTime = Instant.MIN;
     private Instant lastBarTime = null;
 
     // ---- Shared orchestrator state ----
@@ -866,6 +867,34 @@ public class LiveStrategyRunner implements Runnable {
     // ========================================================================
 
     private void updatePositions(String oandaSymbol) throws Exception {
+        if (activeTrades.isEmpty()) return;
+
+        Instant now = TimeConventions.now();
+        if (Duration.between(lastReconciliationTime, now).toSeconds() >= 60) {
+            try {
+                Set<String> openTradeIds = executor.getOpenTradeIds();
+                Iterator<ActiveTrade> it = activeTrades.iterator();
+                boolean changed = false;
+                while (it.hasNext()) {
+                    ActiveTrade trade = it.next();
+                    if (trade.tradeId != null && !openTradeIds.contains(trade.tradeId)) {
+                        log.warn("⚠️ Trade ID {} for strategy {} is no longer open at OANDA. Removing from activeTrades. Realized PnL: ${}",
+                            trade.tradeId, strategyShortName, String.format("%.2f", trade.unrealizedPnl));
+                        totalExits++;
+                        totalPnl += trade.unrealizedPnl;
+                        it.remove();
+                        changed = true;
+                    }
+                }
+                if (changed) {
+                    saveStateNow();
+                }
+            } catch (Exception e) {
+                log.error("Failed to reconcile trades with OANDA: {}", e.getMessage());
+            }
+            lastReconciliationTime = now;
+        }
+
         if (activeTrades.isEmpty()) return;
 
         var price = priceClient.getPrice(oandaSymbol);

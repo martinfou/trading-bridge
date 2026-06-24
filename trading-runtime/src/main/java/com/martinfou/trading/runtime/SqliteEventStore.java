@@ -159,4 +159,8 @@ public final class SqliteEventStore implements EventStore {
     private interface StatementBinder {
         void bind(PreparedStatement ps) throws SQLException;
     }
+
+    public Connection connection() {
+        return connection;
+    }
 }

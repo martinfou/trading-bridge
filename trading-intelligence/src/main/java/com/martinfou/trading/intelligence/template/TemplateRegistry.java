@@ -37,8 +37,29 @@ public final class TemplateRegistry {
     private final Map<String, TemplateEntry> templates;
 
     public TemplateRegistry(List<String> whitelistPairs, Map<String, TemplateEntry> templates) {
-        this.whitelistPairs = List.copyOf(whitelistPairs);
-        this.templates = Map.copyOf(templates);
+        if (whitelistPairs == null) {
+            this.whitelistPairs = List.of();
+        } else {
+            List<String> cleanPairs = new java.util.ArrayList<>();
+            for (String p : whitelistPairs) {
+                if (p != null) {
+                    cleanPairs.add(p);
+                }
+            }
+            this.whitelistPairs = List.copyOf(cleanPairs);
+        }
+
+        if (templates == null) {
+            this.templates = Map.of();
+        } else {
+            Map<String, TemplateEntry> cleanMap = new LinkedHashMap<>();
+            for (Map.Entry<String, TemplateEntry> entry : templates.entrySet()) {
+                if (entry.getKey() != null && entry.getValue() != null) {
+                    cleanMap.put(entry.getKey(), entry.getValue());
+                }
+            }
+            this.templates = Map.copyOf(cleanMap);
+        }
     }
 
     public static TemplateRegistry loadDefault() throws IOException {
@@ -46,25 +67,46 @@ public final class TemplateRegistry {
             if (in == null) {
                 throw new IOException("Missing classpath resource: " + RESOURCE);
             }
-            ObjectMapper mapper = new ObjectMapper();
-            JsonNode root = mapper.readTree(in);
-            List<String> pairs = readStringList(root.get("whitelistPairs"));
-            Map<String, TemplateEntry> map = new LinkedHashMap<>();
-            JsonNode templatesNode = root.get("templates");
-            templatesNode.fields().forEachRemaining(field -> {
-                String id = field.getKey();
-                JsonNode node = field.getValue();
-                map.put(id, new TemplateEntry(
-                    id,
-                    node.get("name").asText(),
-                    node.get("description").asText(),
-                    CodegenHandler.valueOf(node.get("codegenHandler").asText()),
-                    readStringList(node.get("requiredParams")),
-                    readStringList(node.get("optionalParams")),
-                    readStringList(node.get("allowedDirections"))
-                ));
-            });
-            return new TemplateRegistry(pairs, map);
+            return load(in);
+        }
+    }
+
+    public static TemplateRegistry load(InputStream in) throws IOException {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode root = mapper.readTree(in);
+        if (root == null) {
+            throw new IOException("Empty registry JSON");
+        }
+        List<String> pairs = readStringList(root.get("whitelistPairs"));
+        Map<String, TemplateEntry> map = new LinkedHashMap<>();
+        JsonNode templatesNode = root.get("templates");
+        if (templatesNode == null || !templatesNode.isObject()) {
+            throw new IOException("Missing templates node in registry");
+        }
+        var fields = templatesNode.fields();
+        while (fields.hasNext()) {
+            var field = fields.next();
+            String id = field.getKey();
+            JsonNode node = field.getValue();
+            map.put(id, new TemplateEntry(
+                id,
+                node.path("name").asText(""),
+                node.path("description").asText(""),
+                parseCodegenHandler(node),
+                readStringList(node.path("requiredParams")),
+                readStringList(node.path("optionalParams")),
+                readStringList(node.path("allowedDirections"))
+            ));
+        }
+        return new TemplateRegistry(pairs, map);
+    }
+
+    private static CodegenHandler parseCodegenHandler(JsonNode node) {
+        String val = node.path("codegenHandler").asText("NO_TRADE");
+        try {
+            return CodegenHandler.valueOf(val.toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return CodegenHandler.NO_TRADE;
         }
     }
 

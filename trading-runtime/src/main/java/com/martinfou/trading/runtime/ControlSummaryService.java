@@ -233,7 +233,8 @@ public final class ControlSummaryService {
         if (record.lastEventAt().isPresent()) {
             return record.lastEventAt();
         }
-        return latestStored.map(stored -> stored.event().timestamp());
+        return latestStored.map(stored -> stored.event().timestamp())
+            .filter(t -> !t.isBefore(record.startedAt()));
     }
 
     private Optional<StoredRunEvent> latestStoredEvent(String runId) {
@@ -282,6 +283,7 @@ public final class ControlSummaryService {
 
     private List<Map<String, Object>> getPositions(RunRecord record, ExecutionLabel label) {
         List<Map<String, Object>> positions = new ArrayList<>();
+        boolean querySucceeded = false;
         if (record.status() == RunRecord.Status.RUNNING && label.isBrokerBacked()) {
             try {
                 String accountId = record.configSnapshot().containsKey("brokerAccountId")
@@ -290,50 +292,58 @@ public final class ControlSummaryService {
                 if (runManager != null && runManager.brokerAccountRegistry() != null) {
                     var brokerOpt = runManager.brokerAccountRegistry().broker(accountId, label);
                     if (brokerOpt.isPresent()) {
-                        try (var broker = brokerOpt.get()) {
-                            broker.connect();
-                            java.util.Set<String> runOrderIds = new java.util.HashSet<>();
-                            if (runManager.eventStore() != null) {
-                                for (var e : runManager.eventStore().replayAll(record.runId())) {
-                                    if (e.type() == RunEventType.FILL && e.payload() != null && e.payload().containsKey("orderId")) {
-                                        runOrderIds.add(String.valueOf(e.payload().get("orderId")));
-                                    }
+                        var broker = brokerOpt.get();
+                        broker.connect();
+                        List<com.martinfou.trading.core.Position> brokerPosList = broker.getPositions();
+                        querySucceeded = true;
+                        java.util.Set<String> runOrderIds = new java.util.HashSet<>();
+                        if (runManager.eventStore() != null) {
+                            for (var e : runManager.eventStore().replayAll(record.runId())) {
+                                if ((e.type() == RunEventType.FILL || e.type() == RunEventType.ORDER_SUBMITTED) && e.payload() != null && e.payload().containsKey("orderId")) {
+                                    runOrderIds.add(String.valueOf(e.payload().get("orderId")));
                                 }
                             }
-                            var journalPositions = JournalPositions.fromFills(runManager.eventStore().replayAll(record.runId()));
-                            for (var pos : broker.getPositions()) {
-                                if (pos.symbol().equalsIgnoreCase(record.symbol()) || pos.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(record.symbol().replace("/", "_").replace("-", "_"))) {
-                                    java.time.Instant resolvedEntryTime = pos.entryTime();
-                                    if (resolvedEntryTime == null || resolvedEntryTime.equals(java.time.Instant.EPOCH)) {
-                                        String journalKey = pos.symbol() + ":" + pos.side().name();
-                                        var jp = journalPositions.get(journalKey);
-                                        if (jp != null && jp.entryTime() != null) {
-                                            resolvedEntryTime = jp.entryTime();
+                        }
+                        var journalPositions = JournalPositions.fromFills(runManager.eventStore().replayAll(record.runId()));
+                        for (var pos : brokerPosList) {
+                            if (pos.symbol().equalsIgnoreCase(record.symbol()) || pos.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(record.symbol().replace("/", "_").replace("-", "_"))) {
+                                java.time.Instant resolvedEntryTime = pos.entryTime();
+                                if (resolvedEntryTime == null || resolvedEntryTime.equals(java.time.Instant.EPOCH)) {
+                                    String journalKey = pos.symbol() + ":" + pos.side().name();
+                                    var jp = journalPositions.get(journalKey);
+                                    if (jp != null && jp.entryTime() != null) {
+                                        resolvedEntryTime = jp.entryTime();
+                                    }
+                                }
+                                boolean match = false;
+                                if (pos.clientTag() != null && !pos.clientTag().isBlank()) {
+                                    if (runOrderIds.contains(pos.clientTag())) {
+                                        match = true;
+                                    }
+                                } else {
+                                    int activeRuns = 0;
+                                    for (RunRecord r : runManager.list(null)) {
+                                        if (r.status() == RunRecord.Status.RUNNING) {
+                                            String rs = r.symbol();
+                                            if (pos.symbol().equalsIgnoreCase(rs) || pos.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(rs.replace("/", "_").replace("-", "_"))) {
+                                                activeRuns++;
+                                            }
                                         }
                                     }
-                                    if (pos.clientTag() != null && !pos.clientTag().isBlank()) {
-                                        if (runOrderIds.contains(pos.clientTag())) {
-                                            positions.add(Map.of(
-                                                "symbol", pos.symbol(),
-                                                "side", pos.side().name(),
-                                                "quantity", pos.quantity(),
-                                                "entryTime", resolvedEntryTime != null ? resolvedEntryTime.toString() : "",
-                                                "entryPrice", pos.entryPrice(),
-                                                "stopLoss", pos.stopLoss(),
-                                                "takeProfit", pos.takeProfit()
-                                            ));
-                                        }
-                                    } else {
-                                        positions.add(Map.of(
-                                            "symbol", pos.symbol(),
-                                            "side", pos.side().name(),
-                                            "quantity", pos.quantity(),
-                                            "entryTime", resolvedEntryTime != null ? resolvedEntryTime.toString() : "",
-                                            "entryPrice", pos.entryPrice(),
-                                            "stopLoss", pos.stopLoss(),
-                                            "takeProfit", pos.takeProfit()
-                                        ));
+                                    if (activeRuns == 1) {
+                                        match = true;
                                     }
+                                }
+                                if (match) {
+                                    positions.add(Map.of(
+                                        "symbol", pos.symbol(),
+                                        "side", pos.side().name(),
+                                        "quantity", pos.quantity(),
+                                        "entryTime", resolvedEntryTime != null ? resolvedEntryTime.toString() : "",
+                                        "entryPrice", pos.entryPrice(),
+                                        "stopLoss", pos.stopLoss(),
+                                        "takeProfit", pos.takeProfit()
+                                    ));
                                 }
                             }
                         }
@@ -343,7 +353,7 @@ public final class ControlSummaryService {
                 // fallback to journal fills
             }
         }
-        if (positions.isEmpty()) {
+        if (!querySucceeded) {
             List<Map<String, Object>> journalPositions = JournalPositions.fromFills(runManager.eventStore().replayAll(record.runId())).values().stream()
                 .map(pos -> Map.<String, Object>of(
                     "symbol", pos.symbol(),

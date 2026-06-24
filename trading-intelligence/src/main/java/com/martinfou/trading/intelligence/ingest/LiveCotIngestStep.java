@@ -26,12 +26,25 @@ public final class LiveCotIngestStep implements CotIngestStep {
     public List<WeeklyIntelBrief.CotSnapshotEntry> fetch() throws Exception {
         List<COTDataFetcher.COTPosition> positions = fetcher.fetchAll();
         List<WeeklyIntelBrief.CotSnapshotEntry> out = new ArrayList<>();
+        if (positions == null) {
+            return out;
+        }
         for (COTDataFetcher.COTPosition pos : positions) {
+            if (pos == null) {
+                continue;
+            }
             double ratio = pos.speculatorRatio();
-            double longPct = ratio / (1.0 + ratio) * 100.0;
-            double shortPct = 100.0 - longPct;
+            double longPct;
+            double shortPct;
+            if (ratio == -1.0 || Double.isNaN(ratio) || Double.isInfinite(ratio) || ratio < 0.0) {
+                longPct = 0.0;
+                shortPct = 0.0;
+            } else {
+                longPct = ratio / (1.0 + ratio) * 100.0;
+                shortPct = 100.0 - longPct;
+            }
             out.add(new WeeklyIntelBrief.CotSnapshotEntry(
-                pos.pair(),
+                pos.pair() != null ? pos.pair() : "Unknown",
                 longPct,
                 shortPct,
                 null,

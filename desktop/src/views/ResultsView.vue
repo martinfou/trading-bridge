@@ -357,6 +357,8 @@ onUnmounted(() => {
           <TradeChart
             :bars="bars"
             :trades="trades"
+            :pending-orders="run?.pendingOrders"
+            :indicators="run?.indicators"
             :height="450"
             :timeframe="run.configSnapshot?.strategyTimeframe"
             @loadMoreBars="handleLoadMoreBars"

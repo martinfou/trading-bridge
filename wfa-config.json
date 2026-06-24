@@ -1,0 +1,27 @@
+{
+  "instrument": "EUR_USD",
+  "initialCapital": 10000.0,
+  "inSampleDays": 180,
+  "outOfSampleDays": 60,
+  "anchored": false,
+  "parameterRanges": [
+    {
+      "name": "emaFastPeriod",
+      "min": 10.0,
+      "max": 30.0,
+      "step": 10.0
+    },
+    {
+      "name": "emaSlowPeriod",
+      "min": 100.0,
+      "max": 200.0,
+      "step": 50.0
+    },
+    {
+      "name": "atrPeriod",
+      "min": 10.0,
+      "max": 20.0,
+      "step": 5.0
+    }
+  ]
+}

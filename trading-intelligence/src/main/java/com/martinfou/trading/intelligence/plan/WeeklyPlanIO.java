@@ -22,18 +22,29 @@ public final class WeeklyPlanIO {
     }
 
     public static void write(WeeklyPlan plan, Path target) throws IOException {
-        Files.createDirectories(target.getParent());
+        Path parent = target.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
         Path temp = target.resolveSibling(target.getFileName() + ".tmp");
-        MAPPER.writerWithDefaultPrettyPrinter().writeValue(temp.toFile(), plan);
         try {
-            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (IOException ex) {
-            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
+            try (var out = Files.newOutputStream(temp)) {
+                MAPPER.writerWithDefaultPrettyPrinter().writeValue(out, plan);
+            }
+            try {
+                Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (IOException ex) {
+                Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(temp);
         }
     }
 
     public static WeeklyPlan read(Path path) throws IOException {
-        return MAPPER.readValue(path.toFile(), WeeklyPlan.class);
+        try (var in = Files.newInputStream(path)) {
+            return MAPPER.readValue(in, WeeklyPlan.class);
+        }
     }
 
     public static Path planPath(Path pendingRoot, String weekId) {
