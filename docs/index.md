@@ -24,6 +24,8 @@ Trading Bridge est un projet multi-parties organisé en monorepo :
 ### Guides & Opérations
 *   **[Guide de Développement](./development-guide.md)** – Instructions d'installation locale, compilation, exécution de backtests et de tests.
 *   **[Guide de Déploiement](./deployment-guide.md)** – Déploiement en production via Docker Compose et gestion des variables d'environnement.
+*   **[Manifeste d'Opérations](./operations-manifest.md)** – Procédures opérationnelles complètes: checklists pré-vol, réponse aux incidents, revues hebdomadaires/mensuelles, preuve de fonctionnement de la plateforme.
+*   **[Ingénierie de Fiabilité (SRE)](./reliability-engineering.md)** – SLOs, runbooks, matrice de sévérité des incidents, checklists de préparation opérationnelle, tableaux de bord de monitoring, et procédures de reprise après sinistre.
 
 ### Partie Java Backend (`trading-bridge-java`)
 *   **[Architecture technique de Java](./architecture-trading-bridge-java.md)** – Conception modulaire Maven et flux d'exécution.
