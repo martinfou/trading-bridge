@@ -39,6 +39,26 @@ The user **does not trust Trading Bridge in PAPER_OANDA mode**. Concrete issues 
 
 ---
 
+## Story Standards
+
+### Effort Scale
+
+| Tag | Effort | Équivalent |
+|-----|--------|-----------|
+| **XS** | ~2h | Fix mineur, 1 fichier, pas de nouveau test |
+| **S** | ~4h | Changement localisé, 1-2 fichiers, tests existants |
+| **M** | ~1j | Feature modulaire, 3-5 fichiers, nouveaux tests |
+| **L** | ~2j | Changement cross-module, 5+ fichiers, test suite |
+
+### Structure Obligatoire par Story
+
+Chaque story doit spécifier :
+1. **Fichiers cibles** — Classes Java ou fichiers à créer/modifier
+2. **Critères d'acceptation (DoD)** — Conditions explicites pour considérer la story "finie"
+3. **Tests** — Comment valider que ça marche (unitaire, intégration, manuel)
+
+---
+
 ## Epic N — Trade-Level Audit & Persistence
 
 **Objectif** : Every paper trade is durably recorded in a structured SQLite table, survives restart, and is queryable via REST.
@@ -65,6 +85,18 @@ The user **does not trust Trading Bridge in PAPER_OANDA mode**. Concrete issues 
 | **N.7** | Contingency: detect and flag partial fills | S | N.2 | When fill quantity < order quantity, emit PARTIAL_FILL event; `trades` table gets `filled_qty` vs `requested_qty` |
 
 **Total Epic N**: ~4 jours
+
+### Détails d'implémentation — Epic N
+
+| Story | Fichiers cibles | Critères d'acceptation | Tests |
+|-------|----------------|------------------------|-------|
+| **N.1** | `SqliteEventStore.java` (nouvelle table) ou nouveau `TradeStore.java` dans `trading-backtest/persistence/` | — Table `trades` créée dans le même SQLite DB que events.db<br/>— `PRAGMA table_info(trades)` retourne 13 colonnes<br/>— Migrations forward/backward fonctionnelles<br/>— Index sur `(run_id, exit_time)` créé | `@Test` insert + select + delete sur la table. `@Test` migration rollback |
+| **N.2** | `OandaStreamingExecutor.java` (après chaque FILL pair → INSERT trade)<br/>`BrokerRunExecutor.java` (idem)<br/>`ControlSummaryService.java` (supprimer calculatePnLMetrics si remplacé)<br/>Nouveau `TradeWriter.java` (utilitaire write-time) | — Algorithme FIFO : les FILL BUY sont stockés dans une queue per-symbol. Chaque FILL SELL matche le BUY le plus ancien (FIFO). Quantité excédentaire = nouveau BUY partiel.<br/>— Quand un BUY+SELL pair est complété → INSERT dans trades table<br/>— `filledQty` tracké pour les partial fills<br/>— Tous les trades passés sont reconstruits depuis events au startup (rattrapage) | `@Test` BUY→SELL complet → 1 trade en DB<br/>`@Test` BUY→BUY→SELL (2 BUY, 1 SELL partiel) → 1 trade partiel<br/>`@Test` crash recovery : inserer events, simuler restart, vérifier trades reconstruits |
+| **N.3** | `RunManager.java:473-477`<br/>`OandaStreamingExecutor.java` (exposer getFilledCount/getTradeSnapshot) | — `totalTrades` dans BacktestResult n'est plus 0 pour les runs OANDA<br/>— La valeur correspond à `filledCount` du OandaStreamingExecutor | `@Test` vérifie que BacktestResult.totalTrades == filledCount après une run |
+| **N.4** | `ControlPlaneServer.java` (nouvelle route)<br/>`TradesController.java` (nouveau) | — `GET /api/trades?strategyId=X&limit=20` retourne JSON<br/>— Filtres : strategyId, symbol, status(OPEN/CLOSED), date from/to<br/>— Paginé (offset, limit)<br/>— Réponse < 200ms pour 10k trades | `curl` test sur chaque filtre<br/>Test charge avec 10k trades |
+| **N.5** | `TradesController.java` (nouvelle route) | — `GET /api/trades/summary` retourne total, win rate, avg PnL, net PnL par strategy<br/>— Temps de réponse < 100ms | `@Test` compare summary calculé vs requête SQL brute |
+| **N.6** | `ControlPlaneMain.java` (hook startup)<br/>`RunManager.java` (nouvelle méthode restorePositions) | — Au startup du control plane, les trades OPEN dans la table sont chargés<br/>— `getPositions()` retourne les positions restaurées<br/>— Si un trade OPEN n'a plus de position correspondante chez OANDA → marqué `STALE` | `@Test` insert 3 trades OPEN, restart mock, vérifier positions = 3 |
+| **N.7** | `Trade.java` ou `Order.java` (filledQty field)<br/>`OandaStreamingExecutor.java` (check fill vs order qty) | — Si `filledQty < orderQty` → `PARTIAL_FILL` event émis<br/>— `trades` table a `filled_qty` et `requested_qty` distincts | `@Test` order 100, fill 40 → PARTIAL_FILL émis, filled_qty=40 |
 
 ---
 
@@ -96,6 +128,20 @@ The user **does not trust Trading Bridge in PAPER_OANDA mode**. Concrete issues 
 
 **Total Epic N+1**: ~5 jours
 
+### Détails d'implémentation — Epic N+1
+
+| Story | Fichiers cibles | Critères d'acceptation | Tests |
+|-------|----------------|------------------------|-------|
+| **N+1.1** | `OandaBroker.java` (new ScheduledExecutorService, heartbeat loop) | — Keepalive ping toutes les 30s ±5s<br/>— 2 échecs consécutifs → `connected=false` + BROKER_DISCONNECT event<br/>— Keepalive ne bloque pas submitOrder | `@Test` ping réussi → connected reste true<br/>`@Test` 2 pings échoués → connected=false |
+| **N+1.2** | `OandaBroker.java` (reconnect()) | — Reset HttpClient<br/>— Re-fetchAccountSummary<br/>— Resubscribe streaming prices<br/>— Appelable depuis watchdog et manuellement | `@Test` reconnect après disconnect → isConnected = true |
+| **N+1.3** | `RunEventType.java` (new CONNECTION type)<br/>`RunEvent.java` (nouveau constructeur ou helper)<br/>`OandaBroker.java` (emit event on connect/disconnect) | — Nouveau `RunEventType.CONNECTION`<br/>— Events contiennent : eventType(CONNECT/DISCONNECT/RECONNECT), brokerAccountId, timestamp<br/>— Visibles dans `/control/summary` | `@Test` connect → CONNECTION event dans EventStore |
+| **N+1.4** | `StaleRunWatchdog.java` (reconnect avant restart)<br/>`OandaStreamingExecutor.java` (méthode reconnect) | — Watchdog appelle broker.reconnect() avant stop()+register()<br/>— Timeout reconnect = 30s max<br/>— Si reconnect OK → pas de nouveau runId<br/>— Si reconnect FAIL → fallback à l'ancien comportement | `@Test` stale run + reconnect OK → pas de nouveau runId<br/>`@Test` stale run + reconnect échoue → nouveau runId |
+| **N+1.5** | `OandaBroker.java` (backoff dans reconnect)<br/>`ControlSummaryService.java` (retryCount) | — Backoff : 1s → 2s → 4s → 8s → 16s → 32s → 60s cap<br/>— Reset à 1s après un reconnect réussi<br/>— `retryCount` exposé dans `/control/summary` | `@Test` 5 échecs → backoff = 16s<br/>`@Test` 1 succès → backoff reset à 1s |
+| **N+1.6** | `OandaStreamingExecutor.java` (post-reconnect reconciliation)<br/>ControlSummaryService | — Après reconnect, fetch OANDA positions via REST<br/>— Compare avec trades table (OPEN trades)<br/>— Émet `RECONCILIATION` event avec {matched, unmatchedLocal, unmatchedBroker}<br/>— Si unmatchedBroker > 0 → alerte | `@Test` réconciliation : 2 trades identiques → 0 diff<br/>`@Test` 1 trade local sans position broker → unmatchedLocal |
+| **N+1.7** | `OandaBroker.java` (rate limiter)<br/>`RunEventType.java` (RATE_LIMIT type) | — Compteur de submitOrder/minute<br/>— Seuil : >50/min → queue avec 1s delay<br/>— Émet `RATE_LIMIT` event avec delay + queue size | `@Test` 51 ordres en 1min → 1e mis en queue |
+| **N+1.8** | `MarketHoursService.java` (nouveau)<br/>`OandaStreamingExecutor.java` (check avant submit) | — Modèle : FOREX 24/5, fermé vendredi 17:00 NY → dimanche 17:00 NY<br/>— DST supporté : UTC−5 (hiver) / UTC−4 (été) pour NY cutoffs<br/>— Paires exotiques (USD/MXN, USD/ZAR) = heures réduites<br/>— Émet `MARKET_CLOSED` avec nextOpen estimé | `@Test` vendredi 18:00 NY → MARKET_CLOSED<br/>`@Test` lundi 10:00 NY → pas de fermeture |
+| **N+1.9** | `OandaStreamingExecutor.java` (stale price check) | — Si `lastMidPrice` identique pendant 5min et stream actif → STALE_PRICE event<br/>— Flag dans `/control/summary`<br/>— Ne bloque pas les trades (info seulement) | `@Test` prix inchangé 6min → STALE_PRICE émis |
+
 ---
 
 ## Epic N+2 — Monitoring & Observability
@@ -123,8 +169,23 @@ The user **does not trust Trading Bridge in PAPER_OANDA mode**. Concrete issues 
 | **N+2.6** | Add `lastTradeAt` to `/control/summary` per-run | XS | N.2 | Time of most recent FILL/REJECT event for each running strategy |
 | **N+2.7** | Add stale-detection log4j markers | XS | — | Structured MDC logging for stale/heartbeat/timeout events — searchable in log files |
 | **N+2.8** | Health-check CLI command in TUI | S | N+2.5 | `/health` — displays broker connection, DB status, running strategy count, last heartbeat timestamp |
+| **N+2.9** | Fix RunRecord status model for paper trading | S | — | `RunRecord.Status` : remplacer `COMPLETED`/`FAILED`/`ARCHIVED` par `RETIRED`. Garder `RUNNING`/`PAUSED`/`CREATED`. `RUNNING` = stratégie active. `PAUSED` = suspendue temporairement. `RETIRED` = arrêtée manuellement, ne redémarrera pas. Impact : `markCompleted()` → `markRetired()`, `markFailed()` → `markRetired()` |
 
-**Total Epic N+2**: ~2.5 jours
+**Total Epic N+2**: ~3 jours
+
+### Détails d'implémentation — Epic N+2
+
+| Story | Fichiers cibles | Critères d'acceptation | Tests |
+|-------|----------------|------------------------|-------|
+| **N+2.1** | `RunManager.java` (fix ligne 476)<br/>`OandaStreamingExecutor.java` (exposer filledCount) | — Même critères que N.3<br/>— Story dédiée car priorité haute | `@Test` (idem N.3) |
+| **N+2.2** | `HeartbeatEvents.java` (payload enrichi)<br/>`OandaStreamingExecutor.java` (fournir les métriques) | — heartbeat contient : runningTradeCount, lastFillTime, openPnl<br/>— backward compat : payload existant conservé | `@Test` heartbeat avec trades → payload a les 3 champs |
+| **N+2.3** | `RunManager.java` (startRun check) | — `startRun()` rejette si même strategyId + symbol + mode déjà RUNNING<br/>— `force=true` override<br/>— Émet `DUPLICATE_RUN` event | `@Test` 2 starts → 2nd rejeté<br/>`@Test` force=true → 2nd accepté |
+| **N+2.4** | `RunManager.java` (ReentrantLock per strategyId) | — Lock par strategyId, pas global<br/>— Timeout 5s pour acquire<br/>— Si timeout → IllegalStateException | `@Test` 2 startRun simultanés → 1 exécuté, 1 exception |
+| **N+2.5** | `ControlPlaneServer.java` (nouvelle route) | — `GET /api/broker/health` retourne JSON : connected, lastResponse, lastFailure, uptimeSeconds<br/>— Temps de réponse < 50ms | `curl` test |
+| **N+2.6** | `ControlSummaryService.java` (buildSummary enrichi) | — Chaque run item a `lastTradeAt` (timestamp dernier FILL/REJECT)<br/>— null si aucun trade | `@Test` run avec FILL → lastTradeAt = timestamp FILL |
+| **N+2.7** | `log4j2.xml` (pattern avec MDC)<br/>`HeartbeatEvents.java`/`BrokerRunExecutor.java` (MDC puts) | — Logs contiennent [runId=..., strategyId=..., stale=true/false]<br/>— Recherchable via `grep stale=true` | Vérification manuelle : grep sur log |
+| **N+2.8** | `TradingTuiMain.java` (nouvelle commande `/health`) | — `/health` affiche : broker OK/FAIL, DB status, N runs actives, dernier heartbeat<br/>— Temps de réponse < 1s | Test manuel dans TUI |
+| **N+2.9** | `RunRecord.java` (enum Status)<br/>`RunManager.java` (markCompleted→markRetired)<br/>`BMAD_SPRINT.md` (màj status si dans le board) | — `RunRecord.Status` = CREATED, RUNNING, PAUSED, RETIRED<br/>— `COMPLETED`/`FAILED`/`ARCHIVED` remplacés par `RETIRED`<br/>— Les runs existantes en COMPLETED/FAILED sont migrées à RETIRED au premier démarrage<br/>— Toute référence à `markCompleted()`/`markFailed()` dans le code est migrée | `@Test` CREATED→RUNNING→PAUSED→RETIRED<br/>`@Test` migration : run COMPLETED existante → lue comme RETIRED |
 
 ---
 
@@ -151,6 +212,16 @@ The user **does not trust Trading Bridge in PAPER_OANDA mode**. Concrete issues 
 
 **Total Epic N+3**: ~4 jours
 
+### Détails d'implémentation — Epic N+3
+
+| Story | Fichiers cibles | Critères d'acceptation | Tests |
+|-------|----------------|------------------------|-------|
+| **N+3.1** | Nouveau `RunRecordStore.java` dans `trading-runtime`<br/>Migration SQL dans les ressources | — Table `run_records` créée avec toutes les colonnes<br/>— INSERT/UPDATE/DELETE fonctionnels<br/>— Migration backward compatible | `@Test` CRUD complet |
+| **N+3.2** | `RunManager.java` (remplacement ConcurrentHashMap)<br/>Nouveau `SqliteRunRecordStore.java` | — RunManager utilise SqliteRunRecordStore comme backing store<br/>— Cache in-memory en lecture, écriture synchrone SQLite<br/>— AtomicRead : lire de mem, écrire sur DB<br/>— Timeout écriture : 500ms max | `@Test` insert + restart mock → données relues<br/>`@Test` 1000 runs → < 2s |
+| **N+3.3** | `ControlPlaneMain.java` (startup hook) | — Au startup, query run_records WHERE status=RUNNING ou PAUSED<br/>— Reconstruit OandaStreamingExecutor avec config stockée<br/>— Resume streaming<br/>— Les runs RETIRED ne sont pas restaurées | `@Test` 2 runs RUNNING en DB → toutes les 2 restaurées<br/>`@Test` RETIRED → pas restaurée |
+| **N+3.4** | `StaleRunWatchdog.java` (reconnect-first)<br/>identique N+1.4, plus persistance du restartCount dans run_records | — Watchdog persiste restartCount dans run_records<br/>— 3 restart/h max<br/>— Reset restartCount après 1h sans restart<br/>— Si reconnect OK → restartCount pas incrémenté | `@Test` 3 restart/h → 4e refusé<br/>`@Test` 1h sans restart → reset |
+| **N+3.5** | `SqliteEventStore.java` (transaction)<br/>TradeStore (transaction) | — event.append() et trade INSERT dans la même transaction SQLite<br/>— Si l'un échoue → ROLLBACK des deux<br/>— Pas de phantom events sans trade ou trade sans event | `@Test` insert events + trades dans transaction → tout ou rien |
+
 ---
 
 ## Epic N+4 — Logging & Diagnostics Infrastructure
@@ -174,6 +245,15 @@ The user **does not trust Trading Bridge in PAPER_OANDA mode**. Concrete issues 
 | **N+4.4** | Contingency: log rotation & size management | S | — | Add log4j2 RollingFileAppender config with max 10 files × 100MB. Keep 7 days of history |
 
 **Total Epic N+4**: ~1.5 jours
+
+### Détails d'implémentation — Epic N+4
+
+| Story | Fichiers cibles | Critères d'acceptation | Tests |
+|-------|----------------|------------------------|-------|
+| **N+4.1** | `OandaBroker.java` (tous les appels API) | — Chaque connect/disconnect/reconnect/submitOrder loggué avec : [runId=..., symbol=..., mode=..., durationMs=N]<br/>— Pas de données sensibles (token, password) dans les logs | Vérification manuelle des logs |
+| **N+4.2** | `RunEventType.java` (nouveaux types)<br/>`SqliteEventStore.java` | — 6 nouveaux types : BROKER_CONNECT, BROKER_DISCONNECT, RECONNECT_ATTEMPT, RECONNECT_FAILURE, RATE_LIMIT_TRIGGERED, STALE_PRICE_DETECTED | `@Test` chaque nouveau type s'écrit et se lit |
+| **N+4.3** | `ControlPlaneServer.java` (nouvelle route) | — `GET /api/events/{runId}/audit` retourne les events filtrés par type<br/>— Paginé, trié par sequence<br/>— Filtre optionnel ?type=CONNECTION,RATE_LIMIT | `curl` test |
+| **N+4.4** | `log4j2.xml` (RollingFileAppender) | — Max 10 fichiers × 100MB<br/>— Compression .gz des fichiers archivés<br/>— Pattern : `%d{ISO8601} [%t] %-5p %c - %m%n`<br/>— 7 jours de rétention | Vérification : ls -la logs/ |
 
 ---
 
@@ -250,6 +330,19 @@ The user **does not trust Trading Bridge in PAPER_OANDA mode**. Concrete issues 
 
 **Total Epic N+5**: ~3 jours
 
+### Détails d'implémentation — Epic N+5
+
+| Story | Fichiers cibles | Critères d'acceptation | Tests |
+|-------|----------------|------------------------|-------|
+| **N+5.1** | `ControlPlaneMain.java` (startup hook)<br/>EventStore + TradeStore (count queries) | — Au startup, pour chaque run complétée : count(FILL events) vs count(trades)<br/>— Émet `DATA_DIVERGENCE` si mismatch<br/>— Ignore les runs RUNNING (trades peuvent arriver après startup) | `@Test` 5 events FILL, 4 trades → DATA_DIVERGENCE émis<br/>`@Test` matching → pas d'event |
+| **N+5.2** | `SqliteBacktestRunStore.java`<br/>`SqliteEventStore.java` (initSchema) | — `PRAGMA integrity_check` après chaque connection init<br/>— Si échec → INTEGRITY_FAILURE event, log ERROR<br/>— Flag `dbCorrupted: true` dans `/api/health` | `@Test` DB corrompue → integrity_check échoue<br/>`@Test` DB saine → ok |
+| **N+5.3** | Nouveau `PaperTradingSurvivabilityTest.java` dans trading-runtime | — Harness strategy + RunManager.start() → attendre trades → close store → clear HashMap → reconstruct → assert trades survivent | `mvn test -pl trading-runtime -Dtest=PaperTradingSurvivabilityTest` ✅ |
+| **N+5.4** | Nouveau `ReconciliationScheduler.java` dans trading-runtime<br/>ControlSummaryService (nouvelle clé `reconciliation`) | — Tourne toutes les 6h<br/>— Query trades table + broker positions → compute diff<br/>— Écrit dans `/control/summary` sous `reconciliation`<br/>— Format : {lastRun, matched, unmatchedLocal, unmatchedBroker, staleBrokerPositions} | `@Test` 2 trades match → matched=2<br/>`@Test` 1 trade local sans position → unmatchedLocal=1 |
+| **N+5.5** | `RunManager.java` (reject rate monitor)<br/>NotificationService (Telegram/Discord) | — Fenêtre glissante 1h pour ORDER_REJECT rate<br/>— Seuil >30% → HIGH_REJECT_RATE event<br/>— Stale >5min → notification Telegram<br/>— Seuils configurables via config.yaml | `@Test` 40/100 rejets → pas d'alerte<br/>`@Test` 35/100 rejets → alerte |
+| **N+5.6** | Nouvelle route dans ControlPlaneServer | — `GET /api/diagnostics/integrity` : (1) integrity_check, (2) event/trade match pour 10 dernières runs, (3) broker connectivity<br/>— Retourne {checks: [{name, passed, durationMs}], overall: PASS/FAIL}<br/>— Timeout max 10s | `curl` test |
+| **N+5.7** | TradeStore (timer autour de chaque INSERT) | — Timer avant/après chaque INSERT<br/>— Log WARN si >100ms<br/>— p50/p95/p99 dans `/control/summary` sous dbLatency.trades.insert | Vérification manuelle des logs |
+| **N+5.8** | Nouveau `TradeArchiver.java` (cron job) | — Purge trades >90 jours (configurable)<br/>— Export CSV avant purge dans `data/archive/trades/`<br/>— Log `ARCHIVED` event avec count<br/>— Index sur `created_at` nécessaire | `@Test` purger trades >90j → 0 trades restants |
+
 ---
 
 ## Epic N+6 — Backtest vs Live/Paper Drift Comparison (Epic 37)
@@ -301,13 +394,13 @@ The user **does not trust Trading Bridge in PAPER_OANDA mode**. Concrete issues 
 |-------|------|--------|-----------|
 | **4.1** | Epic N — Trade-Level Audit & Persistence | ~4j | Foundation — everything else depends on structured trade data |
 | **4.2** | Epic N+1 — Connection Resilience | ~5j | Second — stops data loss from connectivity failures |
-| **4.3** | Epic N+2 — Monitoring & Observability | ~2.5j | Third — surface the data that Epics N and N+1 produce |
+| **4.3** | Epic N+2 — Monitoring & Observability | ~3j | Third — surface the data that Epics N and N+1 produce |
 | **4.4** | Epic N+3 — Stateful Run Recovery | ~4j | Fourth — requires Epic N (trades table) and N+1 (reconnect) |
 | **4.5** | Epic N+4 — Logging & Diagnostics | ~1.5j | Can start in parallel with 4.2 (independent) |
 | **4.6** | Epic N+5 — Verification & Malfunction Detection | ~3j | Proves everything above actually works |
-| **4.7** | **Epic N+6 — BT vs Paper Drift Comparison** | ~4j | Last — requires trades table (N) and event log (N+4) |
+| **4.7** | **Epic N+6 — BT vs Paper Drift Comparison** | ~5j | Last — requires trades table (N) and event log (N+4) |
 
-**Total revised**: ~24 jours
+**Total revised**: ~25.5 jours
 
 ---
 
