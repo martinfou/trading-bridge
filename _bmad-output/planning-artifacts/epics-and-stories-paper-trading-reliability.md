@@ -252,6 +252,44 @@ The user **does not trust Trading Bridge in PAPER_OANDA mode**. Concrete issues 
 
 ---
 
+## Epic N+6 — Backtest vs Live/Paper Drift Comparison (Epic 37)
+
+**Objectif** : Automatically compare how a strategy performs in backtest vs in live/paper trading, detect statistically significant drift, and expose a side-by-side report via REST and the TUI.
+
+**État des lieux** : Un `DriftEngine` existe déjà (`trading-runtime/.../DriftEngine.java`), utilisé par `DriftSignalService` et exposé via `/control/summary` sous la clé `signals.drift`. Il compare drawdown, win rate et trade volume entre une baseline backtest (déploiement promote) et les runs broker. Mais il est limité :
+- Ne compare que 3 métriques (drawdown, win rate, trade volume)
+- Pas de Sharpe, Profit Factor, Sortino, avg trade PnL, equity curve shape
+- Pas d'endpoint REST dédié
+- Pas de cron de rapport autonome
+- Pas de test statistique (seulement des seuils fixes)
+- Impossible de comparer une run arbitraire sans passer par un déploiement
+
+### User Stories (Valeur Métier)
+
+| # | As a [role]... | Value |
+|---|----------------|-------|
+| US-N+6.1 | Trader | I want to see a side-by-side comparison of my strategy's backtest metrics vs its paper trading metrics | Know if the strategy is behaving as expected |
+| US-N+6.2 | Trader | I want an alert when paper performance diverges significantly from backtest | Catch problems early |
+| US-N+6.3 | Trader | I want to see at a glance: "this strategy is running X% worse than backtest" | Decide whether to stop/pause |
+
+### Coding Stories
+
+| # | Story | Effort | Dépend de | Description |
+|---|-------|--------|-----------|-------------|
+| **N+6.1** | Extend DriftEngine with full metric suite | M | N.2, N.4 | Add comparison for: Sharpe ratio, Profit Factor, Sortino, Calmar, avg trade PnL. For each metric, compute: (1) backtest value, (2) paper/live value, (3) delta (absolute + %), (4) threshold status (GREEN/YELLOW/RED). Store thresholds in `DriftThresholds` |
+| **N+6.2** | Match strategy runs to backtest baseline via parameter hash | S | N+6.1 | When a paper run starts (or at report time), find the matching backtest run by `strategyId + symbol + parameterHash`. Use the most recent backtest with the same hash. If no match → emit `NO_BASELINE` signal |
+| **N+6.3** | Add `GET /api/drift/comparison` endpoint | M | N+6.1 | Returns per-strategy comparison: backtest metrics, live metrics, delta, status per dimension, overall recommendation. Query params: `?strategyId=X` or omit for all. Paginated. Response shape mirrors `DriftEvaluation` but with richer metric data |
+| **N+6.4** | Add `comparison` section to `/control/summary` | S | N+6.3 | Include a `comparison` key in the summary payload showing a compact version of the drift comparison for each running strategy (backtest vs live Sharpe, drawdown, win rate, trade count) |
+| **N+6.5** | Statistical significance: add minimum sample check | S | N+6.1 | Before flagging drift, verify the paper run has ≥15 trades OR ≥7 days of observation. Below those thresholds, report `INSUFFICIENT_DATA` instead of a false alarm. Configurable via `DriftThresholds` |
+| **N+6.6** | Cron: automated BT-vs-paper comparison report | S | N+6.3 | Scheduled task (every 12h) that runs `GET /api/drift/comparison` and emits a structured report. If any strategy has RED status → emit `DRIFT_ALERT` event and notify via Telegram/Discord. If all GREEN → emit `DRIFT_OK` event (no notification, just log) |
+| **N+6.7** | TUI `/compare` command | S | N+6.4 | Terminal command showing per-strategy comparison table: columns = metric (Sharpe, WinRate, DD, PF), backtest value, live value, delta %, status (✅/⚠️/🔴). Color-coded |
+| **N+6.8** | Contingency: parameter mismatch detection | XS | N+6.2 | If paper run's `configHash` differs from backtest baseline's `parameterHash`, include `CONFIG_MISMATCH` in the report with the delta fields. The user can then decide if the strategies are even comparable |
+| **N+6.9** | Contingency: timeframe mismatch guard | XS | N+6.2 | If backtest used H1 bars but paper run receives M5 ticks, mark the comparison as `TIMEFRAME_MISMATCH` — they're not directly comparable. Skip drift computation |
+
+**Total Epic N+6**: ~4 jours
+
+---
+
 ## Updated Priority / Build Order
 
 | Phase | Epic | Effort | Why first |
@@ -261,9 +299,10 @@ The user **does not trust Trading Bridge in PAPER_OANDA mode**. Concrete issues 
 | **4.3** | Epic N+2 — Monitoring & Observability | ~2.5j | Third — surface the data that Epics N and N+1 produce |
 | **4.4** | Epic N+3 — Stateful Run Recovery | ~4j | Fourth — requires Epic N (trades table) and N+1 (reconnect) |
 | **4.5** | Epic N+4 — Logging & Diagnostics | ~1.5j | Can start in parallel with 4.2 (independent) |
-| **4.6** | **Epic N+5 — Verification & Malfunction Detection** | ~3j | Last — proofs that everything above actually works |
+| **4.6** | Epic N+5 — Verification & Malfunction Detection | ~3j | Proves everything above actually works |
+| **4.7** | **Epic N+6 — BT vs Paper Drift Comparison** | ~4j | Last — requires trades table (N) and event log (N+4) |
 
-**Total revised**: ~20 jours
+**Total revised**: ~24 jours
 
 ---
 

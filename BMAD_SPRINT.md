@@ -90,6 +90,20 @@ Restaurer la confiance dans le paper trading en ajoutant :
 | 36.7 | Trade write-latency monitoring | XS | 📝 |
 | 36.8 | Data retention & archival policy (90 days) | S | 📝 |
 
+### Epic 37 — Backtest vs Live/Paper Drift Comparison (4j)
+
+| # | Story | Effort | Statut |
+|---|-------|--------|--------|
+| 37.1 | Extend DriftEngine with full metric suite (Sharpe, PF, Sortino, Calmar, avg PnL) | M | 📝 |
+| 37.2 | Match runs to backtest baseline via parameter hash | S | 📝 |
+| 37.3 | `GET /api/drift/comparison` endpoint | M | 📝 |
+| 37.4 | Add `comparison` section to `/control/summary` | S | 📝 |
+| 37.5 | Statistical significance: minimum sample guard (≥15 trades / ≥7 days) | S | 📝 |
+| 37.6 | Cron: automated BT-vs-paper comparison report (every 12h) | S | 📝 |
+| 37.7 | TUI `/compare` command | S | 📝 |
+| 37.8 | Contingency: parameter mismatch detection | XS | 📝 |
+| 37.9 | Contingency: timeframe mismatch guard | XS | 📝 |
+
 ---
 
 ## 🔷 Bugs Identifiés (Code-Inspectés)
@@ -119,8 +133,9 @@ Restaurer la confiance dans le paper trading en ajoutant :
 | 4.4 | Epic 34 — Stateful Run Recovery | 4j | Epic 31, 32 |
 | 4.5 | Epic 35 — Logging & Diagnostics | 1.5j | — (parallèle) |
 | 4.6 | Epic 36 — Verification & Malfunction Detection | 3j | Epic N, N+1 |
+| 4.7 | **Epic 37 — BT vs Paper Drift Comparison** | 4j | Epic N (trades), Epic N+4 (events) |
 
-**Total**: ~20 jours
+**Total**: ~24 jours
 
 ---
 
