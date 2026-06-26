@@ -370,5 +370,10 @@ development_status:
   37-7-tui-compare-command: backlog
   37-8-contingency-parameter-mismatch: backlog
   37-9-contingency-timeframe-mismatch: backlog
+  37-10-trade-reconstructor-shared-utility: backlog
+  37-11-comparison-engine-pure-computation: backlog
+  37-12-equity-curve-correlation: backlog
+  37-13-trade-pnl-distribution-ks-test: backlog
+  37-14-commission-slippage-drift: backlog
   epic-37-retrospective: optional
 

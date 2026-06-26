@@ -285,8 +285,13 @@ The user **does not trust Trading Bridge in PAPER_OANDA mode**. Concrete issues 
 | **N+6.7** | TUI `/compare` command | S | N+6.4 | Terminal command showing per-strategy comparison table: columns = metric (Sharpe, WinRate, DD, PF), backtest value, live value, delta %, status (✅/⚠️/🔴). Color-coded |
 | **N+6.8** | Contingency: parameter mismatch detection | XS | N+6.2 | If paper run's `configHash` differs from backtest baseline's `parameterHash`, include `CONFIG_MISMATCH` in the report with the delta fields. The user can then decide if the strategies are even comparable |
 | **N+6.9** | Contingency: timeframe mismatch guard | XS | N+6.2 | If backtest used H1 bars but paper run receives M5 ticks, mark the comparison as `TIMEFRAME_MISMATCH` — they're not directly comparable. Skip drift computation |
+| **N+6.10** | Extract TradeReconstructor to shared utility in trading-core | S | N.2 | Extract the trade reconstruction logic from `ControlPlaneServer.reconstructTradesFromFills()` and `ControlSummaryService.calculatePnLMetrics()` into a shared `TradeReconstructor` utility. Also add `SharpeRatio.of(trades)`, `ProfitFactor.of(trades)`, `WinLossRatio.of(trades)`, `MaxDrawdown.of(trades)` static methods |
+| **N+6.11** | Add ComparisonEngine — pure computation layer | M | N+6.10 | Pure-function engine: input = `(BacktestRunDetails, List<Trade>)`, output = `List<DimensionComparison>`. Computes Sharpe delta, PF delta, avg trade PnL delta, equity curve Pearson correlation, trade PnL distribution similarity (Kolmogorov-Smirnov), time-normalized trade frequency |
+| **N+6.12** | Add equity curve correlation comparison | S | N+6.11 | Downsample backtest equity curve to match live period length, compute Pearson correlation. Thresholds: r<0.5 → REVIEW, r<0.3 → PAUSE. Include scatter plot data in response |
+| **N+6.13** | Add trade PnL distribution comparison (KS test) | S | N+6.11 | Kolmogorov-Smirnov test comparing trade PnL distributions from backtest vs paper. Detect if the distribution of outcomes has fundamentally changed, even if averages look similar. p<0.05 → REVIEW, p<0.01 → PAUSE |
+| **N+6.14** | Add commission & slippage drift tracking | XS | N+6.11 | Compare `totalCommission` and `totalSlippage` from backtest vs paper. If actual costs are significantly higher (>2×), flag as `COST_DRIFT` — could indicate market regime shift or broker change |
 
-**Total Epic N+6**: ~4 jours
+**Total Epic N+6**: ~5 jours
 
 ---
 
