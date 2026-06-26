@@ -109,6 +109,19 @@ Restaurer la confiance dans le paper trading en ajoutant :
 | 37.13 | Add trade PnL distribution comparison (KS test) | S | 📝 |
 | 37.14 | Add commission & slippage drift tracking | XS | 📝 |
 
+### Epic 38 — Reliability Documentation & Operational Runbook (4j)
+
+| # | Story | Effort | Statut |
+|---|-------|--------|--------|
+| 38.1 | Write Reliability SLOs document | S | 📝 |
+| 38.2 | Write Incident Severity Matrix (P0-P3) | S | 📝 |
+| 38.3 | Write Pre-Flight Checklist for new runs | S | 📝 |
+| 38.4 | Write Incident Response Runbooks (4 failure modes) | M | 📝 |
+| 38.5 | Write Daily/Weekly Operations Review process | S | 📝 |
+| 38.6 | Write Platform Recovery Runbook (crash/restart) | M | 📝 |
+| 38.7 | Write Run Promotion Playbook (extend existing) | S | 📝 |
+| 38.8 | Write Operator Dashboard Guide | S | 📝 |
+
 ---
 
 ## 🔷 Bugs Identifiés (Code-Inspectés)
@@ -139,8 +152,9 @@ Restaurer la confiance dans le paper trading en ajoutant :
 | 4.5 | Epic 35 — Logging & Diagnostics | 1.5j | — (parallèle) |
 | 4.6 | Epic 36 — Verification & Malfunction Detection | 3j | Epic N, N+1 |
 | 4.7 | **Epic 37 — BT vs Paper Drift Comparison** | 5j | Epic N (trades), Epic N+4 (events) |
+| 4.8 | **Epic 38 — Reliability Doc & Runbook** | 4j | Epic N through N+6 (depends on all features) |
 
-**Total**: ~25 jours
+**Total**: ~29.5 jours
 
 ---
 

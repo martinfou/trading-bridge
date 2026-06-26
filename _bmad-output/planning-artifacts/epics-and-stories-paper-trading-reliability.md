@@ -388,6 +388,39 @@ Chaque story doit spécifier :
 
 ---
 
+## Epic N+7 — Reliability Documentation & Operational Runbook (Epic 38)
+
+**Objectif** : Documenter les procédures opérationnelles, les runbooks d'incident, les SLOs, et les checklists pour qu'un opérateur (toi) puisse lancer, monitorer et dépanner le platform de trading en toute confiance.
+
+**État des lieux** : Un `docs/prop-shop-runbook.md` existe déjà (focus promote gate, 126 lignes). Mais il manque : procédures de récupération d'incident, définitions de sévérité, SLOs, dashboard monitoring, checklists pré-run, recovery après crash.
+
+### User Stories (Valeur Métier)
+
+| # | As a [role]... | Value |
+|---|----------------|-------|
+| US-N+7.1 | Operator (you) | I want a step-by-step runbook for every known failure mode so I don't have to debug under pressure | Fast incident response |
+| US-N+7.2 | Operator (you) | I want to know the platform is healthy at a glance — SLOs, dashboards, alerts | Trust without constant checking |
+| US-N+7.3 | Operator (you) | I want a pre-flight checklist before starting a new paper/live run | Avoid mistakes |
+| US-N+7.4 | Operator (you) | I want a weekly review ritual to catch problems early | Preventative maintenance |
+| US-N+7.5 | Developer (you) | I want clear incident severity definitions so I know what's urgent vs routine | Prioritize correctly |
+
+### Coding Stories
+
+| # | Story | Effort | Dépend de | Description |
+|---|-------|--------|-----------|-------------|
+| **N+7.1** | Write Reliability SLOs document | S | — | Document `docs/reliability-slos.md`. Define SLOs : (1) Trade persistence : 100% of trades survive restart (Epic N), (2) Broker connectivity : < 30s reconnect after network drop (Epic N+1), (3) Stale detection : any stale run detected within 2min (Epic N+2), (4) Run recovery : 100% of running strategies restored on restart (Epic N+3). Each SLO has : metric definition, measurement method, current status (baseline), target |
+| **N+7.2** | Write Incident Severity Matrix | S | — | Document `docs/incident-severity.md`. Define P0-P3 : **P0** = trade data loss, broker position desync, platform crash on startup. **P1** = stale run not detected, reconnect loop, duplicate run. **P2** = delayed heartbeat, slow trades query. **P3** = cosmetic, missing MDC log field. Each level has : response time, notification method (Telegram/Discord), who handles it |
+| **N+7.3** | Write Pre-Flight Checklist for new runs | S | — | Document `docs/run-preflight-checklist.md`. Before starting any paper/live run : (1) Broker account connected ? `GET /api/broker/health`, (2) Event store writable ? (check events.db + trades.db exist), (3) Strategy has backtest baseline ? (parameterHash exists), (4) No duplicate run for same strategyId+symbol+mode ?, (5) Historical data available for symbol ?, (6) Kill switch not active ?, (7) Equity sufficient for position sizing ? |
+| **N+7.4** | Write Incident Response Runbooks (4 failure modes) | M | N+7.2 | Document `docs/runbooks/`. One markdown file per failure mode : (1) `broker-disconnect.md` — symptoms (ORDER_REJECT, BROKER_DISCONNECT event), diagnostics (check `/api/broker/health`, check OANDA status page), recovery (wait for auto-reconnect or manual `POST /api/runs/{runId}/reconnect`), verification (confirm trades resume), (2) `stale-run.md`, (3) `db-corruption.md`, (4) `oanda-rate-limit.md`. Each runbook has : symptoms, severity, diagnostics steps, recovery steps, verification steps |
+| **N+7.5** | Write Daily/Weekly Operations Review | S | — | Document `docs/weekly-review.md`. Daily : (1) Check `/control/summary` — any stale ? any gaps ? any daily DD breach ?, (2) Check Discord alert channel for overnight issues. Weekly : (1) Review reconciliation report (N+5.4), (2) Review drift comparison for each running strategy (N+6.6), (3) Review error logs for unknown exceptions, (4) Verify all crons ran successfully, (5) Update decision log |
+| **N+7.6** | Write Platform Recovery Runbook | M | N+3.3 | Document `docs/runbooks/platform-recovery.md`. Step-by-step after crash or restart : (1) Verify events.db + trades.db files exist and are readable, (2) Start control plane → check logs for auto-restore of RUNNING strategies, (3) Verify each restored strategy : `GET /api/runs/{runId}` shows status=RUNNING, (4) Verify broker connection : `GET /api/broker/health` returns connected=true, (5) Run reconciliation : check unmatched trades, (6) Confirm no duplicate runs created by watchdog |
+| **N+7.7** | Write Run Promotion Playbook (extend existing) | S | N+7.5 | Extend `docs/prop-shop-runbook.md` with : (1) promote BACKTEST→PAPER (check parameter match, check backtest metrics vs thresholds), (2) promote PAPER→LIVE (check 30-day observation, check reconciliation clear, check drift comparison GREEN, check kill switch inactive), (3) rollback procedure if LIVE run behaves unexpectedly |
+| **N+7.8** | Write Operator Dashboard Guide | S | N+2.5, N+2.6 | Document `docs/operator-dashboard.md`. Explain each field in `/control/summary` response : what each signal means, what GREEN/YELLOW/RED means, what action to take for each state. Include example responses + screenshots |
+
+**Total Epic N+7**: ~4 jours
+
+---
+
 ## Updated Priority / Build Order
 
 | Phase | Epic | Effort | Why first |
@@ -398,9 +431,10 @@ Chaque story doit spécifier :
 | **4.4** | Epic N+3 — Stateful Run Recovery | ~4j | Fourth — requires Epic N (trades table) and N+1 (reconnect) |
 | **4.5** | Epic N+4 — Logging & Diagnostics | ~1.5j | Can start in parallel with 4.2 (independent) |
 | **4.6** | Epic N+5 — Verification & Malfunction Detection | ~3j | Proves everything above actually works |
-| **4.7** | **Epic N+6 — BT vs Paper Drift Comparison** | ~5j | Last — requires trades table (N) and event log (N+4) |
+| **4.7** | Epic N+6 — BT vs Paper Drift Comparison | ~5j | Requires trades table (N) and event log (N+4) |
+| **4.8** | **Epic N+7 — Reliability Doc & Runbook** | ~4j | Last — documents everything built in N through N+6 |
 
-**Total revised**: ~25.5 jours
+**Total revised**: ~29.5 jours
 
 ---
 
