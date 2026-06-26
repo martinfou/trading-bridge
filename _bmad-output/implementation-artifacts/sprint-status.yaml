@@ -300,5 +300,52 @@ development_status:
   30-4-heartbeat-de-connexion-cache-de-fraicheur-et-notifications-temps-reel-websocket-ui: backlog
   epic-30-retrospective: optional
 
+  epic-31: backlog
+  31-1-trades-sqlite-table: backlog
+  31-2-event-replay-to-trade-extraction: backlog
+  31-3-fix-totaltrades-zero-oanda-streaming: backlog
+  31-4-get-api-trades-endpoint: backlog
+  31-5-get-api-trades-summary: backlog
+  31-6-rebuild-positions-from-trades-after-restart: backlog
+  31-7-partial-fill-detection: backlog
+  epic-31-retrospective: optional
 
+  epic-32: backlog
+  32-1-rest-keepalive-oandabroker: backlog
+  32-2-implement-oandabroker-reconnect: backlog
+  32-3-connection-state-event-stream: backlog
+  32-4-stalerunwatchdog-reconnect-before-restart: backlog
+  32-5-exponential-backoff-reconnect: backlog
+  32-6-position-reconciliation-after-reconnect: backlog
+  32-7-oanda-rate-limit-guard: backlog
+  32-8-market-hours-weekend-detection: backlog
+  32-9-stale-price-detection: backlog
+  epic-32-retrospective: optional
+
+  epic-33: backlog
+  33-1-fix-totaltrades-oanda-backtestresult: backlog
+  33-2-enrich-heartbeat-with-trade-metadata: backlog
+  33-3-duplicate-run-prevention: backlog
+  33-4-run-startup-race-condition-lock: backlog
+  33-5-get-api-broker-health: backlog
+  33-6-lasttradeat-in-control-summary: backlog
+  33-7-log4j-structured-mdc-markers: backlog
+  33-8-tui-health-command: backlog
+  33-9-fix-runrecord-status-model: backlog
+  epic-33-retrospective: optional
+
+  epic-34: backlog
+  34-1-create-run-records-table: backlog
+  34-2-migrate-runmanager-to-db-backed: backlog
+  34-3-auto-restore-runs-on-startup: backlog
+  34-4-watchdog-reconnect-first-then-restart: backlog
+  34-5-crash-safe-sqlite-transactions: backlog
+  epic-34-retrospective: optional
+
+  epic-35: backlog
+  35-1-structured-logging-oandabroker: backlog
+  35-2-new-audit-event-types: backlog
+  35-3-get-api-events-audit: backlog
+  35-4-log4j2-rolling-file-appender: backlog
+  epic-35-retrospective: optional
 
