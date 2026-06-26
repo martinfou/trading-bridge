@@ -1,233 +1,130 @@
-# BMAD Sprint — Advanced Backtesting & Portfolio Analytics
+# BMAD Sprint — Paper Trading Reliability & Monitoring
 
-> Sprint 6 — Généré par Bmad Sprint Planning
-> Martin Fournier — 19 mai 2026
+> **Sprint 7** — 2026-06-26
+> **Martin Fournier** — Product Owner
 
 ---
 
 ## 🎯 Objectif du Sprint
 
-Ajouter des capacités avancées de backtesting : Monte Carlo, Walk-Forward Optimization,
-matrice de corrélation, portfolio builder, et rapports de type StrategyQuant.
+Restaurer la confiance dans le paper trading en ajoutant :
+- Une table `trades` persistante pour que l'historique survive au restart
+- La connexion broker avec keepalive et auto-reconnect
+- Un monitoring en temps réel (trades, PnL, heartbeat, health)
 
-Ces features transforment le moteur d'un simple backtest unitaire en un véritable
-outil d'analyse quantitative.
-
----
-
-## 🌐 Questions de Scope (Bmad)
-
-### Q1: Quel périmètre pour Monte Carlo ?
-
-- **a)** ✅ Simulation simple : randomisation de l'ordre des trades, 1000 runs,
-       distribution P&L / drawdown / Sharpe, percentiles (best/worst/median/5%/95%)
-- **b)** With additional: analyse de sensibilité sur les paramètres d'entrée
-       (commission, slippage, taille de position)
-- **c)** Full: a) + b) + stress testing par scénario (crash 2008, COVID, etc.)
-
-### Q2: Walk-Forward Optimization — quelle profondeur ?
-
-- **a)** ✅ Simple: une seule fenêtre IS/OOS, optimisation brute des paramètres,
-       validation sur OOS
-- **b)** Multiple: fenêtres glissantes (ex: 12 mois IS / 3 mois OOS, slide 3 mois),
-       moyenne des résultats OOS
-- **c)** Full: b) + optimisation multi-objectif (Sharpe + Drawdown + Profit Factor),
-       sélection de modèle (AIC/BIC)
-
-### Q3: Correlation Matrix — scope ?
-
-- **a)** ✅ Corrélation des P&L quotidiens entre stratégies (Pearson)
-- **b)** ✅ Also: corrélation des drawdowns (max DD overlap)
-- **c)** Full: a) + b) + heatmap exportable (JSON/CSV), dendrogramme de clustering
-
-### Q4: Portfolio Builder — niveau ?
-
-- **a)** ✅ Simple allocation: pondération égale entre N stratégies
-- **b)** ✅ Mean-variance: optimisation de Markowitz (efficient frontier),
-       min variance, max Sharpe
-- **c)** Full: b) + Black-Litterman, rééquilibrage périodique, contraintes
-       sectorielles
-
-### Q5: Rapports HTML — format ?
-
-- **a)** ✅ Summary: metrics clés, equity curve chart, trade distribution
-- **b)** ✅ StrategyQuant-style: multiple onglets avec overview, trades, equity,
-       monthly/drawdown analysis, Monte Carlo overlay
-- **c)** Full: b) + export PDF, dashboard intégrable (iframe)
-
-### Q6: Architecture des données — format intermédiaire ?
-
-- **a)** ✅ In-memory: tout dans des POJO/records (aucune persistance)
-- **b)** SQLite: stockage des résultats de runs pour comparaison historique
-- **c)** Full: b) + export JSON des configurations de run pour reproductibilité
-
-### Q7: Priorité des features ?
-
-- **a)** Metrics + Monte Carlo d'abord (fondations numériques)
-- **b)** ✅ Metrics + Walk-Forward d'abord (fondations + optimisation)
-- **c)** Parallèle: toutes les features en même temps
-
-### Q8: Tests et validation ?
-
-- **a)** Tests unitaires pour chaque nouvelle classe
-- **b)** ✅ Tests unitaires + test d'intégration Monte Carlo (1 run de vérification)
-- **c)** Full: a) + b) + fixtures de données de marché pour reproductibilité
-
-### Q9: Interface utilisateur ?
-
-- **a)** Console uniquement (printSummary / CSV export)
-- **b)** ✅ Rapports HTML auto-générés
-- **c)** Full: b) + API REST pour lancer des runs depuis le dashboard
-
----
-
-## 🔷 Décisions Prises
-
-Basé sur les réponses ci-dessus (marquées ✅) :
-
-| # | Feature | Scope choisi |
-|---|---------|-------------|
-| 1 | Monte Carlo | Simple (a): randomisation ordre, 1000 runs, distribution |
-| 2 | Walk-Forward | Multiple (b): fenêtres glissantes, moyenne OOS |
-| 3 | Correlation | Standard (b): P&L + drawdown correlation |
-| 4 | Portfolio | Mean-Variance (b): Markowitz, efficient frontier |
-| 5 | HTML Reports | StrategyQuant-style (b): onglets multiples |
-| 6 | Architecture | In-memory (a): pas de persistance dans ce sprint |
-| 7 | Priorité | Parallèle metrics + WF (b) |
-| 8 | Tests | Tests unitaires + intégration (b) |
-| 9 | UI | Rapports HTML (b) |
+**Problème racine** : Tout l'état des runs (`RunRecord`) est en mémoire dans un `ConcurrentHashMap`. Les events survivent en SQLite mais les trades et métriques ne sont pas requêtables sans replay complet.
 
 ---
 
 ## 📋 Sprint Backlog
 
-### Epic 6: Advanced Backtesting & Portfolio Analytics
+### Epic 31 — Trade-Level Audit & Persistence (4j)
 
-#### Story 6.1: Advanced Performance Metrics
-Améliorer `BacktestResult` avec Sharpe, Sortino, Profit Factor, Calmar,
-et intégrer commission/slippage dans `BacktestEngine`.
+| # | Story | Effort | Statut |
+|---|-------|--------|--------|
+| 31.1 | Create `trades` SQLite table | S | 📝 |
+| 31.2 | Migrate event replay → write-time trade extraction | M | 📝 |
+| 31.3 | Fix `totalTrades=0` for OANDA streaming | XS | 📝 |
+| 31.4 | `GET /api/trades` REST endpoint | S | 📝 |
+| 31.5 | `GET /api/trades/summary` endpoint | XS | 📝 |
+| 31.6 | Rebuild positions from trades table after restart | M | 📝 |
+| 31.7 | Partial fill detection (PARTIAL_FILL event) | S | 📝 |
 
-**Status:** 🎯 This sprint
-**Priority:** P0
+### Epic 32 — Connection Resilience & Keepalive (5j)
 
-#### Story 6.2: Monte Carlo Simulation
-Créer `MonteCarloSimulation` : randomisation des trades, runs parallèles,
-distribution statistics (P&L, drawdown, Sharpe), percentiles reporting.
+| # | Story | Effort | Statut |
+|---|-------|--------|--------|
+| 32.1 | REST keepalive heartbeat for OandaBroker (30s) | M | 📝 |
+| 32.2 | Implement `OandaBroker.reconnect()` (currently dead code) | S | 📝 |
+| 32.3 | Connection-state event stream (CONNECTION events) | S | 📝 |
+| 32.4 | StaleRunWatchdog: reconnect before restart | M | 📝 |
+| 32.5 | Exponential backoff on broker reconnect | XS | 📝 |
+| 32.6 | Position reconciliation after reconnect | M | 📝 |
+| 32.7 | OANDA API rate-limit guard | S | 📝 |
+| 32.8 | Market hours / weekend detection | S | 📝 |
+| 32.9 | Stale price detection | XS | 📝 |
 
-**Status:** 🎯 This sprint
-**Priority:** P1
+### Epic 33 — Monitoring & Observability (3j)
 
-#### Story 6.3: Walk-Forward Optimization
-Créer `WalkForwardOptimizer` : fenêtres IS/OOS glissantes, optimisation de paramètres,
-validation cross-validation style, moyenne des résultats OOS.
+| # | Story | Effort | Statut |
+|---|-------|--------|--------|
+| 33.1 | Fix `totalTrades` in OANDA BacktestResult | XS | 📝 |
+| 33.2 | Enrich heartbeat events with trade metadata | S | 📝 |
+| 33.3 | Duplicate-run prevention guard | S | 📝 |
+| 33.4 | Run-startup race condition lock | XS | 📝 |
+| 33.5 | `GET /api/broker/health` endpoint | XS | 📝 |
+| 33.6 | `lastTradeAt` in `/control/summary` | XS | 📝 |
+| 33.7 | Log4j structured MDC markers | XS | 📝 |
+| 33.8 | TUI `/health` command | S | 📝 |
+| 33.9 | Fix RunRecord status model: RUNNING / PAUSED / RETIRED | S | 📝 |
 
-**Status:** 🎯 This sprint
-**Priority:** P1
+### Epic 34 — Stateful Run Recovery (4j)
 
-#### Story 6.4: Correlation Matrix
-Créer `CorrelationMatrix` : calcul de corrélation P&L et drawdown entre stratégies,
-export JSON/CSV, heatmap data.
+| # | Story | Effort | Statut |
+|---|-------|--------|--------|
+| 34.1 | Create `run_records` SQLite table | M | 📝 |
+| 34.2 | Migrate RunManager to DB-backed storage | L | 📝 |
+| 34.3 | Auto-restore runs on control-plane startup | M | 📝 |
+| 34.4 | StaleRunWatchdog: reconnect-first, then clean restart | M | 📝 |
+| 34.5 | Crash-safe SQLite transaction boundaries | S | 📝 |
 
-**Status:** 🎯 This sprint
-**Priority:** P2
+### Epic 35 — Logging & Diagnostics Infrastructure (1.5j)
 
-#### Story 6.5: Portfolio Builder
-Créer `PortfolioBuilder` : allocation mean-variance, efficient frontier,
-calcul de Sharpe portfolio, re-balancing.
-
-**Status:** 🎯 This sprint
-**Priority:** P2
-
-#### Story 6.6: StrategyQuant-Style HTML Reports
-Créer un générateur de rapport HTML multi-onglets avec graphiques (Chart.js),
-équity curve, trades, monthly analysis, Monte Carlo overlay.
-
-**Status:** 🎯 This sprint
-**Priority:** P2
-
----
-
-## ✅ Definition of Done
-
-- [ ] Toutes les classes implémentées dans `trading-backtest`
-- [ ] `mvn compile` passe sans erreur
-- [ ] `mvn test` passe (nouveaux tests unitaires JUnit 5)
-- [ ] `BacktestResult` inclut Sharpe, Sortino, Profit Factor, Calmar
-- [ ] `BacktestEngine` supporte commission + slippage configurables
-- [ ] `MonteCarloSimulation` produit des statistiques de distribution
-- [ ] `WalkForwardOptimizer` produit des métriques IS/OOS
-- [ ] `CorrelationMatrix` calcule P&L et drawdown corrélation
-- [ ] `PortfolioBuilder` produit efficient frontier
-- [ ] Rapport HTML généré avec Chart.js
-
----
-
-## 📐 Architecture
-
-```
-trading-backtest/
-├── BacktestEngine.java          ← amélioré: commission + slippage
-├── BacktestResult.java          ← amélioré: Sharpe, Sortino, etc.
-├── MonteCarloSimulation.java    ← NOUVEAU
-├── WalkForwardOptimizer.java    ← NOUVEAU
-├── CorrelationMatrix.java       ← NOUVEAU
-├── PortfolioBuilder.java        ← NOUVEAU
-├── PerformanceMetrics.java      ← NOUVEAU (utilitaires de calcul)
-└── report/
-    └── HtmlReportGenerator.java ← NOUVEAU
-```
+| # | Story | Effort | Statut |
+|---|-------|--------|--------|
+| 35.1 | Structured logging to OandaBroker methods | XS | 📝 |
+| 35.2 | New audit event types in EventStore | S | 📝 |
+| 35.3 | `GET /api/events/{runId}/audit` endpoint | XS | 📝 |
+| 35.4 | Log4j2 RollingFileAppender config | S | 📝 |
 
 ---
 
-## ⚡ Dépendances
+## 🔷 Bugs Identifiés (Code-Inspectés)
 
-| Feature | Dépend du module | Dépend de la classe |
-|---------|-----------------|---------------------|
-| PerformanceMetrics | trading-core | Bar, Trade (for returns) |
-| MonteCarloSimulation | trading-backtest | BacktestEngine, BacktestResult |
-| WalkForwardOptimizer | trading-backtest | BacktestEngine, BacktestResult |
-| CorrelationMatrix | trading-backtest | BacktestResult |
-| PortfolioBuilder | trading-backtest | BacktestResult, CorrelationMatrix |
-| HtmlReportGenerator | trading-backtest | BacktestResult, MonteCarloSimulation |
-
----
-
-## 🧪 Stratégie de Test
-
-- `PerformanceMetricsTest` — vérifie chaque métrique avec des données connues
-- `MonteCarloSimulationTest` — vérifie nombre de runs, distributions valides
-- `WalkForwardOptimizerTest` — vérifie fenêtres IS/OOS, pas de lookahead
-- `CorrelationMatrixTest` — vérifie valeurs de corrélation connues
-- `PortfolioBuilderTest` — vérifie efficient frontier, min variance
-- `HtmlReportGeneratorTest` — vérifie que le HTML est généré sans erreur
-
+| # | Bug | Fichier | Sévérité |
+|---|-----|---------|:--------:|
+| B1 | `totalTrades=0` hardcodé pour OANDA streaming | `RunManager.java:473-477` | 🔴 |
+| B2 | RunRecords en `ConcurrentHashMap` — perdus au restart | `RunManager.java:108-112` | 🔴 |
+| B3 | Aucune table `trades` — events = JSON blobs opaques | `SqliteEventStore.java:142-156` | 🔴 |
+| B4 | `OandaBroker.connect()` one-shot, `reconnect()` jamais appelé | `OandaBroker.java:41-48` | 🟠 |
+| B5 | StaleRunWatchdog crée des nouvelles runs, perd l'état | `StaleRunWatchdog.java:79-96` | 🟠 |
+| B6 | Pas de garde anti-run dupliquée | `RunManager.java:352-371` | 🟠 |
+| B7 | Stream watchdog reconnect mais REST reste mort | `OandaStreamingClient.java:129-143` | 🟡 |
+| B8 | Aucun logging structuré pour les events de trade | `OandaBroker.java` | 🟡 |
+| B9 | `COMPLETED` n'a pas de sens en paper trading | `RunRecord.Status` | 🟠 |
+| B10 | Noms de stratégies dupliqués dans l'historique | `RunManager.java` | 🟡 |
 
 ---
 
-## ✅ Sprint 7 — Complété (19 mai 2026)
+## ✅ Build Order
 
-**13 stories, 141 tests, BUILD SUCCESS**
+| Phase | Epic | Effort | Dépend de |
+|-------|------|:------:|-----------|
+| 4.1 | Epic 31 — Trade-Level Audit & Persistence | 4j | — |
+| 4.2 | Epic 32 — Connection Resilience | 5j | Epic 31 |
+| 4.3 | Epic 33 — Monitoring & Observability | 3j | Epic 31 |
+| 4.4 | Epic 34 — Stateful Run Recovery | 4j | Epic 31, 32 |
+| 4.5 | Epic 35 — Logging & Diagnostics | 1.5j | — (parallèle) |
 
-### Livrables
+**Total**: ~17.5 jours
 
-| Story | Statut | Fichiers |
-|-------|:------:|----------|
-| StrategyTemplate, GenePool, GeneticEngine | ✅ | 8 Java classes |
-| StrategyCodeGen (Chromosome → Java) | ✅ | StrategyCodeGen + test |
-| RobustnessScore + RankingDashboard | ✅ | HTML + Chart.js |
-| StrategyBuilder (4 types) | ✅ | StrategyBuilder + test |
-| Parameter Sensitivity Analysis | ✅ | 14 tests |
-| Multi-Market Test (7 paires) | ✅ | 15 tests |
-| Export One-Click | ✅ | export-strategy.sh |
-| Batch Generator (500+) | ✅ | batch-gen.sh, 10 tests |
-| JForex Converter (5 strategies) | ✅ | convert-jforex.sh, 13 tests |
-| Strategy Naming System | ✅ | StrategyID, Registry, WF calibration |
+---
 
-### Métriques
+## 🧪 Définition de Done
 
-- **Tests total:** 141 (0 failure)
-- **Nouvelles classes:** ~25 Java files
-- **Scripts bash:** 5 (test-all, run-demo, export, batch-gen, convert-jforex)
-- **Commits:** 10+ sur master
-- **Modules:** trading-genetics ✅, trading-parser (JForex) ✅
-- **Dashboard:** Laravel app avec auto-refresh live
+- [ ] `trades` table créée avec les colonnes typées (pnl, commission, slippage)
+- [ ] `totalTrades` n'est plus jamais 0 pour les runs OANDA
+- [ ] Les trades survivent à un restart du control plane
+- [ ] `GET /api/trades` retourne les trades sans replay d'events
+- [ ] `OandaBroker` a un keepalive + reconnect fonctionnel
+- [ ] `StaleRunWatchdog` tente reconnect avant restart
+- [ ] Aucun run dupliqué possible (par `strategyId + symbol + mode`)
+- [ ] `GET /api/broker/health` retourne l'état réel de la connexion
+- [ ] Le status model est `RUNNING / PAUSED / RETIRED`
+
+---
+
+## 📂 Références
+
+- Epics & Stories complet : `_bmad-output/planning-artifacts/epics-and-stories-paper-trading-reliability.md`
+- Rapport Joplin : `02-Projects/Trading robot management system/03-Decisions`
