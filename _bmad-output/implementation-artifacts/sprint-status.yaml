@@ -377,3 +377,14 @@ development_status:
   37-14-commission-slippage-drift: backlog
   epic-37-retrospective: optional
 
+  epic-38: backlog
+  38-1-reliability-slos-document: backlog
+  38-2-incident-severity-matrix: backlog
+  38-3-pre-flight-checklist: backlog
+  38-4-incident-response-runbooks: backlog
+  38-5-daily-weekly-review-process: backlog
+  38-6-platform-recovery-runbook: backlog
+  38-7-run-promotion-playbook: backlog
+  38-8-operator-dashboard-guide: backlog
+  epic-38-retrospective: optional
+
