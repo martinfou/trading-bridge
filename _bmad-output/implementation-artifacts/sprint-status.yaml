@@ -349,3 +349,14 @@ development_status:
   35-4-log4j2-rolling-file-appender: backlog
   epic-35-retrospective: optional
 
+  epic-36: backlog
+  36-1-startup-event-trade-reconciliation: backlog
+  36-2-sqlite-integrity-check-on-connect: backlog
+  36-3-paper-trading-survivability-test: backlog
+  36-4-cron-daily-reconciliation-report: backlog
+  36-5-alerting-high-reject-rate-stale-runs: backlog
+  36-6-self-diagnostic-endpoint: backlog
+  36-7-trade-write-latency-monitoring: backlog
+  36-8-data-retention-archival-policy: backlog
+  epic-36-retrospective: optional
+
