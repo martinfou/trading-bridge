@@ -103,6 +103,11 @@ Restaurer la confiance dans le paper trading en ajoutant :
 | 37.7 | TUI `/compare` command | S | 📝 |
 | 37.8 | Contingency: parameter mismatch detection | XS | 📝 |
 | 37.9 | Contingency: timeframe mismatch guard | XS | 📝 |
+| 37.10 | Extract TradeReconstructor to shared utility | S | 📝 |
+| 37.11 | Add ComparisonEngine — pure computation layer | M | 📝 |
+| 37.12 | Add equity curve correlation (Pearson r) | S | 📝 |
+| 37.13 | Add trade PnL distribution comparison (KS test) | S | 📝 |
+| 37.14 | Add commission & slippage drift tracking | XS | 📝 |
 
 ---
 
@@ -133,9 +138,9 @@ Restaurer la confiance dans le paper trading en ajoutant :
 | 4.4 | Epic 34 — Stateful Run Recovery | 4j | Epic 31, 32 |
 | 4.5 | Epic 35 — Logging & Diagnostics | 1.5j | — (parallèle) |
 | 4.6 | Epic 36 — Verification & Malfunction Detection | 3j | Epic N, N+1 |
-| 4.7 | **Epic 37 — BT vs Paper Drift Comparison** | 4j | Epic N (trades), Epic N+4 (events) |
+| 4.7 | **Epic 37 — BT vs Paper Drift Comparison** | 5j | Epic N (trades), Epic N+4 (events) |
 
-**Total**: ~24 jours
+**Total**: ~25 jours
 
 ---
 
