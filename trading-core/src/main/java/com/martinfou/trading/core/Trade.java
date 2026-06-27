@@ -4,7 +4,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 public class Trade {
-    private final String id = UUID.randomUUID().toString();
+    private final String id;
     private final String symbol;
     private final Order.Side side;
     private final double entryPrice, exitPrice;
@@ -15,19 +15,10 @@ public class Trade {
     private final double stopLoss;
     private final double takeProfit;
 
-    public Trade(String symbol, Order.Side side, double entryPrice, double exitPrice,
-                 double quantity, Instant entryTime, Instant exitTime) {
-        this(symbol, side, entryPrice, exitPrice, quantity, entryTime, exitTime, ForexPnL.DEFAULT_USD_JPY);
-    }
-
-    public Trade(String symbol, Order.Side side, double entryPrice, double exitPrice,
-                 double quantity, Instant entryTime, Instant exitTime, double usdJpyRate) {
-        this(symbol, side, entryPrice, exitPrice, quantity, entryTime, exitTime, usdJpyRate, 0.0, 0.0);
-    }
-
-    public Trade(String symbol, Order.Side side, double entryPrice, double exitPrice,
-                 double quantity, Instant entryTime, Instant exitTime, double usdJpyRate,
+    public Trade(String id, String symbol, Order.Side side, double entryPrice, double exitPrice,
+                 double quantity, Instant entryTime, Instant exitTime, double pnl,
                  double stopLoss, double takeProfit) {
+        this.id = id != null ? id : java.util.UUID.randomUUID().toString();
         this.symbol = symbol;
         this.side = side;
         this.entryPrice = entryPrice;
@@ -35,11 +26,31 @@ public class Trade {
         this.quantity = quantity;
         this.entryTime = entryTime;
         this.exitTime = exitTime;
-        this.pnl = ForexPnL.pnlUsd(symbol, side, entryPrice, exitPrice, quantity, usdJpyRate);
+        this.pnl = pnl;
         this.stopLoss = stopLoss;
         this.takeProfit = takeProfit;
     }
 
+    public Trade(String symbol, Order.Side side, double entryPrice, double exitPrice,
+                 double quantity, Instant entryTime, Instant exitTime) {
+        this(java.util.UUID.randomUUID().toString(), symbol, side, entryPrice, exitPrice, quantity, entryTime, exitTime,
+             ForexPnL.pnlUsd(symbol, side, entryPrice, exitPrice, quantity, ForexPnL.DEFAULT_USD_JPY), 0.0, 0.0);
+    }
+
+    public Trade(String symbol, Order.Side side, double entryPrice, double exitPrice,
+                 double quantity, Instant entryTime, Instant exitTime, double usdJpyRate) {
+        this(java.util.UUID.randomUUID().toString(), symbol, side, entryPrice, exitPrice, quantity, entryTime, exitTime,
+             ForexPnL.pnlUsd(symbol, side, entryPrice, exitPrice, quantity, usdJpyRate), 0.0, 0.0);
+    }
+
+    public Trade(String symbol, Order.Side side, double entryPrice, double exitPrice,
+                 double quantity, Instant entryTime, Instant exitTime, double usdJpyRate,
+                 double stopLoss, double takeProfit) {
+        this(java.util.UUID.randomUUID().toString(), symbol, side, entryPrice, exitPrice, quantity, entryTime, exitTime,
+             ForexPnL.pnlUsd(symbol, side, entryPrice, exitPrice, quantity, usdJpyRate), stopLoss, takeProfit);
+    }
+
+    public String id() { return id; }
     public double pnl() { return pnl; }
     public double pnlPercent() { return (pnl / (entryPrice * quantity)) * 100; }
     public Instant entryTime() { return entryTime; }

@@ -112,6 +112,51 @@ public record BrokerEvent(
             null);
     }
 
+    public static BrokerEvent connection(String status, String details) {
+        return new BrokerEvent(
+            BrokerEventType.CONNECTION,
+            Instant.now(),
+            null,
+            null,
+            null,
+            null,
+            null,
+            status + ":" + details,
+            null,
+            null,
+            null);
+    }
+
+    public static BrokerEvent rateLimit(String details) {
+        return new BrokerEvent(
+            BrokerEventType.RATE_LIMIT,
+            Instant.now(),
+            null,
+            null,
+            null,
+            null,
+            null,
+            details,
+            null,
+            null,
+            null);
+    }
+
+    public static BrokerEvent stalePrice(String details) {
+        return new BrokerEvent(
+            BrokerEventType.STALE_PRICE,
+            Instant.now(),
+            null,
+            null,
+            null,
+            null,
+            null,
+            details,
+            null,
+            null,
+            null);
+    }
+
 
     public Map<String, Object> toPayload() {
         Map<String, Object> map = new LinkedHashMap<>();

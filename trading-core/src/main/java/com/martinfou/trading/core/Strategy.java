@@ -23,4 +23,8 @@ public interface Strategy {
             return null;
         }
     }
+
+    default void syncPosition(Order.Side side, double quantity, double sl, double tp) {
+        // Default no-op for backward compatibility
+    }
 }

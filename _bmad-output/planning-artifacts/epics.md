@@ -2130,3 +2130,19 @@ So that I do not make trading decisions based on outdated margin information.
 **When** the connection state is `DISCONNECTED`.
 **Then** a red badge is displayed, manual order buttons are disabled, and warnings are shown.
 **And** JUnit 5 tests verify the status transitions (`CONNECTED` -> `STALE` -> `DISCONNECTED`) deterministically using a mockable `Clock`.
+
+## Epic 39: OANDA API Resilience & Transient Error Handling
+
+### Story 39.1: OANDA API 503 and Transient Error Handling during Position Reconciliation
+
+As a trader,
+I want position reconciliation to handle transient OANDA API errors gracefully,
+So that single API timeouts or service unavailability do not clutter logs with errors or disrupt execution.
+
+**Acceptance Criteria:**
+
+**Given** an active `OandaStreamingExecutor` running position reconciliation.
+**When** a call to OANDA API (like `fetchOpenPositions`) throws an `IllegalStateException` wrapping a transient 503 or network error.
+**Then** the executor catches the exception, logs a warning instead of a full stack trace error, and skips reconciliation for the current tick.
+**And** subsequent ticks retry the position reconciliation once the 60-second interval passes.
+**And** unit tests verify that a simulated 503 error on position reconciliation is handled gracefully as a warning.

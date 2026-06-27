@@ -1,5 +1,5 @@
 # generated: 2026-06-06
-# last_updated: 2026-06-17T03:01:00Z
+# last_updated: "2026-06-27T16:48:19Z"
 # project: trading-bridge
 # project_key: NOKEY
 # tracking_system: file-system
@@ -36,7 +36,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: "2026-06-06"
-last_updated: "2026-06-22T03:47:00Z"
+last_updated: "2026-06-27T16:48:19Z"
 project: trading-bridge
 project_key: NOKEY
 tracking_system: file-system
@@ -67,10 +67,10 @@ development_status:
   epic-2-retrospective: optional
 
   epic-3: in-progress
-  3-1-complete-limit-and-stop-order-simulation: backlog
+  3-1-complete-limit-and-stop-order-simulation: ready-for-dev
   3-2-commission-and-slippage: done
-  3-3-trade-exit-lifecycle: backlog
-  3-4-multi-timeframe-support: backlog
+  3-3-trade-exit-lifecycle: ready-for-dev
+  3-4-multi-timeframe-support: ready-for-dev
   3-5-risk-management-rules: backlog
   3-6-html-backtest-report: backlog
   3-7-trade-csv-export: backlog
@@ -279,14 +279,14 @@ development_status:
   30-4-heartbeat-de-connexion-cache-de-fraicheur-et-notifications-temps-reel-websocket-ui: backlog
   epic-30-retrospective: optional
 
-  epic-31: backlog
-  31-1-trades-sqlite-table: backlog
-  31-2-event-replay-to-trade-extraction: backlog
-  31-3-fix-totaltrades-zero-oanda-streaming: backlog
-  31-4-get-api-trades-endpoint: backlog
-  31-5-get-api-trades-summary: backlog
-  31-6-rebuild-positions-from-trades-after-restart: backlog
-  31-7-partial-fill-detection: backlog
+  epic-31: done
+  31-1-trades-sqlite-table: done
+  31-2-event-replay-to-trade-extraction: done
+  31-3-fix-totaltrades-zero-oanda-streaming: done
+  31-4-get-api-trades-endpoint: done
+  31-5-get-api-trades-summary: done
+  31-6-rebuild-positions-from-trades-after-restart: done
+  31-7-partial-fill-detection: done
   epic-31-retrospective: optional
 
   epic-32: backlog
@@ -367,3 +367,6 @@ development_status:
   38-8-operator-dashboard-guide: backlog
   epic-38-retrospective: optional
 
+  epic-39: in-progress
+  39-1-oanda-api-503-transient-error-handling-reconciliation: ready-for-dev
+  epic-39-retrospective: optional

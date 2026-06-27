@@ -416,4 +416,10 @@ public class HttpOandaRestClient implements OandaRestClient {
         }
         return mapper.readTree(response.body());
     }
+
+    @Override
+    public void reset() {
+        log.info("Resetting HttpOandaRestClient's HttpClient connection pool");
+        this.client = buildHttpClient();
+    }
 }

@@ -900,6 +900,55 @@ class ControlPlaneServerTest {
         throw new AssertionError("Run did not complete in time: " + runId);
     }
 
+    @Test
+    void testTradesAndSummaryEndpoints() throws Exception {
+        String runId = "test-summary-run-id";
+        java.nio.file.Path dbPath = com.martinfou.trading.backtest.persistence.BacktestPersistenceService.resolveDefaultDbPath();
+        
+        // Insert a dummy run to the BacktestRunStore
+        Instant entryTime = Instant.now().minus(10, java.time.temporal.ChronoUnit.MINUTES).truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
+        Instant exitTime = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
+        
+        var details = new com.martinfou.trading.backtest.persistence.BacktestRunDetails(
+            runId, "SmaCrossover", "EUR_USD", entryTime, exitTime, "{}", "hash",
+            1000.0, 1100.0, 100.0, 10.0, 1, 1, 0, 100.0, 0.0, 100.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, "[]", Instant.now()
+        );
+        
+        try (var store = new com.martinfou.trading.backtest.persistence.SqliteBacktestRunStore(dbPath)) {
+            store.insert(details);
+        }
+        
+        // Insert trades to the trades table
+        com.martinfou.trading.core.Trade t = new com.martinfou.trading.core.Trade(
+            "EUR_USD", com.martinfou.trading.core.Order.Side.BUY, 1.1000, 1.1050, 1000.0, entryTime, exitTime, com.martinfou.trading.core.ForexPnL.DEFAULT_USD_JPY, 1.0950, 1.1100
+        );
+        
+        try (var tradeStore = new com.martinfou.trading.backtest.persistence.SqliteTradeStore(dbPath)) {
+            tradeStore.deleteForRun(runId);
+            tradeStore.insert(runId, t);
+        }
+        
+        // Request the trades endpoint
+        HttpResponse<String> tradesResponse = get("/api/runs/" + runId + "/trades");
+        System.out.println("TRADES RESPONSE: " + tradesResponse.body());
+        assertEquals(200, tradesResponse.statusCode());
+        assertTrue(tradesResponse.body().contains("\"runId\":\"test-summary-run-id\""));
+        assertTrue(tradesResponse.body().contains("\"entryPrice\":1.1"));
+        assertTrue(tradesResponse.body().contains("\"exitPrice\":1.105"));
+        assertTrue(tradesResponse.body().contains("\"pnl\":"));
+
+        // Request the summary endpoint
+        HttpResponse<String> summaryResponse = get("/api/runs/" + runId + "/trades/summary");
+        System.out.println("SUMMARY RESPONSE: " + summaryResponse.body());
+        assertEquals(200, summaryResponse.statusCode());
+        assertTrue(summaryResponse.body().contains("\"totalTrades\":1"));
+        assertTrue(summaryResponse.body().contains("\"winningTrades\":1"));
+        assertTrue(summaryResponse.body().contains("\"losingTrades\":0"));
+        assertTrue(summaryResponse.body().contains("\"winRatePct\":100.0"));
+        assertTrue(summaryResponse.body().contains("\"totalPnl\":"));
+        assertTrue(summaryResponse.body().contains("\"maxWin\":"));
+    }
+
     private HttpResponse<String> get(String path) throws Exception {
         HttpRequest request = HttpRequest.newBuilder()
             .uri(URI.create("http://localhost:" + server.port() + path))

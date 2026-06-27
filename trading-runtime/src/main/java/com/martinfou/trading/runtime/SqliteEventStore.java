@@ -45,22 +45,24 @@ public final class SqliteEventStore implements EventStore {
         String jsonLine = RunEventJson.toJsonLine(event);
         String createdAt = Instant.now().toString();
 
-        try (PreparedStatement ps = connection.prepareStatement(
-            "INSERT INTO events (run_id, json_line, created_at) VALUES (?, ?, ?)",
-            Statement.RETURN_GENERATED_KEYS)) {
-            ps.setString(1, runId);
-            ps.setString(2, jsonLine);
-            ps.setString(3, createdAt);
-            ps.executeUpdate();
+        synchronized (connection) {
+            try (PreparedStatement ps = connection.prepareStatement(
+                "INSERT INTO events (run_id, json_line, created_at) VALUES (?, ?, ?)",
+                Statement.RETURN_GENERATED_KEYS)) {
+                ps.setString(1, runId);
+                ps.setString(2, jsonLine);
+                ps.setString(3, createdAt);
+                ps.executeUpdate();
 
-            try (ResultSet keys = ps.getGeneratedKeys()) {
-                if (!keys.next()) {
-                    throw new IllegalStateException("SQLite did not return generated sequence");
+                try (ResultSet keys = ps.getGeneratedKeys()) {
+                    if (!keys.next()) {
+                        throw new IllegalStateException("SQLite did not return generated sequence");
+                    }
+                    return keys.getLong(1);
                 }
-                return keys.getLong(1);
+            } catch (SQLException e) {
+                throw new IllegalStateException("Failed to append event for run " + runId, e);
             }
-        } catch (SQLException e) {
-            throw new IllegalStateException("Failed to append event for run " + runId, e);
         }
     }
 
@@ -87,15 +89,17 @@ public final class SqliteEventStore implements EventStore {
     @Override
     public long count(String runId) {
         EventStoreValidation.requireRunId(runId);
-        try (PreparedStatement ps = connection.prepareStatement(
-            "SELECT COUNT(*) FROM events WHERE run_id = ?")) {
-            ps.setString(1, runId);
-            try (ResultSet rs = ps.executeQuery()) {
-                rs.next();
-                return rs.getLong(1);
+        synchronized (connection) {
+            try (PreparedStatement ps = connection.prepareStatement(
+                "SELECT COUNT(*) FROM events WHERE run_id = ?")) {
+                ps.setString(1, runId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    rs.next();
+                    return rs.getLong(1);
+                }
+            } catch (SQLException e) {
+                throw new IllegalStateException("Failed to count events for run " + runId, e);
             }
-        } catch (SQLException e) {
-            throw new IllegalStateException("Failed to count events for run " + runId, e);
         }
     }
 
@@ -111,10 +115,12 @@ public final class SqliteEventStore implements EventStore {
 
     @Override
     public void close() {
-        try {
-            connection.close();
-        } catch (SQLException e) {
-            throw new IllegalStateException("Failed to close EventStore", e);
+        synchronized (connection) {
+            try {
+                connection.close();
+            } catch (SQLException e) {
+                throw new IllegalStateException("Failed to close EventStore", e);
+            }
         }
     }
 
@@ -123,19 +129,21 @@ public final class SqliteEventStore implements EventStore {
     }
 
     private List<StoredRunEvent> fetchRecords(String sql, StatementBinder binder) {
-        try (PreparedStatement ps = connection.prepareStatement(sql)) {
-            binder.bind(ps);
-            try (ResultSet rs = ps.executeQuery()) {
-                List<StoredRunEvent> result = new ArrayList<>();
-                while (rs.next()) {
-                    long sequence = rs.getLong("sequence");
-                    RunEvent event = RunEventJson.fromJsonLine(rs.getString("json_line"));
-                    result.add(new StoredRunEvent(sequence, event));
+        synchronized (connection) {
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                binder.bind(ps);
+                try (ResultSet rs = ps.executeQuery()) {
+                    List<StoredRunEvent> result = new ArrayList<>();
+                    while (rs.next()) {
+                        long sequence = rs.getLong("sequence");
+                        RunEvent event = RunEventJson.fromJsonLine(rs.getString("json_line"));
+                        result.add(new StoredRunEvent(sequence, event));
+                    }
+                    return List.copyOf(result);
                 }
-                return List.copyOf(result);
+            } catch (SQLException e) {
+                throw new IllegalStateException("Failed to query events", e);
             }
-        } catch (SQLException e) {
-            throw new IllegalStateException("Failed to query events", e);
         }
     }
 

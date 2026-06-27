@@ -34,7 +34,7 @@ import java.nio.file.Path;
  * Starts strategy runs asynchronously and persists {@link RunEvent} records to the {@link EventStore}.
  * Lifecycle-only orchestration — promote, gaps, and deployments are handled by other services.
  */
-public final class RunManager implements RunLifecycle, AutoCloseable {
+public class RunManager implements RunLifecycle, AutoCloseable {
 
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(RunManager.class);
     private static final Map<String, java.util.concurrent.locks.ReentrantLock> downloadLocks = new ConcurrentHashMap<>();
@@ -115,6 +115,7 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
     private final CopyOnWriteArrayList<RunTransitionListener> listeners = new CopyOnWriteArrayList<>();
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     private final com.martinfou.trading.backtest.persistence.SqliteTradeAlignmentStore alignmentStore;
+    private final com.martinfou.trading.backtest.persistence.SqliteTradeStore tradeStore;
     private final Map<String, List<com.martinfou.trading.core.Order>> btOrdersByRun = new ConcurrentHashMap<>();
     private final Map<String, List<com.martinfou.trading.core.Order>> liveOrdersByRun = new ConcurrentHashMap<>();
     private final Map<String, Integer> consecutiveTimeDrifts = new ConcurrentHashMap<>();
@@ -176,6 +177,7 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
             ? brokerAccountRegistry
             : BrokerAccountRegistry.loadDefault();
         this.alignmentStore = createAlignmentStore(eventStore);
+        this.tradeStore = createTradeStore(eventStore);
     }
 
     private com.martinfou.trading.backtest.persistence.SqliteTradeAlignmentStore createAlignmentStore(EventStore eventStore) {
@@ -206,6 +208,39 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
             return new com.martinfou.trading.backtest.persistence.SqliteTradeAlignmentStore(inMemoryConnection, true);
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to create in-memory SQLite connection for alignment store", e);
+        }
+    }
+
+    private com.martinfou.trading.backtest.persistence.SqliteTradeStore createTradeStore(EventStore eventStore) {
+        EventStore unwrapped = eventStore;
+        while (unwrapped != null) {
+            if (unwrapped instanceof ReconcilingEventStore) {
+                unwrapped = ((ReconcilingEventStore) unwrapped).delegate;
+            } else if (unwrapped.getClass().getSimpleName().equals("BroadcastingEventStore")) {
+                try {
+                    java.lang.reflect.Field field = unwrapped.getClass().getDeclaredField("delegate");
+                    field.setAccessible(true);
+                    unwrapped = (EventStore) field.get(unwrapped);
+                } catch (Exception e) {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        
+        if (unwrapped instanceof SqliteEventStore) {
+            Connection conn = ((SqliteEventStore) unwrapped).connection();
+            if (conn != null) {
+                return new com.martinfou.trading.backtest.persistence.SqliteTradeStore(conn, false);
+            }
+        }
+        
+        try {
+            Connection inMemoryConnection = DriverManager.getConnection("jdbc:sqlite::memory:");
+            return new com.martinfou.trading.backtest.persistence.SqliteTradeStore(inMemoryConnection, true);
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to create in-memory SQLite connection for trade store", e);
         }
     }
 
@@ -409,6 +444,13 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
         };
     }
 
+    public void reconnectBroker(String runId) {
+        AutoCloseable exec = activeExecutors.get(runId);
+        if (exec instanceof OandaStreamingExecutor poe) {
+            poe.reconnectBroker();
+        }
+    }
+
     @Override
     public RunRecord pause(String runId) {
         RunRecord record = requireRun(runId);
@@ -534,6 +576,23 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
         } catch (Exception e) {
             log.error("Failed to close SqliteTradeAlignmentStore", e);
         }
+        try {
+            tradeStore.close();
+        } catch (Exception e) {
+            log.error("Failed to close SqliteTradeStore", e);
+        }
+    }
+
+    public com.martinfou.trading.backtest.persistence.SqliteTradeStore tradeStore() {
+        return tradeStore;
+    }
+
+    public List<com.martinfou.trading.core.Trade> getTrades(String runId) {
+        List<com.martinfou.trading.core.Trade> list = tradeStore.getTrades(runId);
+        if (list.isEmpty()) {
+            return com.martinfou.trading.backtest.persistence.TradeReconstructor.reconstruct(eventStore.replayAll(runId));
+        }
+        return list;
     }
 
     private void executeRun(
@@ -1012,6 +1071,15 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
         public long append(String runId, RunEvent event) {
             long sequence = delegate.append(runId, event);
             processEventForReconciliation(runId, event, true);
+            if (event.type() == RunEventType.FILL) {
+                try {
+                    List<com.martinfou.trading.core.Trade> reconstructed = com.martinfou.trading.backtest.persistence.TradeReconstructor.reconstruct(delegate.replayAll(runId));
+                    tradeStore.deleteForRun(runId);
+                    tradeStore.insertAll(runId, reconstructed);
+                } catch (Exception e) {
+                    log.error("Failed to update trades for run on append: " + runId, e);
+                }
+            }
             return sequence;
         }
 
@@ -1055,6 +1123,14 @@ public final class RunManager implements RunLifecycle, AutoCloseable {
             processEventForReconciliation(runId, event, false);
         }
         runReconciliation(runId, false);
+        
+        try {
+            List<com.martinfou.trading.core.Trade> reconstructed = com.martinfou.trading.backtest.persistence.TradeReconstructor.reconstruct(eventStore.replayAll(runId));
+            tradeStore.deleteForRun(runId);
+            tradeStore.insertAll(runId, reconstructed);
+        } catch (Exception e) {
+            log.error("Failed to reconstruct and persist trades for run: " + runId, e);
+        }
     }
 
     private void processEventForReconciliation(String runId, RunEvent event, boolean triggerActions) {

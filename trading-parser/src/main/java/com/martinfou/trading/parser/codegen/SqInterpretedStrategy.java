@@ -142,6 +142,26 @@ public final class SqInterpretedStrategy implements Strategy {
         longQuantity = quantity;
     }
 
+    @Override
+    public void syncPosition(Order.Side side, double quantity, double sl, double tp) {
+        if (side == null || quantity == 0) {
+            longOpen = false;
+            shortOpen = false;
+            longQuantity = 0.0;
+            shortQuantity = 0.0;
+        } else if (side == Order.Side.BUY) {
+            longOpen = true;
+            longQuantity = quantity;
+            shortOpen = false;
+            shortQuantity = 0.0;
+        } else {
+            shortOpen = true;
+            shortQuantity = quantity;
+            longOpen = false;
+            longQuantity = 0.0;
+        }
+    }
+
     private boolean emitClose(SqCloseIntent close, Bar bar) {
         return switch (close.direction()) {
             case LONG -> closeLong(bar);

@@ -26,6 +26,8 @@ public class StaleRunWatchdog implements AutoCloseable {
     private final Clock clock;
     private final Map<String, Integer> restartsPerHour = new ConcurrentHashMap<>();
     private Instant currentHour;
+    long reconnectTimeoutMs = 30_000;
+    long reconnectCheckIntervalMs = 1000;
 
     public StaleRunWatchdog(RunManager runManager, ControlSummaryService summaryService) {
         this(runManager, summaryService, Clock.systemUTC());
@@ -101,6 +103,50 @@ public class StaleRunWatchdog implements AutoCloseable {
 
                 log.warn("Run {} for strategy {} is STALE. Initiating Watchdog recovery...", runId, strategyId);
                 
+                boolean recovered = false;
+                try {
+                    log.info("Watchdog attempting broker reconnect first for stale run {}", runId);
+                    runManager.reconnectBroker(runId);
+                    
+                    long start = System.currentTimeMillis();
+                    while (System.currentTimeMillis() - start < reconnectTimeoutMs) {
+                        Thread.sleep(reconnectCheckIntervalMs);
+                        
+                        Map<String, Object> freshSummary = summaryService.buildSummary();
+                        if (freshSummary != null) {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> freshSignals = (Map<String, Object>) freshSummary.get("signals");
+                            if (freshSignals != null) {
+                                @SuppressWarnings("unchecked")
+                                List<Map<String, Object>> freshStale = (List<Map<String, Object>>) freshSignals.get("stale");
+                                boolean stillStale = false;
+                                if (freshStale != null) {
+                                    for (Map<String, Object> s : freshStale) {
+                                        if (runId.equals(s.get("runId"))) {
+                                            stillStale = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (!stillStale) {
+                                    recovered = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                } catch (Exception e) {
+                    log.warn("Watchdog reconnect attempt failed for run {}", runId, e);
+                }
+
+                if (recovered) {
+                    log.info("Stale run {} successfully recovered via broker reconnect. Skipping restart.", runId);
+                    continue;
+                }
+
                 try {
                     // 1. Get original config before killing
                     RunConfigSnapshot config = RunConfigSnapshot.fromRecord(record);

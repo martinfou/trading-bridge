@@ -778,23 +778,78 @@ public final class ControlPlaneServer implements AutoCloseable {
             .get("/api/runs/{runId}/trades", ctx -> {
                 String runId = ctx.pathParam("runId");
                 Optional<RunRecord> recordOpt = runManager.getRun(runId);
-                List<?> trades;
+                List<com.martinfou.trading.core.Trade> trades;
                 if (recordOpt.isPresent()) {
-                    RunRecord record = recordOpt.get();
-                    if (record.endedPayload().isPresent()) {
-                        trades = (List<?>) record.endedPayload().get().get("trades");
-                    } else {
-                        trades = reconstructTradesFromFills(runManager.eventStore().replayAll(runId));
-                    }
+                    trades = runManager.getTrades(runId);
                 } else {
                     Optional<BacktestRunDetails> detailsOpt = backtestRunStore.get(runId);
                     if (detailsOpt.isPresent()) {
-                        trades = reconstructTradesFromFills(runManager.eventStore().replayAll(runId));
+                        trades = backtestRunStore.tradeStore().getTrades(runId);
+                        if (trades.isEmpty()) {
+                            trades = com.martinfou.trading.backtest.persistence.TradeReconstructor.reconstruct(runManager.eventStore().replayAll(runId));
+                        }
                     } else {
                         throw new NotFoundException("Run not found: " + runId);
                     }
                 }
-                ctx.json(Map.of("runId", runId, "trades", trades != null ? trades : List.of()));
+                List<Map<String, Object>> mapped = trades.stream().map(ControlPlaneServer::tradeToMap).toList();
+                ctx.json(Map.of("runId", runId, "trades", mapped));
+            })
+            .get("/api/runs/{runId}/trades/summary", ctx -> {
+                String runId = ctx.pathParam("runId");
+                Optional<RunRecord> recordOpt = runManager.getRun(runId);
+                List<com.martinfou.trading.core.Trade> trades;
+                if (recordOpt.isPresent()) {
+                    trades = runManager.getTrades(runId);
+                } else {
+                    Optional<BacktestRunDetails> detailsOpt = backtestRunStore.get(runId);
+                    if (detailsOpt.isPresent()) {
+                        trades = backtestRunStore.tradeStore().getTrades(runId);
+                        if (trades.isEmpty()) {
+                            trades = com.martinfou.trading.backtest.persistence.TradeReconstructor.reconstruct(runManager.eventStore().replayAll(runId));
+                        }
+                    } else {
+                        throw new NotFoundException("Run not found: " + runId);
+                    }
+                }
+                
+                int totalTrades = trades.size();
+                int winningTrades = 0;
+                int losingTrades = 0;
+                double totalPnl = 0.0;
+                double maxWin = 0.0;
+                double maxLoss = 0.0;
+                
+                List<Double> pnls = new ArrayList<>();
+                for (var t : trades) {
+                    double pnl = t.pnl();
+                    pnls.add(pnl);
+                    totalPnl += pnl;
+                    if (pnl > 0.0) {
+                        winningTrades++;
+                        if (pnl > maxWin) maxWin = pnl;
+                    } else if (pnl < 0.0) {
+                        losingTrades++;
+                        if (pnl < maxLoss) maxLoss = pnl;
+                    }
+                }
+                
+                double winRatePct = totalTrades > 0 ? ((double) winningTrades / totalTrades) * 100.0 : 0.0;
+                double averagePnl = totalTrades > 0 ? totalPnl / totalTrades : 0.0;
+                double profitFactor = com.martinfou.trading.backtest.PerformanceMetrics.profitFactor(pnls);
+                
+                Map<String, Object> summary = new LinkedHashMap<>();
+                summary.put("totalTrades", totalTrades);
+                summary.put("winningTrades", winningTrades);
+                summary.put("losingTrades", losingTrades);
+                summary.put("winRatePct", winRatePct);
+                summary.put("totalPnl", totalPnl);
+                summary.put("averagePnl", averagePnl);
+                summary.put("profitFactor", profitFactor);
+                summary.put("maxWin", maxWin);
+                summary.put("maxLoss", maxLoss);
+                
+                ctx.json(summary);
             })
             .get("/api/runs/{runId}/equity-curve", ctx -> {
                 String runId = ctx.pathParam("runId");
@@ -805,14 +860,14 @@ public final class ControlPlaneServer implements AutoCloseable {
                     if (record.endedPayload().isPresent()) {
                         curve = (List<?>) record.endedPayload().get().get("equityCurveSample");
                     } else {
-                        List<Map<String, Object>> recTrades = reconstructTradesFromFills(runManager.eventStore().replayAll(runId));
+                        List<com.martinfou.trading.core.Trade> recTrades = runManager.getTrades(runId);
                         double eq = record.configSnapshot().containsKey("capital")
                             ? toDouble(record.configSnapshot().get("capital"))
                             : 1000.0;
                         List<Double> sample = new ArrayList<>();
                         sample.add(eq);
                         for (var t : recTrades) {
-                            eq += toDouble(t.get("pnl"));
+                            eq += t.pnl();
                             sample.add(eq);
                         }
                         curve = sample;
@@ -857,13 +912,18 @@ public final class ControlPlaneServer implements AutoCloseable {
                         }
                     }
                     if (trades == null) {
-                        trades = reconstructTradesFromFills(runManager.eventStore().replayAll(runId));
+                        trades = runManager.getTrades(runId).stream().map(ControlPlaneServer::tradeToMap).toList();
                     }
                 } else {
                     Optional<BacktestRunDetails> detailsOpt = backtestRunStore.get(runId);
                     if (detailsOpt.isPresent()) {
                         initialCapital = detailsOpt.get().initialCapital();
-                        trades = reconstructTradesFromFills(runManager.eventStore().replayAll(runId));
+                        var list = backtestRunStore.tradeStore().getTrades(runId);
+                        if (list.isEmpty()) {
+                            trades = reconstructTradesFromFills(runManager.eventStore().replayAll(runId));
+                        } else {
+                            trades = list.stream().map(ControlPlaneServer::tradeToMap).toList();
+                        }
                     } else {
                         throw new NotFoundException("Run not found: " + runId);
                     }
@@ -921,7 +981,7 @@ public final class ControlPlaneServer implements AutoCloseable {
                 if (record.endedPayload().isPresent()) {
                     serializedTrades = (List<Map<String, Object>>) record.endedPayload().get().get("trades");
                 } else {
-                    serializedTrades = reconstructTradesFromFills(runManager.eventStore().replayAll(runId));
+                    serializedTrades = runManager.getTrades(runId).stream().map(ControlPlaneServer::tradeToMap).toList();
                 }
                 
                 if (serializedTrades == null || serializedTrades.isEmpty()) {
@@ -1361,6 +1421,22 @@ public final class ControlPlaneServer implements AutoCloseable {
         } catch (NumberFormatException e) {
             return 0.0;
         }
+    }
+
+    private static Map<String, Object> tradeToMap(com.martinfou.trading.core.Trade t) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("tradeId", t.id());
+        map.put("symbol", t.symbol());
+        map.put("side", t.side().name());
+        map.put("entryPrice", t.entryPrice());
+        map.put("exitPrice", t.exitPrice());
+        map.put("quantity", t.quantity());
+        map.put("entryTime", t.entryTime().toString());
+        map.put("exitTime", t.exitTime().toString());
+        map.put("pnl", t.pnl());
+        map.put("stopLoss", t.stopLoss());
+        map.put("takeProfit", t.takeProfit());
+        return map;
     }
 
     private static List<Map<String, Object>> reconstructTradesFromFills(List<RunEvent> events) {

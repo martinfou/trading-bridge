@@ -133,6 +133,20 @@ public abstract class AbstractPropStrategy implements Strategy {
     }
 
     @Override
+    public void syncPosition(Order.Side side, double quantity, double sl, double tp) {
+        if (side == null || quantity == 0) {
+            clearActive();
+        } else {
+            activeSide = (side == Order.Side.BUY) ? com.martinfou.trading.core.indicators.Indicators.TradeSide.LONG : com.martinfou.trading.core.indicators.Indicators.TradeSide.SHORT;
+            activeSl = sl;
+            activeTp = tp;
+            barsInTrade = 0;
+        }
+        tradesToday = 0;
+        consecutiveLosses = 0;
+    }
+
+    @Override
     public void onTick(double bid, double ask, long volume) {}
 
     @Override

@@ -16,5 +16,13 @@ public enum RunEventType {
     HEARTBEAT,
     SQ_EXPORT_RECEIVED,
     /** Weekly strategy builder pipeline step (Epic 22). */
-    WEEKLY_BUILDER_EVENT
+    WEEKLY_BUILDER_EVENT,
+    /** Broker connection state transition (Epic 32). */
+    CONNECTION,
+    BROKER_CONNECT,
+    BROKER_DISCONNECT,
+    RECONNECT_ATTEMPT,
+    RECONNECT_FAILURE,
+    RATE_LIMIT_TRIGGERED,
+    STALE_PRICE_DETECTED
 }

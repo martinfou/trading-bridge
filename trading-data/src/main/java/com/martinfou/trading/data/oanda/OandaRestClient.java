@@ -19,4 +19,6 @@ public interface OandaRestClient {
     List<OandaPositionSnapshot> fetchOpenPositions();
 
     java.util.Map<String, Object> fetchOrderBook(String instrument);
+
+    default void reset() {}
 }
