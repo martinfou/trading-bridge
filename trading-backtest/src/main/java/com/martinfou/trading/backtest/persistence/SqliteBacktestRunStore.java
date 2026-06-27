@@ -399,6 +399,10 @@ public final class SqliteBacktestRunStore implements AutoCloseable {
         }
     }
 
+    public synchronized SqliteTradeStore tradeStore() {
+        return new SqliteTradeStore(connection, false);
+    }
+
     @Override
     public synchronized void close() {
         if (ownsConnection) {

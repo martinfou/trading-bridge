@@ -24,12 +24,33 @@ public final class OandaBroker implements Broker {
     private final OandaRestClient client;
     private final List<Consumer<BrokerEvent>> listeners = new CopyOnWriteArrayList<>();
     private volatile boolean connected;
+    private java.util.concurrent.ScheduledExecutorService keepaliveScheduler;
+    private final List<Long> orderTimestamps = new java.util.ArrayList<>();
+    private final Object rateLimitLock = new Object();
+    private volatile int retryCount;
+
+    private final long keepaliveIntervalMs;
+    private final long rateLimitWindowMs;
+    private final int rateLimitMaxOrders;
+    private final long rateLimitDelayMs;
 
     public OandaBroker(OandaRestClient client) {
+        this(client, 30_000, 60_000, 50, 1000);
+    }
+
+    OandaBroker(OandaRestClient client, long keepaliveIntervalMs) {
+        this(client, keepaliveIntervalMs, 60_000, 50, 1000);
+    }
+
+    OandaBroker(OandaRestClient client, long keepaliveIntervalMs, long rateLimitWindowMs, int rateLimitMaxOrders, long rateLimitDelayMs) {
         if (client == null) {
             throw new IllegalArgumentException("client is required");
         }
         this.client = client;
+        this.keepaliveIntervalMs = keepaliveIntervalMs;
+        this.rateLimitWindowMs = rateLimitWindowMs;
+        this.rateLimitMaxOrders = rateLimitMaxOrders;
+        this.rateLimitDelayMs = rateLimitDelayMs;
     }
 
     @Override
@@ -38,20 +59,89 @@ public final class OandaBroker implements Broker {
     }
 
     @Override
-    public void connect() {
+    public synchronized void connect() {
         client.fetchAccountSummary();
         connected = true;
+        emit(BrokerEvent.connection("CONNECTED", "Account verified"));
+        startKeepalive();
     }
 
     @Override
-    public void disconnect() {
+    public synchronized void disconnect() {
         connected = false;
+        stopKeepalive();
     }
 
     @Override
     public void reconnect() {
-        disconnect();
-        connect();
+        log.info("Attempting to reconnect OandaBroker (retryCount: {})", retryCount);
+        
+        long backoffSec = (long) Math.min(60, Math.pow(2, retryCount));
+        if (retryCount > 0) {
+            log.info("Sleeping for {}s due to reconnect backoff", backoffSec);
+            try {
+                Thread.sleep(backoffSec * 1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+
+        synchronized (this) {
+            disconnect();
+            client.reset();
+            
+            try {
+                retryCount++;
+                connect();
+                retryCount = 0;
+                log.info("OandaBroker reconnected successfully");
+            } catch (Exception e) {
+                log.warn("OandaBroker reconnect attempt failed: {}", e.getMessage());
+                throw e;
+            }
+        }
+    }
+
+    public int getRetryCount() {
+        return retryCount;
+    }
+
+    private void startKeepalive() {
+        stopKeepalive();
+        keepaliveScheduler = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "oanda-keepalive");
+            t.setDaemon(true);
+            return t;
+        });
+
+        final java.util.concurrent.atomic.AtomicInteger consecutiveFailures = new java.util.concurrent.atomic.AtomicInteger(0);
+
+        keepaliveScheduler.scheduleAtFixedRate(() -> {
+            if (!connected) {
+                return;
+            }
+            try {
+                client.fetchAccountSummary();
+                consecutiveFailures.set(0);
+            } catch (Exception e) {
+                int fails = consecutiveFailures.incrementAndGet();
+                log.warn("OANDA keepalive heartbeat failed (consecutive failures: {})", fails, e);
+                if (fails >= 2) {
+                    log.error("OANDA keepalive failed 2 consecutive heartbeats. Declaring broker disconnected.");
+                    connected = false;
+                    emit(BrokerEvent.connection("DISCONNECTED", "Keepalive ping failed: " + e.getMessage()));
+                    stopKeepalive();
+                }
+            }
+        }, keepaliveIntervalMs, keepaliveIntervalMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+    }
+
+    private void stopKeepalive() {
+        if (keepaliveScheduler != null) {
+            keepaliveScheduler.shutdownNow();
+            keepaliveScheduler = null;
+        }
     }
 
     @Override
@@ -62,6 +152,8 @@ public final class OandaBroker implements Broker {
             emit(BrokerEvent.reject(order, "Broker not connected"));
             return OrderSubmitResult.rejected("Broker not connected");
         }
+
+        enforceRateLimit();
 
         if (order.isCloseOnly()) {
             double remainingQty = order.quantity();
@@ -191,6 +283,35 @@ public final class OandaBroker implements Broker {
             throw new IllegalArgumentException("symbol is required");
         }
         return symbol.replace("/", "_").replace("-", "_").toUpperCase();
+    }
+
+    private void enforceRateLimit() {
+        if (rateLimitMaxOrders <= 0) {
+            return;
+        }
+        while (true) {
+            long sleepTime = 0;
+            synchronized (rateLimitLock) {
+                long now = System.currentTimeMillis();
+                orderTimestamps.removeIf(t -> t < now - rateLimitWindowMs);
+                if (orderTimestamps.size() < rateLimitMaxOrders) {
+                    orderTimestamps.add(now);
+                    break;
+                }
+                sleepTime = rateLimitDelayMs;
+            }
+            
+            if (sleepTime > 0) {
+                log.warn("OANDA order submission rate limit reached (>= {} orders/{}ms). Delaying order submission.", rateLimitMaxOrders, rateLimitWindowMs);
+                emit(BrokerEvent.rateLimit("Rate limit exceeded. Delaying submission."));
+                try {
+                    Thread.sleep(sleepTime);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }
     }
 
     private void emit(BrokerEvent event) {

@@ -67,6 +67,36 @@ class SqInterpretedStrategyTest {
         assertEquals(Order.Side.BUY, close.getFirst().side());
     }
 
+    @Test
+    void syncPosition_restoresInternalState() throws Exception {
+        SqStrategyDocument document = documentWithEntryRule();
+        StrategyConfig config = sampleShortExitConfig();
+        SqInterpretedStrategy strategy = new SqInterpretedStrategy(
+            document, config, "TestStrategy", "EUR_USD");
+
+        strategy.syncPosition(Order.Side.BUY, 0.5, 0.0, 0.0);
+        
+        java.lang.reflect.Field longOpenField = SqInterpretedStrategy.class.getDeclaredField("longOpen");
+        longOpenField.setAccessible(true);
+        assertTrue((Boolean) longOpenField.get(strategy));
+
+        java.lang.reflect.Field longQtyField = SqInterpretedStrategy.class.getDeclaredField("longQuantity");
+        longQtyField.setAccessible(true);
+        assertEquals(0.5, (Double) longQtyField.get(strategy), 1e-9);
+
+        // Sync to short
+        strategy.syncPosition(Order.Side.SELL, 0.2, 0.0, 0.0);
+        java.lang.reflect.Field shortOpenField = SqInterpretedStrategy.class.getDeclaredField("shortOpen");
+        shortOpenField.setAccessible(true);
+        assertTrue((Boolean) shortOpenField.get(strategy));
+        assertFalse((Boolean) longOpenField.get(strategy));
+
+        // Sync to flat
+        strategy.syncPosition(null, 0.0, 0.0, 0.0);
+        assertFalse((Boolean) shortOpenField.get(strategy));
+        assertFalse((Boolean) longOpenField.get(strategy));
+    }
+
     private static SqStrategyDocument documentWithEntryRule() {
         return documentWithRule("Short entry", booleanConstant(true), enterAtStopAction());
     }

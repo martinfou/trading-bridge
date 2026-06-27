@@ -32,13 +32,17 @@ class StaleRunWatchdogTest {
         RunRecord record = runManager.restoreRun(runId, config);
         record.markRunning();
         
-        Instant now = Instant.now();
-        Instant lastEventAt = now.minus(Duration.ofSeconds(200));
+        Instant checkTime = Instant.parse("2026-06-24T11:00:00Z"); // Wednesday (market open)
+        Clock fixedClock = Clock.fixed(checkTime, java.time.ZoneOffset.UTC);
+        
+        Instant lastEventAt = checkTime.minus(Duration.ofSeconds(200));
         record.noteEventAt(lastEventAt);
 
-        var summaryService = new ControlSummaryService(runManager, 120, Clock.systemUTC());
+        var summaryService = new ControlSummaryService(runManager, 120, fixedClock);
 
-        try (var watchdog = new StaleRunWatchdog(runManager, summaryService)) {
+        try (var watchdog = new StaleRunWatchdog(runManager, summaryService, fixedClock)) {
+            watchdog.reconnectTimeoutMs = 10;
+            watchdog.reconnectCheckIntervalMs = 5;
             watchdog.checkStaleRuns();
             
             assertEquals(RunRecord.Status.COMPLETED, record.status(), "Expected old run to be COMPLETED");
@@ -99,6 +103,62 @@ class StaleRunWatchdogTest {
             
             List<RunRecord> activeRuns = runManager.list(null);
             assertEquals(1, activeRuns.size(), "Expected no new run to be registered");
+        }
+    }
+
+    @Test
+    void testCheckStaleRuns_reconnectsBrokerFirst() throws Exception {
+        var store = new InMemoryEventStore();
+        var runManager = new TrackingRunManager(store);
+
+        var config = new RunConfigSnapshot(
+            "LondonOpenRangeBreakout",
+            "EUR_USD",
+            "PAPER",
+            "sample",
+            500,
+            null,
+            1000.0,
+            0.07,
+            1e-4,
+            "PAPER_STUB",
+            "acct1"
+        );
+
+        String runId = "stale-run-id";
+        RunRecord record = runManager.restoreRun(runId, config);
+        record.markRunning();
+        
+        Instant checkTime = Instant.parse("2026-06-24T11:00:00Z"); // Wednesday
+        Clock fixedClock = Clock.fixed(checkTime, java.time.ZoneOffset.UTC);
+        
+        Instant lastEventAt = checkTime.minus(Duration.ofSeconds(200));
+        record.noteEventAt(lastEventAt);
+
+        var summaryService = new ControlSummaryService(runManager, 120, fixedClock);
+
+        try (var watchdog = new StaleRunWatchdog(runManager, summaryService, fixedClock)) {
+            watchdog.reconnectTimeoutMs = 10;
+            watchdog.reconnectCheckIntervalMs = 5;
+            watchdog.checkStaleRuns();
+            
+            assertTrue(runManager.reconnectCalled, "Expected reconnectBroker to be called");
+            assertEquals("stale-run-id", runManager.reconnectedRunId);
+        }
+    }
+
+    static class TrackingRunManager extends RunManager {
+        boolean reconnectCalled = false;
+        String reconnectedRunId = null;
+
+        TrackingRunManager(EventStore eventStore) {
+            super(eventStore);
+        }
+
+        @Override
+        public void reconnectBroker(String runId) {
+            this.reconnectCalled = true;
+            this.reconnectedRunId = runId;
         }
     }
 }

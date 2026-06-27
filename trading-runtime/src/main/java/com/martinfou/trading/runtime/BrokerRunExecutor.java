@@ -146,8 +146,17 @@ final class BrokerRunExecutor {
         double finalEquity = account.equity() > 0 ? account.equity() : initialCapital;
         double returnPct = initialCapital > 0 ? (finalEquity - initialCapital) / initialCapital * 100.0 : 0.0;
 
+        int totalTradesCount = 0;
+        try {
+            var replayedEvents = eventStore.replayAll(runId);
+            var reconstructed = com.martinfou.trading.backtest.persistence.TradeReconstructor.reconstruct(replayedEvents);
+            totalTradesCount = reconstructed.size();
+        } catch (Exception e) {
+            totalTradesCount = filled;
+        }
+
         var endedPayload = new LinkedHashMap<String, Object>();
-        endedPayload.put("totalTrades", filled);
+        endedPayload.put("totalTrades", totalTradesCount);
         endedPayload.put("totalReturnPct", returnPct);
         endedPayload.put("finalEquity", finalEquity);
         endedPayload.put("ordersSubmitted", submitted);
@@ -168,7 +177,7 @@ final class BrokerRunExecutor {
         return BacktestResult.builder()
             .initialCapital(initialCapital)
             .finalEquity(finalEquity)
-            .totalTrades(filled)
+            .totalTrades(totalTradesCount)
             .totalReturnPct(returnPct)
             .build();
     }
@@ -212,6 +221,9 @@ final class BrokerRunExecutor {
             case ORDER_SUBMITTED -> RunEventType.ORDER_SUBMITTED;
             case FILL, PARTIAL_CLOSE, FINANCING -> RunEventType.FILL;
             case REJECT -> RunEventType.REJECT;
+            case CONNECTION -> RunEventType.CONNECTION;
+            case RATE_LIMIT -> RunEventType.RATE_LIMIT_TRIGGERED;
+            case STALE_PRICE -> RunEventType.STALE_PRICE_DETECTED;
         };
         RunEvent event = new RunEvent(
             RunEvent.SCHEMA_VERSION,

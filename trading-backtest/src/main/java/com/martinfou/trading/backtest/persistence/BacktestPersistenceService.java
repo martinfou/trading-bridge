@@ -222,6 +222,11 @@ public final class BacktestPersistenceService {
                 log.info("[BacktestPersistence] Saved run {} for strategy {} (hash: {})",
                     runId, strategyId, paramHash);
             }
+            try (SqliteTradeStore tradeStore = new SqliteTradeStore(dbPath)) {
+                tradeStore.deleteForRun(runId);
+                tradeStore.insertAll(runId, result.trades());
+                log.info("[BacktestPersistence] Saved {} trades for run {}", result.trades().size(), runId);
+            }
         } catch (Exception e) {
             log.error("[BacktestPersistence] Failed to persist backtest run {}: {}", runId, e.getMessage(), e);
         }

@@ -79,6 +79,9 @@ public final class OandaStreamingExecutor implements AutoCloseable {
     private volatile double lastBid = 0.0;
     private volatile double lastAsk = 0.0;
     private Instant lastReconciliationTime = Instant.EPOCH;
+    private volatile double lastPriceVal = 0.0;
+    private volatile Instant lastPriceValChangeTime = Instant.now();
+    private volatile boolean stalePriceWarningFlag = false;
 
     public OandaStreamingExecutor(
         String runId,
@@ -207,6 +210,12 @@ public final class OandaStreamingExecutor implements AutoCloseable {
         return active.get();
     }
 
+    public void reconnectBroker() {
+        log.info("Triggering broker reconnect for run {}", runId);
+        broker.reconnect();
+        reconcilePositions();
+    }
+
     /**
      * Returns the error message that caused an error-driven stop, or {@code null} if the stop
      * was operator-initiated. Set before {@link #stop()} is called; safe to read after stop.
@@ -263,6 +272,48 @@ public final class OandaStreamingExecutor implements AutoCloseable {
             if (!historyBars.isEmpty()) {
                 lastMidPrice = historyBars.getLast().close();
             }
+            
+            // Restore active position state if any exists in event log
+            List<RunEvent> allEvents = eventStore.replayAll(runId);
+            Map<String, JournalPositions.Snapshot> journalPositions = JournalPositions.fromFills(allEvents);
+            Order.Side activeSide = null;
+            double activeQty = 0.0;
+            for (var snapshot : journalPositions.values()) {
+                if (snapshot == null || snapshot.symbol() == null) {
+                    continue;
+                }
+                if (snapshot.symbol().equalsIgnoreCase(config.symbol())
+                    || snapshot.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(config.symbol().replace("/", "_").replace("-", "_"))) {
+                    activeSide = snapshot.side();
+                    activeQty = snapshot.quantity();
+                    break;
+                }
+            }
+            double sl = 0.0;
+            double tp = 0.0;
+            if (activeSide != null && activeQty > 0.0) {
+                for (int i = allEvents.size() - 1; i >= 0; i--) {
+                    RunEvent e = allEvents.get(i);
+                    if (e.type() == RunEventType.FILL || e.type() == RunEventType.ORDER_SUBMITTED) {
+                        Map<String, Object> payload = e.payload();
+                        if (payload != null && activeSide.name().equalsIgnoreCase(String.valueOf(payload.get("side"))) 
+                            && config.symbol().equalsIgnoreCase(String.valueOf(payload.get("symbol")))) {
+                            if (payload.containsKey("stopLoss")) {
+                                sl = ((Number) payload.get("stopLoss")).doubleValue();
+                            }
+                            if (payload.containsKey("takeProfit")) {
+                                tp = ((Number) payload.get("takeProfit")).doubleValue();
+                            }
+                            break;
+                        }
+                    }
+                }
+                log.info("Restoring strategy position tracking state on restart: {} {} (SL: {}, TP: {})", activeSide, activeQty, sl, tp);
+                strategy.syncPosition(activeSide, activeQty, sl, tp);
+            } else {
+                strategy.syncPosition(null, 0.0, 0.0, 0.0);
+            }
+            
             log.info("Warm-up complete. Replayed {} bars.", limit);
         } catch (IOException e) {
             log.warn("Failed to load history bootstrap bars: {}. Indicators starting dry.", e.getMessage());
@@ -282,6 +333,23 @@ public final class OandaStreamingExecutor implements AutoCloseable {
             lastBid = bid;
             lastAsk = ask;
             lastMidPrice = (bid + ask) / 2.0;
+
+            if (lastPriceVal == 0.0) {
+                lastPriceVal = lastMidPrice;
+                lastPriceValChangeTime = timestamp;
+            } else if (lastMidPrice != lastPriceVal) {
+                lastPriceVal = lastMidPrice;
+                lastPriceValChangeTime = timestamp;
+                if (stalePriceWarningFlag) {
+                    stalePriceWarningFlag = false;
+                }
+            } else if (java.time.Duration.between(lastPriceValChangeTime, timestamp).toMinutes() >= 5) {
+                if (!stalePriceWarningFlag) {
+                    stalePriceWarningFlag = true;
+                    log.warn("Price stream is STALE for {}. No price change for 5 minutes.", config.symbol());
+                    emitStalePriceWarningEvent(timestamp);
+                }
+            }
 
             // 1. Perform rollover checks
             checkRollovers(timestamp);
@@ -757,6 +825,13 @@ public final class OandaStreamingExecutor implements AutoCloseable {
                 order = pending;
             }
 
+            if (MarketSessionResolver.isClosed(order.symbol(), runMode.name(), Instant.now())) {
+                log.warn("Forex market is closed for symbol {}. Rejecting order submission.", order.symbol());
+                persistMarketClosedReject(order);
+                rejectedCount++;
+                continue;
+            }
+
             RiskCheckResult riskCheck = riskEngine.checkPreTrade(order, broker.getPositions());
             if (!riskCheck.passed()) {
                 persistRiskReject(order, riskCheck);
@@ -814,8 +889,18 @@ public final class OandaStreamingExecutor implements AutoCloseable {
         }
         double returnPct = (currentEquity - config.resolvedCapital()) / config.resolvedCapital() * 100.0;
 
+        int totalTradesCount = 0;
+        try {
+            var replayedEvents = eventStore.replayAll(runId);
+            var reconstructed = com.martinfou.trading.backtest.persistence.TradeReconstructor.reconstruct(replayedEvents);
+            totalTradesCount = reconstructed.size();
+        } catch (Exception e) {
+            log.error("Failed to reconstruct trades for totalTrades metric in emitEnded for run: " + runId, e);
+            totalTradesCount = filledCount;
+        }
+
         var endedPayload = new LinkedHashMap<String, Object>();
-        endedPayload.put("totalTrades", filledCount);
+        endedPayload.put("totalTrades", totalTradesCount);
         endedPayload.put("totalReturnPct", returnPct);
         endedPayload.put("finalEquity", currentEquity);
         endedPayload.put("ordersSubmitted", submittedCount);
@@ -844,6 +929,9 @@ public final class OandaStreamingExecutor implements AutoCloseable {
             case ORDER_SUBMITTED -> RunEventType.ORDER_SUBMITTED;
             case FILL, PARTIAL_CLOSE, FINANCING -> RunEventType.FILL;
             case REJECT -> RunEventType.REJECT;
+            case CONNECTION -> RunEventType.CONNECTION;
+            case RATE_LIMIT -> RunEventType.RATE_LIMIT_TRIGGERED;
+            case STALE_PRICE -> RunEventType.STALE_PRICE_DETECTED;
         };
         RunEvent event = new RunEvent(
             RunEvent.SCHEMA_VERSION,
@@ -886,6 +974,119 @@ public final class OandaStreamingExecutor implements AutoCloseable {
             config.symbol(),
             runMode.name(),
             Map.copyOf(payload));
+        eventStore.append(runId, event);
+    }
+
+    void reconcilePositions() {
+        try {
+            List<RunEvent> allEvents = eventStore.replayAll(runId);
+            var expectedMap = JournalPositions.fromFills(allEvents);
+            List<com.martinfou.trading.core.Position> brokerPositions = broker.getPositions();
+            var actualMap = JournalPositions.fromBroker(brokerPositions);
+            
+            String targetSymbol = config.symbol();
+            double expectedQty = 0.0;
+            Order.Side expectedSide = null;
+            for (var snap : expectedMap.values()) {
+                if (snap.symbol().equalsIgnoreCase(targetSymbol)) {
+                    expectedQty = snap.quantity();
+                    expectedSide = snap.side();
+                }
+            }
+            
+            double actualQty = 0.0;
+            Order.Side actualSide = null;
+            for (var snap : actualMap.values()) {
+                if (snap.symbol().equalsIgnoreCase(targetSymbol)) {
+                    actualQty = snap.quantity();
+                    actualSide = snap.side();
+                }
+            }
+            
+            boolean sideMismatch = (expectedSide != actualSide && expectedQty > 0 && actualQty > 0);
+            boolean qtyMismatch = Math.abs(expectedQty - actualQty) > 1e-6;
+            
+            if (sideMismatch || qtyMismatch) {
+                log.error("POSITION RECONCILIATION DELTA DETECTED for run {} on {}! Expected: {} {}, Actual: {} {}",
+                    runId, targetSymbol, expectedSide, expectedQty, actualSide, actualQty);
+                
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("runId", runId);
+                payload.put("symbol", targetSymbol);
+                payload.put("expectedSide", expectedSide != null ? expectedSide.name() : "NONE");
+                payload.put("expectedQty", expectedQty);
+                payload.put("actualSide", actualSide != null ? actualSide.name() : "NONE");
+                payload.put("actualQty", actualQty);
+                
+                RunEvent alertEvent = new RunEvent(
+                    RunEvent.SCHEMA_VERSION,
+                    RunEventType.RECONCILIATION_ALERT,
+                    Instant.now(),
+                    runId,
+                    config.strategyId(),
+                    config.symbol(),
+                    runMode.name(),
+                    payload);
+                eventStore.append(runId, alertEvent);
+            } else {
+                log.info("Position reconciliation check passed for run {} on {}.", runId, targetSymbol);
+            }
+        } catch (Exception e) {
+            log.error("Failed to run position reconciliation for run {}", runId, e);
+        }
+    }
+
+    void persistMarketClosedReject(Order order) {
+        Instant nextOpen = getNextForexOpen(Instant.now());
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("symbol", order.symbol());
+        payload.put("side", order.side().name());
+        payload.put("quantity", order.quantity());
+        payload.put("reason", "MARKET_CLOSED");
+        payload.put("nextOpenEstimate", nextOpen.toString());
+
+        RunEvent event = new RunEvent(
+            RunEvent.SCHEMA_VERSION,
+            RunEventType.REJECT,
+            Instant.now(),
+            runId,
+            config.strategyId(),
+            config.symbol(),
+            runMode.name(),
+            payload);
+        eventStore.append(runId, event);
+    }
+
+    private Instant getNextForexOpen(Instant now) {
+        java.time.ZoneId NY = java.time.ZoneId.of("America/New_York");
+        java.time.ZonedDateTime nyTime = now.atZone(NY);
+        java.time.ZonedDateTime nextSunday = nyTime;
+        if (nyTime.getDayOfWeek() == java.time.DayOfWeek.SUNDAY && nyTime.getHour() >= 17) {
+            nextSunday = nextSunday.plusDays(1);
+        }
+        while (nextSunday.getDayOfWeek() != java.time.DayOfWeek.SUNDAY) {
+            nextSunday = nextSunday.plusDays(1);
+        }
+        java.time.ZonedDateTime openTime = nextSunday.withHour(17).withMinute(0).withSecond(0).withNano(0);
+        return openTime.toInstant();
+    }
+
+    void emitStalePriceWarningEvent(Instant timestamp) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("symbol", config.symbol());
+        payload.put("lastPrice", lastPriceVal);
+        payload.put("lastChangeTime", lastPriceValChangeTime.toString());
+        payload.put("status", "STALE");
+
+        RunEvent event = new RunEvent(
+            RunEvent.SCHEMA_VERSION,
+            RunEventType.STALE_PRICE_DETECTED,
+            timestamp,
+            runId,
+            config.strategyId(),
+            config.symbol(),
+            runMode.name(),
+            payload);
         eventStore.append(runId, event);
     }
 }

@@ -6,5 +6,8 @@ public enum BrokerEventType {
     FILL,
     PARTIAL_CLOSE,
     FINANCING,
-    REJECT
+    REJECT,
+    CONNECTION,
+    RATE_LIMIT,
+    STALE_PRICE
 }
