@@ -289,16 +289,16 @@ development_status:
   31-7-partial-fill-detection: done
   epic-31-retrospective: optional
 
-  epic-32: backlog
-  32-1-rest-keepalive-oandabroker: backlog
-  32-2-implement-oandabroker-reconnect: backlog
-  32-3-connection-state-event-stream: backlog
-  32-4-stalerunwatchdog-reconnect-before-restart: backlog
-  32-5-exponential-backoff-reconnect: backlog
-  32-6-position-reconciliation-after-reconnect: backlog
-  32-7-oanda-rate-limit-guard: backlog
-  32-8-market-hours-weekend-detection: backlog
-  32-9-stale-price-detection: backlog
+  epic-32: done
+  32-1-rest-keepalive-oandabroker: done
+  32-2-implement-oandabroker-reconnect: done
+  32-3-connection-state-event-stream: done
+  32-4-stalerunwatchdog-reconnect-before-restart: done
+  32-5-exponential-backoff-reconnect: done
+  32-6-position-reconciliation-after-reconnect: done
+  32-7-oanda-rate-limit-guard: done
+  32-8-market-hours-weekend-detection: done
+  32-9-stale-price-detection: done
   epic-32-retrospective: optional
 
   epic-33: backlog
