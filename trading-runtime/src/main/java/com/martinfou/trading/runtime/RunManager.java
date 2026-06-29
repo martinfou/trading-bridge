@@ -763,99 +763,101 @@ public class RunManager implements RunLifecycle, AutoCloseable {
             // Null for operator-initiated stops and all non-OANDA-streaming paths.
             String oandaStreamError = null;
             if (configSnapshot.resolvedExecutionLabel().isOandaBroker() && System.getProperty("trading.bridge.test") == null) {
-                Broker broker = brokerFactory.create(configSnapshot);
-                Strategy strategy = StrategyCatalog.create(
-                    configSnapshot.strategyId(), configSnapshot.symbol(), configSnapshot.quantity());
-                RunRiskContext riskContext = new RunRiskContext(
-                    new RiskEngine(),
-                    (run, cfg, m, check) -> {
-                        if (record.status() == RunRecord.Status.RUNNING) {
-                            RunRecord pausedBefore = snapshotRecord(record);
-                            record.markPaused();
-                            notifyTransition(pausedBefore, record, RunTransition.PAUSE);
+                try (Broker broker = brokerFactory.create(configSnapshot)) {
+                    Strategy strategy = StrategyCatalog.create(
+                        configSnapshot.strategyId(), configSnapshot.symbol(), configSnapshot.quantity());
+                    RunRiskContext riskContext = new RunRiskContext(
+                        new RiskEngine(),
+                        (run, cfg, m, check) -> {
+                            if (record.status() == RunRecord.Status.RUNNING) {
+                                RunRecord pausedBefore = snapshotRecord(record);
+                                record.markPaused();
+                                notifyTransition(pausedBefore, record, RunTransition.PAUSE);
+                            }
+                        },
+                        metrics -> dailyDrawdownByRun.put(runId, metrics));
+
+                    String accountId = configSnapshot.brokerAccountId();
+                    com.martinfou.trading.data.oanda.OandaRestClient restClient = null;
+                    var oandaCreds = brokerAccountRegistry.credentials(accountId);
+                    if (oandaCreds.isPresent()) {
+                        var creds = oandaCreds.get();
+                        restClient = new com.martinfou.trading.data.oanda.HttpOandaRestClient(
+                            creds.apiToken(), creds.accountId(), creds.restUrl());
+                    } else {
+                        restClient = new com.martinfou.trading.data.oanda.StubOandaRestClient();
+                    }
+
+                    var creds = oandaCreds.orElse(null);
+                    var streamClient = new com.martinfou.trading.data.oanda.OandaStreamingClient(
+                        creds != null ? creds.apiToken() : "",
+                        creds != null ? creds.accountId() : "",
+                        creds == null || creds.restUrl().contains("practice")
+                    );
+
+                    OandaStreamingExecutor oandaExecutor = new OandaStreamingExecutor(
+                        runId,
+                        record,
+                        configSnapshot,
+                        strategy,
+                        broker,
+                        restClient,
+                        eventStore,
+                        killSwitchRegistry,
+                        streamClient,
+                        riskContext,
+                        () -> this.list(null).stream()
+                            .filter(r -> r.status() == RunRecord.Status.RUNNING)
+                            .map(RunRecord::symbol)
+                            .toList()
+                    );
+
+                    activeExecutors.put(runId, oandaExecutor);
+                    oandaExecutor.start();
+
+                    while (record.status() == RunRecord.Status.RUNNING) {
+                        try {
+                            Thread.sleep(1000);
+                        } catch (InterruptedException e) {
+                            break;
                         }
-                    },
-                    metrics -> dailyDrawdownByRun.put(runId, metrics));
-
-                String accountId = configSnapshot.brokerAccountId();
-                com.martinfou.trading.data.oanda.OandaRestClient restClient = null;
-                var oandaCreds = brokerAccountRegistry.credentials(accountId);
-                if (oandaCreds.isPresent()) {
-                    var creds = oandaCreds.get();
-                    restClient = new com.martinfou.trading.data.oanda.HttpOandaRestClient(
-                        creds.apiToken(), creds.accountId(), creds.restUrl());
-                } else {
-                    restClient = new com.martinfou.trading.data.oanda.StubOandaRestClient();
-                }
-
-                var creds = oandaCreds.orElse(null);
-                var streamClient = new com.martinfou.trading.data.oanda.OandaStreamingClient(
-                    creds != null ? creds.apiToken() : "",
-                    creds != null ? creds.accountId() : "",
-                    creds == null || creds.restUrl().contains("practice")
-                );
-
-                OandaStreamingExecutor oandaExecutor = new OandaStreamingExecutor(
-                    runId,
-                    record,
-                    configSnapshot,
-                    strategy,
-                    broker,
-                    restClient,
-                    eventStore,
-                    killSwitchRegistry,
-                    streamClient,
-                    riskContext,
-                    () -> this.list(null).stream()
-                        .filter(r -> r.status() == RunRecord.Status.RUNNING)
-                        .map(RunRecord::symbol)
-                        .toList()
-                );
-
-                activeExecutors.put(runId, oandaExecutor);
-                oandaExecutor.start();
-
-                while (record.status() == RunRecord.Status.RUNNING) {
-                    try {
-                        Thread.sleep(1000);
-                    } catch (InterruptedException e) {
-                        break;
+                        if (!oandaExecutor.isActive()) {
+                            break;
+                        }
                     }
-                    if (!oandaExecutor.isActive()) {
-                        break;
-                    }
-                }
-                oandaExecutor.stop();
-                oandaStreamError = oandaExecutor.getPendingFailure();
-                activeExecutors.remove(runId);
+                    oandaExecutor.stop();
+                    oandaStreamError = oandaExecutor.getPendingFailure();
+                    activeExecutors.remove(runId);
 
-                double finalEquity = broker.getAccountState().equity();
-                result = BacktestResult.builder()
-                    .initialCapital(capital)
-                    .finalEquity(finalEquity)
-                    .totalTrades(oandaExecutor.getFilledCount())
-                    .totalReturnPct(capital > 0 ? (finalEquity - capital) / capital * 100.0 : 0.0)
-                    .build();
+                    double finalEquity = broker.getAccountState().equity();
+                    result = BacktestResult.builder()
+                        .initialCapital(capital)
+                        .finalEquity(finalEquity)
+                        .totalTrades(oandaExecutor.getFilledCount())
+                        .totalReturnPct(capital > 0 ? (finalEquity - capital) / capital * 100.0 : 0.0)
+                        .build();
+                }
             } else if (isBrokerBackedRun(configSnapshot)) {
-                Broker broker = brokerFactory.create(configSnapshot);
-                Strategy strategy = StrategyCatalog.create(
-                    configSnapshot.strategyId(), configSnapshot.symbol(), configSnapshot.quantity());
-                RunRiskContext riskContext = new RunRiskContext(
-                    new RiskEngine(),
-                    (run, cfg, mode, check) -> {
-                        if (record.status() == RunRecord.Status.RUNNING) {
-                            RunRecord pausedBefore = snapshotRecord(record);
-                            record.markPaused();
-                            notifyTransition(pausedBefore, record, RunTransition.PAUSE);
-                        }
-                    },
-                    metrics -> dailyDrawdownByRun.put(runId, metrics));
-                result = BrokerRunExecutor.execute(
-                    runId, configSnapshot, bars, capital, strategy, broker, eventStore, killSwitchRegistry, null, riskContext,
-                    () -> this.list(null).stream()
-                        .filter(r -> r.status() == RunRecord.Status.RUNNING)
-                        .map(RunRecord::symbol)
-                        .toList());
+                try (Broker broker = brokerFactory.create(configSnapshot)) {
+                    Strategy strategy = StrategyCatalog.create(
+                        configSnapshot.strategyId(), configSnapshot.symbol(), configSnapshot.quantity());
+                    RunRiskContext riskContext = new RunRiskContext(
+                        new RiskEngine(),
+                        (run, cfg, mode, check) -> {
+                            if (record.status() == RunRecord.Status.RUNNING) {
+                                RunRecord pausedBefore = snapshotRecord(record);
+                                record.markPaused();
+                                notifyTransition(pausedBefore, record, RunTransition.PAUSE);
+                            }
+                        },
+                        metrics -> dailyDrawdownByRun.put(runId, metrics));
+                    result = BrokerRunExecutor.execute(
+                        runId, configSnapshot, bars, capital, strategy, broker, eventStore, killSwitchRegistry, null, riskContext,
+                        () -> this.list(null).stream()
+                            .filter(r -> r.status() == RunRecord.Status.RUNNING)
+                            .map(RunRecord::symbol)
+                            .toList());
+                }
             } else {
                 var context = RunLauncher.create(
                     runId,
