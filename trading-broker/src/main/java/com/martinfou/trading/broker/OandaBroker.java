@@ -33,6 +33,12 @@ public final class OandaBroker implements Broker {
     private final java.util.concurrent.atomic.AtomicInteger connectionFailures = new java.util.concurrent.atomic.AtomicInteger(0);
     private final java.util.concurrent.atomic.AtomicInteger totalOrdersSubmitted = new java.util.concurrent.atomic.AtomicInteger(0);
     private final java.util.concurrent.atomic.AtomicInteger totalOrdersRejected = new java.util.concurrent.atomic.AtomicInteger(0);
+    private final Object cacheLock = new Object();
+    private List<Position> cachedPositions;
+    private java.time.Instant cachedPositionsTime;
+    private AccountState cachedAccountState;
+    private java.time.Instant cachedAccountStateTime;
+    private static final long CACHE_TTL_MS = 5000;
 
     private final long keepaliveIntervalMs;
     private final long rateLimitWindowMs;
@@ -70,6 +76,7 @@ public final class OandaBroker implements Broker {
             lastReplyTime = java.time.Instant.now();
             uptimeStart = java.time.Instant.now();
             connected = true;
+            clearCache();
             emit(BrokerEvent.connection("CONNECTED", "Account verified"));
             startKeepalive();
         } catch (Exception e) {
@@ -83,7 +90,17 @@ public final class OandaBroker implements Broker {
         connected = false;
         uptimeStart = null;
         lastReplyTime = null;
+        clearCache();
         stopKeepalive();
+    }
+
+    private void clearCache() {
+        synchronized (cacheLock) {
+            cachedPositions = null;
+            cachedPositionsTime = null;
+            cachedAccountState = null;
+            cachedAccountStateTime = null;
+        }
     }
 
     @Override
@@ -163,6 +180,7 @@ public final class OandaBroker implements Broker {
 
     @Override
     public OrderSubmitResult submitOrder(Order order) {
+        clearCache();
         totalOrdersSubmitted.incrementAndGet();
         emit(BrokerEvent.submitted(order));
 
@@ -274,6 +292,7 @@ public final class OandaBroker implements Broker {
 
     @Override
     public OrderSubmitResult cancelOrder(String brokerOrderId) {
+        clearCache();
         if (!connected) {
             return OrderSubmitResult.rejected("Broker not connected");
         }
@@ -290,25 +309,51 @@ public final class OandaBroker implements Broker {
 
     @Override
     public List<Position> getPositions() {
+        synchronized (cacheLock) {
+            java.time.Instant now = java.time.Instant.now();
+            if (cachedPositions != null && cachedPositionsTime != null 
+                    && java.time.Duration.between(cachedPositionsTime, now).toMillis() < CACHE_TTL_MS) {
+                return cachedPositions;
+            }
+        }
+
         long startTime = System.currentTimeMillis();
         List<OandaPositionSnapshot> positions = client.fetchOpenPositions();
         long duration = System.currentTimeMillis() - startTime;
-        log.info("OANDA getPositions completed in {}ms", duration);
+        log.debug("OANDA getPositions completed in {}ms (API call)", duration);
         List<Position> out = new ArrayList<>();
         for (OandaPositionSnapshot row : positions) {
             java.time.Instant entryTime = row.entryTime() != null ? row.entryTime() : java.time.Instant.EPOCH;
             out.add(new Position(row.instrument(), row.side(), row.units(), row.averagePrice(), entryTime, row.clientTag(), row.tradeId()));
         }
-        return List.copyOf(out);
+        List<Position> result = List.copyOf(out);
+        synchronized (cacheLock) {
+            cachedPositions = result;
+            cachedPositionsTime = java.time.Instant.now();
+        }
+        return result;
     }
 
     @Override
     public AccountState getAccountState() {
+        synchronized (cacheLock) {
+            java.time.Instant now = java.time.Instant.now();
+            if (cachedAccountState != null && cachedAccountStateTime != null 
+                    && java.time.Duration.between(cachedAccountStateTime, now).toMillis() < CACHE_TTL_MS) {
+                return cachedAccountState;
+            }
+        }
+
         long startTime = System.currentTimeMillis();
         OandaAccountSnapshot account = client.fetchAccountSummary();
         long duration = System.currentTimeMillis() - startTime;
-        log.info("OANDA getAccountState completed in {}ms", duration);
-        return new AccountState(account.balance(), account.nav(), account.currency());
+        log.debug("OANDA getAccountState completed in {}ms (API call)", duration);
+        AccountState result = new AccountState(account.balance(), account.nav(), account.currency());
+        synchronized (cacheLock) {
+            cachedAccountState = result;
+            cachedAccountStateTime = java.time.Instant.now();
+        }
+        return result;
     }
 
     @Override
