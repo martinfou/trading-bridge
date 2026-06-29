@@ -35,9 +35,9 @@ public final class OandaBroker implements Broker {
     private final java.util.concurrent.atomic.AtomicInteger totalOrdersRejected = new java.util.concurrent.atomic.AtomicInteger(0);
     private final Object cacheLock = new Object();
     private List<Position> cachedPositions;
-    private java.time.Instant cachedPositionsTime;
+    private long cachedPositionsTimeMs;
     private AccountState cachedAccountState;
-    private java.time.Instant cachedAccountStateTime;
+    private long cachedAccountStateTimeMs;
     private static final long CACHE_TTL_MS = 5000;
 
     private final long keepaliveIntervalMs;
@@ -97,9 +97,9 @@ public final class OandaBroker implements Broker {
     private void clearCache() {
         synchronized (cacheLock) {
             cachedPositions = null;
-            cachedPositionsTime = null;
+            cachedPositionsTimeMs = 0;
             cachedAccountState = null;
-            cachedAccountStateTime = null;
+            cachedAccountStateTimeMs = 0;
         }
     }
 
@@ -181,6 +181,14 @@ public final class OandaBroker implements Broker {
     @Override
     public OrderSubmitResult submitOrder(Order order) {
         clearCache();
+        try {
+            return submitOrderInternal(order);
+        } finally {
+            clearCache();
+        }
+    }
+
+    private OrderSubmitResult submitOrderInternal(Order order) {
         totalOrdersSubmitted.incrementAndGet();
         emit(BrokerEvent.submitted(order));
 
@@ -293,6 +301,14 @@ public final class OandaBroker implements Broker {
     @Override
     public OrderSubmitResult cancelOrder(String brokerOrderId) {
         clearCache();
+        try {
+            return cancelOrderInternal(brokerOrderId);
+        } finally {
+            clearCache();
+        }
+    }
+
+    private OrderSubmitResult cancelOrderInternal(String brokerOrderId) {
         if (!connected) {
             return OrderSubmitResult.rejected("Broker not connected");
         }
@@ -310,9 +326,9 @@ public final class OandaBroker implements Broker {
     @Override
     public List<Position> getPositions() {
         synchronized (cacheLock) {
-            java.time.Instant now = java.time.Instant.now();
-            if (cachedPositions != null && cachedPositionsTime != null 
-                    && java.time.Duration.between(cachedPositionsTime, now).toMillis() < CACHE_TTL_MS) {
+            long now = System.currentTimeMillis();
+            long elapsed = now - cachedPositionsTimeMs;
+            if (cachedPositions != null && elapsed >= 0 && elapsed < CACHE_TTL_MS) {
                 return cachedPositions;
             }
         }
@@ -329,7 +345,7 @@ public final class OandaBroker implements Broker {
         List<Position> result = List.copyOf(out);
         synchronized (cacheLock) {
             cachedPositions = result;
-            cachedPositionsTime = java.time.Instant.now();
+            cachedPositionsTimeMs = System.currentTimeMillis();
         }
         return result;
     }
@@ -337,9 +353,9 @@ public final class OandaBroker implements Broker {
     @Override
     public AccountState getAccountState() {
         synchronized (cacheLock) {
-            java.time.Instant now = java.time.Instant.now();
-            if (cachedAccountState != null && cachedAccountStateTime != null 
-                    && java.time.Duration.between(cachedAccountStateTime, now).toMillis() < CACHE_TTL_MS) {
+            long now = System.currentTimeMillis();
+            long elapsed = now - cachedAccountStateTimeMs;
+            if (cachedAccountState != null && elapsed >= 0 && elapsed < CACHE_TTL_MS) {
                 return cachedAccountState;
             }
         }
@@ -351,7 +367,7 @@ public final class OandaBroker implements Broker {
         AccountState result = new AccountState(account.balance(), account.nav(), account.currency());
         synchronized (cacheLock) {
             cachedAccountState = result;
-            cachedAccountStateTime = java.time.Instant.now();
+            cachedAccountStateTimeMs = System.currentTimeMillis();
         }
         return result;
     }
