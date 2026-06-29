@@ -326,14 +326,42 @@ class ControlSummaryServiceTest {
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> runs = (List<Map<String, Object>>) summary.get("runs");
             
-            Map<String, Object> run1Item = runs.stream().filter(r -> "run-1".equals(r.get("runId"))).findFirst().orElseThrow();
-            Map<String, Object> run2Item = runs.stream().filter(r -> "run-2".equals(r.get("runId"))).findFirst().orElseThrow();
+            // Since they share the same strategy, symbol, and mode, they are grouped into a single card.
+            assertEquals(1, runs.size());
+            Map<String, Object> runItem = runs.getFirst();
 
-            double pnl1 = ((Number) run1Item.get("realizedPnL")).doubleValue();
-            double pnl2 = ((Number) run2Item.get("realizedPnL")).doubleValue();
+            double pnl = ((Number) runItem.get("realizedPnL")).doubleValue();
+            assertEquals(25.0, pnl, 0.0001);
+        }
+    }
 
-            assertEquals(25.0, pnl1, 0.0001);
-            assertEquals(25.0, pnl2, 0.0001);
+    @Test
+    void testBuildSummaryGroupsByStrategyDeployment() throws Exception {
+        try (EventStore store = EventStores.inMemory();
+             RunManager manager = new RunManager(store)) {
+             
+            RunConfigSnapshot config1 = new RunConfigSnapshot(
+                "StratB", "GBP_USD", "PAPER", "sample", 100, null, 100_000.0, null, null, "PAPER_STUB"
+            );
+            RunRecord run1 = manager.restoreRun("run-comp", config1);
+            run1.markCompleted(Map.of());
+            manager.runRecordStore().save(run1);
+
+            RunRecord run2 = manager.restoreRun("run-active", config1);
+            run2.markRunning();
+            manager.runRecordStore().save(run2);
+
+            ControlSummaryService service = new ControlSummaryService(manager);
+            Map<String, Object> summary = service.buildSummary();
+
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> runs = (List<Map<String, Object>>) summary.get("runs");
+            
+            // Should be exactly 1 card representing the active run
+            assertEquals(1, runs.size());
+            Map<String, Object> runItem = runs.getFirst();
+            assertEquals("run-active", runItem.get("runId"));
+            assertEquals("RUNNING", runItem.get("status"));
         }
     }
 
