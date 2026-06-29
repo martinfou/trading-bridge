@@ -37,6 +37,22 @@ public final class ControlPlaneMain {
         DriftReporter driftReporter = new DriftReporter(driftSignalService);
         driftReporter.start();
 
+        // Stdin watcher daemon thread: exits JVM if standard input closes (EOF) to prevent zombie processes
+        Thread stdinWatcher = new Thread(() -> {
+            try {
+                int read;
+                while ((read = System.in.read()) != -1) {
+                    // consume input
+                }
+                System.out.println("Stdin EOF. Shutting down control plane...");
+                System.exit(0);
+            } catch (Exception e) {
+                System.exit(0);
+            }
+        });
+        stdinWatcher.setDaemon(true);
+        stdinWatcher.start();
+
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             runManager.close();
             historicalDataService.close();
