@@ -23,9 +23,18 @@ public final class TradeReconstructor {
         }
     }
 
+    public record ReconstructionResult(
+        List<Trade> closedTrades,
+        List<Trade> openTrades
+    ) {}
+
     public static List<Trade> reconstruct(List<RunEvent> events) {
+        return reconstructWithOpen(events).closedTrades();
+    }
+
+    public static ReconstructionResult reconstructWithOpen(List<RunEvent> events) {
         if (events == null || events.isEmpty()) {
-            return List.of();
+            return new ReconstructionResult(List.of(), List.of());
         }
 
         // 1. Filter and extract fill events
@@ -84,7 +93,7 @@ public final class TradeReconstructor {
 
         // 3. FIFO Matching
         List<Trade> trades = new ArrayList<>();
-        Map<String, List<RawFill>> openFillsBySymbol = new HashMap<>();
+        Map<String, List<RawFill>> openFillsBySymbol = new LinkedHashMap<>();
 
         for (RawFill fill : mergedFills) {
             String symbol = fill.symbol;
@@ -128,7 +137,26 @@ public final class TradeReconstructor {
             }
         }
 
-        return List.copyOf(trades);
+        List<Trade> openTrades = new ArrayList<>();
+        for (var queue : openFillsBySymbol.values()) {
+            for (RawFill openFill : queue) {
+                openTrades.add(new Trade(
+                    UUID.randomUUID().toString(),
+                    openFill.symbol,
+                    openFill.side,
+                    openFill.price,
+                    0.0,
+                    openFill.quantity,
+                    openFill.timestamp,
+                    null,
+                    0.0,
+                    openFill.stopLoss,
+                    openFill.takeProfit
+                ));
+            }
+        }
+
+        return new ReconstructionResult(trades, openTrades);
     }
 
     private static List<RawFill> mergePartialFills(List<RawFill> fills) {

@@ -1,0 +1,1999 @@
+diff --git a/pom.xml b/pom.xml
+index 1d01429..008ffca 100644
+--- a/pom.xml
++++ b/pom.xml
+@@ -44,6 +44,13 @@
+                 <type>pom</type>
+                 <scope>import</scope>
+             </dependency>
++            <dependency>
++                <groupId>org.apache.logging.log4j</groupId>
++                <artifactId>log4j-bom</artifactId>
++                <version>2.23.1</version>
++                <type>pom</type>
++                <scope>import</scope>
++            </dependency>
+             <dependency>
+                 <groupId>dev.langchain4j</groupId>
+                 <artifactId>langchain4j-bom</artifactId>
+diff --git a/trading-broker/src/main/java/com/martinfou/trading/broker/Broker.java b/trading-broker/src/main/java/com/martinfou/trading/broker/Broker.java
+index 6d7ba1b..30a2c2f 100644
+--- a/trading-broker/src/main/java/com/martinfou/trading/broker/Broker.java
++++ b/trading-broker/src/main/java/com/martinfou/trading/broker/Broker.java
+@@ -30,6 +30,18 @@ public interface Broker extends AutoCloseable {
+ 
+     void addEventListener(Consumer<BrokerEvent> listener);
+ 
++    default java.time.Instant getUptimeStart() {
++        return null;
++    }
++
++    default java.time.Instant getLastReplyTime() {
++        return null;
++    }
++
++    default int getConnectionFailures() {
++        return 0;
++    }
++
+     @Override
+     default void close() {
+         disconnect();
+diff --git a/trading-broker/src/main/java/com/martinfou/trading/broker/OandaBroker.java b/trading-broker/src/main/java/com/martinfou/trading/broker/OandaBroker.java
+index 061019a..2868097 100644
+--- a/trading-broker/src/main/java/com/martinfou/trading/broker/OandaBroker.java
++++ b/trading-broker/src/main/java/com/martinfou/trading/broker/OandaBroker.java
+@@ -28,6 +28,9 @@ public final class OandaBroker implements Broker {
+     private final List<Long> orderTimestamps = new java.util.ArrayList<>();
+     private final Object rateLimitLock = new Object();
+     private volatile int retryCount;
++    private volatile java.time.Instant uptimeStart = null;
++    private volatile java.time.Instant lastReplyTime = null;
++    private final java.util.concurrent.atomic.AtomicInteger connectionFailures = new java.util.concurrent.atomic.AtomicInteger(0);
+ 
+     private final long keepaliveIntervalMs;
+     private final long rateLimitWindowMs;
+@@ -60,15 +63,24 @@ public final class OandaBroker implements Broker {
+ 
+     @Override
+     public synchronized void connect() {
+-        client.fetchAccountSummary();
+-        connected = true;
+-        emit(BrokerEvent.connection("CONNECTED", "Account verified"));
+-        startKeepalive();
++        try {
++            client.fetchAccountSummary();
++            lastReplyTime = java.time.Instant.now();
++            uptimeStart = java.time.Instant.now();
++            connected = true;
++            emit(BrokerEvent.connection("CONNECTED", "Account verified"));
++            startKeepalive();
++        } catch (Exception e) {
++            connectionFailures.incrementAndGet();
++            throw e;
++        }
+     }
+ 
+     @Override
+     public synchronized void disconnect() {
+         connected = false;
++        uptimeStart = null;
++        lastReplyTime = null;
+         stopKeepalive();
+     }
+ 
+@@ -97,6 +109,7 @@ public final class OandaBroker implements Broker {
+                 retryCount = 0;
+                 log.info("OandaBroker reconnected successfully");
+             } catch (Exception e) {
++                connectionFailures.incrementAndGet();
+                 log.warn("OandaBroker reconnect attempt failed: {}", e.getMessage());
+                 throw e;
+             }
+@@ -123,8 +136,10 @@ public final class OandaBroker implements Broker {
+             }
+             try {
+                 client.fetchAccountSummary();
++                lastReplyTime = java.time.Instant.now();
+                 consecutiveFailures.set(0);
+             } catch (Exception e) {
++                connectionFailures.incrementAndGet();
+                 int fails = consecutiveFailures.incrementAndGet();
+                 log.warn("OANDA keepalive heartbeat failed (consecutive failures: {})", fails, e);
+                 if (fails >= 2) {
+@@ -319,4 +334,19 @@ public final class OandaBroker implements Broker {
+             listener.accept(event);
+         }
+     }
++
++    @Override
++    public java.time.Instant getUptimeStart() {
++        return uptimeStart;
++    }
++
++    @Override
++    public java.time.Instant getLastReplyTime() {
++        return lastReplyTime;
++    }
++
++    @Override
++    public int getConnectionFailures() {
++        return connectionFailures.get();
++    }
+ }
+diff --git a/trading-runtime/pom.xml b/trading-runtime/pom.xml
+index dd8a818..b8d3972 100644
+--- a/trading-runtime/pom.xml
++++ b/trading-runtime/pom.xml
+@@ -14,31 +14,67 @@
+             <groupId>com.martinfou.trading</groupId>
+             <artifactId>trading-backtest</artifactId>
+             <version>${project.version}</version>
++            <exclusions>
++                <exclusion>
++                    <groupId>org.slf4j</groupId>
++                    <artifactId>slf4j-simple</artifactId>
++                </exclusion>
++            </exclusions>
+         </dependency>
+         <dependency>
+             <groupId>com.martinfou.trading</groupId>
+             <artifactId>trading-strategies</artifactId>
+             <version>${project.version}</version>
++            <exclusions>
++                <exclusion>
++                    <groupId>org.slf4j</groupId>
++                    <artifactId>slf4j-simple</artifactId>
++                </exclusion>
++            </exclusions>
+         </dependency>
+         <dependency>
+             <groupId>com.martinfou.trading</groupId>
+             <artifactId>trading-data</artifactId>
+             <version>${project.version}</version>
++            <exclusions>
++                <exclusion>
++                    <groupId>org.slf4j</groupId>
++                    <artifactId>slf4j-simple</artifactId>
++                </exclusion>
++            </exclusions>
+         </dependency>
+         <dependency>
+             <groupId>com.martinfou.trading</groupId>
+             <artifactId>trading-broker</artifactId>
+             <version>${project.version}</version>
++            <exclusions>
++                <exclusion>
++                    <groupId>org.slf4j</groupId>
++                    <artifactId>slf4j-simple</artifactId>
++                </exclusion>
++            </exclusions>
+         </dependency>
+         <dependency>
+             <groupId>com.martinfou.trading</groupId>
+             <artifactId>trading-intelligence</artifactId>
+             <version>${project.version}</version>
++            <exclusions>
++                <exclusion>
++                    <groupId>org.slf4j</groupId>
++                    <artifactId>slf4j-simple</artifactId>
++                </exclusion>
++            </exclusions>
+         </dependency>
+         <dependency>
+             <groupId>com.martinfou.trading</groupId>
+             <artifactId>trading-parser</artifactId>
+             <version>${project.version}</version>
++            <exclusions>
++                <exclusion>
++                    <groupId>org.slf4j</groupId>
++                    <artifactId>slf4j-simple</artifactId>
++                </exclusion>
++            </exclusions>
+         </dependency>
+         <dependency>
+             <groupId>org.xerial</groupId>
+@@ -57,6 +93,18 @@
+             <groupId>org.junit.jupiter</groupId>
+             <artifactId>junit-jupiter</artifactId>
+         </dependency>
++        <dependency>
++            <groupId>org.apache.logging.log4j</groupId>
++            <artifactId>log4j-api</artifactId>
++        </dependency>
++        <dependency>
++            <groupId>org.apache.logging.log4j</groupId>
++            <artifactId>log4j-core</artifactId>
++        </dependency>
++        <dependency>
++            <groupId>org.apache.logging.log4j</groupId>
++            <artifactId>log4j-slf4j2-impl</artifactId>
++        </dependency>
+     </dependencies>
+     <build>
+         <plugins>
+diff --git a/trading-runtime/src/main/java/com/martinfou/trading/runtime/ControlPlaneMain.java b/trading-runtime/src/main/java/com/martinfou/trading/runtime/ControlPlaneMain.java
+index a05aa41..d3ca234 100644
+--- a/trading-runtime/src/main/java/com/martinfou/trading/runtime/ControlPlaneMain.java
++++ b/trading-runtime/src/main/java/com/martinfou/trading/runtime/ControlPlaneMain.java
+@@ -51,46 +51,15 @@ public final class ControlPlaneMain {
+         System.out.println("WebSocket runs: ws://localhost:" + server.port() + "/ws/runs/{runId}");
+     }
+ 
+-    private static void restoreActiveRuns(RunManager runManager, EventStoreConfig config) {
+-        String dbPath = config.dbPath().toString();
+-        try (java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:sqlite:" + dbPath)) {
+-            String sql = """
+-                SELECT run_id, json_line 
+-                FROM events 
+-                WHERE sequence IN (
+-                    SELECT MIN(sequence) 
+-                    FROM events 
+-                    WHERE json_extract(json_line, '$.type') = 'RUN_STARTED' 
+-                    GROUP BY run_id
+-                )
+-                AND (json_extract(json_line, '$.mode') = 'PAPER' OR json_extract(json_line, '$.mode') = 'LIVE')
+-                AND run_id NOT IN (
+-                    SELECT run_id 
+-                    FROM events 
+-                    WHERE json_extract(json_line, '$.type') = 'RUN_ENDED' 
+-                       OR json_extract(json_line, '$.type') = 'ERROR'
+-                )
+-                """;
+-            try (java.sql.PreparedStatement stmt = conn.prepareStatement(sql);
+-                 java.sql.ResultSet rs = stmt.executeQuery()) {
+-                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper()
+-                    .configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+-                while (rs.next()) {
+-                    String runId = rs.getString("run_id");
+-                    String jsonLine = rs.getString("json_line");
+-                    try {
+-                        com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(jsonLine);
+-                        com.fasterxml.jackson.databind.JsonNode snapshotNode = root.path("payload").path("configSnapshot");
+-                        if (!snapshotNode.isMissingNode()) {
+-                            RunConfigSnapshot snapshot = mapper.treeToValue(snapshotNode, RunConfigSnapshot.class);
+-                            System.out.println("Restoring active run " + runId + " (" + snapshot.strategyId() + " on " + snapshot.symbol() + ")...");
+-                            runManager.restoreRun(runId, snapshot);
+-                            runManager.start(runId);
+-                        }
+-                    } catch (Exception e) {
+-                        System.err.println("Failed to restore run " + runId + ": " + e.getMessage());
+-                        e.printStackTrace();
+-                    }
++    static void restoreActiveRuns(RunManager runManager, EventStoreConfig config) {
++        try {
++            RunRecordStore store = runManager.runRecordStore();
++            java.util.List<RunRecord> all = store.listAll();
++            for (RunRecord record : all) {
++                if (record.status() == RunRecord.Status.RUNNING || record.status() == RunRecord.Status.PAUSED) {
++                    System.out.println("Restoring active run " + record.runId() + " (" + record.strategyId() + " on " + record.symbol() + ")...");
++                    runManager.restoreRun(record);
++                    runManager.start(record.runId());
+                 }
+             }
+         } catch (Exception e) {
+diff --git a/trading-runtime/src/main/java/com/martinfou/trading/runtime/ControlPlaneServer.java b/trading-runtime/src/main/java/com/martinfou/trading/runtime/ControlPlaneServer.java
+index 99073b2..d655c9d 100644
+--- a/trading-runtime/src/main/java/com/martinfou/trading/runtime/ControlPlaneServer.java
++++ b/trading-runtime/src/main/java/com/martinfou/trading/runtime/ControlPlaneServer.java
+@@ -375,6 +375,34 @@ public final class ControlPlaneServer implements AutoCloseable {
+             .post("/api/weekly-builder/deploy", ctx -> respondWeeklyTrigger(ctx, weeklyBuilderService.triggerDeployAsync()))
+             .get("/control/summary", ctx -> ctx.json(summaryService.buildSummary()))
+             .get("/api/control/summary", ctx -> ctx.json(summaryService.buildSummary()))
++            .get("/api/broker/health", ctx -> {
++                java.util.List<Map<String, Object>> list = new java.util.ArrayList<>();
++                for (var entry : runManager.getActiveExecutors().entrySet()) {
++                    String runId = entry.getKey();
++                    AutoCloseable exec = entry.getValue();
++                    if (exec instanceof OandaStreamingExecutor oandaExec) {
++                        com.martinfou.trading.broker.Broker broker = oandaExec.getBroker();
++                        if (broker != null) {
++                            try {
++                                java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
++                                map.put("runId", runId);
++                                map.put("connected", broker.isConnected());
++                                map.put("uptimeStart", broker.getUptimeStart() != null ? broker.getUptimeStart().toString() : null);
++                                map.put("lastReplyTime", broker.getLastReplyTime() != null ? broker.getLastReplyTime().toString() : null);
++                                map.put("connectionFailures", broker.getConnectionFailures());
++                                list.add(map);
++                            } catch (Exception e) {
++                                log.warn("Failed to query broker health for run {}: {}", runId, e.getMessage());
++                                java.util.Map<String, Object> errMap = new java.util.LinkedHashMap<>();
++                                errMap.put("runId", runId);
++                                errMap.put("error", e.getMessage());
++                                list.add(errMap);
++                            }
++                        }
++                    }
++                }
++                ctx.json(list);
++            })
+             .get("/api/broker-accounts", ctx -> ctx.json(Map.of(
+                 "accounts", runManager.brokerAccountRegistry().listMasked())))
+             .get("/api/broker-accounts/balances", ctx -> {
+@@ -761,6 +789,23 @@ public final class ControlPlaneServer implements AutoCloseable {
+                     }
+                 }
+             })
++            .post("/api/runs/{runId}/retire", ctx -> {
++                String runId = ctx.pathParam("runId");
++                String reason = ctx.queryParam("reason");
++                if (reason == null || reason.isBlank()) {
++                    try {
++                        Map<?, ?> body = ctx.bodyAsClass(Map.class);
++                        if (body != null && body.containsKey("reason")) {
++                            reason = String.valueOf(body.get("reason"));
++                        }
++                    } catch (Exception e) {
++                        // fallback to default
++                    }
++                }
++                RunRecord record = runManager.retire(runId, reason);
++                ctx.status(HttpStatus.ACCEPTED);
++                ctx.json(toRunJson(runManager, record));
++            })
+             .get("/api/runs/{runId}/export", ctx -> {
+                 String runId = ctx.pathParam("runId");
+                 RunRecord record = runManager.getRun(runId)
+diff --git a/trading-runtime/src/main/java/com/martinfou/trading/runtime/ControlSummaryService.java b/trading-runtime/src/main/java/com/martinfou/trading/runtime/ControlSummaryService.java
+index 67b2326..fd6b022 100644
+--- a/trading-runtime/src/main/java/com/martinfou/trading/runtime/ControlSummaryService.java
++++ b/trading-runtime/src/main/java/com/martinfou/trading/runtime/ControlSummaryService.java
+@@ -15,11 +15,16 @@ import java.util.List;
+ import java.util.Map;
+ import java.util.Optional;
+ 
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
++
+ /**
+  * Builds {@code GET /control/summary} payload for prop-shop control room (Story 17.9).
+  */
+ public final class ControlSummaryService {
+ 
++    private static final Logger log = LoggerFactory.getLogger(ControlSummaryService.class);
++
+     public static final int SCHEMA_VERSION = 1;
+ 
+     private final RunManager runManager;
+@@ -130,6 +135,17 @@ public final class ControlSummaryService {
+                 }
+             }
+ 
++            try {
++                Optional<Instant> lastTradeAt = runManager.eventStore().replayAll(record.runId()).stream()
++                    .filter(e -> e.type() == com.martinfou.trading.backtest.events.RunEventType.FILL
++                        || e.type() == com.martinfou.trading.backtest.events.RunEventType.REJECT)
++                    .map(com.martinfou.trading.backtest.events.RunEvent::timestamp)
++                    .max(Comparator.naturalOrder());
++                lastTradeAt.ifPresent(t -> item.put("lastTradeAt", t.toString()));
++            } catch (Exception e) {
++                log.warn("Failed to compute lastTradeAt for run {}: {}", record.runId(), e.getMessage());
++            }
++
+             lastEventAt.ifPresent(t -> item.put("lastEventAt", t.toString()));
+             item.put("configSnapshot", record.configSnapshot());
+             item.put("configHash", record.configHash());
+diff --git a/trading-runtime/src/main/java/com/martinfou/trading/runtime/HeartbeatEvents.java b/trading-runtime/src/main/java/com/martinfou/trading/runtime/HeartbeatEvents.java
+index a3a79e2..9b41cf8 100644
+--- a/trading-runtime/src/main/java/com/martinfou/trading/runtime/HeartbeatEvents.java
++++ b/trading-runtime/src/main/java/com/martinfou/trading/runtime/HeartbeatEvents.java
+@@ -4,10 +4,11 @@ import com.martinfou.trading.backtest.RunMode;
+ import com.martinfou.trading.backtest.events.RunEvent;
+ import com.martinfou.trading.core.Bar;
+ 
++import java.time.Instant;
+ import java.util.LinkedHashMap;
+ import java.util.Map;
+ 
+-/** Emits {@code HEARTBEAT} run events for liveness / stale detection (Story 13.8). */
++/** Emits {@code HEARTBEAT} run events for liveness / stale detection (Story 13.8, Story 33-2). */
+ final class HeartbeatEvents {
+ 
+     private HeartbeatEvents() {}
+@@ -19,11 +20,28 @@ final class HeartbeatEvents {
+         EventStore eventStore,
+         Bar bar,
+         int barIndex
++    ) {
++        emitBarHeartbeat(runId, config, runMode, eventStore, bar, barIndex, 0, null, 0.0);
++    }
++
++    static void emitBarHeartbeat(
++        String runId,
++        RunConfigSnapshot config,
++        RunMode runMode,
++        EventStore eventStore,
++        Bar bar,
++        int barIndex,
++        int runningTradeCount,
++        Instant lastFillTime,
++        double openPnL
+     ) {
+         var payload = new LinkedHashMap<String, Object>();
+         payload.put("source", "BAR_LOOP");
+         payload.put("barIndex", barIndex);
+         payload.put("barTime", bar.timestamp().toString());
++        payload.put("runningTradeCount", runningTradeCount);
++        payload.put("lastFillTime", lastFillTime != null ? lastFillTime.toString() : com.fasterxml.jackson.databind.node.NullNode.getInstance());
++        payload.put("openPnL", openPnL);
+ 
+         RunEvent event = RunEvent.heartbeat(
+             runId,
+diff --git a/trading-runtime/src/main/java/com/martinfou/trading/runtime/InMemoryRunRecordStore.java b/trading-runtime/src/main/java/com/martinfou/trading/runtime/InMemoryRunRecordStore.java
+new file mode 100644
+index 0000000..1ef848c
+--- /dev/null
++++ b/trading-runtime/src/main/java/com/martinfou/trading/runtime/InMemoryRunRecordStore.java
+@@ -0,0 +1,39 @@
++package com.martinfou.trading.runtime;
++
++import java.util.List;
++import java.util.Map;
++import java.util.Optional;
++import java.util.concurrent.ConcurrentHashMap;
++
++/** In-memory implementation of {@link RunRecordStore} for testing (Story 34-1). */
++public final class InMemoryRunRecordStore implements RunRecordStore {
++    private final Map<String, RunRecord> records = new ConcurrentHashMap<>();
++
++    @Override
++    public void save(RunRecord record) {
++        if (record != null) {
++            records.put(record.runId(), record);
++        }
++    }
++
++    @Override
++    public Optional<RunRecord> get(String runId) {
++        if (runId == null) return Optional.empty();
++        return Optional.ofNullable(records.get(runId));
++    }
++
++    @Override
++    public List<RunRecord> listAll() {
++        return List.copyOf(records.values());
++    }
++
++    @Override
++    public void delete(String runId) {
++        if (runId != null) {
++            records.remove(runId);
++        }
++    }
++
++    @Override
++    public void close() {}
++}
+diff --git a/trading-runtime/src/main/java/com/martinfou/trading/runtime/OandaStreamingExecutor.java b/trading-runtime/src/main/java/com/martinfou/trading/runtime/OandaStreamingExecutor.java
+index ce68f86..7ad06e2 100644
+--- a/trading-runtime/src/main/java/com/martinfou/trading/runtime/OandaStreamingExecutor.java
++++ b/trading-runtime/src/main/java/com/martinfou/trading/runtime/OandaStreamingExecutor.java
+@@ -82,6 +82,7 @@ public final class OandaStreamingExecutor implements AutoCloseable {
+     private volatile double lastPriceVal = 0.0;
+     private volatile Instant lastPriceValChangeTime = Instant.now();
+     private volatile boolean stalePriceWarningFlag = false;
++    private volatile Instant lastFillTime = null;
+ 
+     public OandaStreamingExecutor(
+         String runId,
+@@ -137,13 +138,31 @@ public final class OandaStreamingExecutor implements AutoCloseable {
+             @Override
+             public void onTick(String instrument, Instant timestamp, double bid, double ask) {
+                 if (instrument.equalsIgnoreCase(config.symbol())) {
+-                    processTick(timestamp, bid, ask);
++                    org.slf4j.MDC.put("runId", runId);
++                    org.slf4j.MDC.put("strategyId", config.strategyId());
++                    org.slf4j.MDC.put("stale", String.valueOf(stalePriceWarningFlag));
++                    try {
++                        processTick(timestamp, bid, ask);
++                    } finally {
++                        org.slf4j.MDC.remove("runId");
++                        org.slf4j.MDC.remove("strategyId");
++                        org.slf4j.MDC.remove("stale");
++                    }
+                 }
+             }
+ 
+             @Override
+             public void onConnectionStateChange(boolean active) {
+-                log.info("Pricing stream connection state for run {}: active={}", runId, active);
++                org.slf4j.MDC.put("runId", runId);
++                org.slf4j.MDC.put("strategyId", config.strategyId());
++                org.slf4j.MDC.put("stale", String.valueOf(stalePriceWarningFlag));
++                try {
++                    log.info("Pricing stream connection state for run {}: active={}", runId, active);
++                } finally {
++                    org.slf4j.MDC.remove("runId");
++                    org.slf4j.MDC.remove("strategyId");
++                    org.slf4j.MDC.remove("stale");
++                }
+             }
+         };
+         this.activeSymbolsSupplier = activeSymbolsSupplier != null ? activeSymbolsSupplier : java.util.Collections::emptyList;
+@@ -168,14 +187,24 @@ public final class OandaStreamingExecutor implements AutoCloseable {
+         // 2. Register to live prices
+         broker.connect();
+         broker.addEventListener(event -> {
+-            persistBrokerEvent(event);
+-            if (event.type() == com.martinfou.trading.broker.BrokerEventType.FILL) {
+-                // If it is a sell or close that results in a loss, we could track it.
+-                // For simplicity, let's track execution events in the fill callback if PnL is negative.
+-                // Since BrokerEvent does not contain PnL, we can query recent transactions or calculate it from orders.
+-                // Let's check if the trade was a loss by calculating the difference or re-reading positions/transaction history.
+-                // Let's implement consecutive loss tracking via event store scans.
+-                checkConsecutiveLosses(event.timestamp());
++            org.slf4j.MDC.put("runId", runId);
++            org.slf4j.MDC.put("strategyId", config.strategyId());
++            org.slf4j.MDC.put("stale", String.valueOf(stalePriceWarningFlag));
++            try {
++                persistBrokerEvent(event);
++                if (event.type() == com.martinfou.trading.broker.BrokerEventType.FILL) {
++                    lastFillTime = event.timestamp();
++                    // If it is a sell or close that results in a loss, we could track it.
++                    // For simplicity, let's track execution events in the fill callback if PnL is negative.
++                    // Since BrokerEvent does not contain PnL, we can query recent transactions or calculate it from orders.
++                    // Let's check if the trade was a loss by calculating the difference or re-reading positions/transaction history.
++                    // Let's implement consecutive loss tracking via event store scans.
++                    checkConsecutiveLosses(event.timestamp());
++                }
++            } finally {
++                org.slf4j.MDC.remove("runId");
++                org.slf4j.MDC.remove("strategyId");
++                org.slf4j.MDC.remove("stale");
+             }
+         });
+         streamingClient.addListener(tickListener);
+@@ -249,6 +278,14 @@ public final class OandaStreamingExecutor implements AutoCloseable {
+         return lastMidPrice;
+     }
+ 
++    public int getFilledCount() {
++        return filledCount;
++    }
++
++    public Broker getBroker() {
++        return broker;
++    }
++
+     public double getLastBid() {
+         return lastBid;
+     }
+@@ -370,7 +407,20 @@ public final class OandaStreamingExecutor implements AutoCloseable {
+                 aggregator.completePeriod();
+                 Bar completed = aggregator.getLastCompletedBar();
+                 if (completed != null) {
+-                    HeartbeatEvents.emitBarHeartbeat(runId, config, runMode, eventStore, completed, 0);
++                    int runningTradeCount = 0;
++                    double openPnL = 0.0;
++                    try {
++                        for (var pos : broker.getPositions()) {
++                            if (pos.symbol().equalsIgnoreCase(config.symbol())
++                                || pos.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(config.symbol().replace("/", "_").replace("-", "_"))) {
++                                runningTradeCount = pos.quantity() > 0 ? 1 : 0;
++                                openPnL = pos.currentPnl(lastMidPrice);
++                            }
++                        }
++                    } catch (Exception ex) {
++                        log.warn("Failed to retrieve positions/openPnL for heartbeat: {}", ex.getMessage());
++                    }
++                    HeartbeatEvents.emitBarHeartbeat(runId, config, runMode, eventStore, completed, 0, runningTradeCount, lastFillTime, openPnL);
+                     if (!suspendedDaily && !suspendedWeekly && (cooldownUntil == null || timestamp.isAfter(cooldownUntil))) {
+                         strategy.onBar(completed);
+                         executePendingOrders(completed);
+@@ -889,18 +939,18 @@ public final class OandaStreamingExecutor implements AutoCloseable {
+         }
+         double returnPct = (currentEquity - config.resolvedCapital()) / config.resolvedCapital() * 100.0;
+ 
+-        int totalTradesCount = 0;
++        int closedTradesCount = 0;
+         try {
+             var replayedEvents = eventStore.replayAll(runId);
+             var reconstructed = com.martinfou.trading.backtest.persistence.TradeReconstructor.reconstruct(replayedEvents);
+-            totalTradesCount = reconstructed.size();
++            closedTradesCount = reconstructed.size();
+         } catch (Exception e) {
+-            log.error("Failed to reconstruct trades for totalTrades metric in emitEnded for run: " + runId, e);
+-            totalTradesCount = filledCount;
++            log.warn("Failed to reconstruct closed trades for run {}: {}", runId, e.getMessage());
+         }
+ 
+         var endedPayload = new LinkedHashMap<String, Object>();
+-        endedPayload.put("totalTrades", totalTradesCount);
++        endedPayload.put("totalTrades", filledCount);      // fills submitted and accepted
++        endedPayload.put("closedTrades", closedTradesCount); // matched open/close pairs
+         endedPayload.put("totalReturnPct", returnPct);
+         endedPayload.put("finalEquity", currentEquity);
+         endedPayload.put("ordersSubmitted", submittedCount);
+diff --git a/trading-runtime/src/main/java/com/martinfou/trading/runtime/RunManager.java b/trading-runtime/src/main/java/com/martinfou/trading/runtime/RunManager.java
+index 7c4582b..93b744a 100644
+--- a/trading-runtime/src/main/java/com/martinfou/trading/runtime/RunManager.java
++++ b/trading-runtime/src/main/java/com/martinfou/trading/runtime/RunManager.java
+@@ -54,8 +54,30 @@ public class RunManager implements RunLifecycle, AutoCloseable {
+         String strategyTimeframe,
+         Double maxDailyDrawdownPct,
+         Double dailyLossLimitPct,
+-        Double weeklyLossLimitPct
++        Double weeklyLossLimitPct,
++        Boolean force
+     ) {
++        public StartRunRequest(
++            String strategyId,
++            String symbol,
++            String mode,
++            BarSourceResolver.BarsSource barsSource,
++            Double capital,
++            Double lotSize,
++            Double commissionPerTrade,
++            Double slippagePct,
++            String executionLabel,
++            String brokerAccountId,
++            String dataTimeframe,
++            String strategyTimeframe,
++            Double maxDailyDrawdownPct,
++            Double dailyLossLimitPct,
++            Double weeklyLossLimitPct
++        ) {
++            this(strategyId, symbol, mode, barsSource, capital, lotSize, commissionPerTrade, slippagePct,
++                executionLabel, brokerAccountId, dataTimeframe, strategyTimeframe, maxDailyDrawdownPct, dailyLossLimitPct, weeklyLossLimitPct, false);
++        }
++
+         public StartRunRequest(
+             String strategyId,
+             String symbol,
+@@ -69,7 +91,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
+             String brokerAccountId
+         ) {
+             this(strategyId, symbol, mode, barsSource, capital, lotSize, commissionPerTrade, slippagePct,
+-                executionLabel, brokerAccountId, null, null, null, null, null);
++                executionLabel, brokerAccountId, null, null, null, null, null, false);
+         }
+ 
+         public StartRunRequest(
+@@ -84,7 +106,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
+             String executionLabel
+         ) {
+             this(strategyId, symbol, mode, barsSource, capital, lotSize, commissionPerTrade, slippagePct,
+-                executionLabel, null, null, null, null, null, null);
++                executionLabel, null, null, null, null, null, null, false);
+         }
+ 
+         public StartRunRequest(
+@@ -98,7 +120,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
+             String executionLabel
+         ) {
+             this(strategyId, symbol, mode, barsSource, capital, null, commissionPerTrade, slippagePct,
+-                executionLabel, null, null, null, null, null, null);
++                executionLabel, null, null, null, null, null, null, false);
+         }
+     }
+ 
+@@ -110,12 +132,14 @@ public class RunManager implements RunLifecycle, AutoCloseable {
+     private final BrokerAccountRegistry brokerAccountRegistry;
+     private final Map<String, DailyDrawdownMetrics> dailyDrawdownByRun = new ConcurrentHashMap<>();
+     private final Map<String, RunRecord> runs = new ConcurrentHashMap<>();
++    private final Map<String, java.util.concurrent.locks.ReentrantLock> startupLocks = new ConcurrentHashMap<>();
+     private final Map<String, RunConfigSnapshot> snapshots = new ConcurrentHashMap<>();
+     private final Map<String, AutoCloseable> activeExecutors = new ConcurrentHashMap<>();
+     private final CopyOnWriteArrayList<RunTransitionListener> listeners = new CopyOnWriteArrayList<>();
+     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+     private final com.martinfou.trading.backtest.persistence.SqliteTradeAlignmentStore alignmentStore;
+     private final com.martinfou.trading.backtest.persistence.SqliteTradeStore tradeStore;
++    private final RunRecordStore runRecordStore;
+     private final Map<String, List<com.martinfou.trading.core.Order>> btOrdersByRun = new ConcurrentHashMap<>();
+     private final Map<String, List<com.martinfou.trading.core.Order>> liveOrdersByRun = new ConcurrentHashMap<>();
+     private final Map<String, Integer> consecutiveTimeDrifts = new ConcurrentHashMap<>();
+@@ -178,6 +202,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
+             : BrokerAccountRegistry.loadDefault();
+         this.alignmentStore = createAlignmentStore(eventStore);
+         this.tradeStore = createTradeStore(eventStore);
++        this.runRecordStore = createRunRecordStore(eventStore);
+     }
+ 
+     private com.martinfou.trading.backtest.persistence.SqliteTradeAlignmentStore createAlignmentStore(EventStore eventStore) {
+@@ -244,6 +269,35 @@ public class RunManager implements RunLifecycle, AutoCloseable {
+         }
+     }
+ 
++    private RunRecordStore createRunRecordStore(EventStore eventStore) {
++        EventStore unwrapped = eventStore;
++        while (unwrapped != null) {
++            if (unwrapped instanceof ReconcilingEventStore) {
++                unwrapped = ((ReconcilingEventStore) unwrapped).delegate;
++            } else if (unwrapped.getClass().getSimpleName().equals("BroadcastingEventStore")) {
++                try {
++                    java.lang.reflect.Field field = unwrapped.getClass().getDeclaredField("delegate");
++                    field.setAccessible(true);
++                    unwrapped = (EventStore) field.get(unwrapped);
++                } catch (Exception e) {
++                    break;
++                }
++            } else {
++                break;
++            }
++        }
++        
++        if (unwrapped instanceof SqliteEventStore) {
++            EventStoreConfig config = ((SqliteEventStore) unwrapped).config();
++            if (config != null) {
++                return new SqliteRunRecordStore(config);
++            }
++        }
++        
++        return new InMemoryRunRecordStore();
++    }
++
++
+     public KillSwitchRegistry killSwitchRegistry() {
+         return killSwitchRegistry;
+     }
+@@ -260,6 +314,10 @@ public class RunManager implements RunLifecycle, AutoCloseable {
+         return Optional.ofNullable(activeExecutors.get(runId));
+     }
+ 
++    public Map<String, AutoCloseable> getActiveExecutors() {
++        return Map.copyOf(activeExecutors);
++    }
++
+     public Map<String, Object> getAlignmentDetails(String runId) {
+         List<com.martinfou.trading.backtest.reconciliation.ReconciliationAnomaly> anomalies = alignmentStore.getAnomalies(runId);
+         
+@@ -363,6 +421,15 @@ public class RunManager implements RunLifecycle, AutoCloseable {
+         return record;
+     }
+ 
++    public void restoreRun(RunRecord record) {
++        if (record == null) {
++            throw new IllegalArgumentException("record must not be null");
++        }
++        runs.put(record.runId(), record);
++        RunConfigSnapshot snapshot = RunConfigSnapshot.fromRecord(record);
++        snapshots.put(record.runId(), snapshot);
++    }
++
+     @Override
+     public RunRecord start(String runId) {
+         RunRecord record = requireRun(runId);
+@@ -482,6 +549,25 @@ public class RunManager implements RunLifecycle, AutoCloseable {
+         return record;
+     }
+ 
++    /**
++     * Retires a run — gracefully marks it RETIRED so it is excluded from dashboards and
++     * duplicate-run checks without being considered a failure. Only COMPLETED or FAILED
++     * runs can be retired; RUNNING runs must be killed first.
++     */
++    public RunRecord retire(String runId, String reason) {
++        RunRecord record = requireRun(runId);
++        RunRecord before = record;
++        RunRecord.Status s = record.status();
++        if (s != RunRecord.Status.COMPLETED && s != RunRecord.Status.FAILED && s != RunRecord.Status.ARCHIVED) {
++            throw new IllegalStateException(
++                "Cannot retire run " + runId + " from status " + s + ". Kill it first.");
++        }
++        record.markRetired(reason != null ? reason : "Retired by operator");
++        log.info("Run {} retired: {}", runId, record.errorMessage().orElse(""));
++        notifyTransition(before, record, RunTransition.RETIRE);
++        return record;
++    }
++
+     @Override
+     public Optional<RunRecord> get(String runId) {
+         return getRun(runId);
+@@ -506,24 +592,43 @@ public class RunManager implements RunLifecycle, AutoCloseable {
+ 
+     /** Convenience: validate request, register snapshot, and start execution. */
+     public String startRun(StartRunRequest request) throws IOException {
+-        String symbol = request.symbol() != null && !request.symbol().isBlank()
+-            ? request.symbol()
+-            : StrategyCatalog.defaultSymbol(request.strategyId());
+-        RunConfigSnapshot configSnapshot = RunConfigSnapshot.fromRequest(request, symbol);
+-        RunConfigSnapshot resolved = resolveBrokerAccount(request.strategyId(), request.brokerAccountId(), configSnapshot);
+-        if (isBrokerBackedRun(resolved)) {
+-            try {
+-                Broker broker = brokerFactory.create(resolved);
+-                double equity = broker.getAccountState().equity();
+-                resolved = resolved.withCapital(equity);
+-            } catch (Exception e) {
+-                log.warn("Failed to retrieve broker account equity for run: {}. Falling back to default or requested capital.", e.getMessage());
++        var lock = startupLocks.computeIfAbsent(request.strategyId(), k -> new java.util.concurrent.locks.ReentrantLock());
++        lock.lock();
++        try {
++            String symbol = request.symbol() != null && !request.symbol().isBlank()
++                ? request.symbol()
++                : StrategyCatalog.defaultSymbol(request.strategyId());
++
++            boolean isForce = Boolean.TRUE.equals(request.force());
++            if (!isForce) {
++                boolean duplicateExists = runs.values().stream()
++                    .anyMatch(r -> r.status() == RunRecord.Status.RUNNING 
++                        && r.strategyId().equals(request.strategyId())
++                        && r.symbol().equalsIgnoreCase(symbol)
++                        && r.mode().name().equalsIgnoreCase(request.mode()));
++                if (duplicateExists) {
++                    throw new IllegalArgumentException("Run already active for strategyId=" + request.strategyId() + ", symbol=" + symbol + ", mode=" + request.mode());
++                }
+             }
++
++            RunConfigSnapshot configSnapshot = RunConfigSnapshot.fromRequest(request, symbol);
++            RunConfigSnapshot resolved = resolveBrokerAccount(request.strategyId(), request.brokerAccountId(), configSnapshot);
++            if (isBrokerBackedRun(resolved)) {
++                try {
++                    Broker broker = brokerFactory.create(resolved);
++                    double equity = broker.getAccountState().equity();
++                    resolved = resolved.withCapital(equity);
++                } catch (Exception e) {
++                    log.warn("Failed to retrieve broker account equity for run: {}. Falling back to default or requested capital.", e.getMessage());
++                }
++            }
++            validate(request, resolved);
++            RunRecord record = register(resolved);
++            start(record.runId());
++            return record.runId();
++        } finally {
++            lock.unlock();
+         }
+-        validate(request, resolved);
+-        RunRecord record = register(resolved);
+-        start(record.runId());
+-        return record.runId();
+     }
+ 
+     public Optional<RunRecord> getRun(String runId) {
+@@ -562,6 +667,13 @@ public class RunManager implements RunLifecycle, AutoCloseable {
+                 consecutiveTimeDrifts.remove(runId);
+             }
+         }
++        // Evict startup lock entries for strategies that have no active (RUNNING/PAUSED) runs.
++        // This prevents the startupLocks map from growing without bound.
++        java.util.Set<String> activeStrategyIds = runs.values().stream()
++            .filter(r -> r.status() == RunRecord.Status.RUNNING || r.status() == RunRecord.Status.PAUSED)
++            .map(RunRecord::strategyId)
++            .collect(java.util.stream.Collectors.toSet());
++        startupLocks.keySet().removeIf(strategyId -> !activeStrategyIds.contains(strategyId));
+     }
+ 
+     public EventStore eventStore() {
+@@ -581,12 +693,21 @@ public class RunManager implements RunLifecycle, AutoCloseable {
+         } catch (Exception e) {
+             log.error("Failed to close SqliteTradeStore", e);
+         }
++        try {
++            runRecordStore.close();
++        } catch (Exception e) {
++            log.error("Failed to close RunRecordStore", e);
++        }
+     }
+ 
+     public com.martinfou.trading.backtest.persistence.SqliteTradeStore tradeStore() {
+         return tradeStore;
+     }
+ 
++    public RunRecordStore runRecordStore() {
++        return runRecordStore;
++    }
++
+     public List<com.martinfou.trading.core.Trade> getTrades(String runId) {
+         List<com.martinfou.trading.core.Trade> list = tradeStore.getTrades(runId);
+         if (list.isEmpty()) {
+@@ -602,8 +723,12 @@ public class RunManager implements RunLifecycle, AutoCloseable {
+         double capital,
+         RunRecord record
+     ) {
+-        RunRecord before = snapshotRecord(record);
++        org.slf4j.MDC.put("runId", runId);
++        org.slf4j.MDC.put("strategyId", configSnapshot.strategyId());
++        org.slf4j.MDC.put("stale", "false");
+         try {
++            RunRecord before = snapshotRecord(record);
++            try {
+             RunMode runMode = RunMode.valueOf(configSnapshot.mode().toUpperCase());
+             com.martinfou.trading.backtest.BacktestResult result;
+             // Captures a failure message from OandaStreamingExecutor when the stop was error-driven.
+@@ -680,7 +805,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
+                 result = BacktestResult.builder()
+                     .initialCapital(capital)
+                     .finalEquity(finalEquity)
+-                    .totalTrades(0)
++                    .totalTrades(oandaExecutor.getFilledCount())
+                     .totalReturnPct(capital > 0 ? (finalEquity - capital) / capital * 100.0 : 0.0)
+                     .build();
+             } else if (isBrokerBackedRun(configSnapshot)) {
+@@ -741,6 +866,11 @@ public class RunManager implements RunLifecycle, AutoCloseable {
+                 record.markFailed(msg);
+                 notifyTransition(before, record, RunTransition.FAIL);
+             }
++            }
++        } finally {
++            org.slf4j.MDC.remove("runId");
++            org.slf4j.MDC.remove("strategyId");
++            org.slf4j.MDC.remove("stale");
+         }
+     }
+ 
+@@ -749,6 +879,13 @@ public class RunManager implements RunLifecycle, AutoCloseable {
+     }
+ 
+     private void notifyTransition(RunRecord before, RunRecord after, RunTransition cause) {
++        if (after != null) {
++            try {
++                runRecordStore.save(after);
++            } catch (Exception e) {
++                log.error("Failed to persist run record " + after.runId() + " on transition " + cause, e);
++            }
++        }
+         for (RunTransitionListener listener : listeners) {
+             listener.onTransition(before, after, cause);
+         }
+@@ -1009,7 +1146,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
+         validateExecutionLabelForMode(mode, configSnapshot.resolvedExecutionLabel());
+         validateBrokerCredentials(configSnapshot);
+ 
+-        if (mode == RunMode.PAPER || mode == RunMode.LIVE) {
++        if (!Boolean.TRUE.equals(request.force()) && (mode == RunMode.PAPER || mode == RunMode.LIVE)) {
+             String strategyId = configSnapshot.strategyId();
+             String symbol = configSnapshot.symbol();
+             String accountId = configSnapshot.resolvedBrokerAccountId();
+diff --git a/trading-runtime/src/main/java/com/martinfou/trading/runtime/RunRecord.java b/trading-runtime/src/main/java/com/martinfou/trading/runtime/RunRecord.java
+index f30cc8f..73bfeb7 100644
+--- a/trading-runtime/src/main/java/com/martinfou/trading/runtime/RunRecord.java
++++ b/trading-runtime/src/main/java/com/martinfou/trading/runtime/RunRecord.java
+@@ -10,7 +10,7 @@ import java.util.Optional;
+ public final class RunRecord {
+ 
+     public enum Status {
+-        CREATED, RUNNING, PAUSED, COMPLETED, FAILED, ARCHIVED
++        CREATED, RUNNING, PAUSED, COMPLETED, FAILED, ARCHIVED, RETIRED
+     }
+ 
+     private final String runId;
+@@ -25,6 +25,8 @@ public final class RunRecord {
+     private volatile String errorMessage;
+     private volatile Map<String, Object> endedPayload;
+     private volatile Instant lastEventAt;
++    private volatile int restartCount;
++    private volatile Instant lastRestartAt;
+ 
+     RunRecord(String runId, String strategyId, String symbol, RunMode mode, RunConfigSnapshot configSnapshot) {
+         this.runId = runId;
+@@ -37,6 +39,38 @@ public final class RunRecord {
+         this.status = Status.CREATED;
+     }
+ 
++    RunRecord(
++        String runId,
++        String strategyId,
++        String symbol,
++        RunMode mode,
++        Instant startedAt,
++        Map<String, Object> configSnapshot,
++        String configHash,
++        Status status,
++        Instant completedAt,
++        String errorMessage,
++        Map<String, Object> endedPayload,
++        Instant lastEventAt,
++        int restartCount,
++        Instant lastRestartAt
++    ) {
++        this.runId = runId;
++        this.strategyId = strategyId;
++        this.symbol = symbol;
++        this.mode = mode;
++        this.startedAt = startedAt;
++        this.configSnapshot = configSnapshot;
++        this.configHash = configHash;
++        this.status = status;
++        this.completedAt = completedAt;
++        this.errorMessage = errorMessage;
++        this.endedPayload = endedPayload;
++        this.lastEventAt = lastEventAt;
++        this.restartCount = restartCount;
++        this.lastRestartAt = lastRestartAt;
++    }
++
+     public String runId() {
+         return runId;
+     }
+@@ -117,7 +151,43 @@ public final class RunRecord {
+         }
+     }
+ 
++    /**
++     * Marks the run as RETIRED — gracefully decommissioned by an operator,
++     * as opposed to ARCHIVED (evicted by age) or FAILED (error-driven).
++     */
++    void markRetired(String reason) {
++        this.status = Status.RETIRED;
++        this.errorMessage = reason;
++        if (this.completedAt == null) {
++            this.completedAt = Instant.now();
++        }
++    }
++
++    public int restartCount() {
++        return restartCount;
++    }
++
++    public Optional<Instant> lastRestartAt() {
++        return Optional.ofNullable(lastRestartAt);
++    }
++
++    public void incrementRestartCount(Instant timestamp) {
++        this.restartCount++;
++        this.lastRestartAt = timestamp;
++    }
++
++    public void resetRestartCount() {
++        this.restartCount = 0;
++        this.lastRestartAt = null;
++    }
++
++    public void setRestartCount(int count, Instant timestamp) {
++        this.restartCount = count;
++        this.lastRestartAt = timestamp;
++    }
++
+     boolean isTerminal() {
+-        return status == Status.COMPLETED || status == Status.FAILED || status == Status.ARCHIVED;
++        return status == Status.COMPLETED || status == Status.FAILED
++            || status == Status.ARCHIVED || status == Status.RETIRED;
+     }
+ }
+diff --git a/trading-runtime/src/main/java/com/martinfou/trading/runtime/RunRecordStore.java b/trading-runtime/src/main/java/com/martinfou/trading/runtime/RunRecordStore.java
+new file mode 100644
+index 0000000..ed9a2c1
+--- /dev/null
++++ b/trading-runtime/src/main/java/com/martinfou/trading/runtime/RunRecordStore.java
+@@ -0,0 +1,14 @@
++package com.martinfou.trading.runtime;
++
++import java.util.List;
++import java.util.Optional;
++
++/** Persistent or in-memory storage for {@link RunRecord} metadata (Story 34-1, 34-2). */
++public interface RunRecordStore extends AutoCloseable {
++    void save(RunRecord record);
++    Optional<RunRecord> get(String runId);
++    List<RunRecord> listAll();
++    void delete(String runId);
++    @Override
++    void close();
++}
+diff --git a/trading-runtime/src/main/java/com/martinfou/trading/runtime/RunTransition.java b/trading-runtime/src/main/java/com/martinfou/trading/runtime/RunTransition.java
+index ac264c2..50368d3 100644
+--- a/trading-runtime/src/main/java/com/martinfou/trading/runtime/RunTransition.java
++++ b/trading-runtime/src/main/java/com/martinfou/trading/runtime/RunTransition.java
+@@ -9,5 +9,6 @@ public enum RunTransition {
+     RESUME,
+     COMPLETE,
+     FAIL,
+-    ARCHIVE
++    ARCHIVE,
++    RETIRE
+ }
+diff --git a/trading-runtime/src/main/java/com/martinfou/trading/runtime/SqliteRunRecordStore.java b/trading-runtime/src/main/java/com/martinfou/trading/runtime/SqliteRunRecordStore.java
+new file mode 100644
+index 0000000..1a685b5
+--- /dev/null
++++ b/trading-runtime/src/main/java/com/martinfou/trading/runtime/SqliteRunRecordStore.java
+@@ -0,0 +1,210 @@
++package com.martinfou.trading.runtime;
++
++import com.fasterxml.jackson.core.JsonProcessingException;
++import com.fasterxml.jackson.core.type.TypeReference;
++import com.fasterxml.jackson.databind.ObjectMapper;
++import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
++import com.martinfou.trading.backtest.RunMode;
++
++import java.io.IOException;
++import java.sql.Connection;
++import java.sql.DriverManager;
++import java.sql.PreparedStatement;
++import java.sql.ResultSet;
++import java.sql.SQLException;
++import java.sql.Statement;
++import java.time.Instant;
++import java.util.ArrayList;
++import java.util.List;
++import java.util.Map;
++import java.util.Optional;
++
++/** SQLite implementation of {@link RunRecordStore} (Story 34-1, 34-2). */
++public final class SqliteRunRecordStore implements RunRecordStore {
++
++    private static final String JDBC_PREFIX = "jdbc:sqlite:";
++    private static final ObjectMapper MAPPER = new ObjectMapper().registerModule(new JavaTimeModule());
++
++    private final Connection connection;
++
++    public SqliteRunRecordStore(EventStoreConfig config) {
++        try {
++            config.ensureParentDirectories();
++            connection = DriverManager.getConnection(JDBC_PREFIX + config.dbPath());
++            initSchema(connection);
++        } catch (IOException | SQLException e) {
++            throw new IllegalStateException("Failed to open SqliteRunRecordStore at " + config.dbPath(), e);
++        }
++    }
++
++    @Override
++    public void save(RunRecord record) {
++        try (PreparedStatement ps = connection.prepareStatement("""
++            INSERT INTO run_records (
++                run_id, strategy_id, symbol, mode, config_snapshot, config_hash, status, started_at,
++                completed_at, error_message, ended_payload, last_event_at, restart_count, last_restart_at
++            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
++            ON CONFLICT(run_id) DO UPDATE SET
++                status = excluded.status,
++                started_at = excluded.started_at,
++                completed_at = excluded.completed_at,
++                error_message = excluded.error_message,
++                ended_payload = excluded.ended_payload,
++                last_event_at = excluded.last_event_at,
++                restart_count = excluded.restart_count,
++                last_restart_at = excluded.last_restart_at
++            """)) {
++            ps.setString(1, record.runId());
++            ps.setString(2, record.strategyId());
++            ps.setString(3, record.symbol());
++            ps.setString(4, record.mode().name());
++            ps.setString(5, toJson(record.configSnapshot()));
++            ps.setString(6, record.configHash());
++            ps.setString(7, record.status().name());
++            ps.setString(8, record.startedAt().toString());
++            ps.setString(9, record.completedAt().map(Instant::toString).orElse(null));
++            ps.setString(10, record.errorMessage().orElse(null));
++            ps.setString(11, record.endedPayload().map(this::toJson).orElse(null));
++            ps.setString(12, record.lastEventAt().map(Instant::toString).orElse(null));
++            ps.setInt(13, record.restartCount());
++            ps.setString(14, record.lastRestartAt().map(Instant::toString).orElse(null));
++            ps.executeUpdate();
++        } catch (SQLException e) {
++            throw new IllegalStateException("Failed to save run record: " + record.runId(), e);
++        }
++    }
++
++    @Override
++    public Optional<RunRecord> get(String runId) {
++        try (PreparedStatement ps = connection.prepareStatement("""
++            SELECT run_id, strategy_id, symbol, mode, config_snapshot, config_hash, status, started_at,
++                   completed_at, error_message, ended_payload, last_event_at, restart_count, last_restart_at
++              FROM run_records WHERE run_id = ?
++            """)) {
++            ps.setString(1, runId);
++            try (ResultSet rs = ps.executeQuery()) {
++                if (!rs.next()) {
++                    return Optional.empty();
++                }
++                return Optional.of(readRecord(rs));
++            }
++        } catch (SQLException e) {
++            throw new IllegalStateException("Failed to read run record: " + runId, e);
++        }
++    }
++
++    @Override
++    public List<RunRecord> listAll() {
++        try (Statement stmt = connection.createStatement();
++             ResultSet rs = stmt.executeQuery("""
++                 SELECT run_id, strategy_id, symbol, mode, config_snapshot, config_hash, status, started_at,
++                        completed_at, error_message, ended_payload, last_event_at, restart_count, last_restart_at
++                   FROM run_records
++                 """)) {
++            List<RunRecord> list = new ArrayList<>();
++            while (rs.next()) {
++                list.add(readRecord(rs));
++            }
++            return List.copyOf(list);
++        } catch (SQLException e) {
++            throw new IllegalStateException("Failed to list run records", e);
++        }
++    }
++
++    @Override
++    public void delete(String runId) {
++        try (PreparedStatement ps = connection.prepareStatement("DELETE FROM run_records WHERE run_id = ?")) {
++            ps.setString(1, runId);
++            ps.executeUpdate();
++        } catch (SQLException e) {
++            throw new IllegalStateException("Failed to delete run record: " + runId, e);
++        }
++    }
++
++    @Override
++    public void close() {
++        try {
++            connection.close();
++        } catch (SQLException e) {
++            throw new IllegalStateException("Failed to close SqliteRunRecordStore", e);
++        }
++    }
++
++    private static void initSchema(Connection connection) throws SQLException {
++        try (Statement stmt = connection.createStatement()) {
++            stmt.execute("""
++                CREATE TABLE IF NOT EXISTS run_records (
++                    run_id             TEXT    PRIMARY KEY,
++                    strategy_id        TEXT    NOT NULL,
++                    symbol             TEXT    NOT NULL,
++                    mode               TEXT    NOT NULL,
++                    config_snapshot    TEXT    NOT NULL,
++                    config_hash        TEXT    NOT NULL,
++                    status             TEXT    NOT NULL,
++                    started_at         TEXT    NOT NULL,
++                    completed_at       TEXT,
++                    error_message      TEXT,
++                    ended_payload      TEXT,
++                    last_event_at      TEXT,
++                    restart_count      INTEGER NOT NULL DEFAULT 0,
++                    last_restart_at    TEXT
++                )""");
++        }
++    }
++
++    private String toJson(Map<String, Object> map) {
++        try {
++            return MAPPER.writeValueAsString(map);
++        } catch (JsonProcessingException e) {
++            throw new IllegalStateException("Failed to serialize map to JSON", e);
++        }
++    }
++
++    private static RunRecord readRecord(ResultSet rs) throws SQLException {
++        try {
++            String runId = rs.getString("run_id");
++            String strategyId = rs.getString("strategy_id");
++            String symbol = rs.getString("symbol");
++            RunMode mode = RunMode.valueOf(rs.getString("mode"));
++            Instant startedAt = Instant.parse(rs.getString("started_at"));
++            Map<String, Object> configSnapshot = MAPPER.readValue(rs.getString("config_snapshot"), new TypeReference<>() {});
++            String configHash = rs.getString("config_hash");
++            RunRecord.Status status = RunRecord.Status.valueOf(rs.getString("status"));
++            
++            String completedAtStr = rs.getString("completed_at");
++            Instant completedAt = completedAtStr != null ? Instant.parse(completedAtStr) : null;
++            
++            String errorMessage = rs.getString("error_message");
++            
++            String endedPayloadStr = rs.getString("ended_payload");
++            Map<String, Object> endedPayload = endedPayloadStr != null ? MAPPER.readValue(endedPayloadStr, new TypeReference<>() {}) : null;
++            
++            String lastEventAtStr = rs.getString("last_event_at");
++            Instant lastEventAt = lastEventAtStr != null ? Instant.parse(lastEventAtStr) : null;
++            
++            int restartCount = rs.getInt("restart_count");
++            
++            String lastRestartAtStr = rs.getString("last_restart_at");
++            Instant lastRestartAt = lastRestartAtStr != null ? Instant.parse(lastRestartAtStr) : null;
++
++            return new RunRecord(
++                runId,
++                strategyId,
++                symbol,
++                mode,
++                startedAt,
++                configSnapshot,
++                configHash,
++                status,
++                completedAt,
++                errorMessage,
++                endedPayload,
++                lastEventAt,
++                restartCount,
++                lastRestartAt
++            );
++        } catch (JsonProcessingException e) {
++            throw new IllegalStateException("Failed to deserialize JSON snapshot", e);
++        }
++    }
++}
+diff --git a/trading-runtime/src/main/java/com/martinfou/trading/runtime/StaleRunWatchdog.java b/trading-runtime/src/main/java/com/martinfou/trading/runtime/StaleRunWatchdog.java
+index bd78ccd..75c1669 100644
+--- a/trading-runtime/src/main/java/com/martinfou/trading/runtime/StaleRunWatchdog.java
++++ b/trading-runtime/src/main/java/com/martinfou/trading/runtime/StaleRunWatchdog.java
+@@ -24,8 +24,6 @@ public class StaleRunWatchdog implements AutoCloseable {
+     private final ControlSummaryService summaryService;
+     private final ScheduledExecutorService executor;
+     private final Clock clock;
+-    private final Map<String, Integer> restartsPerHour = new ConcurrentHashMap<>();
+-    private Instant currentHour;
+     long reconnectTimeoutMs = 30_000;
+     long reconnectCheckIntervalMs = 1000;
+ 
+@@ -37,7 +35,6 @@ public class StaleRunWatchdog implements AutoCloseable {
+         this.runManager = runManager;
+         this.summaryService = summaryService;
+         this.clock = clock;
+-        this.currentHour = Instant.now(clock);
+         this.executor = Executors.newSingleThreadScheduledExecutor(r -> {
+             Thread t = new Thread(r, "stale-run-watchdog");
+             t.setDaemon(true);
+@@ -55,11 +52,6 @@ public class StaleRunWatchdog implements AutoCloseable {
+             // Prune old completed/failed runs from memory
+             runManager.pruneTerminalRuns();
+ 
+-            if (Duration.between(currentHour, Instant.now(clock)).toHours() >= 1) {
+-                restartsPerHour.clear();
+-                currentHour = Instant.now(clock);
+-            }
+-
+             Map<String, Object> summary = summaryService.buildSummary();
+             if (summary == null) return;
+             
+@@ -94,7 +86,13 @@ public class StaleRunWatchdog implements AutoCloseable {
+                 }
+ 
+                 String strategyId = (String) signal.get("strategyId");
+-                int restarts = restartsPerHour.getOrDefault(strategyId, 0);
++                int restarts = 0;
++                if (record.lastRestartAt().isPresent()) {
++                    Instant lastRestart = record.lastRestartAt().get();
++                    if (Duration.between(lastRestart, Instant.now(clock)).toHours() < 1) {
++                        restarts = record.restartCount();
++                    }
++                }
+ 
+                 if (restarts >= 3) {
+                     log.warn("Strategy {} has reached the maximum auto-restart limit (3 per hour). Skipping restart for stale run {}.", strategyId, runId);
+@@ -156,9 +154,9 @@ public class StaleRunWatchdog implements AutoCloseable {
+                     
+                     // 3. Register and start new run
+                     RunRecord newRecord = runManager.register(config);
++                    newRecord.setRestartCount(restarts + 1, Instant.now(clock));
+                     runManager.start(newRecord.runId());
+ 
+-                    restartsPerHour.put(strategyId, restarts + 1);
+                     log.info("Successfully restarted strategy {} with new run ID: {}", strategyId, newRecord.runId());
+                 } catch (Exception e) {
+                     log.error("Failed to auto-restart stale run {}: {}", runId, e.getMessage(), e);
+diff --git a/trading-runtime/src/main/resources/log4j2.xml b/trading-runtime/src/main/resources/log4j2.xml
+new file mode 100644
+index 0000000..86f7056
+--- /dev/null
++++ b/trading-runtime/src/main/resources/log4j2.xml
+@@ -0,0 +1,13 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<Configuration status="WARN">
++    <Appenders>
++        <Console name="Console" target="SYSTEM_OUT">
++            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg [runId=%X{runId} strategyId=%X{strategyId} stale=%X{stale}]%n"/>
++        </Console>
++    </Appenders>
++    <Loggers>
++        <Root level="INFO">
++            <AppenderRef ref="Console"/>
++        </Root>
++    </Loggers>
++</Configuration>
+diff --git a/trading-runtime/src/test/java/com/martinfou/trading/runtime/ControlPlaneServerTest.java b/trading-runtime/src/test/java/com/martinfou/trading/runtime/ControlPlaneServerTest.java
+index a1d961e..aa6d242 100644
+--- a/trading-runtime/src/test/java/com/martinfou/trading/runtime/ControlPlaneServerTest.java
++++ b/trading-runtime/src/test/java/com/martinfou/trading/runtime/ControlPlaneServerTest.java
+@@ -517,20 +517,20 @@ class ControlPlaneServerTest {
+ 
+         try {
+             stores.deploymentStore().save(new DeploymentRecord(
+-                "LondonOpenRangeBreakout",
++                "ConnorsRsi2",
+                 com.martinfou.trading.backtest.RunMode.LIVE,
+                 Instant.parse("2024-01-01T00:00:00Z"),
+                 "run-bt",
+                 List.of(),
+                 ExecutionLabel.LIVE_OANDA));
+ 
+-            registry.kill("LondonOpenRangeBreakout");
++            registry.kill("ConnorsRsi2");
+ 
+             String runId = brokerManager.startRun(new RunManager.StartRunRequest(
+-                "LondonOpenRangeBreakout",
++                "ConnorsRsi2",
+                 "EUR_USD",
+                 "LIVE",
+-                new BarSourceResolver.BarsSource("sample", 300, null),
++                new BarSourceResolver.BarsSource("sample", 1000, null),
+                 100_000.0,
+                 null,
+                 null,
+@@ -540,6 +540,7 @@ class ControlPlaneServerTest {
+             waitForManagerCompletion(brokerManager, runId, Duration.ofSeconds(10));
+ 
+             var events = brokerManager.eventStore().replayAll(runId);
++            System.out.println("DEBUG EVENTS IN TEST: " + events);
+             assertTrue(events.stream().noneMatch(e -> e.type() == com.martinfou.trading.backtest.events.RunEventType.FILL));
+             assertTrue(events.stream().anyMatch(e -> e.type() == com.martinfou.trading.backtest.events.RunEventType.REJECT));
+         } finally {
+@@ -949,6 +950,49 @@ class ControlPlaneServerTest {
+         assertTrue(summaryResponse.body().contains("\"maxWin\":"));
+     }
+ 
++    @Test
++    void testBrokerHealthEndpoint() throws Exception {
++        HttpResponse<String> response = get("/api/broker/health");
++        assertEquals(200, response.statusCode());
++        assertTrue(response.body().startsWith("[") && response.body().endsWith("]"));
++    }
++
++    @Test
++    void testMdcLog4j2Integration() {
++        org.slf4j.MDC.put("runId", "test-run-123");
++        assertEquals("test-run-123", org.apache.logging.log4j.ThreadContext.get("runId"));
++        org.slf4j.MDC.clear();
++    }
++
++    @Test
++    void testRetireEndpoint() throws Exception {
++        String body = """
++            {
++              "strategyId": "LondonOpenRangeBreakout",
++              "symbol": "EUR_USD",
++              "mode": "BACKTEST",
++              "barsSource": { "type": "sample", "count": 500 }
++            }
++            """;
++        HttpResponse<String> created = post("/api/runs", body);
++        assertEquals(202, created.statusCode());
++        String runId = extractJsonField(created.body(), "runId");
++
++        RunRecord record = waitForCompletion(runId, Duration.ofSeconds(10));
++        assertEquals(RunRecord.Status.COMPLETED, record.status());
++
++        // Retire the run
++        HttpResponse<String> retireResponse = post("/api/runs/" + runId + "/retire?reason=test-retire-reason", "{}");
++        assertEquals(202, retireResponse.statusCode());
++        assertTrue(retireResponse.body().contains("\"status\":\"RETIRED\""));
++        assertTrue(retireResponse.body().contains("test-retire-reason"));
++
++        // Verify state is retired
++        HttpResponse<String> runResponse = get("/api/runs/" + runId);
++        assertEquals(200, runResponse.statusCode());
++        assertTrue(runResponse.body().contains("\"status\":\"RETIRED\""));
++    }
++
+     private HttpResponse<String> get(String path) throws Exception {
+         HttpRequest request = HttpRequest.newBuilder()
+             .uri(URI.create("http://localhost:" + server.port() + path))
+diff --git a/trading-runtime/src/test/java/com/martinfou/trading/runtime/ControlSummaryServiceTest.java b/trading-runtime/src/test/java/com/martinfou/trading/runtime/ControlSummaryServiceTest.java
+index 60057ee..256097c 100644
+--- a/trading-runtime/src/test/java/com/martinfou/trading/runtime/ControlSummaryServiceTest.java
++++ b/trading-runtime/src/test/java/com/martinfou/trading/runtime/ControlSummaryServiceTest.java
+@@ -238,6 +238,49 @@ class ControlSummaryServiceTest {
+         }
+     }
+ 
++    @Test
++    void testLastTradeAtInSummary() throws Exception {
++        try (EventStore store = EventStores.inMemory();
++             RunManager manager = new RunManager(store)) {
++            RunConfigSnapshot config = new RunConfigSnapshot(
++                "LondonOpenRangeBreakout",
++                "EUR_USD",
++                "PAPER",
++                "sample",
++                100,
++                null,
++                100_000.0,
++                null,
++                null,
++                ExecutionLabel.PAPER_STUB.name());
++
++            String runId = "test-run-lastTradeAt";
++            RunRecord run = manager.restoreRun(runId, config);
++            run.markRunning();
++
++            Instant fillTime = Instant.now().minusSeconds(10);
++            store.append(runId, new RunEvent(
++                RunEvent.SCHEMA_VERSION,
++                RunEventType.FILL,
++                fillTime,
++                runId,
++                "LondonOpenRangeBreakout",
++                "EUR_USD",
++                "PAPER",
++                Map.of("symbol", "EUR_USD", "side", "BUY", "quantity", 1000.0, "price", 1.10)
++            ));
++
++            ControlSummaryService service = new ControlSummaryService(manager);
++            Map<String, Object> summary = service.buildSummary();
++
++            @SuppressWarnings("unchecked")
++            List<Map<String, Object>> runs = (List<Map<String, Object>>) summary.get("runs");
++            assertEquals(1, runs.size());
++            Map<String, Object> runItem = runs.getFirst();
++            assertEquals(fillTime.toString(), runItem.get("lastTradeAt"));
++        }
++    }
++
+     private static void waitForCompletion(RunManager manager, String runId) throws InterruptedException {
+         for (int i = 0; i < 200; i++) {
+             RunRecord record = manager.getRun(runId).orElseThrow();
+diff --git a/trading-runtime/src/test/java/com/martinfou/trading/runtime/OandaStreamingExecutorTest.java b/trading-runtime/src/test/java/com/martinfou/trading/runtime/OandaStreamingExecutorTest.java
+index 65e592a..2da273f 100644
+--- a/trading-runtime/src/test/java/com/martinfou/trading/runtime/OandaStreamingExecutorTest.java
++++ b/trading-runtime/src/test/java/com/martinfou/trading/runtime/OandaStreamingExecutorTest.java
+@@ -201,6 +201,40 @@ class OandaStreamingExecutorTest {
+         assertEquals("EUR_USD", staleEvent.payload().get("symbol"));
+     }
+ 
++    @Test
++    void testHeartbeatEventsEnriched() {
++        var store = new InMemoryEventStore();
++        String runId = "test-run-4";
++        var config = new RunConfigSnapshot(
++            "LondonOpenRangeBreakout",
++            "EUR_USD",
++            "LIVE",
++            "sample",
++            500,
++            null,
++            1000.0,
++            0.07,
++            1e-4,
++            "LIVE_OANDA",
++            "acct1"
++        );
++
++        var bar = new com.martinfou.trading.core.Bar("EUR_USD", Instant.now(), 1.1, 1.2, 1.0, 1.15, 100);
++        Instant lastFill = Instant.now().minusSeconds(10);
++        HeartbeatEvents.emitBarHeartbeat(runId, config, com.martinfou.trading.backtest.RunMode.LIVE, store, bar, 3, 1, lastFill, 150.5);
++
++        List<RunEvent> events = store.replayAll(runId);
++        RunEvent heartbeatEvent = events.stream()
++            .filter(e -> e.type() == RunEventType.HEARTBEAT)
++            .findFirst()
++            .orElse(null);
++
++        assertNotNull(heartbeatEvent, "Expected HEARTBEAT event");
++        assertEquals(1, heartbeatEvent.payload().get("runningTradeCount"));
++        assertEquals(lastFill.toString(), heartbeatEvent.payload().get("lastFillTime"));
++        assertEquals(150.5, heartbeatEvent.payload().get("openPnL"));
++    }
++
+     private static class StubBroker implements Broker {
+         @Override public boolean isConnected() { return true; }
+         @Override public void connect() {}
+diff --git a/trading-runtime/src/test/java/com/martinfou/trading/runtime/RunManagerTest.java b/trading-runtime/src/test/java/com/martinfou/trading/runtime/RunManagerTest.java
+index 9b3a3db..9e18ee3 100644
+--- a/trading-runtime/src/test/java/com/martinfou/trading/runtime/RunManagerTest.java
++++ b/trading-runtime/src/test/java/com/martinfou/trading/runtime/RunManagerTest.java
+@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
+ import static org.junit.jupiter.api.Assertions.assertFalse;
+ import static org.junit.jupiter.api.Assertions.assertThrows;
+ import static org.junit.jupiter.api.Assertions.assertTrue;
++import static org.junit.jupiter.api.Assertions.assertNotNull;
+ 
+ class RunManagerTest {
+ 
+@@ -425,4 +426,170 @@ class RunManagerTest {
+         field.setAccessible(true);
+         field.set(record, instant);
+     }
++
++    @Test
++    void testDuplicateRunRejection() throws Exception {
++        try (RuntimeStores.Bundle stores = RuntimeStores.inMemoryWithBroadcast();
++             RunManager manager = new RunManager(stores.eventStore())) {
++
++            var req = new RunManager.StartRunRequest(
++                "LondonOpenRangeBreakout",
++                "EUR_USD",
++                "PAPER",
++                new BarSourceResolver.BarsSource("sample", 10, null),
++                1000.0,
++                null,
++                null,
++                null,
++                "PAPER_STUB",
++                null,
++                null,
++                null,
++                null,
++                null,
++                null,
++                false
++            );
++
++            // Start the first run
++            String runId1 = manager.startRun(req);
++            assertNotNull(runId1);
++
++            // Attempting to start duplicate run should throw IllegalArgumentException
++            assertThrows(IllegalArgumentException.class, () -> manager.startRun(req));
++
++            // Attempting with force=true should succeed
++            var reqForce = new RunManager.StartRunRequest(
++                "LondonOpenRangeBreakout",
++                "EUR_USD",
++                "PAPER",
++                new BarSourceResolver.BarsSource("sample", 10, null),
++                1000.0,
++                null,
++                null,
++                null,
++                "PAPER_STUB",
++                null,
++                null,
++                null,
++                null,
++                null,
++                null,
++                true
++            );
++            String runId2 = manager.startRun(reqForce);
++            assertNotNull(runId2);
++        }
++    }
++
++    @Test
++    void testConcurrentStartLocking() throws Exception {
++        try (RuntimeStores.Bundle stores = RuntimeStores.inMemoryWithBroadcast();
++             RunManager manager = new RunManager(stores.eventStore())) {
++
++            var req = new RunManager.StartRunRequest(
++                "LondonOpenRangeBreakout",
++                "EUR_USD",
++                "PAPER",
++                new BarSourceResolver.BarsSource("sample", 10, null),
++                1000.0,
++                null,
++                null,
++                null,
++                "PAPER_STUB",
++                null,
++                null,
++                null,
++                null,
++                null,
++                null,
++                true // use force to allow multiple concurrent starts
++            );
++
++            int threads = 5;
++            java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(threads);
++            java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
++            java.util.concurrent.atomic.AtomicInteger successCount = new java.util.concurrent.atomic.AtomicInteger(0);
++
++            for (int i = 0; i < threads; i++) {
++                pool.submit(() -> {
++                    try {
++                        latch.await();
++                        manager.startRun(req);
++                        successCount.incrementAndGet();
++                    } catch (Exception e) {
++                        // ignore
++                    }
++                });
++            }
++
++            latch.countDown();
++            pool.shutdown();
++            assertTrue(pool.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS));
++
++            assertEquals(threads, successCount.get(), "Expected all threads to successfully register and start runs");
++        }
++    }
++
++    @Test
++    void testRunRecordDBPersistence(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tempDir) throws Exception {
++        EventStoreConfig config = EventStoreConfig.withDbPath(tempDir.resolve("test_persistence.db"));
++        try (SqliteEventStore eventStore = new SqliteEventStore(config);
++             RunManager manager = new RunManager(eventStore)) {
++
++            String runId = manager.startRun(new RunManager.StartRunRequest(
++                "LondonOpenRangeBreakout",
++                "EUR_USD",
++                "BACKTEST",
++                new BarSourceResolver.BarsSource("sample", 100, null),
++                1000.0,
++                null,
++                null,
++                null,
++                null
++            ));
++
++            waitForCompletion(manager, runId);
++
++            // Assert that the run was saved in SQLite run record store
++            RunRecord record = manager.runRecordStore().get(runId).orElseThrow();
++            assertEquals(runId, record.runId());
++            assertEquals("LondonOpenRangeBreakout", record.strategyId());
++            assertEquals(RunRecord.Status.COMPLETED, record.status());
++        }
++    }
++
++    @Test
++    void testControlPlaneRestoreActiveRuns(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tempDir) throws Exception {
++        EventStoreConfig config = EventStoreConfig.withDbPath(tempDir.resolve("restore_test.db"));
++        
++        // 1. Start a run and let it get saved to database as RUNNING
++        String runId;
++        try (SqliteEventStore eventStore = new SqliteEventStore(config);
++             RunManager manager = new RunManager(eventStore)) {
++
++            RunConfigSnapshot snapshot = new RunConfigSnapshot(
++                "LondonOpenRangeBreakout", "EUR_USD", "LIVE", "sample", 100, null, 1000.0, null, null, "LIVE_OANDA"
++            );
++            RunRecord record = manager.restoreRun("active-run-123", snapshot);
++            record.markRunning();
++            manager.runRecordStore().save(record);
++            runId = record.runId();
++        }
++
++        // 2. Simulate control plane restart and verify restoreActiveRuns restarts it
++        try (SqliteEventStore eventStore = new SqliteEventStore(config);
++             RunManager manager = new RunManager(eventStore)) {
++            
++            // Verify runs map is empty initially
++            assertTrue(manager.list(null).isEmpty());
++
++            ControlPlaneMain.restoreActiveRuns(manager, config);
++
++            // Verify run is restored and running
++            RunRecord restored = manager.getRun(runId).orElseThrow();
++            assertEquals(RunRecord.Status.RUNNING, restored.status());
++            assertEquals("LondonOpenRangeBreakout", restored.strategyId());
++        }
++    }
+ }
+diff --git a/trading-runtime/src/test/java/com/martinfou/trading/runtime/RunRecordStoreTest.java b/trading-runtime/src/test/java/com/martinfou/trading/runtime/RunRecordStoreTest.java
+new file mode 100644
+index 0000000..bc5c54f
+--- /dev/null
++++ b/trading-runtime/src/test/java/com/martinfou/trading/runtime/RunRecordStoreTest.java
+@@ -0,0 +1,78 @@
++package com.martinfou.trading.runtime;
++
++import com.martinfou.trading.backtest.RunMode;
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.api.io.TempDir;
++
++import java.nio.file.Path;
++import java.time.Instant;
++import java.util.Map;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertTrue;
++
++class RunRecordStoreTest {
++
++    @Test
++    void testInMemoryStore() {
++        try (RunRecordStore store = new InMemoryRunRecordStore()) {
++            RunConfigSnapshot snapshot = new RunConfigSnapshot(
++                "SmaCrossover", "EUR_USD", "LIVE", "sample", 100, null, 1000.0, null, null, "LIVE_OANDA"
++            );
++            RunRecord record = new RunRecord(
++                "run-123", "SmaCrossover", "EUR_USD", RunMode.LIVE, snapshot
++            );
++            record.incrementRestartCount(Instant.parse("2026-06-28T10:00:00Z"));
++            store.save(record);
++
++            RunRecord loaded = store.get("run-123").orElseThrow();
++            assertEquals("run-123", loaded.runId());
++            assertEquals("SmaCrossover", loaded.strategyId());
++            assertEquals(1, loaded.restartCount());
++            assertEquals(Instant.parse("2026-06-28T10:00:00Z"), loaded.lastRestartAt().orElseThrow());
++
++            assertEquals(1, store.listAll().size());
++            store.delete("run-123");
++            assertTrue(store.get("run-123").isEmpty());
++        }
++    }
++
++    @Test
++    void testSqliteStorePersistence(@TempDir Path tempDir) {
++        EventStoreConfig config = EventStoreConfig.withDbPath(tempDir.resolve("test_runs.db"));
++        try (RunRecordStore store = new SqliteRunRecordStore(config)) {
++            RunConfigSnapshot snapshot = new RunConfigSnapshot(
++                "SmaCrossover", "EUR_USD", "LIVE", "sample", 100, null, 1000.0, null, null, "LIVE_OANDA"
++            );
++            RunRecord record = new RunRecord(
++                "run-456", "SmaCrossover", "EUR_USD", RunMode.LIVE, snapshot
++            );
++            record.markRunning();
++            record.incrementRestartCount(Instant.parse("2026-06-28T12:00:00Z"));
++            store.save(record);
++        }
++
++        try (RunRecordStore store = new SqliteRunRecordStore(config)) {
++            RunRecord loaded = store.get("run-456").orElseThrow();
++            assertEquals("run-456", loaded.runId());
++            assertEquals("SmaCrossover", loaded.strategyId());
++            assertEquals(RunRecord.Status.RUNNING, loaded.status());
++            assertEquals(1, loaded.restartCount());
++            assertEquals(Instant.parse("2026-06-28T12:00:00Z"), loaded.lastRestartAt().orElseThrow());
++            assertEquals(1, store.listAll().size());
++
++            // Update record
++            loaded.markCompleted(Map.of("pnl", 50.0));
++            loaded.resetRestartCount();
++            store.save(loaded);
++        }
++
++        try (RunRecordStore store = new SqliteRunRecordStore(config)) {
++            RunRecord loaded = store.get("run-456").orElseThrow();
++            assertEquals(RunRecord.Status.COMPLETED, loaded.status());
++            assertEquals(0, loaded.restartCount());
++            assertTrue(loaded.lastRestartAt().isEmpty());
++            assertEquals(50.0, loaded.endedPayload().orElseThrow().get("pnl"));
++        }
++    }
++}
+diff --git a/trading-runtime/src/test/java/com/martinfou/trading/runtime/SqliteEventStoreTest.java b/trading-runtime/src/test/java/com/martinfou/trading/runtime/SqliteEventStoreTest.java
+index 218aec8..1002010 100644
+--- a/trading-runtime/src/test/java/com/martinfou/trading/runtime/SqliteEventStoreTest.java
++++ b/trading-runtime/src/test/java/com/martinfou/trading/runtime/SqliteEventStoreTest.java
+@@ -113,4 +113,49 @@ class SqliteEventStoreTest {
+             RunMode.BACKTEST.name(),
+             Map.of("barCount", 100));
+     }
++
++    @Test
++    void testTransactionRollback(@TempDir Path tempDir) throws Exception {
++        Path db = tempDir.resolve("events.db");
++        EventStoreConfig config = EventStoreConfig.withDbPath(db);
++
++        try (SqliteEventStore eventStore = new SqliteEventStore(config)) {
++            Connection conn = eventStore.connection();
++            try (com.martinfou.trading.backtest.persistence.SqliteTradeStore tradeStore = 
++                     new com.martinfou.trading.backtest.persistence.SqliteTradeStore(conn, false)) {
++                
++                // 1. Set auto-commit to false (start transaction boundary)
++                conn.setAutoCommit(false);
++                
++                // 2. Perform append and insert
++                eventStore.append("run-tx", sampleEvent("run-tx", RunEventType.RUN_STARTED));
++                
++                com.martinfou.trading.core.Trade trade = new com.martinfou.trading.core.Trade(
++                    "trade-tx", "EUR_USD", com.martinfou.trading.core.Order.Side.BUY, 1.1000, 1.1050, 1000.0,
++                    Instant.parse("2026-06-28T12:00:00Z"), Instant.parse("2026-06-28T12:05:00Z"),
++                    5.0, 1.0950, 1.1100
++                );
++                tradeStore.insert("run-tx", trade);
++                
++                // 3. Rollback the connection
++                conn.rollback();
++                conn.setAutoCommit(true);
++                
++                // 4. Verify that neither was persisted
++                assertEquals(0, eventStore.count("run-tx"));
++                assertTrue(tradeStore.getTrades("run-tx").isEmpty());
++                
++                // 5. Test successful commit
++                conn.setAutoCommit(false);
++                eventStore.append("run-tx", sampleEvent("run-tx", RunEventType.RUN_STARTED));
++                tradeStore.insert("run-tx", trade);
++                conn.commit();
++                conn.setAutoCommit(true);
++                
++                // 6. Verify both were persisted
++                assertEquals(1, eventStore.count("run-tx"));
++                assertEquals(1, tradeStore.getTrades("run-tx").size());
++            }
++        }
++    }
+ }
+diff --git a/trading-runtime/src/test/java/com/martinfou/trading/runtime/StaleRunWatchdogTest.java b/trading-runtime/src/test/java/com/martinfou/trading/runtime/StaleRunWatchdogTest.java
+index 8a9db74..63334ad 100644
+--- a/trading-runtime/src/test/java/com/martinfou/trading/runtime/StaleRunWatchdogTest.java
++++ b/trading-runtime/src/test/java/com/martinfou/trading/runtime/StaleRunWatchdogTest.java
+@@ -147,6 +147,51 @@ class StaleRunWatchdogTest {
+         }
+     }
+ 
++    @Test
++    void testCheckStaleRuns_throttlesRestarts() throws Exception {
++        var store = new InMemoryEventStore();
++        var runManager = new RunManager(store);
++
++        var config = new RunConfigSnapshot(
++            "LondonOpenRangeBreakout",
++            "EUR_USD",
++            "PAPER",
++            "sample",
++            500,
++            null,
++            1000.0,
++            0.07,
++            1e-4,
++            "PAPER_STUB",
++            "acct1"
++        );
++
++        String runId = "throttled-run-id";
++        RunRecord record = runManager.restoreRun(runId, config);
++        record.markRunning();
++        
++        // 3 restarts already occurred within the last hour
++        Instant checkTime = Instant.parse("2026-06-24T11:00:00Z");
++        record.setRestartCount(3, checkTime.minus(Duration.ofMinutes(10)));
++        
++        Instant lastEventAt = checkTime.minus(Duration.ofSeconds(200));
++        record.noteEventAt(lastEventAt);
++
++        Clock fixedClock = Clock.fixed(checkTime, java.time.ZoneOffset.UTC);
++        var summaryService = new ControlSummaryService(runManager, 120, fixedClock);
++
++        try (var watchdog = new StaleRunWatchdog(runManager, summaryService, fixedClock)) {
++            watchdog.reconnectTimeoutMs = 10;
++            watchdog.reconnectCheckIntervalMs = 5;
++            watchdog.checkStaleRuns();
++            
++            // Should skip restart because it is throttled
++            assertEquals(RunRecord.Status.RUNNING, record.status(), "Expected run to remain RUNNING because it is throttled");
++            assertEquals(1, runManager.list(null).size(), "Expected no new run to be registered");
++        }
++    }
++
++
+     static class TrackingRunManager extends RunManager {
+         boolean reconnectCalled = false;
+         String reconnectedRunId = null;
+diff --git a/trading-tui/src/main/java/com/martinfou/trading/tui/ControlPlaneClient.java b/trading-tui/src/main/java/com/martinfou/trading/tui/ControlPlaneClient.java
+index db8c338..e892a82 100644
+--- a/trading-tui/src/main/java/com/martinfou/trading/tui/ControlPlaneClient.java
++++ b/trading-tui/src/main/java/com/martinfou/trading/tui/ControlPlaneClient.java
+@@ -227,6 +227,11 @@ public final class ControlPlaneClient {
+         return getJson("/api/broker-accounts");
+     }
+ 
++    /** Returns the JSON array from {@code GET /api/broker/health}. */
++    public JsonNode brokerHealth() throws IOException, InterruptedException {
++        return getJson("/api/broker/health");
++    }
++
+     public JsonNode startRun(
+         String strategyId,
+         String mode,
+diff --git a/trading-tui/src/main/java/com/martinfou/trading/tui/TuiCommandHandler.java b/trading-tui/src/main/java/com/martinfou/trading/tui/TuiCommandHandler.java
+index 6c643cd..987be1c 100644
+--- a/trading-tui/src/main/java/com/martinfou/trading/tui/TuiCommandHandler.java
++++ b/trading-tui/src/main/java/com/martinfou/trading/tui/TuiCommandHandler.java
+@@ -63,6 +63,7 @@ public final class TuiCommandHandler {
+                 case "weekly-build", "weekly" -> weeklyBuild(parts);
+                 case "weekly-status", "wb-status" -> weeklyStatus();
+                 case "data" -> dataCommand(parts);
++                case "health" -> brokerHealth();
+                 case "quit", "exit", "q" -> List.of("__QUIT__");
+                 default -> List.of("Unknown command: /" + command + ". Type /help");
+             };
+@@ -92,6 +93,7 @@ public final class TuiCommandHandler {
+             "  /run <runId>       Run status + full backtest report",
+             "  /events <runId>    Last 20 run events",
+             "  /kill <id> [reason]",
++            "  /health            Broker connection health (uptime, failures per run)",
+             "  /sq | /inbox [process]   SQ bridge status or trigger inbox drain",
+             "  /weekly-status           Weekly builder hot-folder counts",
+             "  /weekly-build [--plan|--compile|--deploy]   Trigger Job 1/2/3",
+@@ -364,6 +366,31 @@ public final class TuiCommandHandler {
+         return step.substring(0, 1).toUpperCase(Locale.ROOT) + step.substring(1);
+     }
+ 
++    private List<String> brokerHealth() throws IOException, InterruptedException {
++        JsonNode items = client.brokerHealth();
++        if (!items.isArray() || items.isEmpty()) {
++            return List.of("No active broker-backed runs.");
++        }
++        List<String> lines = new ArrayList<>();
++        lines.add(String.format("%-36s  %-9s  %-24s  %-24s  %s",
++            "Run ID", "Connected", "Uptime Since", "Last Reply", "Failures"));
++        lines.add("-".repeat(110));
++        for (JsonNode item : items) {
++            if (item.has("error")) {
++                lines.add(item.path("runId").asText("?") + "  ERROR: " + item.get("error").asText());
++                continue;
++            }
++            String runId = item.path("runId").asText("—");
++            boolean connected = item.path("connected").asBoolean(false);
++            String uptimeStart = item.hasNonNull("uptimeStart") ? item.get("uptimeStart").asText() : "—";
++            String lastReply = item.hasNonNull("lastReplyTime") ? item.get("lastReplyTime").asText() : "—";
++            int failures = item.path("connectionFailures").asInt(0);
++            lines.add(String.format("%-36s  %-9s  %-24s  %-24s  %d",
++                runId, connected ? "✓ YES" : "✗ NO", uptimeStart, lastReply, failures));
++        }
++        return lines;
++    }
++
+     private List<String> kill(List<String> parts) throws IOException, InterruptedException {
+         if (parts.size() < 2) {
+             return List.of("Usage: /kill <strategyId> [reason]");

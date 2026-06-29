@@ -517,20 +517,20 @@ class ControlPlaneServerTest {
 
         try {
             stores.deploymentStore().save(new DeploymentRecord(
-                "LondonOpenRangeBreakout",
+                "ConnorsRsi2",
                 com.martinfou.trading.backtest.RunMode.LIVE,
                 Instant.parse("2024-01-01T00:00:00Z"),
                 "run-bt",
                 List.of(),
                 ExecutionLabel.LIVE_OANDA));
 
-            registry.kill("LondonOpenRangeBreakout");
+            registry.kill("ConnorsRsi2");
 
             String runId = brokerManager.startRun(new RunManager.StartRunRequest(
-                "LondonOpenRangeBreakout",
+                "ConnorsRsi2",
                 "EUR_USD",
                 "LIVE",
-                new BarSourceResolver.BarsSource("sample", 300, null),
+                new BarSourceResolver.BarsSource("sample", 1000, null),
                 100_000.0,
                 null,
                 null,
@@ -540,6 +540,7 @@ class ControlPlaneServerTest {
             waitForManagerCompletion(brokerManager, runId, Duration.ofSeconds(10));
 
             var events = brokerManager.eventStore().replayAll(runId);
+            System.out.println("DEBUG EVENTS IN TEST: " + events);
             assertTrue(events.stream().noneMatch(e -> e.type() == com.martinfou.trading.backtest.events.RunEventType.FILL));
             assertTrue(events.stream().anyMatch(e -> e.type() == com.martinfou.trading.backtest.events.RunEventType.REJECT));
         } finally {
@@ -947,6 +948,122 @@ class ControlPlaneServerTest {
         assertTrue(summaryResponse.body().contains("\"winRatePct\":100.0"));
         assertTrue(summaryResponse.body().contains("\"totalPnl\":"));
         assertTrue(summaryResponse.body().contains("\"maxWin\":"));
+    }
+
+    @Test
+    void testBrokerHealthEndpoint() throws Exception {
+        HttpResponse<String> response = get("/api/broker/health");
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().startsWith("[") && response.body().endsWith("]"));
+    }
+
+    @Test
+    void testMdcLog4j2Integration() {
+        org.slf4j.MDC.put("runId", "test-run-123");
+        assertEquals("test-run-123", org.apache.logging.log4j.ThreadContext.get("runId"));
+        org.slf4j.MDC.clear();
+    }
+
+    @Test
+    void testRetireEndpoint() throws Exception {
+        String body = """
+            {
+              "strategyId": "LondonOpenRangeBreakout",
+              "symbol": "EUR_USD",
+              "mode": "BACKTEST",
+              "barsSource": { "type": "sample", "count": 500 }
+            }
+            """;
+        HttpResponse<String> created = post("/api/runs", body);
+        assertEquals(202, created.statusCode());
+        String runId = extractJsonField(created.body(), "runId");
+
+        RunRecord record = waitForCompletion(runId, Duration.ofSeconds(10));
+        assertEquals(RunRecord.Status.COMPLETED, record.status());
+
+        // Retire the run
+        HttpResponse<String> retireResponse = post("/api/runs/" + runId + "/retire?reason=test-retire-reason", "{}");
+        assertEquals(202, retireResponse.statusCode());
+        assertTrue(retireResponse.body().contains("\"status\":\"RETIRED\""));
+        assertTrue(retireResponse.body().contains("test-retire-reason"));
+
+        // Verify state is retired
+        HttpResponse<String> runResponse = get("/api/runs/" + runId);
+        assertEquals(200, runResponse.statusCode());
+        assertTrue(runResponse.body().contains("\"status\":\"RETIRED\""));
+    }
+
+    @Test
+    void testAuditEventsEndpoint() throws Exception {
+        // 1. Register a run
+        String json = """
+            {
+                "strategyId": "LondonOpenRangeBreakout",
+                "symbol": "EUR_USD",
+                "mode": "BACKTEST",
+                "capital": 100000.0,
+                "barsSource": { "type": "sample", "count": 10 }
+            }
+            """;
+        HttpResponse<String> response = post("/api/runs", json);
+        assertEquals(202, response.statusCode());
+        String runId = extractJsonField(response.body(), "runId");
+        
+        // 2. Append some events (one audit type, one non-audit type)
+        RunEvent auditEvent = new RunEvent(
+            RunEvent.SCHEMA_VERSION,
+            RunEventType.BROKER_DISCONNECT,
+            Instant.now(),
+            runId,
+            "LondonOpenRangeBreakout",
+            "EUR_USD",
+            "BACKTEST",
+            java.util.Map.of("reason", "consecutive heartbeat failures")
+        );
+        RunEvent nonAuditEvent = new RunEvent(
+            RunEvent.SCHEMA_VERSION,
+            RunEventType.BAR,
+            Instant.now(),
+            runId,
+            "LondonOpenRangeBreakout",
+            "EUR_USD",
+            "BACKTEST",
+            java.util.Map.of("index", 1)
+        );
+        
+        runManager.eventStore().append(runId, auditEvent);
+        runManager.eventStore().append(runId, nonAuditEvent);
+        
+        // 3. Query without type filter (should return only audit events)
+        HttpResponse<String> auditResponse = get("/api/events/" + runId + "/audit");
+        assertEquals(200, auditResponse.statusCode());
+        assertTrue(auditResponse.body().contains("BROKER_DISCONNECT"));
+        assertFalse(auditResponse.body().contains("\"type\":\"BAR\""));
+        
+        // 4. Query with specific type filter
+        HttpResponse<String> typeResponse = get("/api/events/" + runId + "/audit?type=BROKER_DISCONNECT");
+        assertEquals(200, typeResponse.statusCode());
+        assertTrue(typeResponse.body().contains("BROKER_DISCONNECT"));
+        
+        // 5. Query with invalid type filter should return 400
+        HttpResponse<String> badResponse = get("/api/events/" + runId + "/audit?type=INVALID_TYPE");
+        assertEquals(400, badResponse.statusCode());
+    }
+
+    @Test
+    void testDiagnosticsIntegrityEndpoint() throws Exception {
+        HttpResponse<String> response = get("/api/diagnostics/integrity");
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("\"status\":\"OK\""));
+    }
+
+    @Test
+    void testDriftComparisonEndpoint() throws Exception {
+        HttpResponse<String> responseNoParam = get("/api/drift/comparison");
+        assertEquals(400, responseNoParam.statusCode());
+
+        HttpResponse<String> responseNotFound = get("/api/drift/comparison?strategyId=NonExistentStrategy");
+        assertEquals(404, responseNotFound.statusCode());
     }
 
     private HttpResponse<String> get(String path) throws Exception {

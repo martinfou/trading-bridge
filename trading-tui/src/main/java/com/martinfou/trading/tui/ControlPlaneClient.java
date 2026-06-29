@@ -89,6 +89,10 @@ public final class ControlPlaneClient {
         return getJson("/api/health");
     }
 
+    public JsonNode driftComparison(String strategyId) throws IOException, InterruptedException {
+        return getJson("/api/drift/comparison?strategyId=" + java.net.URLEncoder.encode(strategyId, java.nio.charset.StandardCharsets.UTF_8));
+    }
+
     public JsonNode listStrategies() throws IOException, InterruptedException {
         return getJson("/api/strategies");
     }
@@ -225,6 +229,11 @@ public final class ControlPlaneClient {
 
     public JsonNode listBrokerAccounts() throws IOException, InterruptedException {
         return getJson("/api/broker-accounts");
+    }
+
+    /** Returns the JSON array from {@code GET /api/broker/health}. */
+    public JsonNode brokerHealth() throws IOException, InterruptedException {
+        return getJson("/api/broker/health");
     }
 
     public JsonNode startRun(

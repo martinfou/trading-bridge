@@ -28,6 +28,11 @@ public final class OandaBroker implements Broker {
     private final List<Long> orderTimestamps = new java.util.ArrayList<>();
     private final Object rateLimitLock = new Object();
     private volatile int retryCount;
+    private volatile java.time.Instant uptimeStart = null;
+    private volatile java.time.Instant lastReplyTime = null;
+    private final java.util.concurrent.atomic.AtomicInteger connectionFailures = new java.util.concurrent.atomic.AtomicInteger(0);
+    private final java.util.concurrent.atomic.AtomicInteger totalOrdersSubmitted = new java.util.concurrent.atomic.AtomicInteger(0);
+    private final java.util.concurrent.atomic.AtomicInteger totalOrdersRejected = new java.util.concurrent.atomic.AtomicInteger(0);
 
     private final long keepaliveIntervalMs;
     private final long rateLimitWindowMs;
@@ -60,15 +65,24 @@ public final class OandaBroker implements Broker {
 
     @Override
     public synchronized void connect() {
-        client.fetchAccountSummary();
-        connected = true;
-        emit(BrokerEvent.connection("CONNECTED", "Account verified"));
-        startKeepalive();
+        try {
+            client.fetchAccountSummary();
+            lastReplyTime = java.time.Instant.now();
+            uptimeStart = java.time.Instant.now();
+            connected = true;
+            emit(BrokerEvent.connection("CONNECTED", "Account verified"));
+            startKeepalive();
+        } catch (Exception e) {
+            connectionFailures.incrementAndGet();
+            throw e;
+        }
     }
 
     @Override
     public synchronized void disconnect() {
         connected = false;
+        uptimeStart = null;
+        lastReplyTime = null;
         stopKeepalive();
     }
 
@@ -97,6 +111,7 @@ public final class OandaBroker implements Broker {
                 retryCount = 0;
                 log.info("OandaBroker reconnected successfully");
             } catch (Exception e) {
+                connectionFailures.incrementAndGet();
                 log.warn("OandaBroker reconnect attempt failed: {}", e.getMessage());
                 throw e;
             }
@@ -123,8 +138,10 @@ public final class OandaBroker implements Broker {
             }
             try {
                 client.fetchAccountSummary();
+                lastReplyTime = java.time.Instant.now();
                 consecutiveFailures.set(0);
             } catch (Exception e) {
+                connectionFailures.incrementAndGet();
                 int fails = consecutiveFailures.incrementAndGet();
                 log.warn("OANDA keepalive heartbeat failed (consecutive failures: {})", fails, e);
                 if (fails >= 2) {
@@ -146,9 +163,12 @@ public final class OandaBroker implements Broker {
 
     @Override
     public OrderSubmitResult submitOrder(Order order) {
+        totalOrdersSubmitted.incrementAndGet();
         emit(BrokerEvent.submitted(order));
 
         if (!connected) {
+            totalOrdersRejected.incrementAndGet();
+            checkRejectRate();
             emit(BrokerEvent.reject(order, "Broker not connected"));
             return OrderSubmitResult.rejected("Broker not connected");
         }
@@ -183,7 +203,10 @@ public final class OandaBroker implements Broker {
                 double qtyToClose = Math.min(p.quantity(), remainingQty);
 
                 log.info("Closing OANDA trade {} (quantity: {})", tradeId, qtyToClose);
+                long startTime = System.currentTimeMillis();
                 double fillPrice = client.closeTrade(tradeId, String.valueOf(Math.round(qtyToClose)));
+                long duration = System.currentTimeMillis() - startTime;
+                log.info("OANDA closeTrade completed in {}ms | tradeId={} qty={}", duration, tradeId, qtyToClose);
                 if (fillPrice >= 0.0) {
                     remainingQty -= qtyToClose;
                     closedTotal += qtyToClose;
@@ -200,6 +223,8 @@ public final class OandaBroker implements Broker {
                 emit(BrokerEvent.fill(order, avgClosePrice));
                 return OrderSubmitResult.filled("CLOSE_MULTIPLE");
             } else if (!success) {
+                totalOrdersRejected.incrementAndGet();
+                checkRejectRate();
                 emit(BrokerEvent.reject(order, errorMsg));
                 return OrderSubmitResult.rejected(errorMsg);
             } else {
@@ -217,6 +242,7 @@ public final class OandaBroker implements Broker {
         String instrument = toOandaInstrument(order.symbol());
         OandaMarketOrderResult result;
 
+        long startTime = System.currentTimeMillis();
         if (order.type() == Order.Type.MARKET) {
             if (order.stopLoss() > 0 || order.takeProfit() > 0 || order.trailingStop() > 0) {
                 result = client.placeOrder("MARKET", instrument, units, 0.0, order.stopLoss(), order.takeProfit(), order.trailingStop(), order.guaranteed(), order.id());
@@ -226,8 +252,12 @@ public final class OandaBroker implements Broker {
         } else {
             result = client.placeOrder(order.type().name(), instrument, units, order.price(), order.stopLoss(), order.takeProfit(), order.trailingStop(), order.guaranteed(), order.id());
         }
+        long duration = System.currentTimeMillis() - startTime;
+        log.info("OANDA submitOrder placement completed in {}ms | symbol={} type={} side={} qty={}", duration, order.symbol(), order.type(), order.side(), order.quantity());
 
         if (!result.success()) {
+            totalOrdersRejected.incrementAndGet();
+            checkRejectRate();
             String reason = result.errorMessage() != null ? result.errorMessage() : "OANDA order rejected";
             log.warn("OANDA reject {} {} type={}: {}", instrument, units, order.type(), reason);
             emit(BrokerEvent.reject(order, reason));
@@ -247,7 +277,10 @@ public final class OandaBroker implements Broker {
         if (!connected) {
             return OrderSubmitResult.rejected("Broker not connected");
         }
+        long startTime = System.currentTimeMillis();
         boolean ok = client.cancelOrder(brokerOrderId);
+        long duration = System.currentTimeMillis() - startTime;
+        log.info("OANDA cancelOrder completed in {}ms | brokerOrderId={}", duration, brokerOrderId);
         if (ok) {
             emit(BrokerEvent.reject(brokerOrderId, "", "", 0.0, 0.0, "CANCELLED", null, null));
             return OrderSubmitResult.filled(brokerOrderId);
@@ -257,8 +290,12 @@ public final class OandaBroker implements Broker {
 
     @Override
     public List<Position> getPositions() {
+        long startTime = System.currentTimeMillis();
+        List<OandaPositionSnapshot> positions = client.fetchOpenPositions();
+        long duration = System.currentTimeMillis() - startTime;
+        log.info("OANDA getPositions completed in {}ms", duration);
         List<Position> out = new ArrayList<>();
-        for (OandaPositionSnapshot row : client.fetchOpenPositions()) {
+        for (OandaPositionSnapshot row : positions) {
             java.time.Instant entryTime = row.entryTime() != null ? row.entryTime() : java.time.Instant.EPOCH;
             out.add(new Position(row.instrument(), row.side(), row.units(), row.averagePrice(), entryTime, row.clientTag(), row.tradeId()));
         }
@@ -267,7 +304,10 @@ public final class OandaBroker implements Broker {
 
     @Override
     public AccountState getAccountState() {
+        long startTime = System.currentTimeMillis();
         OandaAccountSnapshot account = client.fetchAccountSummary();
+        long duration = System.currentTimeMillis() - startTime;
+        log.info("OANDA getAccountState completed in {}ms", duration);
         return new AccountState(account.balance(), account.nav(), account.currency());
     }
 
@@ -317,6 +357,41 @@ public final class OandaBroker implements Broker {
     private void emit(BrokerEvent event) {
         for (Consumer<BrokerEvent> listener : listeners) {
             listener.accept(event);
+        }
+    }
+
+    @Override
+    public java.time.Instant getUptimeStart() {
+        return uptimeStart;
+    }
+
+    @Override
+    public java.time.Instant getLastReplyTime() {
+        return lastReplyTime;
+    }
+
+    @Override
+    public int getConnectionFailures() {
+        return connectionFailures.get();
+    }
+
+    public int totalOrdersSubmitted() {
+        return totalOrdersSubmitted.get();
+    }
+
+    public int totalOrdersRejected() {
+        return totalOrdersRejected.get();
+    }
+
+    private void checkRejectRate() {
+        int submitted = totalOrdersSubmitted.get();
+        int rejected = totalOrdersRejected.get();
+        if (submitted >= 5) {
+            double rate = (double) rejected / submitted;
+            if (rate > 0.20) {
+                log.warn("CRITICAL: High order reject rate detected! {} rejected out of {} submitted ({:.1f}%)",
+                    rejected, submitted, rate * 100);
+            }
         }
     }
 }

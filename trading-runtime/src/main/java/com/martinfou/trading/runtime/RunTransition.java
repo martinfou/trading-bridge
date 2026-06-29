@@ -9,5 +9,6 @@ public enum RunTransition {
     RESUME,
     COMPLETE,
     FAIL,
-    ARCHIVE
+    ARCHIVE,
+    RETIRE
 }

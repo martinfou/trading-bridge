@@ -20,9 +20,11 @@ if [ ! -f "$FILE_PATH" ]; then
     exit 1
 fi
 
-# Joplin API token from running MCP server
-JOPLIN_TOKEN=$(tr '\0' '\n' < /proc/$(pgrep -f "joplin-mcp-server" | head -1)/environ 2>/dev/null \
-    | grep JOPLIN_TOKEN | cut -d= -f2)
+# Joplin API token from running MCP server (or already in env)
+if [ -z "${JOPLIN_TOKEN:-}" ]; then
+    JOPLIN_TOKEN=$(tr '\0' '\n' < /proc/$(pgrep -f "joplin-mcp-server" | head -1)/environ 2>/dev/null \
+        | grep JOPLIN_TOKEN | cut -d= -f2)
+fi
 if [ -z "$JOPLIN_TOKEN" ]; then
     echo "❌ Could not find Joplin API token"
     exit 1

@@ -878,7 +878,7 @@ public final class OandaStreamingExecutor implements AutoCloseable {
                 order = pending;
             }
 
-            if (MarketSessionResolver.isClosed(order.symbol(), runMode.name(), Instant.now())) {
+            if (MarketSessionResolver.isClosed(order.symbol(), config.resolvedExecutionLabel(), Instant.now())) {
                 log.warn("Forex market is closed for symbol {}. Rejecting order submission.", order.symbol());
                 persistMarketClosedReject(order);
                 rejectedCount++;

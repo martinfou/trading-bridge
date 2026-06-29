@@ -14,6 +14,7 @@ public final class ControlPlaneMain {
         RuntimeStores.Bundle stores = RuntimeStores.sqliteWithBroadcast(config);
         RunManager runManager = new RunManager(stores.eventStore(), stores.deploymentStore());
         restoreActiveRuns(runManager, config);
+        reconcileCompletedRuns(runManager);
         PromoteGateThresholds thresholds = PromoteGateThresholds.loadDefault();
         PromoteService promoteService = new PromoteService(
             runManager,
@@ -29,9 +30,18 @@ public final class ControlPlaneMain {
         HistoricalDataService historicalDataService = new HistoricalDataService();
         historicalDataService.startWeeklyScheduler();
 
+        DailyReconciliationService dailyReconciliationService = new DailyReconciliationService(runManager);
+        dailyReconciliationService.start();
+
+        DriftSignalService driftSignalService = new DriftSignalService(runManager, stores.deploymentStore());
+        DriftReporter driftReporter = new DriftReporter(driftSignalService);
+        driftReporter.start();
+
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             runManager.close();
             historicalDataService.close();
+            dailyReconciliationService.close();
+            driftReporter.stop();
             stores.close();
         }));
 
@@ -51,50 +61,46 @@ public final class ControlPlaneMain {
         System.out.println("WebSocket runs: ws://localhost:" + server.port() + "/ws/runs/{runId}");
     }
 
-    private static void restoreActiveRuns(RunManager runManager, EventStoreConfig config) {
-        String dbPath = config.dbPath().toString();
-        try (java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:sqlite:" + dbPath)) {
-            String sql = """
-                SELECT run_id, json_line 
-                FROM events 
-                WHERE sequence IN (
-                    SELECT MIN(sequence) 
-                    FROM events 
-                    WHERE json_extract(json_line, '$.type') = 'RUN_STARTED' 
-                    GROUP BY run_id
-                )
-                AND (json_extract(json_line, '$.mode') = 'PAPER' OR json_extract(json_line, '$.mode') = 'LIVE')
-                AND run_id NOT IN (
-                    SELECT run_id 
-                    FROM events 
-                    WHERE json_extract(json_line, '$.type') = 'RUN_ENDED' 
-                       OR json_extract(json_line, '$.type') = 'ERROR'
-                )
-                """;
-            try (java.sql.PreparedStatement stmt = conn.prepareStatement(sql);
-                 java.sql.ResultSet rs = stmt.executeQuery()) {
-                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper()
-                    .configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-                while (rs.next()) {
-                    String runId = rs.getString("run_id");
-                    String jsonLine = rs.getString("json_line");
+    static void restoreActiveRuns(RunManager runManager, EventStoreConfig config) {
+        try {
+            RunRecordStore store = runManager.runRecordStore();
+            java.util.List<RunRecord> all = store.listAll();
+            for (RunRecord record : all) {
+                if (record.status() == RunRecord.Status.RUNNING || record.status() == RunRecord.Status.PAUSED) {
                     try {
-                        com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(jsonLine);
-                        com.fasterxml.jackson.databind.JsonNode snapshotNode = root.path("payload").path("configSnapshot");
-                        if (!snapshotNode.isMissingNode()) {
-                            RunConfigSnapshot snapshot = mapper.treeToValue(snapshotNode, RunConfigSnapshot.class);
-                            System.out.println("Restoring active run " + runId + " (" + snapshot.strategyId() + " on " + snapshot.symbol() + ")...");
-                            runManager.restoreRun(runId, snapshot);
-                            runManager.start(runId);
-                        }
+                        System.out.println("Restoring active run " + record.runId() + " (" + record.strategyId() + " on " + record.symbol() + ")...");
+                        runManager.restoreRun(record);
+                        runManager.start(record.runId());
                     } catch (Exception e) {
-                        System.err.println("Failed to restore run " + runId + ": " + e.getMessage());
+                        System.err.println("Failed to restore run " + record.runId() + ": " + e.getMessage());
                         e.printStackTrace();
                     }
                 }
             }
         } catch (Exception e) {
             System.err.println("Failed to restore active runs from database: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    static void reconcileCompletedRuns(RunManager runManager) {
+        try {
+            RunRecordStore store = runManager.runRecordStore();
+            java.util.List<RunRecord> all = store.listAll();
+            for (RunRecord record : all) {
+                if (record.status() == RunRecord.Status.COMPLETED) {
+                    String runId = record.runId();
+                    long fillCount = runManager.eventStore().replayAll(runId).stream()
+                        .filter(e -> e.type() == com.martinfou.trading.backtest.events.RunEventType.FILL)
+                        .count();
+                    long tradeCount = runManager.tradeStore().getTrades(runId).size();
+                    if (fillCount != 2 * tradeCount) {
+                        System.err.println("Reconciliation warning: Run " + runId + " (" + record.strategyId() + ") has a mismatch between FILL events (" + fillCount + ") and trades count (" + tradeCount + "). Expected " + (2 * tradeCount) + " fills.");
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to reconcile completed runs: " + e.getMessage());
             e.printStackTrace();
         }
     }

@@ -310,6 +310,33 @@ public final class ControlPlaneServer implements AutoCloseable {
                 "status", "ok",
                 "version", VERSION,
                 "dataCatalog", true)))
+            .get("/api/diagnostics/integrity", ctx -> {
+                if (runManager.eventStore() instanceof SqliteEventStore sqliteStore) {
+                    List<String> errors = SqliteEventStore.checkDatabaseIntegrity(sqliteStore.connection());
+                    if (errors.isEmpty()) {
+                        ctx.json(Map.of("status", "OK", "errors", List.of()));
+                    } else {
+                        ctx.status(500).json(Map.of("status", "CORRUPTED", "errors", errors));
+                    }
+                } else {
+                    ctx.json(Map.of("status", "OK", "message", "Database check not supported for current event store type."));
+                }
+            })
+            .get("/api/drift/comparison", ctx -> {
+                String strategyId = ctx.queryParam("strategyId");
+                if (strategyId == null || strategyId.isBlank()) {
+                    throw new io.javalin.http.BadRequestResponse("Query parameter 'strategyId' is required");
+                }
+                DriftSignalService service = summaryService.driftSignalService();
+                if (service == null) {
+                    throw new io.javalin.http.InternalServerErrorResponse("Drift validation service is not initialized");
+                }
+                Optional<DriftEvaluation> evalOpt = service.evaluateStrategy(strategyId, Instant.now());
+                if (evalOpt.isEmpty()) {
+                    throw new io.javalin.http.NotFoundResponse("Drift comparison not found or strategy not active: " + strategyId);
+                }
+                ctx.json(evalOpt.get().toMap());
+            })
             .get("/api/sentiment/{instrument}", ctx -> {
                 String instrument = ctx.pathParam("instrument");
                 var credsOpt = com.martinfou.trading.broker.BrokerCredentials.oandaFromEnvironment();
@@ -375,6 +402,34 @@ public final class ControlPlaneServer implements AutoCloseable {
             .post("/api/weekly-builder/deploy", ctx -> respondWeeklyTrigger(ctx, weeklyBuilderService.triggerDeployAsync()))
             .get("/control/summary", ctx -> ctx.json(summaryService.buildSummary()))
             .get("/api/control/summary", ctx -> ctx.json(summaryService.buildSummary()))
+            .get("/api/broker/health", ctx -> {
+                java.util.List<Map<String, Object>> list = new java.util.ArrayList<>();
+                for (var entry : runManager.getActiveExecutors().entrySet()) {
+                    String runId = entry.getKey();
+                    AutoCloseable exec = entry.getValue();
+                    if (exec instanceof OandaStreamingExecutor oandaExec) {
+                        com.martinfou.trading.broker.Broker broker = oandaExec.getBroker();
+                        if (broker != null) {
+                            try {
+                                java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
+                                map.put("runId", runId);
+                                map.put("connected", broker.isConnected());
+                                map.put("uptimeStart", broker.getUptimeStart() != null ? broker.getUptimeStart().toString() : null);
+                                map.put("lastReplyTime", broker.getLastReplyTime() != null ? broker.getLastReplyTime().toString() : null);
+                                map.put("connectionFailures", broker.getConnectionFailures());
+                                list.add(map);
+                            } catch (Exception e) {
+                                log.warn("Failed to query broker health for run {}: {}", runId, e.getMessage());
+                                java.util.Map<String, Object> errMap = new java.util.LinkedHashMap<>();
+                                errMap.put("runId", runId);
+                                errMap.put("error", e.getMessage());
+                                list.add(errMap);
+                            }
+                        }
+                    }
+                }
+                ctx.json(list);
+            })
             .get("/api/broker-accounts", ctx -> ctx.json(Map.of(
                 "accounts", runManager.brokerAccountRegistry().listMasked())))
             .get("/api/broker-accounts/balances", ctx -> {
@@ -761,6 +816,23 @@ public final class ControlPlaneServer implements AutoCloseable {
                     }
                 }
             })
+            .post("/api/runs/{runId}/retire", ctx -> {
+                String runId = ctx.pathParam("runId");
+                String reason = ctx.queryParam("reason");
+                if (reason == null || reason.isBlank()) {
+                    try {
+                        Map<?, ?> body = ctx.bodyAsClass(Map.class);
+                        if (body != null && body.containsKey("reason")) {
+                            reason = String.valueOf(body.get("reason"));
+                        }
+                    } catch (Exception e) {
+                        // fallback to default
+                    }
+                }
+                RunRecord record = runManager.retire(runId, reason);
+                ctx.status(HttpStatus.ACCEPTED);
+                ctx.json(toRunJson(runManager, record));
+            })
             .get("/api/runs/{runId}/export", ctx -> {
                 String runId = ctx.pathParam("runId");
                 RunRecord record = runManager.getRun(runId)
@@ -1087,6 +1159,40 @@ public final class ControlPlaneServer implements AutoCloseable {
                     })
                     .toList();
                 ctx.json(Map.of("runId", runId, "bars", serializedBars));
+            })
+            .get("/api/events/{runId}/audit", ctx -> {
+                String runId = ctx.pathParam("runId");
+                runManager.getRun(runId)
+                    .orElseThrow(() -> new NotFoundException("Run not found: " + runId));
+
+                String typeParam = ctx.queryParam("type");
+                List<RunEvent> allEvents = runManager.eventStore().replayAll(runId);
+                java.util.stream.Stream<RunEvent> stream = allEvents.stream();
+                
+                if (typeParam != null && !typeParam.isBlank()) {
+                    try {
+                        RunEventType type = RunEventType.valueOf(typeParam.toUpperCase());
+                        stream = stream.filter(e -> e.type() == type);
+                    } catch (IllegalArgumentException e) {
+                        throw new BadRequestException("Invalid event type: " + typeParam);
+                    }
+                } else {
+                    java.util.Set<RunEventType> auditTypes = java.util.Set.of(
+                        RunEventType.CONNECTION,
+                        RunEventType.BROKER_CONNECT,
+                        RunEventType.BROKER_DISCONNECT,
+                        RunEventType.RECONNECT_ATTEMPT,
+                        RunEventType.RECONNECT_FAILURE,
+                        RunEventType.RATE_LIMIT_TRIGGERED,
+                        RunEventType.STALE_PRICE_DETECTED,
+                        RunEventType.RECONCILIATION_ALERT,
+                        RunEventType.ERROR,
+                        RunEventType.OPERATOR_ACTION
+                    );
+                    stream = stream.filter(e -> auditTypes.contains(e.type()));
+                }
+
+                ctx.json(stream.toList());
             })
             .get("/api/runs/{runId}/events", ctx -> {
                 String runId = ctx.pathParam("runId");
@@ -1440,75 +1546,8 @@ public final class ControlPlaneServer implements AutoCloseable {
     }
 
     private static List<Map<String, Object>> reconstructTradesFromFills(List<RunEvent> events) {
-        List<Map<String, Object>> trades = new ArrayList<>();
-        Map<String, List<Map<String, Object>>> openFills = new HashMap<>();
-
-        for (RunEvent event : events) {
-            if (event.type() != RunEventType.FILL) {
-                continue;
-            }
-            Map<String, Object> payload = event.payload();
-            String symbol = String.valueOf(payload.get("symbol"));
-            String side = String.valueOf(payload.get("side"));
-            double qty = toDouble(payload.get("quantity"));
-            double price = toDouble(payload.get("price"));
-            double stopLoss = toDouble(payload.get("stopLoss"));
-            double takeProfit = toDouble(payload.get("takeProfit"));
-            Instant timestamp = event.timestamp();
-
-            List<Map<String, Object>> list = openFills.computeIfAbsent(symbol, k -> new ArrayList<>());
-
-            double remainingQty = qty;
-            while (remainingQty > 0 && !list.isEmpty() && !list.get(0).get("side").equals(side)) {
-                Map<String, Object> first = list.get(0);
-                double firstQty = toDouble(first.get("quantity"));
-                double matchQty = Math.min(remainingQty, firstQty);
-
-                double entryPrice = toDouble(first.get("price"));
-                double exitPrice = price;
-                String entrySide = String.valueOf(first.get("side"));
-
-                double pnl;
-                if (entrySide.equals("BUY")) {
-                    pnl = (exitPrice - entryPrice) * matchQty;
-                } else {
-                    pnl = (entryPrice - exitPrice) * matchQty;
-                }
-
-                Map<String, Object> trade = new LinkedHashMap<>();
-                trade.put("symbol", symbol);
-                trade.put("side", entrySide);
-                trade.put("entryPrice", entryPrice);
-                trade.put("exitPrice", exitPrice);
-                trade.put("quantity", matchQty);
-                trade.put("entryTime", ((Instant) first.get("timestamp")).toString());
-                trade.put("exitTime", timestamp.toString());
-                trade.put("pnl", pnl);
-                trade.put("stopLoss", first.getOrDefault("stopLoss", 0.0));
-                trade.put("takeProfit", first.getOrDefault("takeProfit", 0.0));
-                trades.add(trade);
-
-                remainingQty -= matchQty;
-                double newFirstQty = firstQty - matchQty;
-                if (newFirstQty <= 0) {
-                    list.remove(0);
-                } else {
-                    first.put("quantity", newFirstQty);
-                }
-            }
-
-            if (remainingQty > 0) {
-                Map<String, Object> newFill = new LinkedHashMap<>();
-                newFill.put("side", side);
-                newFill.put("price", price);
-                newFill.put("quantity", remainingQty);
-                newFill.put("timestamp", timestamp);
-                newFill.put("stopLoss", stopLoss);
-                newFill.put("takeProfit", takeProfit);
-                list.add(newFill);
-            }
-        }
-        return trades;
+        List<com.martinfou.trading.core.Trade> list = com.martinfou.trading.backtest.persistence.TradeReconstructor.reconstruct(events);
+        return list.stream().map(ControlPlaneServer::tradeToMap).toList();
     }
 
     private static List<Map<String, Object>> reconstructPendingOrders(List<RunEvent> events) {
