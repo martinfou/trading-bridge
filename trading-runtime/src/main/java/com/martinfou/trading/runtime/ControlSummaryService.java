@@ -401,7 +401,9 @@ public final class ControlSummaryService {
         RunMode mode = record.mode();
 
         List<RunRecord> siblingRuns = runManager.runRecordStore().listAll().stream()
-            .filter(r -> strategyId.equals(r.strategyId()) && mode == r.mode())
+            .filter(r -> java.util.Objects.equals(strategyId, r.strategyId())
+                && mode == r.mode()
+                && java.util.Objects.equals(record.symbol(), r.symbol()))
             .toList();
 
         double cumulativeRealizedPnL = 0.0;
@@ -418,15 +420,15 @@ public final class ControlSummaryService {
         }
 
         for (RunRecord sibling : siblingRuns) {
-            List<RunEvent> siblingEvents = runManager.eventStore().replayAll(sibling.runId());
-            com.martinfou.trading.backtest.persistence.TradeReconstructor.ReconstructionResult siblingResult =
-                com.martinfou.trading.backtest.persistence.TradeReconstructor.reconstructWithOpen(siblingEvents);
-
-            cumulativeRealizedPnL += siblingResult.closedTrades().stream().mapToDouble(com.martinfou.trading.core.Trade::pnl).sum();
-
             if (sibling.status() == RunRecord.Status.RUNNING) {
-                double sibPrice = currentPrice;
-                if (sibPrice == 0.0 && !sibling.runId().equals(record.runId())) {
+                List<RunEvent> siblingEvents = runManager.eventStore().replayAll(sibling.runId());
+                com.martinfou.trading.backtest.persistence.TradeReconstructor.ReconstructionResult siblingResult =
+                    com.martinfou.trading.backtest.persistence.TradeReconstructor.reconstructWithOpen(siblingEvents);
+
+                cumulativeRealizedPnL += siblingResult.closedTrades().stream().mapToDouble(com.martinfou.trading.core.Trade::pnl).sum();
+
+                double sibPrice = sibling.runId().equals(record.runId()) ? currentPrice : 0.0;
+                if (sibPrice == 0.0) {
                     Optional<AutoCloseable> sibExecOpt = runManager.getActiveExecutor(sibling.runId());
                     if (sibExecOpt.isPresent() && sibExecOpt.get() instanceof OandaStreamingExecutor sibExec) {
                         sibPrice = sibExec.getLastMidPrice();
@@ -450,6 +452,13 @@ public final class ControlSummaryService {
                         );
                     }
                 }
+            } else {
+                List<com.martinfou.trading.core.Trade> closedTrades = runManager.tradeStore().getTrades(sibling.runId());
+                if (closedTrades.isEmpty()) {
+                    List<RunEvent> siblingEvents = runManager.eventStore().replayAll(sibling.runId());
+                    closedTrades = com.martinfou.trading.backtest.persistence.TradeReconstructor.reconstruct(siblingEvents);
+                }
+                cumulativeRealizedPnL += closedTrades.stream().mapToDouble(com.martinfou.trading.core.Trade::pnl).sum();
             }
         }
 

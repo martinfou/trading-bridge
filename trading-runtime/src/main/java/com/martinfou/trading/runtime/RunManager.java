@@ -716,7 +716,9 @@ public class RunManager implements RunLifecycle, AutoCloseable {
             RunMode mode = targetRecord.mode();
 
             List<RunRecord> siblingRuns = runRecordStore.listAll().stream()
-                .filter(r -> strategyId.equals(r.strategyId()) && mode == r.mode())
+                .filter(r -> java.util.Objects.equals(strategyId, r.strategyId())
+                    && mode == r.mode()
+                    && java.util.Objects.equals(targetRecord.symbol(), r.symbol()))
                 .toList();
 
             List<com.martinfou.trading.core.Trade> cumulativeTrades = new ArrayList<>();
@@ -728,10 +730,10 @@ public class RunManager implements RunLifecycle, AutoCloseable {
                 cumulativeTrades.addAll(siblingTrades);
             }
             // Sort by entry time
-            cumulativeTrades.sort((t1, t2) -> {
-                if (t1.entryTime() == null || t2.entryTime() == null) return 0;
-                return t1.entryTime().compareTo(t2.entryTime());
-            });
+            cumulativeTrades.sort(Comparator.comparing(
+                com.martinfou.trading.core.Trade::entryTime,
+                Comparator.nullsLast(Instant::compareTo)
+            ));
             return cumulativeTrades;
         }
 
