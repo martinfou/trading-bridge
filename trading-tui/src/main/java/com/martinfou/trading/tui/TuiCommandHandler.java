@@ -58,11 +58,13 @@ public final class TuiCommandHandler {
                 case "configure-oanda", "oanda-setup" -> configureOanda(reader, liveOutput);
                 case "run" -> showRun(parts);
                 case "events" -> showEvents(parts);
+                case "compare" -> compare(parts);
                 case "kill" -> kill(parts);
                 case "inbox", "sq" -> sqBridge(parts);
                 case "weekly-build", "weekly" -> weeklyBuild(parts);
                 case "weekly-status", "wb-status" -> weeklyStatus();
                 case "data" -> dataCommand(parts);
+                case "health" -> brokerHealth();
                 case "quit", "exit", "q" -> List.of("__QUIT__");
                 default -> List.of("Unknown command: /" + command + ". Type /help");
             };
@@ -91,7 +93,9 @@ public final class TuiCommandHandler {
             "  /configure-oanda   Interactive wizard to configure OANDA token and account ID",
             "  /run <runId>       Run status + full backtest report",
             "  /events <runId>    Last 20 run events",
+            "  /compare <id>      Compare live performance of a strategy with its backtest baseline",
             "  /kill <id> [reason]",
+            "  /health            Broker connection health (uptime, failures per run)",
             "  /sq | /inbox [process]   SQ bridge status or trigger inbox drain",
             "  /weekly-status           Weekly builder hot-folder counts",
             "  /weekly-build [--plan|--compile|--deploy]   Trigger Job 1/2/3",
@@ -265,6 +269,65 @@ public final class TuiCommandHandler {
         return tailEvents(runId, 20);
     }
 
+    private List<String> compare(List<String> parts) throws IOException, InterruptedException {
+        if (parts.size() < 2) {
+            return List.of("Usage: /compare <strategyId>");
+        }
+        String strategyId = parts.get(1);
+        JsonNode response = client.driftComparison(strategyId);
+
+        List<String> output = new ArrayList<>();
+        output.add("=====================================================================");
+        output.add(" Drift Comparison Report for Strategy: " + response.path("strategyId").asText());
+        output.add("=====================================================================");
+        output.add("Recommendation : " + response.path("recommendation").asText());
+        output.add("Reason         : " + response.path("reason").asText());
+        output.add("DataSource     : " + response.path("dataSource").asText());
+        output.add("Evaluated At   : " + response.path("evaluatedAt").asText());
+        if (response.hasNonNull("executionLabel")) {
+            output.add("Deployment     : " + response.path("executionLabel").asText());
+        }
+        output.add("");
+
+        JsonNode metrics = response.path("comparisonMetrics");
+        if (metrics.isMissingNode() || metrics.isNull()) {
+            output.add("No detailed side-by-side metrics available (likely insufficient data).");
+        } else {
+            output.add(String.format("%-25s | %-12s | %-12s | %-12s", "Metric", "Baseline", "Live", "Status"));
+            output.add("---------------------------------------------------------------------");
+
+            // Collect signals for status mapping
+            Map<String, String> signalsStatus = new LinkedHashMap<>();
+            JsonNode signalsNode = response.path("signals");
+            if (signalsNode.isArray()) {
+                for (JsonNode sig : signalsNode) {
+                    signalsStatus.put(sig.path("dimension").asText(), sig.path("status").asText());
+                }
+            }
+
+            appendMetricRow(output, "Win Rate", metrics.path("baselineWinRate").asDouble(), metrics.path("liveWinRate").asDouble(), "%", signalsStatus.getOrDefault("WIN_RATE", "OK"));
+            appendMetricRow(output, "Sharpe Ratio", metrics.path("baselineSharpe").asDouble(), metrics.path("liveSharpe").asDouble(), "", signalsStatus.getOrDefault("SHARPE_RATIO", "OK"));
+            appendMetricRow(output, "Profit Factor", metrics.path("baselinePF").asDouble(), metrics.path("livePF").asDouble(), "", signalsStatus.getOrDefault("PROFIT_FACTOR", "OK"));
+            appendMetricRow(output, "Sortino Ratio", metrics.path("baselineSortino").asDouble(), metrics.path("liveSortino").asDouble(), "", signalsStatus.getOrDefault("SORTINO_RATIO", "OK"));
+            appendMetricRow(output, "Calmar Ratio", metrics.path("baselineCalmar").asDouble(), metrics.path("liveCalmar").asDouble(), "", signalsStatus.getOrDefault("CALMAR_RATIO", "OK"));
+            appendMetricRow(output, "Average P&L", metrics.path("baselineAvgPnl").asDouble(), metrics.path("liveAvgPnl").asDouble(), "", signalsStatus.getOrDefault("AVERAGE_PNL", "OK"));
+            appendMetricRow(output, "Pearson Correlation", 1.0, metrics.path("pearsonCorrelation").asDouble(), "", signalsStatus.getOrDefault("EQUITY_CORRELATION", "OK"));
+
+            double ksStat = metrics.path("ksStatistic").asDouble();
+            String ksStatus = signalsStatus.getOrDefault("STATISTICAL_DISTRIBUTION", "OK");
+            output.add(String.format("%-25s | %-12s | %-12.4f | %-12s", "KS P-Val Distribution", "N/A", ksStat, ksStatus));
+
+            boolean costExceeded = metrics.path("costDriftExceeded").asBoolean();
+            output.add(String.format("%-25s | %-12s | %-12s | %-12s", "Cost Drift Exceeded", "N/A", costExceeded ? "YES" : "NO", signalsStatus.getOrDefault("COST_DRIFT", "OK")));
+        }
+        output.add("=====================================================================");
+        return output;
+    }
+
+    private void appendMetricRow(List<String> output, String name, double baseline, double live, String suffix, String status) {
+        output.add(String.format("%-25s | %-12.2f%s | %-12.2f%s | %-12s", name, baseline, suffix, live, suffix, status));
+    }
+
     private List<String> sqBridge(List<String> parts) throws IOException, InterruptedException {
         if (parts.size() >= 2 && "process".equalsIgnoreCase(parts.get(1))) {
             JsonNode response = client.processSqInbox();
@@ -362,6 +425,31 @@ public final class TuiCommandHandler {
 
     private static String capitalize(String step) {
         return step.substring(0, 1).toUpperCase(Locale.ROOT) + step.substring(1);
+    }
+
+    private List<String> brokerHealth() throws IOException, InterruptedException {
+        JsonNode items = client.brokerHealth();
+        if (!items.isArray() || items.isEmpty()) {
+            return List.of("No active broker-backed runs.");
+        }
+        List<String> lines = new ArrayList<>();
+        lines.add(String.format("%-36s  %-9s  %-24s  %-24s  %s",
+            "Run ID", "Connected", "Uptime Since", "Last Reply", "Failures"));
+        lines.add("-".repeat(110));
+        for (JsonNode item : items) {
+            if (item.has("error")) {
+                lines.add(item.path("runId").asText("?") + "  ERROR: " + item.get("error").asText());
+                continue;
+            }
+            String runId = item.path("runId").asText("—");
+            boolean connected = item.path("connected").asBoolean(false);
+            String uptimeStart = item.hasNonNull("uptimeStart") ? item.get("uptimeStart").asText() : "—";
+            String lastReply = item.hasNonNull("lastReplyTime") ? item.get("lastReplyTime").asText() : "—";
+            int failures = item.path("connectionFailures").asInt(0);
+            lines.add(String.format("%-36s  %-9s  %-24s  %-24s  %d",
+                runId, connected ? "✓ YES" : "✗ NO", uptimeStart, lastReply, failures));
+        }
+        return lines;
     }
 
     private List<String> kill(List<String> parts) throws IOException, InterruptedException {

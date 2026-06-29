@@ -30,6 +30,18 @@ public interface Broker extends AutoCloseable {
 
     void addEventListener(Consumer<BrokerEvent> listener);
 
+    default java.time.Instant getUptimeStart() {
+        return null;
+    }
+
+    default java.time.Instant getLastReplyTime() {
+        return null;
+    }
+
+    default int getConnectionFailures() {
+        return 0;
+    }
+
     @Override
     default void close() {
         disconnect();

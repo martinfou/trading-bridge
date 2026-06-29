@@ -3,6 +3,9 @@ package com.martinfou.trading.runtime;
 import com.martinfou.trading.backtest.events.RunEvent;
 import com.martinfou.trading.backtest.events.RunEventJson;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -19,6 +22,7 @@ import java.util.List;
  */
 public final class SqliteEventStore implements EventStore {
 
+    private static final Logger log = LoggerFactory.getLogger(SqliteEventStore.class);
     private static final String JDBC_PREFIX = "jdbc:sqlite:";
 
     private final EventStoreConfig config;
@@ -33,6 +37,12 @@ public final class SqliteEventStore implements EventStore {
             config.ensureParentDirectories();
             connection = DriverManager.getConnection(JDBC_PREFIX + config.dbPath());
             initSchema(connection);
+            List<String> integrityErrors = checkDatabaseIntegrity(connection);
+            if (!integrityErrors.isEmpty()) {
+                log.error("CRITICAL: SQLite integrity check failed for {}: {}", config.dbPath(), integrityErrors);
+            } else {
+                log.info("SQLite database integrity check passed successfully.");
+            }
         } catch (IOException | SQLException e) {
             throw new IllegalStateException("Failed to open EventStore at " + config.dbPath(), e);
         }
@@ -45,6 +55,7 @@ public final class SqliteEventStore implements EventStore {
         String jsonLine = RunEventJson.toJsonLine(event);
         String createdAt = Instant.now().toString();
 
+        long startTime = System.currentTimeMillis();
         synchronized (connection) {
             try (PreparedStatement ps = connection.prepareStatement(
                 "INSERT INTO events (run_id, json_line, created_at) VALUES (?, ?, ?)",
@@ -58,7 +69,12 @@ public final class SqliteEventStore implements EventStore {
                     if (!keys.next()) {
                         throw new IllegalStateException("SQLite did not return generated sequence");
                     }
-                    return keys.getLong(1);
+                    long sequence = keys.getLong(1);
+                    long duration = System.currentTimeMillis() - startTime;
+                    if (duration > 100) {
+                        log.warn("CRITICAL DATABASE SLOWDOWN: SQLite event write took {}ms (threshold: 100ms)", duration);
+                    }
+                    return sequence;
                 }
             } catch (SQLException e) {
                 throw new IllegalStateException("Failed to append event for run " + runId, e);
@@ -129,6 +145,7 @@ public final class SqliteEventStore implements EventStore {
     }
 
     private List<StoredRunEvent> fetchRecords(String sql, StatementBinder binder) {
+        long startTime = System.currentTimeMillis();
         synchronized (connection) {
             try (PreparedStatement ps = connection.prepareStatement(sql)) {
                 binder.bind(ps);
@@ -138,6 +155,10 @@ public final class SqliteEventStore implements EventStore {
                         long sequence = rs.getLong("sequence");
                         RunEvent event = RunEventJson.fromJsonLine(rs.getString("json_line"));
                         result.add(new StoredRunEvent(sequence, event));
+                    }
+                    long duration = System.currentTimeMillis() - startTime;
+                    if (duration > 100) {
+                        log.warn("CRITICAL DATABASE SLOWDOWN: SQLite event query took {}ms (threshold: 100ms)", duration);
                     }
                     return List.copyOf(result);
                 }
@@ -170,5 +191,36 @@ public final class SqliteEventStore implements EventStore {
 
     public Connection connection() {
         return connection;
+    }
+
+    public static List<String> checkDatabaseIntegrity(Connection connection) {
+        List<String> errors = new ArrayList<>();
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery("PRAGMA integrity_check")) {
+            while (rs.next()) {
+                String status = rs.getString(1);
+                if (!"ok".equalsIgnoreCase(status)) {
+                    errors.add(status);
+                }
+            }
+        } catch (SQLException e) {
+            errors.add("Failed to run integrity check: " + e.getMessage());
+        }
+        return errors;
+    }
+
+    public int pruneEventsOlderThanDays(int days) {
+        synchronized (connection) {
+            try (PreparedStatement ps = connection.prepareStatement(
+                "DELETE FROM events WHERE datetime(created_at) < datetime('now', ?)")) {
+                ps.setString(1, "-" + days + " days");
+                int pruned = ps.executeUpdate();
+                log.info("Pruned {} event(s) older than {} days from database", pruned, days);
+                return pruned;
+            } catch (SQLException e) {
+                log.error("Failed to prune old events from database", e);
+                return 0;
+            }
+        }
     }
 }

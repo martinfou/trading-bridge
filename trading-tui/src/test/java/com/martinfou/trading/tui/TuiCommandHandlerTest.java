@@ -328,4 +328,55 @@ class TuiCommandHandlerTest {
         List<String> lines2 = handler.handle("/data download --sync 123");
         assertTrue(lines2.getFirst().contains("Invalid timeframe"));
     }
+
+    @Test
+    void compareCommand_outputsSideBySideMetrics() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/api/drift/comparison", exchange -> {
+            byte[] body = """
+                {
+                  "strategyId": "LondonOpenRangeBreakout",
+                  "recommendation": "PAUSE",
+                  "dataSource": "BROKER",
+                  "reason": "PAUSE — 2 dimension(s) breached",
+                  "evaluatedAt": "2026-06-28T21:30:00Z",
+                  "signals": [
+                    { "dimension": "SHARPE_RATIO", "status": "BREACHED" },
+                    { "dimension": "PROFIT_FACTOR", "status": "BREACHED" }
+                  ],
+                  "comparisonMetrics": {
+                    "baselineWinRate": 55.0,
+                    "liveWinRate": 60.0,
+                    "baselineSharpe": 1.5,
+                    "liveSharpe": 0.2,
+                    "baselinePF": 1.5,
+                    "livePF": 0.8,
+                    "baselineSortino": 1.8,
+                    "liveSortino": 1.9,
+                    "baselineCalmar": 1.2,
+                    "liveCalmar": 1.3,
+                    "baselineAvgPnl": 50.0,
+                    "liveAvgPnl": 60.0,
+                    "pearsonCorrelation": 0.95,
+                    "ksStatistic": 0.05,
+                    "costDriftExceeded": false
+                  }
+                }
+                """.getBytes();
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.start();
+        try {
+            var handler = new TuiCommandHandler(new ControlPlaneClient("http://127.0.0.1:" + server.getAddress().getPort()));
+            List<String> lines = handler.handle("/compare LondonOpenRangeBreakout");
+            assertTrue(lines.stream().anyMatch(l -> l.contains("Drift Comparison Report for Strategy: LondonOpenRangeBreakout")));
+            assertTrue(lines.stream().anyMatch(l -> l.contains("Sharpe Ratio")));
+            assertTrue(lines.stream().anyMatch(l -> l.contains("Profit Factor")));
+        } finally {
+            server.stop(0);
+        }
+    }
 }

@@ -54,8 +54,30 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         String strategyTimeframe,
         Double maxDailyDrawdownPct,
         Double dailyLossLimitPct,
-        Double weeklyLossLimitPct
+        Double weeklyLossLimitPct,
+        Boolean force
     ) {
+        public StartRunRequest(
+            String strategyId,
+            String symbol,
+            String mode,
+            BarSourceResolver.BarsSource barsSource,
+            Double capital,
+            Double lotSize,
+            Double commissionPerTrade,
+            Double slippagePct,
+            String executionLabel,
+            String brokerAccountId,
+            String dataTimeframe,
+            String strategyTimeframe,
+            Double maxDailyDrawdownPct,
+            Double dailyLossLimitPct,
+            Double weeklyLossLimitPct
+        ) {
+            this(strategyId, symbol, mode, barsSource, capital, lotSize, commissionPerTrade, slippagePct,
+                executionLabel, brokerAccountId, dataTimeframe, strategyTimeframe, maxDailyDrawdownPct, dailyLossLimitPct, weeklyLossLimitPct, false);
+        }
+
         public StartRunRequest(
             String strategyId,
             String symbol,
@@ -69,7 +91,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
             String brokerAccountId
         ) {
             this(strategyId, symbol, mode, barsSource, capital, lotSize, commissionPerTrade, slippagePct,
-                executionLabel, brokerAccountId, null, null, null, null, null);
+                executionLabel, brokerAccountId, null, null, null, null, null, false);
         }
 
         public StartRunRequest(
@@ -84,7 +106,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
             String executionLabel
         ) {
             this(strategyId, symbol, mode, barsSource, capital, lotSize, commissionPerTrade, slippagePct,
-                executionLabel, null, null, null, null, null, null);
+                executionLabel, null, null, null, null, null, null, false);
         }
 
         public StartRunRequest(
@@ -98,7 +120,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
             String executionLabel
         ) {
             this(strategyId, symbol, mode, barsSource, capital, null, commissionPerTrade, slippagePct,
-                executionLabel, null, null, null, null, null, null);
+                executionLabel, null, null, null, null, null, null, false);
         }
     }
 
@@ -110,12 +132,14 @@ public class RunManager implements RunLifecycle, AutoCloseable {
     private final BrokerAccountRegistry brokerAccountRegistry;
     private final Map<String, DailyDrawdownMetrics> dailyDrawdownByRun = new ConcurrentHashMap<>();
     private final Map<String, RunRecord> runs = new ConcurrentHashMap<>();
+    private final Map<String, java.util.concurrent.locks.ReentrantLock> startupLocks = new ConcurrentHashMap<>();
     private final Map<String, RunConfigSnapshot> snapshots = new ConcurrentHashMap<>();
     private final Map<String, AutoCloseable> activeExecutors = new ConcurrentHashMap<>();
     private final CopyOnWriteArrayList<RunTransitionListener> listeners = new CopyOnWriteArrayList<>();
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     private final com.martinfou.trading.backtest.persistence.SqliteTradeAlignmentStore alignmentStore;
     private final com.martinfou.trading.backtest.persistence.SqliteTradeStore tradeStore;
+    private final RunRecordStore runRecordStore;
     private final Map<String, List<com.martinfou.trading.core.Order>> btOrdersByRun = new ConcurrentHashMap<>();
     private final Map<String, List<com.martinfou.trading.core.Order>> liveOrdersByRun = new ConcurrentHashMap<>();
     private final Map<String, Integer> consecutiveTimeDrifts = new ConcurrentHashMap<>();
@@ -178,6 +202,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
             : BrokerAccountRegistry.loadDefault();
         this.alignmentStore = createAlignmentStore(eventStore);
         this.tradeStore = createTradeStore(eventStore);
+        this.runRecordStore = createRunRecordStore(eventStore);
     }
 
     private com.martinfou.trading.backtest.persistence.SqliteTradeAlignmentStore createAlignmentStore(EventStore eventStore) {
@@ -244,6 +269,35 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         }
     }
 
+    private RunRecordStore createRunRecordStore(EventStore eventStore) {
+        EventStore unwrapped = eventStore;
+        while (unwrapped != null) {
+            if (unwrapped instanceof ReconcilingEventStore) {
+                unwrapped = ((ReconcilingEventStore) unwrapped).delegate;
+            } else if (unwrapped.getClass().getSimpleName().equals("BroadcastingEventStore")) {
+                try {
+                    java.lang.reflect.Field field = unwrapped.getClass().getDeclaredField("delegate");
+                    field.setAccessible(true);
+                    unwrapped = (EventStore) field.get(unwrapped);
+                } catch (Exception e) {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        
+        if (unwrapped instanceof SqliteEventStore) {
+            EventStoreConfig config = ((SqliteEventStore) unwrapped).config();
+            if (config != null) {
+                return new SqliteRunRecordStore(config);
+            }
+        }
+        
+        return new InMemoryRunRecordStore();
+    }
+
+
     public KillSwitchRegistry killSwitchRegistry() {
         return killSwitchRegistry;
     }
@@ -258,6 +312,10 @@ public class RunManager implements RunLifecycle, AutoCloseable {
 
     public Optional<AutoCloseable> getActiveExecutor(String runId) {
         return Optional.ofNullable(activeExecutors.get(runId));
+    }
+
+    public Map<String, AutoCloseable> getActiveExecutors() {
+        return Map.copyOf(activeExecutors);
     }
 
     public Map<String, Object> getAlignmentDetails(String runId) {
@@ -361,6 +419,15 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         runs.put(runId, record);
         notifyTransition(null, record, RunTransition.REGISTER);
         return record;
+    }
+
+    public void restoreRun(RunRecord record) {
+        if (record == null) {
+            throw new IllegalArgumentException("record must not be null");
+        }
+        runs.put(record.runId(), record);
+        RunConfigSnapshot snapshot = RunConfigSnapshot.fromRecord(record);
+        snapshots.put(record.runId(), snapshot);
     }
 
     @Override
@@ -482,6 +549,25 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         return record;
     }
 
+    /**
+     * Retires a run — gracefully marks it RETIRED so it is excluded from dashboards and
+     * duplicate-run checks without being considered a failure. Only COMPLETED or FAILED
+     * runs can be retired; RUNNING runs must be killed first.
+     */
+    public RunRecord retire(String runId, String reason) {
+        RunRecord record = requireRun(runId);
+        RunRecord before = record;
+        RunRecord.Status s = record.status();
+        if (s != RunRecord.Status.COMPLETED && s != RunRecord.Status.FAILED && s != RunRecord.Status.ARCHIVED) {
+            throw new IllegalStateException(
+                "Cannot retire run " + runId + " from status " + s + ". Kill it first.");
+        }
+        record.markRetired(reason != null ? reason : "Retired by operator");
+        log.info("Run {} retired: {}", runId, record.errorMessage().orElse(""));
+        notifyTransition(before, record, RunTransition.RETIRE);
+        return record;
+    }
+
     @Override
     public Optional<RunRecord> get(String runId) {
         return getRun(runId);
@@ -506,24 +592,43 @@ public class RunManager implements RunLifecycle, AutoCloseable {
 
     /** Convenience: validate request, register snapshot, and start execution. */
     public String startRun(StartRunRequest request) throws IOException {
-        String symbol = request.symbol() != null && !request.symbol().isBlank()
-            ? request.symbol()
-            : StrategyCatalog.defaultSymbol(request.strategyId());
-        RunConfigSnapshot configSnapshot = RunConfigSnapshot.fromRequest(request, symbol);
-        RunConfigSnapshot resolved = resolveBrokerAccount(request.strategyId(), request.brokerAccountId(), configSnapshot);
-        if (isBrokerBackedRun(resolved)) {
-            try {
-                Broker broker = brokerFactory.create(resolved);
-                double equity = broker.getAccountState().equity();
-                resolved = resolved.withCapital(equity);
-            } catch (Exception e) {
-                log.warn("Failed to retrieve broker account equity for run: {}. Falling back to default or requested capital.", e.getMessage());
+        var lock = startupLocks.computeIfAbsent(request.strategyId(), k -> new java.util.concurrent.locks.ReentrantLock());
+        lock.lock();
+        try {
+            String symbol = request.symbol() != null && !request.symbol().isBlank()
+                ? request.symbol()
+                : StrategyCatalog.defaultSymbol(request.strategyId());
+
+            boolean isForce = Boolean.TRUE.equals(request.force());
+            if (!isForce) {
+                boolean duplicateExists = runs.values().stream()
+                    .anyMatch(r -> r.status() == RunRecord.Status.RUNNING 
+                        && r.strategyId().equals(request.strategyId())
+                        && r.symbol().equalsIgnoreCase(symbol)
+                        && r.mode().name().equalsIgnoreCase(request.mode()));
+                if (duplicateExists) {
+                    throw new IllegalArgumentException("Run already active for strategyId=" + request.strategyId() + ", symbol=" + symbol + ", mode=" + request.mode());
+                }
             }
+
+            RunConfigSnapshot configSnapshot = RunConfigSnapshot.fromRequest(request, symbol);
+            RunConfigSnapshot resolved = resolveBrokerAccount(request.strategyId(), request.brokerAccountId(), configSnapshot);
+            if (isBrokerBackedRun(resolved)) {
+                try {
+                    Broker broker = brokerFactory.create(resolved);
+                    double equity = broker.getAccountState().equity();
+                    resolved = resolved.withCapital(equity);
+                } catch (Exception e) {
+                    log.warn("Failed to retrieve broker account equity for run: {}. Falling back to default or requested capital.", e.getMessage());
+                }
+            }
+            validate(request, resolved);
+            RunRecord record = register(resolved);
+            start(record.runId());
+            return record.runId();
+        } finally {
+            lock.unlock();
         }
-        validate(request, resolved);
-        RunRecord record = register(resolved);
-        start(record.runId());
-        return record.runId();
     }
 
     public Optional<RunRecord> getRun(String runId) {
@@ -562,6 +667,13 @@ public class RunManager implements RunLifecycle, AutoCloseable {
                 consecutiveTimeDrifts.remove(runId);
             }
         }
+        // Evict startup lock entries for strategies that have no active (RUNNING/PAUSED) runs.
+        // This prevents the startupLocks map from growing without bound.
+        java.util.Set<String> activeStrategyIds = runs.values().stream()
+            .filter(r -> r.status() == RunRecord.Status.RUNNING || r.status() == RunRecord.Status.PAUSED)
+            .map(RunRecord::strategyId)
+            .collect(java.util.stream.Collectors.toSet());
+        startupLocks.keySet().removeIf(strategyId -> !activeStrategyIds.contains(strategyId));
     }
 
     public EventStore eventStore() {
@@ -581,10 +693,19 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         } catch (Exception e) {
             log.error("Failed to close SqliteTradeStore", e);
         }
+        try {
+            runRecordStore.close();
+        } catch (Exception e) {
+            log.error("Failed to close RunRecordStore", e);
+        }
     }
 
     public com.martinfou.trading.backtest.persistence.SqliteTradeStore tradeStore() {
         return tradeStore;
+    }
+
+    public RunRecordStore runRecordStore() {
+        return runRecordStore;
     }
 
     public List<com.martinfou.trading.core.Trade> getTrades(String runId) {
@@ -602,8 +723,12 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         double capital,
         RunRecord record
     ) {
-        RunRecord before = snapshotRecord(record);
+        org.slf4j.MDC.put("runId", runId);
+        org.slf4j.MDC.put("strategyId", configSnapshot.strategyId());
+        org.slf4j.MDC.put("stale", "false");
         try {
+            RunRecord before = snapshotRecord(record);
+            try {
             RunMode runMode = RunMode.valueOf(configSnapshot.mode().toUpperCase());
             com.martinfou.trading.backtest.BacktestResult result;
             // Captures a failure message from OandaStreamingExecutor when the stop was error-driven.
@@ -680,7 +805,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
                 result = BacktestResult.builder()
                     .initialCapital(capital)
                     .finalEquity(finalEquity)
-                    .totalTrades(0)
+                    .totalTrades(oandaExecutor.getFilledCount())
                     .totalReturnPct(capital > 0 ? (finalEquity - capital) / capital * 100.0 : 0.0)
                     .build();
             } else if (isBrokerBackedRun(configSnapshot)) {
@@ -741,6 +866,11 @@ public class RunManager implements RunLifecycle, AutoCloseable {
                 record.markFailed(msg);
                 notifyTransition(before, record, RunTransition.FAIL);
             }
+            }
+        } finally {
+            org.slf4j.MDC.remove("runId");
+            org.slf4j.MDC.remove("strategyId");
+            org.slf4j.MDC.remove("stale");
         }
     }
 
@@ -749,6 +879,13 @@ public class RunManager implements RunLifecycle, AutoCloseable {
     }
 
     private void notifyTransition(RunRecord before, RunRecord after, RunTransition cause) {
+        if (after != null) {
+            try {
+                runRecordStore.save(after);
+            } catch (Exception e) {
+                log.error("Failed to persist run record " + after.runId() + " on transition " + cause, e);
+            }
+        }
         for (RunTransitionListener listener : listeners) {
             listener.onTransition(before, after, cause);
         }
@@ -1009,7 +1146,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         validateExecutionLabelForMode(mode, configSnapshot.resolvedExecutionLabel());
         validateBrokerCredentials(configSnapshot);
 
-        if (mode == RunMode.PAPER || mode == RunMode.LIVE) {
+        if (!Boolean.TRUE.equals(request.force()) && (mode == RunMode.PAPER || mode == RunMode.LIVE)) {
             String strategyId = configSnapshot.strategyId();
             String symbol = configSnapshot.symbol();
             String accountId = configSnapshot.resolvedBrokerAccountId();

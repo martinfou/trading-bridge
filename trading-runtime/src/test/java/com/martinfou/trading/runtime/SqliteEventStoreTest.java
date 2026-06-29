@@ -113,4 +113,59 @@ class SqliteEventStoreTest {
             RunMode.BACKTEST.name(),
             Map.of("barCount", 100));
     }
+
+    @Test
+    void testTransactionRollback(@TempDir Path tempDir) throws Exception {
+        Path db = tempDir.resolve("events.db");
+        EventStoreConfig config = EventStoreConfig.withDbPath(db);
+
+        try (SqliteEventStore eventStore = new SqliteEventStore(config)) {
+            Connection conn = eventStore.connection();
+            try (com.martinfou.trading.backtest.persistence.SqliteTradeStore tradeStore = 
+                     new com.martinfou.trading.backtest.persistence.SqliteTradeStore(conn, false)) {
+                
+                // 1. Set auto-commit to false (start transaction boundary)
+                conn.setAutoCommit(false);
+                
+                // 2. Perform append and insert
+                eventStore.append("run-tx", sampleEvent("run-tx", RunEventType.RUN_STARTED));
+                
+                com.martinfou.trading.core.Trade trade = new com.martinfou.trading.core.Trade(
+                    "trade-tx", "EUR_USD", com.martinfou.trading.core.Order.Side.BUY, 1.1000, 1.1050, 1000.0,
+                    Instant.parse("2026-06-28T12:00:00Z"), Instant.parse("2026-06-28T12:05:00Z"),
+                    5.0, 1.0950, 1.1100
+                );
+                tradeStore.insert("run-tx", trade);
+                
+                // 3. Rollback the connection
+                conn.rollback();
+                conn.setAutoCommit(true);
+                
+                // 4. Verify that neither was persisted
+                assertEquals(0, eventStore.count("run-tx"));
+                assertTrue(tradeStore.getTrades("run-tx").isEmpty());
+                
+                // 5. Test successful commit
+                conn.setAutoCommit(false);
+                eventStore.append("run-tx", sampleEvent("run-tx", RunEventType.RUN_STARTED));
+                tradeStore.insert("run-tx", trade);
+                conn.commit();
+                conn.setAutoCommit(true);
+                
+                // 6. Verify both were persisted
+                assertEquals(1, eventStore.count("run-tx"));
+                assertEquals(1, tradeStore.getTrades("run-tx").size());
+            }
+        }
+    }
+
+    @Test
+    void testDatabaseIntegrityCheck(@TempDir Path tempDir) throws Exception {
+        Path db = tempDir.resolve("events.db");
+        EventStoreConfig config = EventStoreConfig.withDbPath(db);
+        try (SqliteEventStore eventStore = new SqliteEventStore(config)) {
+            List<String> errors = SqliteEventStore.checkDatabaseIntegrity(eventStore.connection());
+            assertTrue(errors.isEmpty(), "Expected no integrity errors, got: " + errors);
+        }
+    }
 }

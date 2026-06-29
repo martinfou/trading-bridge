@@ -149,6 +149,32 @@ Weekly error budget is calculated per SLO. Budget consumption is tracked in `dat
 
 ---
 
+## 3. Incident Severity Matrix
+
+[incident-severity-matrix.md](incident-severity-matrix.md)
+
+## 4. Pre-Flight Checklist
+
+[pre-flight-checklist.md](pre-flight-checklist.md)
+
+## 5. Review Process
+
+[daily-weekly-review-process.md](daily-weekly-review-process.md)
+
+## 6. Platform Recovery Runbook
+
+[platform-recovery-runbook.md](platform-recovery-runbook.md)
+
+## 7. Run Promotion Playbook
+
+[run-promotion-playbook.md](run-promotion-playbook.md)
+
+## 8. Operator Dashboard Guide
+
+[operator-dashboard-guide.md](operator-dashboard-guide.md)
+
+---
+
 ### 2.3 Stale Stream / Missing Heartbeat
 
 **Summary:** A `RUNNING` broker-backed run has not emitted a `HEARTBEAT` event for longer than `runningStaleThresholdSeconds` (default 120s).

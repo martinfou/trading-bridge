@@ -24,8 +24,6 @@ public class StaleRunWatchdog implements AutoCloseable {
     private final ControlSummaryService summaryService;
     private final ScheduledExecutorService executor;
     private final Clock clock;
-    private final Map<String, Integer> restartsPerHour = new ConcurrentHashMap<>();
-    private Instant currentHour;
     long reconnectTimeoutMs = 30_000;
     long reconnectCheckIntervalMs = 1000;
 
@@ -37,7 +35,6 @@ public class StaleRunWatchdog implements AutoCloseable {
         this.runManager = runManager;
         this.summaryService = summaryService;
         this.clock = clock;
-        this.currentHour = Instant.now(clock);
         this.executor = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "stale-run-watchdog");
             t.setDaemon(true);
@@ -54,11 +51,6 @@ public class StaleRunWatchdog implements AutoCloseable {
         try {
             // Prune old completed/failed runs from memory
             runManager.pruneTerminalRuns();
-
-            if (Duration.between(currentHour, Instant.now(clock)).toHours() >= 1) {
-                restartsPerHour.clear();
-                currentHour = Instant.now(clock);
-            }
 
             Map<String, Object> summary = summaryService.buildSummary();
             if (summary == null) return;
@@ -94,7 +86,13 @@ public class StaleRunWatchdog implements AutoCloseable {
                 }
 
                 String strategyId = (String) signal.get("strategyId");
-                int restarts = restartsPerHour.getOrDefault(strategyId, 0);
+                int restarts = 0;
+                if (record.lastRestartAt().isPresent()) {
+                    Instant lastRestart = record.lastRestartAt().get();
+                    if (Duration.between(lastRestart, Instant.now(clock)).toHours() < 1) {
+                        restarts = record.restartCount();
+                    }
+                }
 
                 if (restarts >= 3) {
                     log.warn("Strategy {} has reached the maximum auto-restart limit (3 per hour). Skipping restart for stale run {}.", strategyId, runId);
@@ -156,9 +154,9 @@ public class StaleRunWatchdog implements AutoCloseable {
                     
                     // 3. Register and start new run
                     RunRecord newRecord = runManager.register(config);
+                    newRecord.setRestartCount(restarts + 1, Instant.now(clock));
                     runManager.start(newRecord.runId());
 
-                    restartsPerHour.put(strategyId, restarts + 1);
                     log.info("Successfully restarted strategy {} with new run ID: {}", strategyId, newRecord.runId());
                 } catch (Exception e) {
                     log.error("Failed to auto-restart stale run {}: {}", runId, e.getMessage(), e);

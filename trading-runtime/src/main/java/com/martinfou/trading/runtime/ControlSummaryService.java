@@ -15,10 +15,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * Builds {@code GET /control/summary} payload for prop-shop control room (Story 17.9).
  */
 public final class ControlSummaryService {
+
+    private static final Logger log = LoggerFactory.getLogger(ControlSummaryService.class);
 
     public static final int SCHEMA_VERSION = 1;
 
@@ -56,6 +61,10 @@ public final class ControlSummaryService {
         this.staleThresholdSeconds = staleThresholdSeconds;
         this.clock = clock != null ? clock : Clock.systemUTC();
         this.driftSignalService = driftSignalService;
+    }
+
+    public DriftSignalService driftSignalService() {
+        return driftSignalService;
     }
 
     public Map<String, Object> buildSummary() {
@@ -130,6 +139,17 @@ public final class ControlSummaryService {
                 }
             }
 
+            try {
+                Optional<Instant> lastTradeAt = runManager.eventStore().replayAll(record.runId()).stream()
+                    .filter(e -> e.type() == com.martinfou.trading.backtest.events.RunEventType.FILL
+                        || e.type() == com.martinfou.trading.backtest.events.RunEventType.REJECT)
+                    .map(com.martinfou.trading.backtest.events.RunEvent::timestamp)
+                    .max(Comparator.naturalOrder());
+                lastTradeAt.ifPresent(t -> item.put("lastTradeAt", t.toString()));
+            } catch (Exception e) {
+                log.warn("Failed to compute lastTradeAt for run {}: {}", record.runId(), e.getMessage());
+            }
+
             lastEventAt.ifPresent(t -> item.put("lastEventAt", t.toString()));
             item.put("configSnapshot", record.configSnapshot());
             item.put("configHash", record.configHash());
@@ -153,6 +173,12 @@ public final class ControlSummaryService {
             item.put("netQuantity", pnlMetrics.netQuantity);
             item.put("netSide", pnlMetrics.netSide);
             item.put("positions", getPositions(record, label));
+
+            if (driftSignalService != null) {
+                driftSignalService.evaluateStrategy(record.strategyId(), now).ifPresent(evaluation -> {
+                    item.put("driftComparison", evaluation.toMap());
+                });
+            }
 
             runItems.add(item);
 
@@ -371,60 +397,11 @@ public final class ControlSummaryService {
         StrategyPnLMetrics metrics = new StrategyPnLMetrics();
         List<RunEvent> events = runManager.eventStore().replayAll(record.runId());
         
-        List<Map<String, Object>> closedTrades = new ArrayList<>();
-        Map<String, List<Map<String, Object>>> openFills = new java.util.LinkedHashMap<>();
+        com.martinfou.trading.backtest.persistence.TradeReconstructor.ReconstructionResult result =
+            com.martinfou.trading.backtest.persistence.TradeReconstructor.reconstructWithOpen(events);
         
-        for (RunEvent event : events) {
-            if (event.type() != RunEventType.FILL) {
-                continue;
-            }
-            Map<String, Object> payload = event.payload();
-            String symbol = String.valueOf(payload.get("symbol"));
-            String side = String.valueOf(payload.get("side"));
-            double qty = ((Number) payload.get("quantity")).doubleValue();
-            double price = ((Number) payload.get("price")).doubleValue();
-            Instant timestamp = event.timestamp();
-
-            List<Map<String, Object>> list = openFills.computeIfAbsent(symbol, k -> new ArrayList<>());
-
-            double remainingQty = qty;
-            while (remainingQty > 0 && !list.isEmpty() && !list.get(0).get("side").equals(side)) {
-                Map<String, Object> first = list.get(0);
-                double firstQty = ((Number) first.get("quantity")).doubleValue();
-                double matchQty = Math.min(remainingQty, firstQty);
-
-                double entryPrice = ((Number) first.get("price")).doubleValue();
-                double exitPrice = price;
-                String entrySide = String.valueOf(first.get("side"));
-
-                double pnl = ForexPnL.pnlUsd(symbol, Order.Side.valueOf(entrySide), entryPrice, exitPrice, matchQty);
-                closedTrades.add(Map.of("pnl", pnl));
-
-                remainingQty -= matchQty;
-                double newFirstQty = firstQty - matchQty;
-                if (newFirstQty <= 0) {
-                    list.remove(0);
-                } else {
-                    first.put("quantity", newFirstQty);
-                }
-            }
-
-            if (remainingQty > 0) {
-                Map<String, Object> newFill = new java.util.LinkedHashMap<>();
-                newFill.put("side", side);
-                newFill.put("price", price);
-                newFill.put("quantity", remainingQty);
-                newFill.put("timestamp", timestamp);
-                list.add(newFill);
-            }
-        }
-
-        // Sum realized PnL
-        double realizedPnL = 0.0;
-        for (var t : closedTrades) {
-            realizedPnL += ((Number) t.get("pnl")).doubleValue();
-        }
-
+        double realizedPnL = result.closedTrades().stream().mapToDouble(com.martinfou.trading.core.Trade::pnl).sum();
+        
         // Get latest price if running live/paper
         double currentPrice = 0.0;
         Optional<AutoCloseable> execOpt = runManager.getActiveExecutor(record.runId());
@@ -437,27 +414,22 @@ public final class ControlSummaryService {
         int openTradesCount = 0;
         double netBuyQty = 0.0;
         double netSellQty = 0.0;
-        for (var entry : openFills.entrySet()) {
-            String symbol = entry.getKey();
-            for (var fill : entry.getValue()) {
-                double qty = ((Number) fill.get("quantity")).doubleValue();
-                double entryPrice = ((Number) fill.get("price")).doubleValue();
-                String side = String.valueOf(fill.get("side"));
-                openTradesCount++;
-                if ("BUY".equalsIgnoreCase(side)) {
-                    netBuyQty += qty;
-                } else if ("SELL".equalsIgnoreCase(side)) {
-                    netSellQty += qty;
-                }
-                if (currentPrice > 0.0) {
-                    openPnL += ForexPnL.pnlUsd(
-                        symbol,
-                        Order.Side.valueOf(side),
-                        entryPrice,
-                        currentPrice,
-                        qty
-                    );
-                }
+
+        for (com.martinfou.trading.core.Trade t : result.openTrades()) {
+            openTradesCount++;
+            if (t.side() == Order.Side.BUY) {
+                netBuyQty += t.quantity();
+            } else if (t.side() == Order.Side.SELL) {
+                netSellQty += t.quantity();
+            }
+            if (currentPrice > 0.0) {
+                openPnL += ForexPnL.pnlUsd(
+                    t.symbol(),
+                    t.side(),
+                    t.entryPrice(),
+                    currentPrice,
+                    t.quantity()
+                );
             }
         }
 

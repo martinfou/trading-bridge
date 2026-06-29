@@ -1,0 +1,11 @@
+{
+  "databaseSizeBytes" : 71880704,
+  "warnings" : [ ],
+  "prunedEventsCount" : 1,
+  "totalRuns" : 0,
+  "failedRuns" : 0,
+  "activeRuns" : 0,
+  "completedRuns" : 0,
+  "timestamp" : "2026-06-29T13:20:07.783115Z",
+  "status" : "OK"
+}

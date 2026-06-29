@@ -147,6 +147,51 @@ class StaleRunWatchdogTest {
         }
     }
 
+    @Test
+    void testCheckStaleRuns_throttlesRestarts() throws Exception {
+        var store = new InMemoryEventStore();
+        var runManager = new RunManager(store);
+
+        var config = new RunConfigSnapshot(
+            "LondonOpenRangeBreakout",
+            "EUR_USD",
+            "PAPER",
+            "sample",
+            500,
+            null,
+            1000.0,
+            0.07,
+            1e-4,
+            "PAPER_STUB",
+            "acct1"
+        );
+
+        String runId = "throttled-run-id";
+        RunRecord record = runManager.restoreRun(runId, config);
+        record.markRunning();
+        
+        // 3 restarts already occurred within the last hour
+        Instant checkTime = Instant.parse("2026-06-24T11:00:00Z");
+        record.setRestartCount(3, checkTime.minus(Duration.ofMinutes(10)));
+        
+        Instant lastEventAt = checkTime.minus(Duration.ofSeconds(200));
+        record.noteEventAt(lastEventAt);
+
+        Clock fixedClock = Clock.fixed(checkTime, java.time.ZoneOffset.UTC);
+        var summaryService = new ControlSummaryService(runManager, 120, fixedClock);
+
+        try (var watchdog = new StaleRunWatchdog(runManager, summaryService, fixedClock)) {
+            watchdog.reconnectTimeoutMs = 10;
+            watchdog.reconnectCheckIntervalMs = 5;
+            watchdog.checkStaleRuns();
+            
+            // Should skip restart because it is throttled
+            assertEquals(RunRecord.Status.RUNNING, record.status(), "Expected run to remain RUNNING because it is throttled");
+            assertEquals(1, runManager.list(null).size(), "Expected no new run to be registered");
+        }
+    }
+
+
     static class TrackingRunManager extends RunManager {
         boolean reconnectCalled = false;
         String reconnectedRunId = null;

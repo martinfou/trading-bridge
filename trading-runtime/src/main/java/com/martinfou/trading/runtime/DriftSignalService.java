@@ -2,6 +2,7 @@ package com.martinfou.trading.runtime;
 
 import com.martinfou.trading.backtest.events.RunEvent;
 import com.martinfou.trading.backtest.events.RunEventType;
+import com.martinfou.trading.backtest.persistence.BacktestRunDetails;
 import com.martinfou.trading.strategies.StrategyCatalog;
 
 import java.time.Clock;
@@ -84,7 +85,7 @@ public final class DriftSignalService {
                 strategyId,
                 deploymentLabel,
                 Optional.empty(),
-                Optional.empty(),
+                List.of(),
                 brokerObservations,
                 now)));
         }
@@ -95,63 +96,61 @@ public final class DriftSignalService {
                 strategyId,
                 deploymentLabel,
                 Optional.empty(),
-                Optional.empty(),
+                List.of(),
                 List.of(),
                 now)));
         }
 
-        Optional<BacktestRunMetrics> baseline = Optional.empty();
-        Optional<String> baselineHash = Optional.empty();
+        Optional<BacktestRunDetails> baseline = Optional.empty();
+        List<com.martinfou.trading.core.Trade> baselineTrades = List.of();
 
         Optional<RunRecord> baselineRun = deployment
             .map(DeploymentRecord::sourceRunId)
             .flatMap(runManager::getRun);
 
         if (baselineRun.isPresent()) {
-            baseline = baselineRun.map(BacktestRunMetrics::fromRun);
-            baselineHash = baselineRun.map(RunRecord::configHash);
+            String sourceId = baselineRun.get().runId();
+            java.nio.file.Path dbPath = com.martinfou.trading.backtest.persistence.BacktestPersistenceService.resolveDefaultDbPath();
+            try (var store = new com.martinfou.trading.backtest.persistence.SqliteBacktestRunStore(dbPath)) {
+                var detailsOpt = store.get(sourceId);
+                if (detailsOpt.isPresent()) {
+                    baseline = detailsOpt;
+                    baselineTrades = store.tradeStore().getTrades(sourceId);
+                }
+            } catch (Exception ignored) {}
         } else if (deployment.isPresent() && deployment.get().sourceRunId() != null) {
             String sourceId = deployment.get().sourceRunId();
             java.nio.file.Path dbPath = com.martinfou.trading.backtest.persistence.BacktestPersistenceService.resolveDefaultDbPath();
             try (var store = new com.martinfou.trading.backtest.persistence.SqliteBacktestRunStore(dbPath)) {
                 var detailsOpt = store.get(sourceId);
                 if (detailsOpt.isPresent()) {
-                    var details = detailsOpt.get();
-                    baseline = Optional.of(new BacktestRunMetrics(
-                        details.totalTrades(),
-                        details.totalReturnPct(),
-                        details.maxDrawdownPct(),
-                        details.winRatePct()
-                    ));
-                    baselineHash = Optional.of(details.parameterHash());
+                    baseline = detailsOpt;
+                    baselineTrades = store.tradeStore().getTrades(sourceId);
                 }
-            } catch (Exception ignored) {
-                // best effort fallback
-            }
+            } catch (Exception ignored) {}
         }
 
         return Optional.of(engine.evaluate(new DriftEngine.StrategyDriftInput(
             strategyId,
             deploymentLabel,
             baseline,
-            baselineHash,
+            baselineTrades,
             brokerObservations,
             now)));
     }
 
     private DriftEngine.BrokerObservation toBrokerObservation(RunRecord run) {
         ExecutionLabel label = ControlSummaryService.executionLabel(run);
-        BacktestRunMetrics metrics = BacktestRunMetrics.fromRun(run);
-        int fillCount = (int) runManager.eventStore().replayAll(run.runId()).stream()
-            .filter(event -> event.type() == RunEventType.FILL)
-            .count();
-        int tradeCount = Math.max(metrics.totalTrades(), fillCount);
+        List<com.martinfou.trading.backtest.events.RunEvent> events = runManager.eventStore().replayAll(run.runId());
+        List<com.martinfou.trading.core.Trade> actualTrades = com.martinfou.trading.backtest.persistence.TradeReconstructor.reconstruct(events);
+        RunConfigSnapshot config = RunConfigSnapshot.fromRecord(run);
+
         return new DriftEngine.BrokerObservation(
             run.runId(),
             label,
             run.startedAt(),
             run.configHash(),
-            metrics,
-            tradeCount);
+            actualTrades,
+            config);
     }
 }

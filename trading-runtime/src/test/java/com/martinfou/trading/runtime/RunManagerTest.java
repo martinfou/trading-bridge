@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 class RunManagerTest {
 
@@ -424,5 +425,207 @@ class RunManagerTest {
         java.lang.reflect.Field field = RunRecord.class.getDeclaredField("completedAt");
         field.setAccessible(true);
         field.set(record, instant);
+    }
+
+    @Test
+    void testDuplicateRunRejection() throws Exception {
+        try (RuntimeStores.Bundle stores = RuntimeStores.inMemoryWithBroadcast();
+             RunManager manager = new RunManager(stores.eventStore())) {
+
+            var req = new RunManager.StartRunRequest(
+                "LondonOpenRangeBreakout",
+                "EUR_USD",
+                "PAPER",
+                new BarSourceResolver.BarsSource("sample", 10, null),
+                1000.0,
+                null,
+                null,
+                null,
+                "PAPER_STUB",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                false
+            );
+
+            // Start the first run
+            String runId1 = manager.startRun(req);
+            assertNotNull(runId1);
+
+            // Attempting to start duplicate run should throw IllegalArgumentException
+            assertThrows(IllegalArgumentException.class, () -> manager.startRun(req));
+
+            // Attempting with force=true should succeed
+            var reqForce = new RunManager.StartRunRequest(
+                "LondonOpenRangeBreakout",
+                "EUR_USD",
+                "PAPER",
+                new BarSourceResolver.BarsSource("sample", 10, null),
+                1000.0,
+                null,
+                null,
+                null,
+                "PAPER_STUB",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                true
+            );
+            String runId2 = manager.startRun(reqForce);
+            assertNotNull(runId2);
+        }
+    }
+
+    @Test
+    void testConcurrentStartLocking() throws Exception {
+        try (RuntimeStores.Bundle stores = RuntimeStores.inMemoryWithBroadcast();
+             RunManager manager = new RunManager(stores.eventStore())) {
+
+            var req = new RunManager.StartRunRequest(
+                "LondonOpenRangeBreakout",
+                "EUR_USD",
+                "PAPER",
+                new BarSourceResolver.BarsSource("sample", 10, null),
+                1000.0,
+                null,
+                null,
+                null,
+                "PAPER_STUB",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                true // use force to allow multiple concurrent starts
+            );
+
+            int threads = 5;
+            java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(threads);
+            java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+            java.util.concurrent.atomic.AtomicInteger successCount = new java.util.concurrent.atomic.AtomicInteger(0);
+
+            for (int i = 0; i < threads; i++) {
+                pool.submit(() -> {
+                    try {
+                        latch.await();
+                        manager.startRun(req);
+                        successCount.incrementAndGet();
+                    } catch (Exception e) {
+                        // ignore
+                    }
+                });
+            }
+
+            latch.countDown();
+            pool.shutdown();
+            assertTrue(pool.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS));
+
+            assertEquals(threads, successCount.get(), "Expected all threads to successfully register and start runs");
+        }
+    }
+
+    @Test
+    void testRunRecordDBPersistence(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tempDir) throws Exception {
+        EventStoreConfig config = EventStoreConfig.withDbPath(tempDir.resolve("test_persistence.db"));
+        try (SqliteEventStore eventStore = new SqliteEventStore(config);
+             RunManager manager = new RunManager(eventStore)) {
+
+            String runId = manager.startRun(new RunManager.StartRunRequest(
+                "LondonOpenRangeBreakout",
+                "EUR_USD",
+                "BACKTEST",
+                new BarSourceResolver.BarsSource("sample", 100, null),
+                1000.0,
+                null,
+                null,
+                null,
+                null
+            ));
+
+            waitForCompletion(manager, runId);
+
+            // Assert that the run was saved in SQLite run record store
+            RunRecord record = manager.runRecordStore().get(runId).orElseThrow();
+            assertEquals(runId, record.runId());
+            assertEquals("LondonOpenRangeBreakout", record.strategyId());
+            assertEquals(RunRecord.Status.COMPLETED, record.status());
+        }
+    }
+
+    @Test
+    void testControlPlaneRestoreActiveRuns(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tempDir) throws Exception {
+        EventStoreConfig config = EventStoreConfig.withDbPath(tempDir.resolve("restore_test.db"));
+        
+        // 1. Start a run and let it get saved to database as RUNNING
+        String runId;
+        try (SqliteEventStore eventStore = new SqliteEventStore(config);
+             RunManager manager = new RunManager(eventStore)) {
+
+            RunConfigSnapshot snapshot = new RunConfigSnapshot(
+                "LondonOpenRangeBreakout", "EUR_USD", "LIVE", "sample", 100, null, 1000.0, null, null, "LIVE_OANDA"
+            );
+            RunRecord record = manager.restoreRun("active-run-123", snapshot);
+            record.markRunning();
+            manager.runRecordStore().save(record);
+            runId = record.runId();
+        }
+
+        // 2. Simulate control plane restart and verify restoreActiveRuns restarts it
+        try (SqliteEventStore eventStore = new SqliteEventStore(config);
+             RunManager manager = new RunManager(eventStore)) {
+            
+            // Verify runs map is empty initially
+            assertTrue(manager.list(null).isEmpty());
+
+            ControlPlaneMain.restoreActiveRuns(manager, config);
+
+            // Verify run is restored and running
+            RunRecord restored = manager.getRun(runId).orElseThrow();
+            assertEquals(RunRecord.Status.RUNNING, restored.status());
+            assertEquals("LondonOpenRangeBreakout", restored.strategyId());
+        }
+    }
+
+    @Test
+    void testReconcileCompletedRuns(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tempDir) throws Exception {
+        EventStoreConfig config = EventStoreConfig.withDbPath(tempDir.resolve("reconcile_test.db"));
+        try (SqliteEventStore eventStore = new SqliteEventStore(config);
+             RunManager manager = new RunManager(eventStore)) {
+
+            RunConfigSnapshot snapshot = new RunConfigSnapshot(
+                "LondonOpenRangeBreakout", "EUR_USD", "BACKTEST", "sample", 100, null, 1000.0, null, null, null
+            );
+            RunRecord record = manager.restoreRun("completed-run-123", snapshot);
+            record.markCompleted(java.util.Map.of());
+            manager.runRecordStore().save(record);
+
+            // Add a trade but 0 fill events (mismatch)
+            com.martinfou.trading.core.Trade trade = new com.martinfou.trading.core.Trade(
+                "trade-rx", "EUR_USD", com.martinfou.trading.core.Order.Side.BUY, 1.1000, 1.1050, 1000.0,
+                Instant.now(), Instant.now(), 5.0, 1.0950, 1.1100
+            );
+            manager.tradeStore().insert("completed-run-123", trade);
+
+            // Capture System.err
+            java.io.ByteArrayOutputStream errStream = new java.io.ByteArrayOutputStream();
+            java.io.PrintStream originalErr = System.err;
+            System.setErr(new java.io.PrintStream(errStream));
+            try {
+                ControlPlaneMain.reconcileCompletedRuns(manager);
+            } finally {
+                System.setErr(originalErr);
+            }
+
+            String output = errStream.toString();
+            assertTrue(output.contains("Reconciliation warning: Run completed-run-123"));
+            assertTrue(output.contains("mismatch between FILL events (0) and trades count (1)"));
+        }
     }
 }

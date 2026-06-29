@@ -10,7 +10,7 @@ import java.util.Optional;
 public final class RunRecord {
 
     public enum Status {
-        CREATED, RUNNING, PAUSED, COMPLETED, FAILED, ARCHIVED
+        CREATED, RUNNING, PAUSED, COMPLETED, FAILED, ARCHIVED, RETIRED
     }
 
     private final String runId;
@@ -25,6 +25,8 @@ public final class RunRecord {
     private volatile String errorMessage;
     private volatile Map<String, Object> endedPayload;
     private volatile Instant lastEventAt;
+    private volatile int restartCount;
+    private volatile Instant lastRestartAt;
 
     RunRecord(String runId, String strategyId, String symbol, RunMode mode, RunConfigSnapshot configSnapshot) {
         this.runId = runId;
@@ -35,6 +37,38 @@ public final class RunRecord {
         this.configSnapshot = configSnapshot.toMap();
         this.configHash = configSnapshot.hash();
         this.status = Status.CREATED;
+    }
+
+    RunRecord(
+        String runId,
+        String strategyId,
+        String symbol,
+        RunMode mode,
+        Instant startedAt,
+        Map<String, Object> configSnapshot,
+        String configHash,
+        Status status,
+        Instant completedAt,
+        String errorMessage,
+        Map<String, Object> endedPayload,
+        Instant lastEventAt,
+        int restartCount,
+        Instant lastRestartAt
+    ) {
+        this.runId = runId;
+        this.strategyId = strategyId;
+        this.symbol = symbol;
+        this.mode = mode;
+        this.startedAt = startedAt;
+        this.configSnapshot = configSnapshot;
+        this.configHash = configHash;
+        this.status = status;
+        this.completedAt = completedAt;
+        this.errorMessage = errorMessage;
+        this.endedPayload = endedPayload;
+        this.lastEventAt = lastEventAt;
+        this.restartCount = restartCount;
+        this.lastRestartAt = lastRestartAt;
     }
 
     public String runId() {
@@ -117,7 +151,43 @@ public final class RunRecord {
         }
     }
 
+    /**
+     * Marks the run as RETIRED — gracefully decommissioned by an operator,
+     * as opposed to ARCHIVED (evicted by age) or FAILED (error-driven).
+     */
+    void markRetired(String reason) {
+        this.status = Status.RETIRED;
+        this.errorMessage = reason;
+        if (this.completedAt == null) {
+            this.completedAt = Instant.now();
+        }
+    }
+
+    public int restartCount() {
+        return restartCount;
+    }
+
+    public Optional<Instant> lastRestartAt() {
+        return Optional.ofNullable(lastRestartAt);
+    }
+
+    public void incrementRestartCount(Instant timestamp) {
+        this.restartCount++;
+        this.lastRestartAt = timestamp;
+    }
+
+    public void resetRestartCount() {
+        this.restartCount = 0;
+        this.lastRestartAt = null;
+    }
+
+    public void setRestartCount(int count, Instant timestamp) {
+        this.restartCount = count;
+        this.lastRestartAt = timestamp;
+    }
+
     boolean isTerminal() {
-        return status == Status.COMPLETED || status == Status.FAILED || status == Status.ARCHIVED;
+        return status == Status.COMPLETED || status == Status.FAILED
+            || status == Status.ARCHIVED || status == Status.RETIRED;
     }
 }

@@ -238,6 +238,49 @@ class ControlSummaryServiceTest {
         }
     }
 
+    @Test
+    void testLastTradeAtInSummary() throws Exception {
+        try (EventStore store = EventStores.inMemory();
+             RunManager manager = new RunManager(store)) {
+            RunConfigSnapshot config = new RunConfigSnapshot(
+                "LondonOpenRangeBreakout",
+                "EUR_USD",
+                "PAPER",
+                "sample",
+                100,
+                null,
+                100_000.0,
+                null,
+                null,
+                ExecutionLabel.PAPER_STUB.name());
+
+            String runId = "test-run-lastTradeAt";
+            RunRecord run = manager.restoreRun(runId, config);
+            run.markRunning();
+
+            Instant fillTime = Instant.now().minusSeconds(10);
+            store.append(runId, new RunEvent(
+                RunEvent.SCHEMA_VERSION,
+                RunEventType.FILL,
+                fillTime,
+                runId,
+                "LondonOpenRangeBreakout",
+                "EUR_USD",
+                "PAPER",
+                Map.of("symbol", "EUR_USD", "side", "BUY", "quantity", 1000.0, "price", 1.10)
+            ));
+
+            ControlSummaryService service = new ControlSummaryService(manager);
+            Map<String, Object> summary = service.buildSummary();
+
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> runs = (List<Map<String, Object>>) summary.get("runs");
+            assertEquals(1, runs.size());
+            Map<String, Object> runItem = runs.getFirst();
+            assertEquals(fillTime.toString(), runItem.get("lastTradeAt"));
+        }
+    }
+
     private static void waitForCompletion(RunManager manager, String runId) throws InterruptedException {
         for (int i = 0; i < 200; i++) {
             RunRecord record = manager.getRun(runId).orElseThrow();
