@@ -1,5 +1,5 @@
 # generated: 2026-06-06
-# last_updated: "2026-06-29T12:03:50-04:00"
+# last_updated: "2026-06-29T12:45:17-04:00"
 # project: trading-bridge
 # project_key: NOKEY
 # tracking_system: file-system
@@ -36,7 +36,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: "2026-06-06"
-last_updated: "2026-06-29T12:03:50-04:00"
+last_updated: "2026-06-29T12:45:17-04:00"
 project: "trading-bridge"
 project_key: "NOKEY"
 tracking_system: "file-system"
@@ -338,3 +338,6 @@ development_status:
   39-1-oanda-api-503-transient-error-handling-reconciliation: done
   39-2-strategy-based-telemetry-and-trade-tracking: done
   epic-39-retrospective: optional
+  epic-40: backlog
+  40-1-suppress-javalin-version-check-warning: backlog
+  epic-40-retrospective: optional

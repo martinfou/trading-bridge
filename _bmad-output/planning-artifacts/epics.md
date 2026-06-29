@@ -2162,3 +2162,18 @@ So that when a strategy run restarts, I do not lose its cumulative trade history
 **And** open P&L and net positions are still tracked dynamically for the active runs.
 **And** unit tests verify cumulative trade retrieval and realized P&L aggregation across multiple sibling runs.
 
+## Epic 40: Control Plane Log Noise Reduction & Version Warn Suppression
+
+### Story 40.1: Suppress Javalin Version Check Warning
+
+As a developer,
+I want the Javalin version check warning on startup to be suppressed,
+So that the terminal startup logs are clean and free of unnecessary age/warning alerts.
+
+**Acceptance Criteria:**
+
+**Given** a running Control Plane application.
+**When** the Javalin server is initialized in `ControlPlaneServer.java`.
+**Then** `config.core.disableVersionCheck = true` is set in the Javalin configuration block.
+**And** the Javalin version check warning is successfully suppressed on application startup.
+
