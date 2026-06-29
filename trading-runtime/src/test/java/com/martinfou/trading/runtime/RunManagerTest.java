@@ -628,4 +628,46 @@ class RunManagerTest {
             assertTrue(output.contains("mismatch between FILL events (0) and trades count (1)"));
         }
     }
+
+    @Test
+    void testGetTradesAggregatesAcrossSiblingRuns(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tempDir) throws Exception {
+        EventStoreConfig config = EventStoreConfig.withDbPath(tempDir.resolve("sibling_trades_test.db"));
+        try (SqliteEventStore eventStore = new SqliteEventStore(config);
+             RunManager manager = new RunManager(eventStore)) {
+
+            RunConfigSnapshot snapshot1 = new RunConfigSnapshot(
+                "StratA", "EUR_USD", "PAPER", "sample", 100, null, 1000.0, null, null, "PAPER_OANDA"
+            );
+            RunRecord run1 = manager.restoreRun("run-1", snapshot1);
+            run1.markRunning();
+            manager.runRecordStore().save(run1);
+
+            RunConfigSnapshot snapshot2 = new RunConfigSnapshot(
+                "StratA", "EUR_USD", "PAPER", "sample", 100, null, 1000.0, null, null, "PAPER_OANDA"
+            );
+            RunRecord run2 = manager.restoreRun("run-2", snapshot2);
+            run2.markRunning();
+            manager.runRecordStore().save(run2);
+
+            // Insert trade 1 for run-1
+            com.martinfou.trading.core.Trade trade1 = new com.martinfou.trading.core.Trade(
+                "trade-1", "EUR_USD", com.martinfou.trading.core.Order.Side.BUY, 1.1000, 1.1050, 1000.0,
+                Instant.now().minusSeconds(3600), Instant.now().minusSeconds(1800), 5.0, 1.0950, 1.1100
+            );
+            manager.tradeStore().insert("run-1", trade1);
+
+            // Insert trade 2 for run-2
+            com.martinfou.trading.core.Trade trade2 = new com.martinfou.trading.core.Trade(
+                "trade-2", "EUR_USD", com.martinfou.trading.core.Order.Side.SELL, 1.1020, 1.1000, 1000.0,
+                Instant.now().minusSeconds(1200), Instant.now(), 2.0, 1.1050, 1.0980
+            );
+            manager.tradeStore().insert("run-2", trade2);
+
+            // Retrieve trades for run-2 and verify it includes trade1 from run-1 (since they share StratA + PAPER)
+            java.util.List<com.martinfou.trading.core.Trade> trades = manager.getTrades("run-2");
+            assertEquals(2, trades.size());
+            assertEquals("trade-1", trades.get(0).id());
+            assertEquals("trade-2", trades.get(1).id());
+        }
+    }
 }

@@ -2,6 +2,7 @@ package com.martinfou.trading.runtime;
 
 import com.martinfou.trading.backtest.events.RunEvent;
 import com.martinfou.trading.backtest.events.RunEventType;
+import com.martinfou.trading.backtest.RunMode;
 import com.martinfou.trading.core.ForexPnL;
 import com.martinfou.trading.core.Order;
 
@@ -395,13 +396,20 @@ public final class ControlSummaryService {
 
     private StrategyPnLMetrics calculatePnLMetrics(RunRecord record) {
         StrategyPnLMetrics metrics = new StrategyPnLMetrics();
-        List<RunEvent> events = runManager.eventStore().replayAll(record.runId());
         
-        com.martinfou.trading.backtest.persistence.TradeReconstructor.ReconstructionResult result =
-            com.martinfou.trading.backtest.persistence.TradeReconstructor.reconstructWithOpen(events);
-        
-        double realizedPnL = result.closedTrades().stream().mapToDouble(com.martinfou.trading.core.Trade::pnl).sum();
-        
+        String strategyId = record.strategyId();
+        RunMode mode = record.mode();
+
+        List<RunRecord> siblingRuns = runManager.runRecordStore().listAll().stream()
+            .filter(r -> strategyId.equals(r.strategyId()) && mode == r.mode())
+            .toList();
+
+        double cumulativeRealizedPnL = 0.0;
+        double openPnL = 0.0;
+        int openTradesCount = 0;
+        double netBuyQty = 0.0;
+        double netSellQty = 0.0;
+
         // Get latest price if running live/paper
         double currentPrice = 0.0;
         Optional<AutoCloseable> execOpt = runManager.getActiveExecutor(record.runId());
@@ -409,34 +417,46 @@ public final class ControlSummaryService {
             currentPrice = exec.getLastMidPrice();
         }
 
-        // Calculate open PnL
-        double openPnL = 0.0;
-        int openTradesCount = 0;
-        double netBuyQty = 0.0;
-        double netSellQty = 0.0;
+        for (RunRecord sibling : siblingRuns) {
+            List<RunEvent> siblingEvents = runManager.eventStore().replayAll(sibling.runId());
+            com.martinfou.trading.backtest.persistence.TradeReconstructor.ReconstructionResult siblingResult =
+                com.martinfou.trading.backtest.persistence.TradeReconstructor.reconstructWithOpen(siblingEvents);
 
-        for (com.martinfou.trading.core.Trade t : result.openTrades()) {
-            openTradesCount++;
-            if (t.side() == Order.Side.BUY) {
-                netBuyQty += t.quantity();
-            } else if (t.side() == Order.Side.SELL) {
-                netSellQty += t.quantity();
-            }
-            if (currentPrice > 0.0) {
-                openPnL += ForexPnL.pnlUsd(
-                    t.symbol(),
-                    t.side(),
-                    t.entryPrice(),
-                    currentPrice,
-                    t.quantity()
-                );
+            cumulativeRealizedPnL += siblingResult.closedTrades().stream().mapToDouble(com.martinfou.trading.core.Trade::pnl).sum();
+
+            if (sibling.status() == RunRecord.Status.RUNNING) {
+                double sibPrice = currentPrice;
+                if (sibPrice == 0.0 && !sibling.runId().equals(record.runId())) {
+                    Optional<AutoCloseable> sibExecOpt = runManager.getActiveExecutor(sibling.runId());
+                    if (sibExecOpt.isPresent() && sibExecOpt.get() instanceof OandaStreamingExecutor sibExec) {
+                        sibPrice = sibExec.getLastMidPrice();
+                    }
+                }
+
+                for (com.martinfou.trading.core.Trade t : siblingResult.openTrades()) {
+                    openTradesCount++;
+                    if (t.side() == Order.Side.BUY) {
+                        netBuyQty += t.quantity();
+                    } else if (t.side() == Order.Side.SELL) {
+                        netSellQty += t.quantity();
+                    }
+                    if (sibPrice > 0.0) {
+                        openPnL += ForexPnL.pnlUsd(
+                            t.symbol(),
+                            t.side(),
+                            t.entryPrice(),
+                            sibPrice,
+                            t.quantity()
+                        );
+                    }
+                }
             }
         }
 
         metrics.openTradesCount = openTradesCount;
         metrics.openPnL = openPnL;
-        metrics.realizedPnL = realizedPnL;
-        metrics.totalPnL = realizedPnL + openPnL;
+        metrics.realizedPnL = cumulativeRealizedPnL;
+        metrics.totalPnL = cumulativeRealizedPnL + openPnL;
 
         double diff = netBuyQty - netSellQty;
         if (diff > 0.0) {

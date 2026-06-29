@@ -709,6 +709,32 @@ public class RunManager implements RunLifecycle, AutoCloseable {
     }
 
     public List<com.martinfou.trading.core.Trade> getTrades(String runId) {
+        Optional<RunRecord> recordOpt = getRun(runId);
+        if (recordOpt.isPresent()) {
+            RunRecord targetRecord = recordOpt.get();
+            String strategyId = targetRecord.strategyId();
+            RunMode mode = targetRecord.mode();
+
+            List<RunRecord> siblingRuns = runRecordStore.listAll().stream()
+                .filter(r -> strategyId.equals(r.strategyId()) && mode == r.mode())
+                .toList();
+
+            List<com.martinfou.trading.core.Trade> cumulativeTrades = new ArrayList<>();
+            for (RunRecord sibling : siblingRuns) {
+                List<com.martinfou.trading.core.Trade> siblingTrades = tradeStore.getTrades(sibling.runId());
+                if (siblingTrades.isEmpty()) {
+                    siblingTrades = com.martinfou.trading.backtest.persistence.TradeReconstructor.reconstruct(eventStore.replayAll(sibling.runId()));
+                }
+                cumulativeTrades.addAll(siblingTrades);
+            }
+            // Sort by entry time
+            cumulativeTrades.sort((t1, t2) -> {
+                if (t1.entryTime() == null || t2.entryTime() == null) return 0;
+                return t1.entryTime().compareTo(t2.entryTime());
+            });
+            return cumulativeTrades;
+        }
+
         List<com.martinfou.trading.core.Trade> list = tradeStore.getTrades(runId);
         if (list.isEmpty()) {
             return com.martinfou.trading.backtest.persistence.TradeReconstructor.reconstruct(eventStore.replayAll(runId));

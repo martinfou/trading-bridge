@@ -281,6 +281,62 @@ class ControlSummaryServiceTest {
         }
     }
 
+    @Test
+    void testCalculatePnLMetricsAccumulatesRealizedPnLAcrossSiblingRuns() throws Exception {
+        try (EventStore store = EventStores.inMemory();
+             RunManager manager = new RunManager(store)) {
+             
+            RunConfigSnapshot config1 = new RunConfigSnapshot(
+                "StratA", "EUR_USD", "PAPER", "sample", 100, null, 100_000.0, null, null, "PAPER_STUB"
+            );
+            RunRecord run1 = manager.restoreRun("run-1", config1);
+            run1.markRunning();
+            manager.runRecordStore().save(run1);
+
+            RunConfigSnapshot config2 = new RunConfigSnapshot(
+                "StratA", "EUR_USD", "PAPER", "sample", 100, null, 100_000.0, null, null, "PAPER_STUB"
+            );
+            RunRecord run2 = manager.restoreRun("run-2", config2);
+            run2.markRunning();
+            manager.runRecordStore().save(run2);
+
+            // Add events for run-1 representing a completed trade (BUY -> SELL, PnL = 5.0)
+            store.append("run-1", new RunEvent(
+                RunEvent.SCHEMA_VERSION, RunEventType.FILL, Instant.now().minusSeconds(100), "run-1", "StratA", "EUR_USD", "PAPER",
+                Map.of("symbol", "EUR_USD", "side", "BUY", "quantity", 10000.0, "price", 1.1000)
+            ));
+            store.append("run-1", new RunEvent(
+                RunEvent.SCHEMA_VERSION, RunEventType.FILL, Instant.now().minusSeconds(80), "run-1", "StratA", "EUR_USD", "PAPER",
+                Map.of("symbol", "EUR_USD", "side", "SELL", "quantity", 10000.0, "price", 1.1005)
+            ));
+
+            // Add events for run-2 representing a completed trade (SELL -> BUY, PnL = 20.0)
+            store.append("run-2", new RunEvent(
+                RunEvent.SCHEMA_VERSION, RunEventType.FILL, Instant.now().minusSeconds(50), "run-2", "StratA", "EUR_USD", "PAPER",
+                Map.of("symbol", "EUR_USD", "side", "SELL", "quantity", 10000.0, "price", 1.1020)
+            ));
+            store.append("run-2", new RunEvent(
+                RunEvent.SCHEMA_VERSION, RunEventType.FILL, Instant.now().minusSeconds(10), "run-2", "StratA", "EUR_USD", "PAPER",
+                Map.of("symbol", "EUR_USD", "side", "BUY", "quantity", 10000.0, "price", 1.1000)
+            ));
+
+            ControlSummaryService service = new ControlSummaryService(manager);
+            Map<String, Object> summary = service.buildSummary();
+
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> runs = (List<Map<String, Object>>) summary.get("runs");
+            
+            Map<String, Object> run1Item = runs.stream().filter(r -> "run-1".equals(r.get("runId"))).findFirst().orElseThrow();
+            Map<String, Object> run2Item = runs.stream().filter(r -> "run-2".equals(r.get("runId"))).findFirst().orElseThrow();
+
+            double pnl1 = ((Number) run1Item.get("realizedPnL")).doubleValue();
+            double pnl2 = ((Number) run2Item.get("realizedPnL")).doubleValue();
+
+            assertEquals(pnl1, pnl2, 0.0001);
+            assertTrue(pnl1 > 0.0);
+        }
+    }
+
     private static void waitForCompletion(RunManager manager, String runId) throws InterruptedException {
         for (int i = 0; i < 200; i++) {
             RunRecord record = manager.getRun(runId).orElseThrow();
