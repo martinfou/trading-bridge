@@ -22,6 +22,10 @@
         </RollingFile>
     </Appenders>
     <Loggers>
+        <Logger name="io.javalin" level="WARN" additivity="false">
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="RollingFile"/>
+        </Logger>
         <Root level="INFO">
             <AppenderRef ref="Console"/>
             <AppenderRef ref="RollingFile"/>
