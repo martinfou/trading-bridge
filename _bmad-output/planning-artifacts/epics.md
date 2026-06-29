@@ -2146,3 +2146,19 @@ So that single API timeouts or service unavailability do not clutter logs with e
 **Then** the executor catches the exception, logs a warning instead of a full stack trace error, and skips reconciliation for the current tick.
 **And** subsequent ticks retry the position reconciliation once the 60-second interval passes.
 **And** unit tests verify that a simulated 503 error on position reconciliation is handled gracefully as a warning.
+
+### Story 39.2: Strategy-based Telemetry and Trade Tracking
+
+As a trader,
+I want the control plane telemetry and GUI dashboard to track trades and P&L metrics by Strategy ID (segregated by execution mode) instead of specific execution Run IDs,
+So that when a strategy run restarts, I do not lose its cumulative trade history, realized P&L, or metric tracking on the dashboard.
+
+**Acceptance Criteria:**
+
+**Given** an active live/paper strategy run.
+**When** the frontend client requests trades or trades summary via `/api/runs/{runId}/trades` or `/api/runs/{runId}/trades/summary`.
+**Then** the backend returns the combined trade history and performance metrics of all sibling runs that share the same `strategyId` and `mode`.
+**And** `ControlSummaryService.calculatePnLMetrics` computes realized P&L cumulatively across all completed/closed trades of sibling runs.
+**And** open P&L and net positions are still tracked dynamically for the active runs.
+**And** unit tests verify cumulative trade retrieval and realized P&L aggregation across multiple sibling runs.
+
