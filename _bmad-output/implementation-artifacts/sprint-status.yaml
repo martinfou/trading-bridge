@@ -1,5 +1,5 @@
 # generated: 2026-06-06
-# last_updated: "2026-06-27T16:48:19Z"
+# last_updated: "2026-06-29T00:52:13Z"
 # project: trading-bridge
 # project_key: NOKEY
 # tracking_system: file-system
@@ -36,10 +36,10 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: "2026-06-06"
-last_updated: "2026-06-27T16:48:19Z"
-project: trading-bridge
-project_key: NOKEY
-tracking_system: file-system
+last_updated: "2026-06-29T00:52:13Z"
+project: "trading-bridge"
+project_key: "NOKEY"
+tracking_system: "file-system"
 story_location: "_bmad-output/implementation-artifacts"
 
 development_status:
@@ -52,7 +52,6 @@ development_status:
   1-6-sma-crossover-example: done
   1-7-foundation-documentation: done
   epic-1-retrospective: optional
-
   epic-2: done
   2-1-analyze-strategyquant-xml-format: done
   2-2-sqxmlparser-implementation: done
@@ -65,7 +64,6 @@ development_status:
   2-9-java-code-generator: done
   2-10-utc-timezone-migration: done
   epic-2-retrospective: optional
-
   epic-3: in-progress
   3-1-complete-limit-and-stop-order-simulation: ready-for-dev
   3-2-commission-and-slippage: done
@@ -76,7 +74,6 @@ development_status:
   3-7-trade-csv-export: backlog
   3-8-advanced-performance-metrics: backlog
   epic-3-retrospective: optional
-
   epic-12: done
   12-1-golden-backtest-stabilization: done
   12-2-unified-historical-data-loading: done
@@ -90,7 +87,6 @@ development_status:
   12-10-backtest-engine-trust: done
   12-11-platform-test-strategies: done
   epic-12-retrospective: done
-
   epic-13: done
   13-1-decouple-runcontext-catalog-factory: done
   13-2-event-store-sqlite: done
@@ -102,14 +98,12 @@ development_status:
   13-8-mini-dataset-ci-golden: done
   13-9-run-lifecycle-interface: done
   epic-13-retrospective: done
-
   epic-14: backlog
   14-1-enregistrement-strategie-java-au-catalog: backlog
   14-2-import-sq-jforex-strategie-pilote-firstsqjforx: backlog
   14-3-rapport-de-conversion-partielle: backlog
   14-4-export-genetics-vers-catalog: backlog
   epic-14-retrospective: optional
-
   epic-15: in-progress
   15-1-gate-backtest-mvp-golden-metriques-minimales: backlog
   15-2-promoteservice-et-deploymentstore: backlog
@@ -121,7 +115,6 @@ development_status:
   15-8-prop-shop-runbook: done
   15-9-exception-de-promotion-pour-les-strategies-harness: done
   epic-15-retrospective: optional
-
   epic-16: in-progress
   16-1-runner-paper-stub-labellise: backlog
   16-2-broker-interface-skeleton: done
@@ -138,7 +131,6 @@ development_status:
   16-13-watchdog-weekend-close-and-memory-cleanup: review
   16-14-position-synchronization: review
   epic-16-retrospective: optional
-
   epic-17: in-progress
   17-1-get-control-summary-phase-a-observabilite: backlog
   17-2-websocket-dashboard-patches: backlog
@@ -153,7 +145,6 @@ development_status:
   17-11-execution-label-ui: done
   17-12-drift-post-broker: done
   epic-17-retrospective: done
-
   epic-18: backlog
   18-1-module-trading-node-scaffold: backlog
   18-2-localoutboxstore-et-buffer-hub-down: backlog
@@ -161,7 +152,6 @@ development_status:
   18-4-noderegistry-et-heartbeat: backlog
   18-5-replay-complet-apres-recovery-hub: backlog
   epic-18-retrospective: optional
-
   epic-19: in-progress
   19-1-interface-modules-de-validation-pluggables: backlog
   19-2-purged-walk-forward-gate: backlog
@@ -169,13 +159,11 @@ development_status:
   19-4-oos-holdout-gate: done
   19-5-execution-stress-gate: done
   epic-19-retrospective: done
-
   epic-20: backlog
   20-1-client-deepseek-via-deepseek-api-key: backlog
   20-2-generation-squelette-strategy-java: backlog
   20-3-tagging-origin-ai-dans-snapshot: backlog
   epic-20-retrospective: optional
-
   epic-desktop-gui: done
   dg-1-java-endpoints: done
   dg-2-electron-scaffold: done
@@ -185,17 +173,14 @@ development_status:
   dg-6-results-charts: done
   dg-7-compare-runs: done
   dg-8-packaging-ci: done
-
   epic-desktop-crossplatform-ci: done
   dci-1-matrix-build: done
-
   epic-desktop-bundle-java: done
   dbj-1-fat-jar: done
   dbj-2-jlink-script: done
   dbj-3-jvm-lifecycle: done
   dbj-4-extra-resources: done
   dbj-5-ci-feed: done
-
   epic-21: done
   21-1-hot-folder-strategy-manifest: done
   21-2-sq-inbox-processor: done
@@ -206,7 +191,6 @@ development_status:
   21-7-runtime-sq-bridge-hooks: done
   21-8-fitness-external-indicators-loop: done
   epic-21-retrospective: optional
-
   epic-22: in-progress
   22-1-weekly-intel-brief-ingest: done
   22-2-weekly-plan-job-deepseek: done
@@ -217,18 +201,15 @@ development_status:
   22-7-cron-scheduler-strategy-ttl: review
   22-8-tui-weekly-build-status: review
   epic-22-retrospective: optional
-
   epic-23: in-progress
   23-1-integration-de-montecarlosimulation-et-endpoint-api: done
   23-2-graphique-et-statistiques-monte-carlo-sur-la-gui: done
   23-3-gate-de-promotion-monte-carlo-var: backlog
   epic-23-retrospective: optional
-
-  epic-24: in-progress
+  epic-24: done
   24-1-wfa-core-engine-and-calibration-metadata: done
   24-2-cli-launcher-and-export-json: done
   epic-24-retrospective: optional
-
   epic-25: in-progress
   25-1-configuration-des-dependances-maven-et-factory-de-modeles-deepseek-ollama: done
   25-2-declaration-des-records-cibles-et-dtos-partages: done
@@ -239,7 +220,6 @@ development_status:
   25-7-experience-store-boucle-de-feedback-rag: backlog
   25-8-integration-du-control-plane-http-ecriture-json-et-tests-unitaires: backlog
   epic-25-retrospective: optional
-
   epic-26: done
   26-1-sqlite-backtest-schema: done
   26-2-backtest-persistence-service-autosave: done
@@ -251,34 +231,29 @@ development_status:
   26-8-pending-orders-sl-tp-on-price-chart: done
   26-9-compare-runs-by-weeks-and-drift: done
   epic-26-retrospective: done
-
   epic-27: in-progress
   27-1-active-strategy-card-drift-badge-desktop-gui: backlog
   27-2-drift-analysis-tab-in-inspect-view-desktop-gui: backlog
   27-3-tui-status-drift-alerts-section: backlog
   27-4-open-positions-pnl-ticket-metadata: ready-for-dev
   epic-27-retrospective: optional
-
   epic-28: backlog
   28-1-endpoints-rest-api-and-persistance: backlog
   28-2-interface-graphique-desktop-timeline-et-stabilite: backlog
   28-3-suivi-de-la-fraicheur-de-calibration-et-alertes-tuigui: backlog
   epic-28-retrospective: optional
-
   epic-29: backlog
   29-1-refactoring-de-valorisation-d-actifs-et-multiplicateur-mes-pnl: backlog
   29-2-simulation-des-marges-et-liquidation-forcee: backlog
   29-3-serie-de-prix-continue-et-execution-de-rollover: backlog
   29-4-ingesteur-de-donnees-historiques-via-tws-api: backlog
   epic-29-retrospective: optional
-
   epic-30: backlog
   30-1-resolution-de-contrat-et-soumission-d-ordres-market-fut: backlog
   30-2-interception-des-fills-et-reconciliation-double-barriere-des-commissions: backlog
   30-3-resume-de-compte-et-metriques-de-marge-api-rest-generique-cache: backlog
   30-4-heartbeat-de-connexion-cache-de-fraicheur-et-notifications-temps-reel-websocket-ui: backlog
   epic-30-retrospective: optional
-
   epic-31: done
   31-1-trades-sqlite-table: done
   31-2-event-replay-to-trade-extraction: done
@@ -288,7 +263,6 @@ development_status:
   31-6-rebuild-positions-from-trades-after-restart: done
   31-7-partial-fill-detection: done
   epic-31-retrospective: optional
-
   epic-32: done
   32-1-rest-keepalive-oandabroker: done
   32-2-implement-oandabroker-reconnect: done
@@ -300,7 +274,6 @@ development_status:
   32-8-market-hours-weekend-detection: done
   32-9-stale-price-detection: done
   epic-32-retrospective: optional
-
   epic-33: backlog
   33-1-fix-totaltrades-oanda-backtestresult: backlog
   33-2-enrich-heartbeat-with-trade-metadata: backlog
@@ -312,61 +285,55 @@ development_status:
   33-8-tui-health-command: backlog
   33-9-fix-runrecord-status-model: backlog
   epic-33-retrospective: optional
-
-  epic-34: backlog
-  34-1-create-run-records-table: backlog
-  34-2-migrate-runmanager-to-db-backed: backlog
-  34-3-auto-restore-runs-on-startup: backlog
-  34-4-watchdog-reconnect-first-then-restart: backlog
-  34-5-crash-safe-sqlite-transactions: backlog
+  epic-34: done
+  34-1-create-run-records-table: done
+  34-2-migrate-runmanager-to-db-backed: done
+  34-3-auto-restore-runs-on-startup: done
+  34-4-watchdog-reconnect-first-then-restart: done
+  34-5-crash-safe-sqlite-transactions: done
   epic-34-retrospective: optional
-
-  epic-35: backlog
-  35-1-structured-logging-oandabroker: backlog
-  35-2-new-audit-event-types: backlog
-  35-3-get-api-events-audit: backlog
-  35-4-log4j2-rolling-file-appender: backlog
+  epic-35: done
+  35-1-structured-logging-oandabroker: done
+  35-2-new-audit-event-types: done
+  35-3-get-api-events-audit: done
+  35-4-log4j2-rolling-file-appender: done
   epic-35-retrospective: optional
-
-  epic-36: backlog
-  36-1-startup-event-trade-reconciliation: backlog
-  36-2-sqlite-integrity-check-on-connect: backlog
-  36-3-paper-trading-survivability-test: backlog
-  36-4-cron-daily-reconciliation-report: backlog
-  36-5-alerting-high-reject-rate-stale-runs: backlog
-  36-6-self-diagnostic-endpoint: backlog
-  36-7-trade-write-latency-monitoring: backlog
-  36-8-data-retention-archival-policy: backlog
+  epic-36: done
+  36-1-startup-event-trade-reconciliation: done
+  36-2-sqlite-integrity-check-on-connect: done
+  36-3-paper-trading-survivability-test: done
+  36-4-cron-daily-reconciliation-report: done
+  36-5-alerting-high-reject-rate-stale-runs: done
+  36-6-self-diagnostic-endpoint: done
+  36-7-trade-write-latency-monitoring: done
+  36-8-data-retention-archival-policy: done
   epic-36-retrospective: optional
-
-  epic-37: backlog
-  37-1-extend-driftengine-full-metrics: backlog
-  37-2-match-run-to-backtest-by-param-hash: backlog
-  37-3-get-api-drift-comparison: backlog
-  37-4-comparison-in-control-summary: backlog
-  37-5-minimum-sample-statistical-guard: backlog
-  37-6-cron-bt-vs-paper-comparison-report: backlog
-  37-7-tui-compare-command: backlog
-  37-8-contingency-parameter-mismatch: backlog
-  37-9-contingency-timeframe-mismatch: backlog
-  37-10-trade-reconstructor-shared-utility: backlog
-  37-11-comparison-engine-pure-computation: backlog
-  37-12-equity-curve-correlation: backlog
-  37-13-trade-pnl-distribution-ks-test: backlog
-  37-14-commission-slippage-drift: backlog
+  epic-37: done
+  37-1-extend-driftengine-full-metrics: done
+  37-2-match-run-to-backtest-by-param-hash: done
+  37-3-get-api-drift-comparison: done
+  37-4-comparison-in-control-summary: done
+  37-5-minimum-sample-statistical-guard: done
+  37-6-cron-bt-vs-paper-comparison-report: done
+  37-7-tui-compare-command: done
+  37-8-contingency-parameter-mismatch: done
+  37-9-contingency-timeframe-mismatch: done
+  37-10-trade-reconstructor-shared-utility: done
+  37-11-comparison-engine-pure-computation: done
+  37-12-equity-curve-correlation: done
+  37-13-trade-pnl-distribution-ks-test: done
+  37-14-commission-slippage-drift: done
   epic-37-retrospective: optional
-
-  epic-38: backlog
-  38-1-reliability-slos-document: backlog
-  38-2-incident-severity-matrix: backlog
-  38-3-pre-flight-checklist: backlog
-  38-4-incident-response-runbooks: backlog
-  38-5-daily-weekly-review-process: backlog
-  38-6-platform-recovery-runbook: backlog
-  38-7-run-promotion-playbook: backlog
-  38-8-operator-dashboard-guide: backlog
+  epic-38: done
+  38-1-reliability-slos-document: done
+  38-2-incident-severity-matrix: done
+  38-3-pre-flight-checklist: done
+  38-4-incident-response-runbooks: done
+  38-5-daily-weekly-review-process: done
+  38-6-platform-recovery-runbook: done
+  38-7-run-promotion-playbook: done
+  38-8-operator-dashboard-guide: done
   epic-38-retrospective: optional
-
-  epic-39: in-progress
-  39-1-oanda-api-503-transient-error-handling-reconciliation: ready-for-dev
+  epic-39: done
+  39-1-oanda-api-503-transient-error-handling-reconciliation: done
   epic-39-retrospective: optional

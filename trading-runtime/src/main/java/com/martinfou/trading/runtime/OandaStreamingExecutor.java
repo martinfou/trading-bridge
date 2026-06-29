@@ -82,6 +82,7 @@ public final class OandaStreamingExecutor implements AutoCloseable {
     private volatile double lastPriceVal = 0.0;
     private volatile Instant lastPriceValChangeTime = Instant.now();
     private volatile boolean stalePriceWarningFlag = false;
+    private volatile Instant lastFillTime = null;
 
     public OandaStreamingExecutor(
         String runId,
@@ -137,13 +138,31 @@ public final class OandaStreamingExecutor implements AutoCloseable {
             @Override
             public void onTick(String instrument, Instant timestamp, double bid, double ask) {
                 if (instrument.equalsIgnoreCase(config.symbol())) {
-                    processTick(timestamp, bid, ask);
+                    org.slf4j.MDC.put("runId", runId);
+                    org.slf4j.MDC.put("strategyId", config.strategyId());
+                    org.slf4j.MDC.put("stale", String.valueOf(stalePriceWarningFlag));
+                    try {
+                        processTick(timestamp, bid, ask);
+                    } finally {
+                        org.slf4j.MDC.remove("runId");
+                        org.slf4j.MDC.remove("strategyId");
+                        org.slf4j.MDC.remove("stale");
+                    }
                 }
             }
 
             @Override
             public void onConnectionStateChange(boolean active) {
-                log.info("Pricing stream connection state for run {}: active={}", runId, active);
+                org.slf4j.MDC.put("runId", runId);
+                org.slf4j.MDC.put("strategyId", config.strategyId());
+                org.slf4j.MDC.put("stale", String.valueOf(stalePriceWarningFlag));
+                try {
+                    log.info("Pricing stream connection state for run {}: active={}", runId, active);
+                } finally {
+                    org.slf4j.MDC.remove("runId");
+                    org.slf4j.MDC.remove("strategyId");
+                    org.slf4j.MDC.remove("stale");
+                }
             }
         };
         this.activeSymbolsSupplier = activeSymbolsSupplier != null ? activeSymbolsSupplier : java.util.Collections::emptyList;
@@ -168,14 +187,24 @@ public final class OandaStreamingExecutor implements AutoCloseable {
         // 2. Register to live prices
         broker.connect();
         broker.addEventListener(event -> {
-            persistBrokerEvent(event);
-            if (event.type() == com.martinfou.trading.broker.BrokerEventType.FILL) {
-                // If it is a sell or close that results in a loss, we could track it.
-                // For simplicity, let's track execution events in the fill callback if PnL is negative.
-                // Since BrokerEvent does not contain PnL, we can query recent transactions or calculate it from orders.
-                // Let's check if the trade was a loss by calculating the difference or re-reading positions/transaction history.
-                // Let's implement consecutive loss tracking via event store scans.
-                checkConsecutiveLosses(event.timestamp());
+            org.slf4j.MDC.put("runId", runId);
+            org.slf4j.MDC.put("strategyId", config.strategyId());
+            org.slf4j.MDC.put("stale", String.valueOf(stalePriceWarningFlag));
+            try {
+                persistBrokerEvent(event);
+                if (event.type() == com.martinfou.trading.broker.BrokerEventType.FILL) {
+                    lastFillTime = event.timestamp();
+                    // If it is a sell or close that results in a loss, we could track it.
+                    // For simplicity, let's track execution events in the fill callback if PnL is negative.
+                    // Since BrokerEvent does not contain PnL, we can query recent transactions or calculate it from orders.
+                    // Let's check if the trade was a loss by calculating the difference or re-reading positions/transaction history.
+                    // Let's implement consecutive loss tracking via event store scans.
+                    checkConsecutiveLosses(event.timestamp());
+                }
+            } finally {
+                org.slf4j.MDC.remove("runId");
+                org.slf4j.MDC.remove("strategyId");
+                org.slf4j.MDC.remove("stale");
             }
         });
         streamingClient.addListener(tickListener);
@@ -247,6 +276,14 @@ public final class OandaStreamingExecutor implements AutoCloseable {
 
     public double getLastMidPrice() {
         return lastMidPrice;
+    }
+
+    public int getFilledCount() {
+        return filledCount;
+    }
+
+    public Broker getBroker() {
+        return broker;
     }
 
     public double getLastBid() {
@@ -370,7 +407,20 @@ public final class OandaStreamingExecutor implements AutoCloseable {
                 aggregator.completePeriod();
                 Bar completed = aggregator.getLastCompletedBar();
                 if (completed != null) {
-                    HeartbeatEvents.emitBarHeartbeat(runId, config, runMode, eventStore, completed, 0);
+                    int runningTradeCount = 0;
+                    double openPnL = 0.0;
+                    try {
+                        for (var pos : broker.getPositions()) {
+                            if (pos.symbol().equalsIgnoreCase(config.symbol())
+                                || pos.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(config.symbol().replace("/", "_").replace("-", "_"))) {
+                                runningTradeCount = pos.quantity() > 0 ? 1 : 0;
+                                openPnL = pos.currentPnl(lastMidPrice);
+                            }
+                        }
+                    } catch (Exception ex) {
+                        log.warn("Failed to retrieve positions/openPnL for heartbeat: {}", ex.getMessage());
+                    }
+                    HeartbeatEvents.emitBarHeartbeat(runId, config, runMode, eventStore, completed, 0, runningTradeCount, lastFillTime, openPnL);
                     if (!suspendedDaily && !suspendedWeekly && (cooldownUntil == null || timestamp.isAfter(cooldownUntil))) {
                         strategy.onBar(completed);
                         executePendingOrders(completed);
@@ -580,6 +630,9 @@ public final class OandaStreamingExecutor implements AutoCloseable {
                     }
                 }
             }
+        } catch (IllegalStateException e) {
+            log.warn("Run {} — transient error fetching positions; skipping reconciliation for this tick: {}",
+                runId, e.getMessage());
         } catch (Exception e) {
             log.error("Failed to run position reconciliation for run {}", runId, e);
         }
@@ -889,18 +942,18 @@ public final class OandaStreamingExecutor implements AutoCloseable {
         }
         double returnPct = (currentEquity - config.resolvedCapital()) / config.resolvedCapital() * 100.0;
 
-        int totalTradesCount = 0;
+        int closedTradesCount = 0;
         try {
             var replayedEvents = eventStore.replayAll(runId);
             var reconstructed = com.martinfou.trading.backtest.persistence.TradeReconstructor.reconstruct(replayedEvents);
-            totalTradesCount = reconstructed.size();
+            closedTradesCount = reconstructed.size();
         } catch (Exception e) {
-            log.error("Failed to reconstruct trades for totalTrades metric in emitEnded for run: " + runId, e);
-            totalTradesCount = filledCount;
+            log.warn("Failed to reconstruct closed trades for run {}: {}", runId, e.getMessage());
         }
 
         var endedPayload = new LinkedHashMap<String, Object>();
-        endedPayload.put("totalTrades", totalTradesCount);
+        endedPayload.put("totalTrades", filledCount);      // fills submitted and accepted
+        endedPayload.put("closedTrades", closedTradesCount); // matched open/close pairs
         endedPayload.put("totalReturnPct", returnPct);
         endedPayload.put("finalEquity", currentEquity);
         endedPayload.put("ordersSubmitted", submittedCount);
@@ -1031,6 +1084,9 @@ public final class OandaStreamingExecutor implements AutoCloseable {
             } else {
                 log.info("Position reconciliation check passed for run {} on {}.", runId, targetSymbol);
             }
+        } catch (IllegalStateException e) {
+            log.warn("Run {} — transient error fetching positions during manual check; skipping: {}",
+                runId, e.getMessage());
         } catch (Exception e) {
             log.error("Failed to run position reconciliation for run {}", runId, e);
         }

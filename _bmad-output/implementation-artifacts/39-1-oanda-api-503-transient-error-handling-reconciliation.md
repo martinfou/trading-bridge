@@ -1,6 +1,6 @@
 # Story 39.1 — OANDA API 503 and Transient Error Handling during Position Reconciliation
 
-Status: ready-for-dev
+Status: done
 
 Epic: 39 — OANDA API Resilience & Transient Error Handling
 
@@ -12,17 +12,17 @@ so that transient OANDA API hiccups do not clutter the logs with ERROR level mes
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — `OandaStreamingExecutor.reconcilePositions` must catch `IllegalStateException` specifically and log a warning instead of a full stack trace ERROR.
-- [ ] **AC2** — When a transient `IllegalStateException` occurs, the reconciliation is skipped for the current tick, and the 60-second timer/interval continues normally so that the next tick attempts reconciliation.
-- [ ] **AC3** — Programming errors (e.g., NullPointerException) during reconciliation are still caught by the fallback `Exception` catch block and logged as `ERROR`.
-- [ ] **AC4** — A unit test in `OandaStreamingExecutorTest.java` is written to verify that when the `Broker` throws `IllegalStateException` during `reconcilePositions`, the executor catches it and skips/continues without throwing or logging an `ERROR`.
+- [x] **AC1** — `OandaStreamingExecutor.reconcilePositions` must catch `IllegalStateException` specifically and log a warning instead of a full stack trace ERROR.
+- [x] **AC2** — When a transient `IllegalStateException` occurs, the reconciliation is skipped for the current tick, and the 60-second timer/interval continues normally so that the next tick attempts reconciliation.
+- [x] **AC3** — Programming errors (e.g., NullPointerException) during reconciliation are still caught by the fallback `Exception` catch block and logged as `ERROR`.
+- [x] **AC4** — A unit test in `OandaStreamingExecutorTest.java` is written to verify that when the `Broker` throws `IllegalStateException` during `reconcilePositions`, the executor catches it and skips/continues without throwing or logging an `ERROR`.
 
 ## Tasks
 
-- [ ] Modify `OandaStreamingExecutor.java` to add a specific `catch (IllegalStateException e)` block in `reconcilePositions` to log a warning.
-- [ ] Ensure that other non-runtime exceptions are still logged as errors in the generic `catch (Exception e)` block.
-- [ ] Create `OandaStreamingExecutorTest.java` in `trading-runtime/src/test/java/com/martinfou/trading/runtime/` and write a unit test to verify this behavior under simulated exception conditions.
-- [ ] Run `mvn test -pl trading-runtime` to ensure all tests pass.
+- [x] Modify `OandaStreamingExecutor.java` to add a specific `catch (IllegalStateException e)` block in `reconcilePositions` to log a warning.
+- [x] Ensure that other non-runtime exceptions are still logged as errors in the generic `catch (Exception e)` block.
+- [x] Create `OandaStreamingExecutorTest.java` in `trading-runtime/src/test/java/com/martinfou/trading/runtime/` and write a unit test to verify this behavior under simulated exception conditions.
+- [x] Run `mvn test -pl trading-runtime` to ensure all tests pass.
 
 ## Dev Notes
 
