@@ -365,21 +365,21 @@ function viewRun(runId: string) {
 <template>
   <div class="view">
     <h1>Compare</h1>
-    <p class="subtitle">Side-by-side comparison of up to 4 runs</p>
+    <p class="subtitle">Side-by-side comparison of up to 4 strategies</p>
 
     <!-- Error -->
     <div v-if="viewError" class="banner error">{{ viewError }}</div>
 
-    <!-- Loading runs list -->
+    <!-- Loading list -->
     <div v-if="loading" class="loading-state">
       <div class="spinner"></div>
-      <p>Loading runs…</p>
+      <p>Loading strategies…</p>
     </div>
 
-    <!-- Runs selector -->
+    <!-- Selector -->
     <div v-else class="runs-selector">
       <div class="runs-selector-header">
-        <h3>Select runs to compare</h3>
+        <h3>Select strategies to compare</h3>
         <input v-model="searchQuery" placeholder="Filter by strategy or symbol..." class="search-input" />
       </div>
       <div class="runs-selector-filters">
@@ -413,13 +413,13 @@ function viewRun(runId: string) {
         </div>
       </div>
       <div v-if="filteredRuns.length === 0" class="no-runs">
-        No matching runs found.
+        No matching strategies found.
       </div>
     </div>
 
-    <!-- Selected runs indicator -->
+    <!-- Selected indicator -->
     <div v-if="selectedIds.length > 0" class="selected-badge">
-      {{ selectedIds.length }} run{{ selectedIds.length > 1 ? 's' : '' }} selected
+      {{ selectedIds.length }} selected
       <span v-if="selectedIds.length < 4" class="badge-hint">(select up to 4)</span>
     </div>
 
@@ -610,7 +610,7 @@ function viewRun(runId: string) {
         <div v-if="activeTab === 'alignment'" class="tab-content">
           <div class="alignment-container">
             <div class="run-selector-row">
-              <span class="label">Sélectionner un run :</span>
+              <span class="label">Sélectionner une stratégie :</span>
               <select v-model="selectedAlignmentRunId" class="run-select">
                 <option v-for="id in selectedIds" :key="id" :value="id">
                   {{ compareData.get(id)?.run.strategyId }} ({{ compareData.get(id)?.run.symbol }}) · {{ compareData.get(id)?.run.mode }}
