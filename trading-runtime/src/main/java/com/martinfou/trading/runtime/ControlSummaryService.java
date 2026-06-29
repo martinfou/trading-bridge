@@ -340,60 +340,60 @@ public final class ControlSummaryService {
                     ? String.valueOf(record.configSnapshot().get("brokerAccountId"))
                     : null;
                 if (runManager != null && runManager.brokerAccountRegistry() != null) {
-                    var brokerOpt = runManager.brokerAccountRegistry().broker(accountId, label);
-                    if (brokerOpt.isPresent()) {
-                        var broker = brokerOpt.get();
-                        broker.connect();
-                        List<com.martinfou.trading.core.Position> brokerPosList = broker.getPositions();
-                        querySucceeded = true;
-                        java.util.Set<String> runOrderIds = new java.util.HashSet<>();
-                        if (runManager.eventStore() != null) {
-                            for (var e : runManager.eventStore().replayAll(record.runId())) {
-                                if ((e.type() == RunEventType.FILL || e.type() == RunEventType.ORDER_SUBMITTED) && e.payload() != null && e.payload().containsKey("orderId")) {
-                                    runOrderIds.add(String.valueOf(e.payload().get("orderId")));
+                    try (com.martinfou.trading.broker.Broker broker = runManager.brokerAccountRegistry().broker(accountId, label).orElse(null)) {
+                        if (broker != null) {
+                            broker.connect();
+                            List<com.martinfou.trading.core.Position> brokerPosList = broker.getPositions();
+                            querySucceeded = true;
+                            java.util.Set<String> runOrderIds = new java.util.HashSet<>();
+                            if (runManager.eventStore() != null) {
+                                for (var e : runManager.eventStore().replayAll(record.runId())) {
+                                    if ((e.type() == RunEventType.FILL || e.type() == RunEventType.ORDER_SUBMITTED) && e.payload() != null && e.payload().containsKey("orderId")) {
+                                        runOrderIds.add(String.valueOf(e.payload().get("orderId")));
+                                    }
                                 }
                             }
-                        }
-                        var journalPositions = JournalPositions.fromFills(runManager.eventStore().replayAll(record.runId()));
-                        for (var pos : brokerPosList) {
-                            if (pos.symbol().equalsIgnoreCase(record.symbol()) || pos.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(record.symbol().replace("/", "_").replace("-", "_"))) {
-                                java.time.Instant resolvedEntryTime = pos.entryTime();
-                                if (resolvedEntryTime == null || resolvedEntryTime.equals(java.time.Instant.EPOCH)) {
-                                    String journalKey = pos.symbol() + ":" + pos.side().name();
-                                    var jp = journalPositions.get(journalKey);
-                                    if (jp != null && jp.entryTime() != null) {
-                                        resolvedEntryTime = jp.entryTime();
-                                    }
-                                }
-                                boolean match = false;
-                                if (pos.clientTag() != null && !pos.clientTag().isBlank()) {
-                                    if (runOrderIds.contains(pos.clientTag())) {
-                                        match = true;
-                                    }
-                                } else {
-                                    int activeRuns = 0;
-                                    for (RunRecord r : runManager.list(null)) {
-                                        if (r.status() == RunRecord.Status.RUNNING) {
-                                            String rs = r.symbol();
-                                            if (pos.symbol().equalsIgnoreCase(rs) || pos.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(rs.replace("/", "_").replace("-", "_"))) {
-                                                activeRuns++;
-                                            }
+                            var journalPositions = JournalPositions.fromFills(runManager.eventStore().replayAll(record.runId()));
+                            for (var pos : brokerPosList) {
+                                if (pos.symbol().equalsIgnoreCase(record.symbol()) || pos.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(record.symbol().replace("/", "_").replace("-", "_"))) {
+                                    java.time.Instant resolvedEntryTime = pos.entryTime();
+                                    if (resolvedEntryTime == null || resolvedEntryTime.equals(java.time.Instant.EPOCH)) {
+                                        String journalKey = pos.symbol() + ":" + pos.side().name();
+                                        var jp = journalPositions.get(journalKey);
+                                        if (jp != null && jp.entryTime() != null) {
+                                            resolvedEntryTime = jp.entryTime();
                                         }
                                     }
-                                    if (activeRuns == 1) {
-                                        match = true;
+                                    boolean match = false;
+                                    if (pos.clientTag() != null && !pos.clientTag().isBlank()) {
+                                        if (runOrderIds.contains(pos.clientTag())) {
+                                            match = true;
+                                        }
+                                    } else {
+                                        int activeRuns = 0;
+                                        for (RunRecord r : runManager.list(null)) {
+                                            if (r.status() == RunRecord.Status.RUNNING) {
+                                                String rs = r.symbol();
+                                                if (pos.symbol().equalsIgnoreCase(rs) || pos.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(rs.replace("/", "_").replace("-", "_"))) {
+                                                    activeRuns++;
+                                                }
+                                            }
+                                        }
+                                        if (activeRuns == 1) {
+                                            match = true;
+                                        }
                                     }
-                                }
-                                if (match) {
-                                    positions.add(Map.of(
-                                        "symbol", pos.symbol(),
-                                        "side", pos.side().name(),
-                                        "quantity", pos.quantity(),
-                                        "entryTime", resolvedEntryTime != null ? resolvedEntryTime.toString() : "",
-                                        "entryPrice", pos.entryPrice(),
-                                        "stopLoss", pos.stopLoss(),
-                                        "takeProfit", pos.takeProfit()
-                                    ));
+                                    if (match) {
+                                        positions.add(Map.of(
+                                            "symbol", pos.symbol(),
+                                            "side", pos.side().name(),
+                                            "quantity", pos.quantity(),
+                                            "entryTime", resolvedEntryTime != null ? resolvedEntryTime.toString() : "",
+                                            "entryPrice", pos.entryPrice(),
+                                            "stopLoss", pos.stopLoss(),
+                                            "takeProfit", pos.takeProfit()
+                                        ));
+                                    }
                                 }
                             }
                         }
