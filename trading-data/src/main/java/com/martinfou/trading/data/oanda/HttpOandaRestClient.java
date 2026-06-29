@@ -89,34 +89,43 @@ public class HttpOandaRestClient implements OandaRestClient {
 
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
-                return client.send(request, handler);
+                HttpResponse<T> response = client.send(request, handler);
+                int status = response.statusCode();
+                if (status >= 500 && isTransientStatus(status)) {
+                    if (attempt == maxAttempts) {
+                        throw new java.io.IOException("Transient OANDA error after " + maxAttempts + " attempts, status: " + status);
+                    }
+                    log.warn("OANDA REST — transient HTTP {} (attempt {}/{}) retrying after {} ms", status, attempt, maxAttempts, backoffMs);
+                    if (isGet) {
+                        Thread.sleep(backoffMs);
+                        backoffMs = Math.min(backoffMs * 2, 32000);
+                        this.client = buildHttpClient();
+                    }
+                    continue;
+                }
+                return response;
             } catch (java.io.IOException e) {
                 if (attempt == maxAttempts) {
                     throw e;
                 }
-
                 boolean shouldRetry = false;
                 if (isGet) {
                     shouldRetry = true;
                 } else {
                     String msg = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
                     shouldRetry = msg.contains("goaway")
-                        || msg.contains("reset")
-                        || msg.contains("connection")
-                        || msg.contains("eof")
-                        || msg.contains("closed")
-                        || e instanceof java.net.ConnectException;
+                            || msg.contains("reset")
+                            || msg.contains("connection")
+                            || msg.contains("eof")
+                            || msg.contains("closed")
+                            || e instanceof java.net.ConnectException;
                 }
-
                 if (!shouldRetry) {
                     throw e;
                 }
-
                 log.warn("OANDA REST — HTTP/2 connection error (attempt {}/{}): {}; rebuilding HttpClient and retrying request",
-                    attempt, maxAttempts, e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
-
+                        attempt, maxAttempts, e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
                 this.client = buildHttpClient();
-
                 if (isGet) {
                     try {
                         Thread.sleep(backoffMs);
@@ -129,6 +138,11 @@ public class HttpOandaRestClient implements OandaRestClient {
             }
         }
         throw new java.io.IOException("Request failed after " + maxAttempts + " attempts");
+    }
+
+    /** Returns true for HTTP status codes that are considered transient and should be retried. */
+    private boolean isTransientStatus(int status) {
+        return status == 502 || status == 503 || status == 504;
     }
 
     @Override

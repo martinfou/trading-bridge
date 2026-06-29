@@ -201,6 +201,97 @@ class OandaStreamingExecutorTest {
         assertEquals("EUR_USD", staleEvent.payload().get("symbol"));
     }
 
+    @Test
+    void testHeartbeatEventsEnriched() {
+        var store = new InMemoryEventStore();
+        String runId = "test-run-4";
+        var config = new RunConfigSnapshot(
+            "LondonOpenRangeBreakout",
+            "EUR_USD",
+            "LIVE",
+            "sample",
+            500,
+            null,
+            1000.0,
+            0.07,
+            1e-4,
+            "LIVE_OANDA",
+            "acct1"
+        );
+
+        var bar = new com.martinfou.trading.core.Bar("EUR_USD", Instant.now(), 1.1, 1.2, 1.0, 1.15, 100);
+        Instant lastFill = Instant.now().minusSeconds(10);
+        HeartbeatEvents.emitBarHeartbeat(runId, config, com.martinfou.trading.backtest.RunMode.LIVE, store, bar, 3, 1, lastFill, 150.5);
+
+        List<RunEvent> events = store.replayAll(runId);
+        RunEvent heartbeatEvent = events.stream()
+            .filter(e -> e.type() == RunEventType.HEARTBEAT)
+            .findFirst()
+            .orElse(null);
+
+        assertNotNull(heartbeatEvent, "Expected HEARTBEAT event");
+        assertEquals(1, heartbeatEvent.payload().get("runningTradeCount"));
+        assertEquals(lastFill.toString(), heartbeatEvent.payload().get("lastFillTime"));
+        assertEquals(150.5, heartbeatEvent.payload().get("openPnL"));
+    }
+
+    @Test
+    void testReconcilePositionsHandlesTransientException() {
+        var store = new InMemoryEventStore();
+        String runId = "test-run-exception";
+        var config = new RunConfigSnapshot(
+            "LondonOpenRangeBreakout",
+            "EUR_USD",
+            "LIVE",
+            "sample",
+            500,
+            null,
+            1000.0,
+            0.07,
+            1e-4,
+            "LIVE_OANDA",
+            "acct1"
+        );
+
+        // Broker throws IllegalStateException (transient error like 503)
+        var broker = new StubBroker() {
+            @Override
+            public List<Position> getPositions() {
+                throw new IllegalStateException("OANDA API 503 Service Unavailable");
+            }
+        };
+
+        var strategy = new Strategy() {
+            @Override public String name() { return "stub"; }
+            @Override public void onBar(com.martinfou.trading.core.Bar bar) {}
+            @Override public void onTick(double bid, double ask, long time) {}
+            @Override public List<Order> getPendingOrders() { return Collections.emptyList(); }
+            @Override public void reset() {}
+        };
+
+        var executor = new OandaStreamingExecutor(
+            runId,
+            null,
+            config,
+            strategy,
+            broker,
+            null,
+            store,
+            new KillSwitchRegistry(),
+            null,
+            new RunRiskContext(new RiskEngine(), (run, cfg, m, check) -> {}, metrics -> {})
+        );
+
+        // This call should catch IllegalStateException, log a warning and return normally
+        assertDoesNotThrow(() -> executor.reconcilePositions(), 
+            "Position reconciliation should catch IllegalStateException and not propagate it");
+
+        // Verify no RECONCILIATION_ALERT event was written
+        List<RunEvent> events = store.replayAll(runId);
+        boolean hasAlert = events.stream().anyMatch(e -> e.type() == RunEventType.RECONCILIATION_ALERT);
+        assertFalse(hasAlert, "No reconciliation alert event should be written on transient errors");
+    }
+
     private static class StubBroker implements Broker {
         @Override public boolean isConnected() { return true; }
         @Override public void connect() {}
