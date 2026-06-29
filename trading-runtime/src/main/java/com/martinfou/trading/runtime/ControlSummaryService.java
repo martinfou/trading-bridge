@@ -76,7 +76,25 @@ public final class ControlSummaryService {
         Optional<Instant> globalLastEvent = Optional.empty();
         int staleRunCount = 0;
 
+        Map<String, List<RunRecord>> grouped = new LinkedHashMap<>();
         for (RunRecord record : runManager.list(null)) {
+            String key = record.strategyId() + "|" + record.mode().name() + "|" + record.symbol();
+            grouped.computeIfAbsent(key, k -> new ArrayList<>()).add(record);
+        }
+
+        List<RunRecord> representativeRecords = new ArrayList<>();
+        for (List<RunRecord> group : grouped.values()) {
+            RunRecord representative = group.stream()
+                .filter(r -> r.status() == RunRecord.Status.RUNNING || r.status() == RunRecord.Status.PAUSED)
+                .findFirst()
+                .orElseGet(() -> group.stream()
+                    .max(Comparator.comparing(RunRecord::startedAt))
+                    .orElse(group.get(0))
+                );
+            representativeRecords.add(representative);
+        }
+
+        for (RunRecord record : representativeRecords) {
             EventGapDetector.Result gaps = EventGapDetector.analyze(record.runId(), runManager.eventStore());
             Optional<StoredRunEvent> latestStored = latestStoredEvent(record.runId());
             Optional<Instant> lastEventAt = resolveLastEventAt(record, latestStored);
