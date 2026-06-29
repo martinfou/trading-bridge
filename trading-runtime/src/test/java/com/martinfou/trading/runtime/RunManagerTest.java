@@ -649,25 +649,25 @@ class RunManagerTest {
             run2.markRunning();
             manager.runRecordStore().save(run2);
 
-            // Insert trade 1 for run-1
+            // Insert trade 1 for run-1 (later trade)
             com.martinfou.trading.core.Trade trade1 = new com.martinfou.trading.core.Trade(
                 "trade-1", "EUR_USD", com.martinfou.trading.core.Order.Side.BUY, 1.1000, 1.1050, 1000.0,
-                Instant.now().minusSeconds(3600), Instant.now().minusSeconds(1800), 5.0, 1.0950, 1.1100
+                Instant.now().minusSeconds(1200), Instant.now(), 5.0, 1.0950, 1.1100
             );
             manager.tradeStore().insert("run-1", trade1);
 
-            // Insert trade 2 for run-2
+            // Insert trade 2 for run-2 (earlier trade)
             com.martinfou.trading.core.Trade trade2 = new com.martinfou.trading.core.Trade(
                 "trade-2", "EUR_USD", com.martinfou.trading.core.Order.Side.SELL, 1.1020, 1.1000, 1000.0,
-                Instant.now().minusSeconds(1200), Instant.now(), 2.0, 1.1050, 1.0980
+                Instant.now().minusSeconds(3600), Instant.now().minusSeconds(1800), 2.0, 1.1050, 1.0980
             );
             manager.tradeStore().insert("run-2", trade2);
 
-            // Retrieve trades for run-2 and verify it includes trade1 from run-1 (since they share StratA + PAPER)
+            // Retrieve trades for run-2 and verify it includes trade2 (first, chronologically) and trade1 (second)
             java.util.List<com.martinfou.trading.core.Trade> trades = manager.getTrades("run-2");
             assertEquals(2, trades.size());
-            assertEquals("trade-1", trades.get(0).id());
-            assertEquals("trade-2", trades.get(1).id());
+            assertEquals("trade-2", trades.get(0).id());
+            assertEquals("trade-1", trades.get(1).id());
         }
     }
 }

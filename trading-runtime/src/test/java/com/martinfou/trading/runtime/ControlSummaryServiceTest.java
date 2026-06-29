@@ -332,8 +332,8 @@ class ControlSummaryServiceTest {
             double pnl1 = ((Number) run1Item.get("realizedPnL")).doubleValue();
             double pnl2 = ((Number) run2Item.get("realizedPnL")).doubleValue();
 
-            assertEquals(pnl1, pnl2, 0.0001);
-            assertTrue(pnl1 > 0.0);
+            assertEquals(25.0, pnl1, 0.0001);
+            assertEquals(25.0, pnl2, 0.0001);
         }
     }
 
