@@ -78,18 +78,23 @@ public final class ControlSummaryService {
 
         Map<String, List<RunRecord>> grouped = new LinkedHashMap<>();
         for (RunRecord record : runManager.list(null)) {
-            String key = record.strategyId() + "|" + record.mode().name() + "|" + record.symbol();
+            String modeName = record.mode() != null ? record.mode().name() : "UNKNOWN";
+            String key = record.strategyId() + "|" + modeName + "|" + record.symbol();
             grouped.computeIfAbsent(key, k -> new ArrayList<>()).add(record);
         }
 
         List<RunRecord> representativeRecords = new ArrayList<>();
         for (List<RunRecord> group : grouped.values()) {
             RunRecord representative = group.stream()
-                .filter(r -> r.status() == RunRecord.Status.RUNNING || r.status() == RunRecord.Status.PAUSED)
-                .findFirst()
+                .filter(r -> r.status() == RunRecord.Status.RUNNING)
+                .max(Comparator.comparing(RunRecord::startedAt, Comparator.nullsLast(Instant::compareTo)))
                 .orElseGet(() -> group.stream()
-                    .max(Comparator.comparing(RunRecord::startedAt))
-                    .orElse(group.get(0))
+                    .filter(r -> r.status() == RunRecord.Status.PAUSED)
+                    .max(Comparator.comparing(RunRecord::startedAt, Comparator.nullsLast(Instant::compareTo)))
+                    .orElseGet(() -> group.stream()
+                        .max(Comparator.comparing(RunRecord::startedAt, Comparator.nullsLast(Instant::compareTo)))
+                        .orElse(group.get(0))
+                    )
                 );
             representativeRecords.add(representative);
         }
