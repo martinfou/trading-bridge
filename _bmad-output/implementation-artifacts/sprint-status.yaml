@@ -1,5 +1,5 @@
 # generated: 2026-06-06
-# last_updated: "2026-06-29T12:50:00-04:00"
+# last_updated: "2026-06-29T19:11:00-04:00"
 # project: trading-bridge
 # project_key: NOKEY
 # tracking_system: file-system
@@ -36,7 +36,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: "2026-06-06"
-last_updated: "2026-06-29T12:50:00-04:00"
+last_updated: "2026-06-29T19:11:00-04:00"
 project: "trading-bridge"
 project_key: "NOKEY"
 tracking_system: "file-system"
@@ -341,3 +341,11 @@ development_status:
   epic-40: done
   40-1-suppress-javalin-version-check-warning: done
   epic-40-retrospective: optional
+  epic-41: done
+  41-1-resilience-du-parsing-json-et-gestion-des-exceptions-oanda: done
+  41-2-tracage-http-contextes-mdc-et-masquage-des-secrets-par-expression-reguliere: done
+  41-3-telemetrie-de-la-latence-par-tampon-circulaire-en-memoire: done
+  41-4-queue-de-reconciliation-asynchrone-regulee: done
+  41-5-resilience-de-reconciliation-appariement-fallback-et-blocage-d-entrees: done
+  41-6-telemetrie-du-signal-et-watchdog-de-liveness: done
+  epic-41-retrospective: optional

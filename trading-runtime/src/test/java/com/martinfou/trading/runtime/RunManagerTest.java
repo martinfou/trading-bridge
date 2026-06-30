@@ -374,6 +374,56 @@ class RunManagerTest {
     }
 
     @Test
+    void testReconciliation_correctiveEvents_doesNotTerminateStrategy() throws Exception {
+        try (EventStore store = EventStores.inMemory();
+             RunManager manager = new RunManager(store)) {
+            
+            // Register an active PAPER run
+            RunConfigSnapshot config = RunConfigSnapshot.fromRequest(new RunManager.StartRunRequest(
+                "LondonOpenRangeBreakout",
+                "EUR_USD",
+                "PAPER",
+                new BarSourceResolver.BarsSource("sample", 50, null),
+                10_000.0,
+                1.0,
+                0.0,
+                0.0,
+                ExecutionLabel.PAPER_STUB.name(),
+                "default"
+            ), "EUR_USD");
+            
+            RunRecord record = manager.register(config);
+            record.markRunning();
+            
+            String runId = record.runId();
+            Instant baseTime = Instant.parse("2026-06-20T12:00:00Z");
+            
+            // 1. Appending a corrective FILL event
+            var corrPayload = new java.util.LinkedHashMap<String, Object>();
+            corrPayload.put("orderId", "reconciliation-12345");
+            corrPayload.put("symbol", "EUR_USD");
+            corrPayload.put("side", "SELL");
+            corrPayload.put("quantity", 1000.0);
+            corrPayload.put("price", 1.0855);
+            corrPayload.put("reconciliation", true);
+            
+            manager.eventStore().append(runId, new com.martinfou.trading.backtest.events.RunEvent(
+                com.martinfou.trading.backtest.events.RunEvent.SCHEMA_VERSION,
+                RunEventType.FILL,
+                baseTime,
+                runId,
+                "LondonOpenRangeBreakout",
+                "EUR_USD",
+                "PAPER",
+                corrPayload
+            ));
+            
+            // ReconcilingEventStore inside manager should ignore this event and NOT change status
+            assertEquals(RunRecord.Status.RUNNING, record.status());
+        }
+    }
+
+    @Test
     void testPruneTerminalRuns() throws Exception {
         try (RuntimeStores.Bundle stores = RuntimeStores.inMemoryWithBroadcast();
              RunManager manager = new RunManager(stores.eventStore())) {

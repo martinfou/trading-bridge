@@ -7,10 +7,12 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.core.Strategy;
+import com.martinfou.trading.core.exceptions.BrokerException;
 import com.martinfou.trading.core.TimeConventions;
 import com.martinfou.trading.data.OandaPriceClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -76,10 +78,14 @@ public class LiveStrategyRunner implements Runnable {
     private final int intervalSec;
 
     // ---- Runtime state ----
+    private final String runId;
     private final List<Bar> barHistory = new ArrayList<>();
     private final List<ActiveTrade> activeTrades = new ArrayList<>();
     private final List<PendingStop> pendingStops = new ArrayList<>();
     private final Set<String> executedBars = new HashSet<>();
+    private long signalCount = 0;
+    private long barCount = 0;
+    private volatile Instant lastHeartbeatTime = Instant.now();
     private int totalEntries = 0;
     private int totalExits = 0;
     private double totalPnl = 0.0;
@@ -92,7 +98,7 @@ public class LiveStrategyRunner implements Runnable {
     private static final Map<String, LiveStrategyRunner> ACTIVE_RUNNERS = new ConcurrentHashMap<>();
 
     // ---- Persisted state ----
-    private static final class ActiveTrade {
+    static final class ActiveTrade {
         String tradeId;
         String symbol;
         String side;
@@ -102,6 +108,7 @@ public class LiveStrategyRunner implements Runnable {
         double takeProfit;
         Instant entryTime;
         double unrealizedPnl;
+        String reconciliationStatus = "CONFIRMED";
 
         ActiveTrade() {}
 
@@ -116,10 +123,11 @@ public class LiveStrategyRunner implements Runnable {
             this.takeProfit = takeProfit;
             this.entryTime = entryTime;
             this.unrealizedPnl = 0.0;
+            this.reconciliationStatus = "CONFIRMED";
         }
     }
 
-    private static final class PendingStop {
+    static final class PendingStop {
         String orderId;
         String symbol;
         String side;
@@ -148,6 +156,7 @@ public class LiveStrategyRunner implements Runnable {
 
     public LiveStrategyRunner(String apiKey, String accountId, Strategy strategy,
                               String strategyShortName, String granularity, int intervalSec) {
+        this.runId = java.util.UUID.randomUUID().toString();
         this.apiKey = apiKey;
         this.accountId = accountId;
         this.strategy = strategy;
@@ -470,6 +479,9 @@ public class LiveStrategyRunner implements Runnable {
                 sn.put("totalPnl", r.totalPnl);
                 sn.put("activeTrades", r.activeTrades.size());
                 sn.put("pendingStops", r.pendingStops.size());
+                sn.put("signalCount", r.signalCount);
+                sn.put("barCount", r.barCount);
+                sn.put("liveness", r.getLivenessStatus());
             }
 
             MAPPER.writerWithDefaultPrettyPrinter().writeValue(AGGREGATED_MONITOR.toFile(), root);
@@ -547,10 +559,21 @@ public class LiveStrategyRunner implements Runnable {
 
     @Override
     public void run() {
+        MDC.put("runId", runId);
+        MDC.put("strategyId", strategyShortName);
+        MDC.put("symbol", toOandaSymbol());
         try {
             runLoop();
-        } catch (Exception e) {
-            log.error("❌ Fatal error in strategy thread '{}': {}", strategyShortName, e.getMessage(), e);
+        } catch (BrokerException e) {
+            log.error("❌ Broker exception in strategy thread '{}': {}. Attempting shutdown.", strategyShortName, e.getMessage(), e);
+            RUNNING.set(false);
+            saveStateFailed(e.getMessage());
+        } catch (Throwable e) {
+            log.error("❌ Fatal unhandled exception in strategy thread '{}': {}", strategyShortName, e.getMessage(), e);
+            RUNNING.set(false);
+            saveStateFailed(e.getMessage());
+        } finally {
+            MDC.clear();
         }
     }
 
@@ -595,6 +618,7 @@ public class LiveStrategyRunner implements Runnable {
         log.info("▶ Entering main loop ({}s interval)...", intervalSec);
         while (RUNNING.get()) {
             try {
+                lastHeartbeatTime = TimeConventions.now();
                 Instant loopStart = TimeConventions.now();
                 tick(oandaSymbol);
                 saveStatePeriodic();
@@ -607,9 +631,12 @@ public class LiveStrategyRunner implements Runnable {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 RUNNING.set(false);
+            } catch (BrokerException e) {
+                log.warn("⚠ Broker error in loop for '{}' (will retry in 5s): {}", strategyShortName, e.getMessage());
+                try { Thread.sleep(5000); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
             } catch (Exception e) {
                 log.error("Loop error in '{}': {}", strategyShortName, e.getMessage(), e);
-                Thread.sleep(5000);
+                try { Thread.sleep(5000); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
             }
         }
 
@@ -623,6 +650,7 @@ public class LiveStrategyRunner implements Runnable {
     // ========================================================================
 
     private void tick(String oandaSymbol) throws Exception {
+        signalCount++;
         // 1. Fetch latest candles
         List<Bar> freshBars = priceClient.getCandles(oandaSymbol, granularity, 5);
         if (freshBars.isEmpty()) return;
@@ -647,6 +675,7 @@ public class LiveStrategyRunner implements Runnable {
 
         // 3. Feed new bars to the strategy
         for (Bar bar : newBars) {
+            barCount++;
             barHistory.add(bar);
             log.info("📊 New bar: {} {} O={} H={} L={} C={} V={}",
                 bar.symbol(), TimeConventions.toDisplayString(bar.timestamp()),
@@ -673,7 +702,12 @@ public class LiveStrategyRunner implements Runnable {
     // Pending Orders
     // ========================================================================
 
-    private void checkPendingOrders(String oandaSymbol) throws Exception {
+    void checkPendingOrders(String oandaSymbol) throws Exception {
+        if (hasUnconfirmedReconciliation()) {
+            log.warn("⚠️ Entry orders blocked because there is a trade awaiting OANDA reconciliation.");
+            strategy.getPendingOrders(); // Consume/clear strategy queue
+            return;
+        }
         List<Order> orders = strategy.getPendingOrders();
         if (orders == null || orders.isEmpty()) return;
 
@@ -873,24 +907,23 @@ public class LiveStrategyRunner implements Runnable {
         if (Duration.between(lastReconciliationTime, now).toSeconds() >= 60) {
             try {
                 Set<String> openTradeIds = executor.getOpenTradeIds();
-                Iterator<ActiveTrade> it = activeTrades.iterator();
-                boolean changed = false;
-                while (it.hasNext()) {
-                    ActiveTrade trade = it.next();
-                    if (trade.tradeId != null && !openTradeIds.contains(trade.tradeId)) {
-                        log.warn("⚠️ Trade ID {} for strategy {} is no longer open at OANDA. Removing from activeTrades. Realized PnL: ${}",
-                            trade.tradeId, strategyShortName, String.format("%.2f", trade.unrealizedPnl));
-                        totalExits++;
-                        totalPnl += trade.unrealizedPnl;
-                        it.remove();
-                        changed = true;
+                synchronized (activeTrades) {
+                    boolean changed = false;
+                    for (ActiveTrade trade : activeTrades) {
+                        if ("CONFIRMED".equals(trade.reconciliationStatus) && trade.tradeId != null && !openTradeIds.contains(trade.tradeId)) {
+                            log.warn("⚠️ Trade ID {} for strategy {} is no longer open at OANDA. Triggering async reconciliation.",
+                                trade.tradeId, strategyShortName);
+                            trade.reconciliationStatus = "UNCONFIRMED_RECONCILIATION";
+                            AsyncReconciliationQueue.GLOBAL.submit(this, trade.tradeId);
+                            changed = true;
+                        }
+                    }
+                    if (changed) {
+                        saveStateNow();
                     }
                 }
-                if (changed) {
-                    saveStateNow();
-                }
             } catch (Exception e) {
-                log.error("Failed to reconcile trades with OANDA: {}", e.getMessage());
+                log.error("Failed to check open trades with OANDA: {}", e.getMessage());
             }
             lastReconciliationTime = now;
         }
@@ -901,51 +934,53 @@ public class LiveStrategyRunner implements Runnable {
         double currentBid = price.bid();
         double currentAsk = price.ask();
 
-        Iterator<ActiveTrade> it = activeTrades.iterator();
-        while (it.hasNext()) {
-            ActiveTrade trade = it.next();
-            double mid = (currentBid + currentAsk) / 2.0;
-
-            double pnl;
-            double exitPrice;
-            boolean exited = false;
-
-            if (trade.side.equals("BUY")) {
-                pnl = (currentBid - trade.entryPrice) * trade.quantity;
-                if (trade.takeProfit > 0 && currentBid >= trade.takeProfit) {
-                    exitPrice = trade.takeProfit;
-                    exited = true;
-                } else if (trade.stopLoss > 0 && currentBid <= trade.stopLoss) {
-                    exitPrice = trade.stopLoss;
-                    exited = true;
-                } else {
-                    exitPrice = currentBid;
+        synchronized (activeTrades) {
+            Iterator<ActiveTrade> it = activeTrades.iterator();
+            while (it.hasNext()) {
+                ActiveTrade trade = it.next();
+                if ("UNCONFIRMED_RECONCILIATION".equals(trade.reconciliationStatus)) {
+                    continue; // Skip already exited trades awaiting OANDA confirmation
                 }
-            } else {
-                pnl = (trade.entryPrice - currentAsk) * trade.quantity;
-                if (trade.takeProfit > 0 && currentAsk <= trade.takeProfit) {
-                    exitPrice = trade.takeProfit;
-                    exited = true;
-                } else if (trade.stopLoss > 0 && currentAsk >= trade.stopLoss) {
-                    exitPrice = trade.stopLoss;
-                    exited = true;
+                double mid = (currentBid + currentAsk) / 2.0;
+
+                double pnl;
+                double exitPrice;
+                boolean exited = false;
+
+                if (trade.side.equals("BUY")) {
+                    pnl = (currentBid - trade.entryPrice) * trade.quantity;
+                    if (trade.takeProfit > 0 && currentBid >= trade.takeProfit) {
+                        exitPrice = trade.takeProfit;
+                        exited = true;
+                    } else if (trade.stopLoss > 0 && currentBid <= trade.stopLoss) {
+                        exitPrice = trade.stopLoss;
+                        exited = true;
+                    } else {
+                        exitPrice = currentBid;
+                    }
                 } else {
-                    exitPrice = currentAsk;
+                    pnl = (trade.entryPrice - currentAsk) * trade.quantity;
+                    if (trade.takeProfit > 0 && currentAsk <= trade.takeProfit) {
+                        exitPrice = trade.takeProfit;
+                        exited = true;
+                    } else if (trade.stopLoss > 0 && currentAsk >= trade.stopLoss) {
+                        exitPrice = trade.stopLoss;
+                        exited = true;
+                    } else {
+                        exitPrice = currentAsk;
+                    }
                 }
-            }
 
-            trade.unrealizedPnl = pnl;
+                trade.unrealizedPnl = pnl;
 
-            if (exited && trade.tradeId != null) {
-                totalExits++;
-                totalPnl += pnl;
-                log.info("═══════ EXIT {} {} @ {} PnL: {}{} ═══════",
-                    trade.symbol, trade.side,
-                    formatPrice(exitPrice, trade.symbol),
-                    pnl >= 0 ? "+" : "",
-                    String.format("%.2f", pnl / trade.quantity * 100000));
-                it.remove();
-            } else {
+                if (exited && trade.tradeId != null) {
+                    log.info("═══════ EXIT {} {} @ {} (Triggering async reconciliation) ═══════",
+                        trade.symbol, trade.side,
+                        formatPrice(exitPrice, trade.symbol));
+                    trade.reconciliationStatus = "UNCONFIRMED_RECONCILIATION";
+                    AsyncReconciliationQueue.GLOBAL.submit(this, trade.tradeId);
+                    saveStateNow();
+                } else {
                 log.info("   {} {} | Entry: {} | Current: {} | PnL: {}{} | SL: {} TP: {}",
                     trade.symbol, trade.side,
                     formatPrice(trade.entryPrice, trade.symbol),
@@ -954,6 +989,7 @@ public class LiveStrategyRunner implements Runnable {
                     String.format("%.2f", pnl),
                     trade.stopLoss > 0 ? formatPrice(trade.stopLoss, trade.symbol) : "—",
                     trade.takeProfit > 0 ? formatPrice(trade.takeProfit, trade.symbol) : "—");
+                }
             }
         }
     }
@@ -1044,16 +1080,19 @@ public class LiveStrategyRunner implements Runnable {
 
             // Active trades
             ArrayNode tradesArray = root.putArray("activeTrades");
-            for (ActiveTrade t : activeTrades) {
-                ObjectNode tn = tradesArray.addObject();
-                tn.put("tradeId", t.tradeId);
-                tn.put("symbol", t.symbol);
-                tn.put("side", t.side);
-                tn.put("entryPrice", t.entryPrice);
-                tn.put("quantity", t.quantity);
-                tn.put("stopLoss", t.stopLoss);
-                tn.put("takeProfit", t.takeProfit);
-                tn.put("entryTime", t.entryTime.toString());
+            synchronized (activeTrades) {
+                for (ActiveTrade t : activeTrades) {
+                    ObjectNode tn = tradesArray.addObject();
+                    tn.put("tradeId", t.tradeId);
+                    tn.put("symbol", t.symbol);
+                    tn.put("side", t.side);
+                    tn.put("entryPrice", t.entryPrice);
+                    tn.put("quantity", t.quantity);
+                    tn.put("stopLoss", t.stopLoss);
+                    tn.put("takeProfit", t.takeProfit);
+                    tn.put("entryTime", t.entryTime.toString());
+                    tn.put("reconciliationStatus", t.reconciliationStatus);
+                }
             }
 
             // Pending stops
@@ -1075,6 +1114,95 @@ public class LiveStrategyRunner implements Runnable {
             lastStateSave = TimeConventions.now();
         } catch (Exception e) {
             log.warn("Failed to save state for '{}': {}", strategyShortName, e.getMessage());
+        }
+    }
+
+    public boolean hasUnconfirmedReconciliation() {
+        synchronized (activeTrades) {
+            for (ActiveTrade t : activeTrades) {
+                if ("UNCONFIRMED_RECONCILIATION".equals(t.reconciliationStatus)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public void reconcileTrade(String tradeId) throws Exception {
+        com.fasterxml.jackson.databind.JsonNode details = executor.getTradeDetails(tradeId);
+        if (details != null && details.has("trade")) {
+            com.fasterxml.jackson.databind.JsonNode tNode = details.get("trade");
+            String state = tNode.has("state") ? tNode.get("state").asText() : "";
+            if ("CLOSED".equals(state)) {
+                double realizedPL = tNode.has("realizedPL") ? tNode.get("realizedPL").asDouble() : 0.0;
+                log.info("Reconciled trade ID {} from OANDA. Realized PnL: ${}", tradeId, realizedPL);
+                completeReconciliation(tradeId, realizedPL);
+            } else {
+                log.info("Trade ID {} is still open at OANDA. Skipping reconciliation.", tradeId);
+            }
+        } else {
+            throw new RuntimeException("Trade details node not found in OANDA response");
+        }
+    }
+
+    public void reconcileTradeFallback(String tradeId) {
+        synchronized (activeTrades) {
+            for (ActiveTrade t : activeTrades) {
+                if (tradeId.equals(t.tradeId)) {
+                    log.warn("⚠️ Fallback reconciliation executed for trade ID {}. Using local state PnL: ${}", tradeId, t.unrealizedPnl);
+                    completeReconciliation(tradeId, t.unrealizedPnl);
+                    return;
+                }
+            }
+        }
+    }
+
+    public void completeReconciliation(String tradeId, double realizedPL) {
+        synchronized (activeTrades) {
+            Iterator<ActiveTrade> it = activeTrades.iterator();
+            while (it.hasNext()) {
+                ActiveTrade t = it.next();
+                if (tradeId.equals(t.tradeId)) {
+                    totalExits++;
+                    totalPnl += realizedPL;
+                    it.remove();
+                    log.info("Reconciliation complete. Removed trade ID {} from activeTrades. Total exits: {}, Total realized PnL: ${}", 
+                        tradeId, totalExits, String.format("%.2f", totalPnl));
+                    saveStateNow();
+                    return;
+                }
+            }
+        }
+    }
+
+    public void markUnconfirmed(String tradeId) {
+        synchronized (activeTrades) {
+            for (ActiveTrade t : activeTrades) {
+                if (tradeId.equals(t.tradeId)) {
+                    if (!"UNCONFIRMED_RECONCILIATION".equals(t.reconciliationStatus)) {
+                        t.reconciliationStatus = "UNCONFIRMED_RECONCILIATION";
+                        saveStateNow();
+                    }
+                    return;
+                }
+            }
+        }
+    }
+
+    private void saveStateFailed(String error) {
+        try {
+            ObjectNode root = MAPPER.createObjectNode();
+            root.put("strategy", strategyShortName);
+            root.put("displayName", strategy.name());
+            root.put("instrument", toOandaSymbol());
+            root.put("status", "FAILED");
+            root.put("error", error);
+            root.put("savedAt", TimeConventions.now().toString());
+            root.put("running", false);
+            MAPPER.writerWithDefaultPrettyPrinter().writeValue(stateFile.toFile(), root);
+            MAPPER.writerWithDefaultPrettyPrinter().writeValue(monitorFile.toFile(), root);
+        } catch (Exception e) {
+            log.warn("Failed to save failed state for '{}': {}", strategyShortName, e.getMessage());
         }
     }
 
@@ -1111,7 +1239,14 @@ public class LiveStrategyRunner implements Runnable {
                     t.stopLoss = tn.has("stopLoss") ? tn.get("stopLoss").asDouble() : 0;
                     t.takeProfit = tn.has("takeProfit") ? tn.get("takeProfit").asDouble() : 0;
                     t.entryTime = Instant.parse(tn.get("entryTime").asText());
+                    t.reconciliationStatus = tn.has("reconciliationStatus") ? tn.get("reconciliationStatus").asText() : "CONFIRMED";
                     activeTrades.add(t);
+
+                    // Resume reconciliation task if it was unconfirmed when JVM shut down
+                    if ("UNCONFIRMED_RECONCILIATION".equals(t.reconciliationStatus)) {
+                        log.info("♻ Resuming unconfirmed reconciliation task for trade ID: {}", t.tradeId);
+                        AsyncReconciliationQueue.GLOBAL.submit(this, t.tradeId);
+                    }
                 }
             }
 
@@ -1154,4 +1289,25 @@ public class LiveStrategyRunner implements Runnable {
             log.warn("Failed to resume state (corrupted?): {}", e.getMessage());
         }
     }
+
+    public static Map<String, LiveStrategyRunner> getActiveRunners() { return ACTIVE_RUNNERS; }
+    public long getSignalCount() { return signalCount; }
+    public long getBarCount() { return barCount; }
+    public Instant getLastHeartbeatTime() { return lastHeartbeatTime; }
+    public String getStrategyShortName() { return strategyShortName; }
+
+    public String getLivenessStatus() {
+        if (!RUNNING.get()) {
+            return "STOPPED";
+        }
+        Instant now = TimeConventions.now();
+        long elapsedSec = Duration.between(lastHeartbeatTime, now).toSeconds();
+        if (elapsedSec > intervalSec * 3) {
+            return "STUCK";
+        }
+        return "ALIVE";
+    }
+
+    List<ActiveTrade> getActiveTrades() { return activeTrades; }
+    List<PendingStop> getPendingStops() { return pendingStops; }
 }

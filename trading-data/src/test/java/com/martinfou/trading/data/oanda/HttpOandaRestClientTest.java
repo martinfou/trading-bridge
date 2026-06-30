@@ -298,4 +298,22 @@ class HttpOandaRestClientTest {
 
         assertEquals(2, client.sendCount.get());
     }
+
+    @Test
+    void scrub_replacesApiTokenWithMasked() {
+        var client = new HttpOandaRestClient("some_token", "123", "http://localhost:" + port + "/");
+        String secret = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"; // 64 hex chars
+        String text = "Authorization: Bearer " + secret + " in standard body.";
+        String scrubbed = client.scrub(text);
+        assertEquals("Authorization: Bearer [MASKED] in standard body.", scrubbed);
+        
+        // Also verify case insensitivity of hex
+        String uppercaseSecret = "ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789";
+        String scrubbedUpper = client.scrub("Bearer " + uppercaseSecret);
+        assertEquals("Bearer [MASKED]", scrubbedUpper);
+
+        // Verify that a shorter or longer hex string is not masked
+        String nonSecret = "abc123def";
+        assertEquals("Bearer " + nonSecret, client.scrub("Bearer " + nonSecret));
+    }
 }

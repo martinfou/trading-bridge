@@ -21,6 +21,14 @@ import java.util.Map;
 public class HttpOandaRestClient implements OandaRestClient {
 
     private static final Logger log = LoggerFactory.getLogger(HttpOandaRestClient.class);
+    private static final java.util.regex.Pattern SECRET_PATTERN = java.util.regex.Pattern.compile("[a-fA-F0-9]{64}");
+
+    String scrub(String input) {
+        if (input == null) {
+            return "";
+        }
+        return SECRET_PATTERN.matcher(input).replaceAll("[MASKED]");
+    }
 
     private final String apiToken;
     private final String accountId;
@@ -81,16 +89,93 @@ public class HttpOandaRestClient implements OandaRestClient {
      * request exactly once.  Any other {@link IOException} — or a second consecutive failure — is
      * rethrown so the caller can decide how to handle it.
      */
+    private String extractRequestBody(HttpRequest request) {
+        if (request == null) {
+            return "";
+        }
+        return request.bodyPublisher().map(publisher -> {
+            var subscriber = HttpResponse.BodySubscribers.ofString(java.nio.charset.StandardCharsets.UTF_8);
+            publisher.subscribe(new java.util.concurrent.Flow.Subscriber<java.nio.ByteBuffer>() {
+                @Override
+                public void onSubscribe(java.util.concurrent.Flow.Subscription subscription) {
+                    subscriber.onSubscribe(subscription);
+                }
+                @Override
+                public void onNext(java.nio.ByteBuffer item) {
+                    subscriber.onNext(java.util.List.of(item));
+                }
+                @Override
+                public void onError(Throwable throwable) {
+                    subscriber.onError(throwable);
+                }
+                @Override
+                public void onComplete() {
+                    subscriber.onComplete();
+                }
+            });
+            try {
+                return subscriber.getBody().toCompletableFuture().get(2, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (Exception e) {
+                return "[Error extracting request body: " + e.getMessage() + "]";
+            }
+        }).orElse("");
+    }
+
     private <T> HttpResponse<T> sendWithRetry(
             HttpRequest request, HttpResponse.BodyHandler<T> handler) throws Exception {
+        boolean highPriority = !request.uri().getPath().contains("/transactions");
+        OandaRateLimiter.GLOBAL.acquire(highPriority);
+
         boolean isGet = request.method().equalsIgnoreCase("GET");
         int maxAttempts = isGet ? 8 : 2;
         long backoffMs = initialBackoffMs;
 
+        if (log.isTraceEnabled()) {
+            StringBuilder reqLog = new StringBuilder();
+            reqLog.append("--- OANDA HTTP REQUEST ---\n");
+            reqLog.append("URI: ").append(scrub(request.uri().toString())).append("\n");
+            reqLog.append("Method: ").append(request.method()).append("\n");
+            reqLog.append("Headers:\n");
+            request.headers().map().forEach((k, v) -> {
+                reqLog.append("  ").append(k).append(": ").append(scrub(String.join(", ", v))).append("\n");
+            });
+            String body = extractRequestBody(request);
+            if (body != null && !body.isEmpty()) {
+                reqLog.append("Body: ").append(scrub(body)).append("\n");
+            }
+            reqLog.append("--------------------");
+            log.trace(reqLog.toString());
+        }
+
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            long startTime = System.nanoTime();
             try {
-                HttpResponse<T> response = client.send(request, handler);
+                HttpResponse<T> response;
+                try {
+                    response = client.send(request, handler);
+                } finally {
+                    long durationNs = System.nanoTime() - startTime;
+                    com.martinfou.trading.core.metrics.LatencyTelemetry.getOandaLatencyBuffer().add(durationNs / 1_000_000.0);
+                }
                 int status = response.statusCode();
+
+                if (log.isTraceEnabled()) {
+                    StringBuilder respLog = new StringBuilder();
+                    respLog.append("--- OANDA HTTP RESPONSE (Attempt ").append(attempt).append(") ---\n");
+                    respLog.append("Status: ").append(status).append("\n");
+                    respLog.append("Headers:\n");
+                    response.headers().map().forEach((k, v) -> {
+                        respLog.append("  ").append(k).append(": ").append(scrub(String.join(", ", v))).append("\n");
+                    });
+                    if (response.body() instanceof String) {
+                        respLog.append("Body: ").append(scrub((String) response.body())).append("\n");
+                    } else if (response.body() != null) {
+                        respLog.append("Body: [Non-String body of type ").append(response.body().getClass().getName()).append("]\n");
+                    }
+                    respLog.append("---------------------");
+                    log.trace(respLog.toString());
+                }
+
                 if (status >= 500 && isTransientStatus(status)) {
                     if (attempt == maxAttempts) {
                         throw new java.io.IOException("Transient OANDA error after " + maxAttempts + " attempts, status: " + status);

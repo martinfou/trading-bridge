@@ -1304,6 +1304,9 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         if (event.mode() == null || (!event.mode().equalsIgnoreCase("PAPER") && !event.mode().equalsIgnoreCase("LIVE"))) {
             return;
         }
+        if (event.payload() != null && Boolean.TRUE.equals(event.payload().get("reconciliation"))) {
+            return;
+        }
 
         if (event.type() == RunEventType.ORDER_SUBMITTED) {
             Map<String, Object> payload = event.payload();

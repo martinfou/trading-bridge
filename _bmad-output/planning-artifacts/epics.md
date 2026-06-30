@@ -2,7 +2,7 @@
 
 stepsCompleted: [1, 2, 3, 4]
 validationStatus: prop-shop-ready
-validatedAt: 2026-05-30
+validatedAt: 2026-06-29
 propShopValidation:
   frCoverage: pass
   psgrCoverage: pass
@@ -22,7 +22,7 @@ propShopEnrichment:
     additions: "multi-compte, rapport HTML investisseur, IBKR"
   partyMode2026-05-30:
     - "Renumerotation Epic 16 : 16.2 = Broker skeleton avant OANDA"
-    - "Must-ship ~10 stories ; Phase 2 : HTML, multi-compte, IBKR"
+    - "Must-ship ~10 stories ; Phase 2 : HTML, mot-compte, IBKR"
     - "Matrice §8d → story ; RiskEngine + ExecutionCostModel partagés"
 propShopMustShip:
 
@@ -65,6 +65,8 @@ inputDocuments:
 - _bmad-output/brainstorming/brainstorming-session-2026-05-31.md
 - _bmad-output/planning-artifacts/prds/prd-agentic-strategist-2026-06-06/prd.md
 - _bmad-output/planning-artifacts/architecture.md
+- _bmad-output/planning-artifacts/prds/prd-live-trading-2026-06-05/prd.md
+- OANDA Live Logging Analysis Findings (2026-06-29)
 approvedStructure: "Epics 13-20, Epic 17 Phase A puis Phase B, ordre 13→14→15→16→17-A ; Epic 21 SQ CLI Bridge (2026-05-31)"
 legacyReference:
 - _bmad-output/planning-artifacts/epics-legacy-sprint-plan.md
@@ -154,6 +156,12 @@ FR31: Bypass Fallback Résilient - Fallback automatique sur un outlook neutre en
 FR32: Experience Store Feedback Loop - Apprentissage continu par post-mortem d'erreurs et injection few-shot.
 FR33: Persistance JSON Cache - Sauvegarde des outlooks générés sous format JSON plat.
 
+FR34: Résilience du parsing JSON OANDA — L'application doit valider défensivement la présence des champs et la taille des tableaux avant toute désérialisation JSON dans OandaPriceClient pour éviter les NullPointerException. Introduire BrokerException (runtime) dans trading-core, dont dérivera OandaApiException. Toutes les exceptions de parsing doivent consigner le corps brut localement et lever une exception détaillée OandaApiException sans propager la charge brute vers les endpoints REST publics. Le loop principal de LiveStrategyRunner doit intercepter les BrokerException pour gérer les relances, et les exceptions génériques au niveau supérieur pour empêcher une mort silencieuse du thread.
+FR35: Traçage des requêtes/réponses HTTP OANDA — OandaExecutor et OandaPriceClient doivent journaliser (log) les URI, méthodes HTTP, en-têtes et charges utiles (payloads) au niveau TRACE (avec masquage des secrets). Utiliser le MDC (Mapped Diagnostic Context) de SLF4J pour lier chaque ligne de log à son runId, strategyId et symbol, avec un nettoyage systématique (MDC.clear()) dans un bloc finally.
+FR36: Télémétrie de la latence d'exécution API — Mesurer la latence aller-retour de chaque appel d'API OANDA en utilisant System.nanoTime() dans un bloc finally. Les latences des 10 dernières requêtes doivent être conservées dans un tampon circulaire (ring buffer) en mémoire non bloquant et thread-safe pour éviter la surcharge d'accès DB lors des requêtes de diagnostic.
+FR37: Réconciliation de P&L au tick basée sur les transactions — Lors de la clôture d'une position, LiveStrategyRunner doit ajouter une tâche de réconciliation asynchrone pour interroger les détails de la transaction de clôture correspondante sur OANDA (max 1 requête/seconde) afin de verrouiller le prix d'exécution, la commission et le P&L réalisé réel. Le limiteur de débit doit prioriser les requêtes de prix et de passage d'ordres par rapport aux tâches de réconciliation pour éviter toute famine. Si le tag clientExtensions.tag est absent, faire correspondre via tradeId et symbole. En cas d'échec ou de timeout, le trade reste marqué UNCONFIRMED_RECONCILIATION et est réessayé. Le runner doit bloquer toute nouvelle ouverture de position (via un verrouillage de signal d'entrée) tant que des transactions de cette stratégie sont en attente de réconciliation.
+FR38: Télémétrie d'état interne des stratégies & Liveness — LiveStrategyRunner doit enregistrer les valeurs calculées par la stratégie (comme les indicateurs EMA, ATR) uniquement lors des changements de l'état du signal de décision (ex: HOLD -> BUY, BUY -> CLOSE) pour éviter la journalisation redondante de calculs déterministes. Enregistrer l'état complet dans le fichier de sauvegarde périodique (toutes les 60s) en remplaçant au préalable toute valeur NaN ou infinie par 0.0 avant sérialisation JSON. La liveness du thread JVM de chaque runner doit être surveillée activement : en cas de plantage du thread, capturer le thread dump dans les logs (maximum une fois toutes les 5 minutes par run pour éviter l'inflation des fichiers), persister de manière asynchrone un événement RUN_CRASHED dans l'EventStore SQLite, basculer le statut à FAILED dans la persistance d'état et propager l'événement en temps réel via WebSockets. Si un runner échoue à répétition dans les 30 secondes suivant son démarrage, imposer un délai de relance exponentiel (backoff).
+
 ### NonFunctional Requirements
 
 NFR1: Temps — UTC (`Instant`) partout en logique trading ; affichage Toronto optionnel UI.
@@ -184,6 +192,10 @@ NFR13: Timeout strict du thread d'orchestration global fixé à 40 secondes.
 NFR14: Timeout individuel des outils fixé à 3.0s avec 1 retry après 1.0s.
 NFR15: Utilisation de Java 21 Records sans Spring ni Lombok.
 
+NFR16: Masquage des secrets de sécurité dans la télémétrie — Aucune clé API ou mot de passe ne doit être écrit dans les logs lors du traçage HTTP. Un filtre regex global doit analyser l'intégralité des flux de logs (en-têtes et corps de message) pour masquer de façon proactive tout token correspondant au format d'OANDA.
+NFR17: Surcharge de latence minimale — La télémétrie et la journalisation supplémentaires ne doivent pas dépasser 5ms par itération.
+NFR18: Limiteur de débit de requêtes d'historique — L'accès aux API d'historique de transactions OANDA (FR37) doit être régulé par un limiteur de débit (token-bucket) pour éviter les rejets HTTP 429 lors d'incidents de déconnexion réseau simultanés.
+
 ### Additional Requirements
 
 - **Brownfield** — Extension modules Maven existants (`trading-runtime`, `trading-backtest`, etc.).
@@ -198,6 +210,7 @@ NFR15: Utilisation de Java 21 Records sans Spring ni Lombok.
 - **DeepSeek Integration** — Intégration du connecteur compatible OpenAI pour DeepSeek API.
 - **Temporal Isolation Enforcement** — Implémentation du filtrage de sécurité temporelle avec le paramètre Instant cutoffTimestamp dans tous les scrapers.
 - **Experience Store Local Folder** — Persistance locale dans data/experience-store/ pour les leçons apprises.
+- **AR-LOG-1 (Intégration sans dépendances externes)** — Utiliser uniquement les bibliothèques existantes (SLF4J et Jackson) dans le monorepo Maven.
 
 ### UX Design Requirements
 
@@ -224,6 +237,8 @@ UX-DR10: Monte Carlo chart overlay — Display the distribution of paths (e.g., 
 UX-DR11: Walk-Forward timeline visualization — Display the IS/OOS sliding windows as a timeline chart, color-coded by performance (Sharpe, Profit Factor).
 
 UX-DR12: Calibration health indicator — Display battery icons/badges (🔋 WF ok, 🔔 WF due!, ⚠️ WF overdue) next to strategy status.
+
+UX-DR13: Affichage de la latence — Exposer les statistiques de latence (latence moyenne et maximale dérivées du tampon circulaire des 10 dernières requêtes) dans l'API de diagnostic pour l'affichage de l'état.
 
 ### Prop-Shop Gap Requirements (PS-GR)
 
@@ -357,6 +372,11 @@ FR-SQ2: Epic 21 — Pilotage sqcli Mac (21.4–21.5)
 FR-SQ3: Epic 21 — Pipeline nightly (21.6)
 FR-SQ4: Epic 21 — Fitness CSV → SQ ext indicators (21.8)
 FR21-FR33: Epic 25 — Agentic Market Strategist (Orchestration Layer)
+FR34: Epic 41 — Résilience du parsing JSON OANDA
+FR35: Epic 41 — Traçage des requêtes/réponses HTTP OANDA
+FR36: Epic 41 — Télémétrie de la latence d'exécution API
+FR37: Epic 41 — Réconciliation de P&L au tick basée sur les transactions
+FR38: Epic 41 — Télémétrie d'état interne des stratégies
 
 ## Epic List
 
@@ -434,6 +454,11 @@ Martin peut effectuer des simulations de contrats Futures (MES) hors-ligne : cal
 
 Martin peut exécuter ses stratégies sur contrats Futures (MES) en Paper/Live via le connecteur IBKR asynchrone (TWS API) : soumission d'ordres MARKET, interception asynchrone des fills, réconciliation double barrière des commissions et visualisation des métriques de marges temps réel sur le dashboard.
 **FRs covered:** FR-6, FR-7, FR-8, FR-9 | **Sprint:** S7 (IBKR Phase 2)
+
+### Epic 41: Télémetrie de Diagnostic et Résilience de l'Exécution (OANDA)
+
+Martin bénéficie d'une visibilité complète sur les communications OANDA, la latence réseau, les erreurs de désérialisation JSON et la réconciliation précise des transactions réelles, réduisant les risques d'arrêt silencieux et d'incohérence P&L.
+**FRs covered:** FR34, FR35, FR36, FR37, FR38 | **Sprint:** S8
 
 ### Synthèse prop-shop (enrichissement Epic 13–20)
 
@@ -2177,3 +2202,95 @@ So that the terminal startup logs are clean and free of unnecessary age/warning 
 **Then** `config.core.disableVersionCheck = true` is set in the Javalin configuration block.
 **And** the Javalin version check warning is successfully suppressed on application startup.
 
+
+## Epic 41: Télémetrie de Diagnostic et Résilience de l'Exécution (OANDA)
+
+Martin bénéficie d'une visibilité complète sur les communications OANDA, la latence réseau, les erreurs de désérialisation JSON et la réconciliation précise des transactions réelles, réduisant les risques d'arrêt silencieux et d'incohérence P&L.
+
+### Story 41.1: Résilience du parsing JSON et gestion des exceptions OANDA
+
+As a Martin (operator),
+I want `OandaPriceClient` to validate JSON fields defensively and catch parse exceptions to throw a sanitized `OandaApiException`,
+So that transient OANDA schema changes do not crash execution threads or leak raw payloads to public endpoints.
+
+**Acceptance Criteria:**
+
+**Given** a mock malformed JSON response (e.g. empty prices array or missing nested keys).
+**When** `OandaPriceClient` fetches prices.
+**Then** the client catches the parsing exception, logs the raw response body locally at the `ERROR` level, and throws `OandaApiException`.
+**And** `OandaApiException` extends the newly created `BrokerException` (runtime exception) in the `trading-core` module.
+**And** the rethrown exception contains a sanitized message without exposing the raw response body to public REST API clients.
+**And** the main execution loop in `LiveStrategyRunner` catches `BrokerException` at the top level to process graceful retries/logging, and catches generic `Exception` to prevent thread death.
+
+### Story 41.2: Traçage HTTP, contextes MDC et masquage des secrets par expression régulière
+
+As a developer,
+I want HTTP requests and responses logged at `TRACE` level with SLF4J MDC context and a global regex credentials scrubber,
+So that I can trace API messages without exposing authentication tokens.
+
+**Acceptance Criteria:**
+
+**Given** OANDA HTTP REST client communication.
+**When** `TRACE` logging is active and a request is executed.
+**Then** the URI, method, headers, and payloads are logged.
+**And** any string matching the OANDA API key structure (regex: `[a-fA-F0-9]{64}`) is scrubbed and replaced with `[MASKED]`.
+**And** all logs generated during strategy runs carry MDC values for `runId`, `strategyId`, and `symbol`.
+**And** `MDC.clear()` is called in a `finally` block at the end of the strategy thread loop to prevent log context leaking to reused threads.
+
+### Story 41.3: Télémétrie de la latence par tampon circulaire en mémoire
+
+As a Martin (operator),
+I want OANDA REST latencies measured via a monotonic timer and kept in an in-memory circular ring buffer,
+So that average/max latency metrics are accessible on the dashboard without database overhead.
+
+**Acceptance Criteria:**
+
+**Given** an OANDA API request.
+**When** the request completes (successfully or with an error/timeout).
+**Then** latency duration is calculated via `System.nanoTime()` inside a `finally` block.
+**And** the latency is added to a thread-safe, non-blocking circular ring buffer of size 10.
+**And** `GET /api/sq-bridge/status` (or health endpoints) returns the average and maximum latency calculated from the buffer.
+
+### Story 41.4: Queue de réconciliation asynchrone régulée
+
+As a Martin (operator),
+I want completed trade reconciliation tasks queued and processed asynchronously,
+So that local trade entries/exits do not block on OANDA history REST calls and we respect API rate limits.
+
+**Acceptance Criteria:**
+
+**Given** a position exit is detected locally.
+**When** reconciliation is triggered.
+**Then** the runner appends a reconciliation task to a thread-safe queue instead of blocking the main execution thread.
+**And** a single-threaded background worker processes this queue at a maximum rate of 1 request/second.
+**And** the gateway rate limiter prioritizes price queries and order placements over these transaction details queries to prevent API limit starvation.
+
+### Story 41.5: Résilience de réconciliation, appariement fallback et blocage d'entrées
+
+As a Martin (operator),
+I want completed trades reconciled using OANDA transaction history with fallback matching and entry signal gating,
+So that final realized P&L is accurate and we prevent new trades when ledger mismatch risks are high.
+
+**Acceptance Criteria:**
+
+**Given** a reconciliation task is dequeued.
+**When** fetching transaction details from OANDA.
+**Then** if the OANDA transaction payload lacks a client tag, the system matches the transaction by comparing local trade ID and instrument.
+**And** if the OANDA API is unreachable or fails, the trade is marked `UNCONFIRMED_RECONCILIATION` and retried periodically.
+**And** the strategy runner blocks any new entry signals for that strategy while a trade is flagged as `UNCONFIRMED_RECONCILIATION`.
+
+### Story 41.6: Télémétrie du signal et watchdog de liveness
+
+As a Martin (operator),
+I want strategy indicator values logged only on decision state changes, and runner threads monitored with active alerts on death,
+So that logs are concise and thread deaths are flagged immediately as system failures with stack traces.
+
+**Acceptance Criteria:**
+
+**Given** a running strategy.
+**When** a bar updates.
+**Then** indicator values and rule conditions are logged *only* if the decision signal state (e.g., `HOLD` -> `BUY`) changes.
+**And** the 60s serialization task persists indicator state with any `NaN` or `Infinite` doubles replaced by `0.0`.
+**And** the control plane watchdog verifies JVM thread liveness for each runner, transitioning the run status to `FAILED` and capturing a thread dump in the logs (max one dump per 5 minutes per run) if the thread crashed.
+**And** the watchdog asynchronously persists a `RUN_CRASHED` event to the SQLite Event Store and broadcasts it via WebSockets to trigger UI/TUI alerts.
+**And** if a runner fails repeatedly within 30 seconds of starting, an exponential backoff delay is imposed before the next restart attempt.

@@ -6,6 +6,17 @@ REPO_ROOT="$(dirname "$DIR")"
 
 PORT=8010
 
+echo "📊 Refreshing static sprint status..."
+python3 "/Users/martinfou/.gemini/config/skills/bmad-sprint-status-ui/scripts/render_sprint_status.py"
+
+# Check if server is already running on the port
+if lsof -i tcp:$PORT | grep -q "LISTEN"; then
+    echo "🌐 BMad Project Board server is already running on http://localhost:$PORT"
+    echo "Opening browser..."
+    open "http://localhost:$PORT"
+    exit 0
+fi
+
 echo "🚀 Starting BMad Project Board server..."
 python3 "/Users/martinfou/.gemini/config/skills/bmad-sprint-status-ui/scripts/project_board_server.py" --project-root "$REPO_ROOT" &
 SERVER_PID=$!
