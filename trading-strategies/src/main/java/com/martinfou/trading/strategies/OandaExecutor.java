@@ -62,6 +62,7 @@ public class OandaExecutor {
             .timeout(Duration.ofSeconds(10))
             .build();
 
+        com.martinfou.trading.data.oanda.OandaRateLimiter.GLOBAL.acquire(true);
         var resp = client.send(req, HttpResponse.BodyHandlers.ofString());
         var json = mapper.readTree(resp.body());
         
@@ -101,6 +102,7 @@ public class OandaExecutor {
             .timeout(Duration.ofSeconds(10))
             .build();
 
+        com.martinfou.trading.data.oanda.OandaRateLimiter.GLOBAL.acquire(true);
         var resp = client.send(req, HttpResponse.BodyHandlers.ofString());
         var json = mapper.readTree(resp.body());
 
@@ -126,6 +128,7 @@ public class OandaExecutor {
             .POST(HttpRequest.BodyPublishers.ofString(body))
             .timeout(Duration.ofSeconds(10))
             .build();
+        com.martinfou.trading.data.oanda.OandaRateLimiter.GLOBAL.acquire(true);
         var resp = client.send(req, HttpResponse.BodyHandlers.ofString());
         return resp.statusCode() == 201 ? "OK" : "FAILED: " + resp.body();
     }
@@ -140,6 +143,7 @@ public class OandaExecutor {
             .POST(HttpRequest.BodyPublishers.ofString(body))
             .timeout(Duration.ofSeconds(10))
             .build();
+        com.martinfou.trading.data.oanda.OandaRateLimiter.GLOBAL.acquire(true);
         var resp = client.send(req, HttpResponse.BodyHandlers.ofString());
         return resp.statusCode() == 201 ? "OK" : "FAILED: " + resp.body();
     }
@@ -152,6 +156,7 @@ public class OandaExecutor {
             .GET()
             .build();
 
+        com.martinfou.trading.data.oanda.OandaRateLimiter.GLOBAL.acquire(true);
         var resp = client.send(req, HttpResponse.BodyHandlers.ofString());
         if (resp.statusCode() != 200) {
             throw new RuntimeException("Failed to fetch open trades: status " + resp.statusCode() + ", body " + resp.body());
@@ -167,6 +172,22 @@ public class OandaExecutor {
             }
         }
         return ids;
+    }
+
+    public JsonNode getTradeDetails(String tradeId) throws Exception {
+        var req = HttpRequest.newBuilder()
+            .uri(URI.create(baseUrl + "accounts/" + accountId + "/trades/" + tradeId))
+            .header("Authorization", "Bearer " + apiKey)
+            .timeout(Duration.ofSeconds(10))
+            .GET()
+            .build();
+
+        com.martinfou.trading.data.oanda.OandaRateLimiter.GLOBAL.acquire(false); // low priority for reconciliation
+        var resp = client.send(req, HttpResponse.BodyHandlers.ofString());
+        if (resp.statusCode() != 200) {
+            throw new RuntimeException("Failed to fetch trade details: status " + resp.statusCode() + ", body " + resp.body());
+        }
+        return mapper.readTree(resp.body());
     }
 
     public static void main(String[] args) throws Exception {

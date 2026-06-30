@@ -115,6 +115,28 @@ public final class SqBridgeService implements AutoCloseable {
         if (lastInboxRun != null) {
             json.put("lastInboxRun", lastInboxRun.toMap());
         }
+        var latencyBuffer = com.martinfou.trading.core.metrics.LatencyTelemetry.getOandaLatencyBuffer();
+        json.put("latencyAverageMs", latencyBuffer.getAverage());
+        json.put("latencyMaxMs", latencyBuffer.getMax());
+
+        java.util.List<Map<String, Object>> strategiesList = new java.util.ArrayList<>();
+        for (var runner : com.martinfou.trading.strategies.LiveStrategyRunner.getActiveRunners().values()) {
+            Map<String, Object> sMap = new java.util.LinkedHashMap<>();
+            sMap.put("strategy", runner.getStrategyShortName());
+            sMap.put("status", runner.getLivenessStatus());
+            sMap.put("signalCount", runner.getSignalCount());
+            sMap.put("barCount", runner.getBarCount());
+            sMap.put("lastHeartbeat", runner.getLastHeartbeatTime().toString());
+            strategiesList.add(sMap);
+            
+            if ("STUCK".equals(runner.getLivenessStatus())) {
+                log.error("🚨 Watchdog Alert: Strategy runner '{}' is STUCK! No heartbeat for {} seconds.", 
+                    runner.getStrategyShortName(), 
+                    java.time.Duration.between(runner.getLastHeartbeatTime(), com.martinfou.trading.core.TimeConventions.now()).toSeconds());
+            }
+        }
+        json.put("strategies", strategiesList);
+
         return json;
     }
 
