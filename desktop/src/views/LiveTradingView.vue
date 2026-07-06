@@ -301,7 +301,32 @@ async function deleteAccount(id: string) {
 // Filter runs to display only live & paper strategies
 const liveRuns = computed(() => {
   if (!summary.value || !summary.value.runs) return []
-  return summary.value.runs.filter((r: any) => r.mode === 'LIVE' || r.mode === 'PAPER')
+  return [...summary.value.runs]
+    .filter((r: any) => r.mode === 'LIVE' || r.mode === 'PAPER')
+    .sort((a: any, b: any) => {
+      // Sort by mode (LIVE then PAPER)
+      const modeA = a.mode || ''
+      const modeB = b.mode || ''
+      const modeComp = modeA.localeCompare(modeB)
+      if (modeComp !== 0) return modeComp
+
+      // Sort by symbol
+      const symA = a.symbol || ''
+      const symB = b.symbol || ''
+      const symComp = symA.localeCompare(symB)
+      if (symComp !== 0) return symComp
+
+      // Sort by strategyId
+      const stratA = a.strategyId || ''
+      const stratB = b.strategyId || ''
+      const stratComp = stratA.localeCompare(stratB)
+      if (stratComp !== 0) return stratComp
+
+      // Fallback to runId for strict determinism
+      const idA = a.runId || ''
+      const idB = b.runId || ''
+      return idA.localeCompare(idB)
+    })
 })
 
 const selectedRun = computed(() => {

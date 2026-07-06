@@ -143,6 +143,8 @@ public class RunManager implements RunLifecycle, AutoCloseable {
     private final Map<String, List<com.martinfou.trading.core.Order>> btOrdersByRun = new ConcurrentHashMap<>();
     private final Map<String, List<com.martinfou.trading.core.Order>> liveOrdersByRun = new ConcurrentHashMap<>();
     private final Map<String, Integer> consecutiveTimeDrifts = new ConcurrentHashMap<>();
+    private final Map<String, com.martinfou.trading.data.oanda.OandaStreamingClient> oandaStreamingClients = new ConcurrentHashMap<>();
+    private final Map<String, java.util.concurrent.atomic.AtomicInteger> oandaStreamingClientRefCounts = new ConcurrentHashMap<>();
 
     public RunManager(EventStore eventStore) {
         this(eventStore, BrokerFactory.fromRegistry(BrokerAccountRegistry.loadDefault()), true,
@@ -425,6 +427,9 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         if (record == null) {
             throw new IllegalArgumentException("record must not be null");
         }
+        if (record.status() == RunRecord.Status.RUNNING) {
+            record.markCreated();
+        }
         runs.put(record.runId(), record);
         RunConfigSnapshot snapshot = RunConfigSnapshot.fromRecord(record);
         snapshots.put(record.runId(), snapshot);
@@ -698,6 +703,15 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         } catch (Exception e) {
             log.error("Failed to close RunRecordStore", e);
         }
+        for (var client : oandaStreamingClients.values()) {
+            try {
+                client.stop();
+            } catch (Exception e) {
+                log.error("Failed to stop streaming client during close", e);
+            }
+        }
+        oandaStreamingClients.clear();
+        oandaStreamingClientRefCounts.clear();
     }
 
     public com.martinfou.trading.backtest.persistence.SqliteTradeStore tradeStore() {
@@ -789,11 +803,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
                     }
 
                     var creds = oandaCreds.orElse(null);
-                    var streamClient = new com.martinfou.trading.data.oanda.OandaStreamingClient(
-                        creds != null ? creds.apiToken() : "",
-                        creds != null ? creds.accountId() : "",
-                        creds == null || creds.restUrl().contains("practice")
-                    );
+                    var streamClient = acquireStreamingClient(creds);
 
                     OandaStreamingExecutor oandaExecutor = new OandaStreamingExecutor(
                         runId,
@@ -828,6 +838,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
                     oandaExecutor.stop();
                     oandaStreamError = oandaExecutor.getPendingFailure();
                     activeExecutors.remove(runId);
+                    releaseStreamingClient(creds, streamClient);
 
                     double finalEquity = broker.getAccountState().equity();
                     result = BacktestResult.builder()
@@ -1449,6 +1460,39 @@ public class RunManager implements RunLifecycle, AutoCloseable {
             return Double.parseDouble(obj.toString());
         } catch (NumberFormatException e) {
             return 0.0;
+        }
+    }
+
+    synchronized com.martinfou.trading.data.oanda.OandaStreamingClient acquireStreamingClient(
+        com.martinfou.trading.broker.BrokerCredentials creds
+    ) {
+        if (creds == null) {
+            return new com.martinfou.trading.data.oanda.OandaStreamingClient("", "", true);
+        }
+        String accountId = creds.accountId();
+        com.martinfou.trading.data.oanda.OandaStreamingClient client = oandaStreamingClients.computeIfAbsent(accountId, id -> {
+            boolean practice = creds.restUrl().contains("practice");
+            return new com.martinfou.trading.data.oanda.OandaStreamingClient(creds.apiToken(), id, practice);
+        });
+        oandaStreamingClientRefCounts.computeIfAbsent(accountId, id -> new java.util.concurrent.atomic.AtomicInteger(0)).incrementAndGet();
+        return client;
+    }
+
+    synchronized void releaseStreamingClient(
+        com.martinfou.trading.broker.BrokerCredentials creds,
+        com.martinfou.trading.data.oanda.OandaStreamingClient client
+    ) {
+        if (creds == null) {
+            client.stop();
+            return;
+        }
+        String accountId = creds.accountId();
+        var refCount = oandaStreamingClientRefCounts.get(accountId);
+        if (refCount != null && refCount.decrementAndGet() <= 0) {
+            client.stop();
+            oandaStreamingClients.remove(accountId);
+            oandaStreamingClientRefCounts.remove(accountId);
+            log.info("Stopped and removed shared OandaStreamingClient for account {}", accountId);
         }
     }
 }

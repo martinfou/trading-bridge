@@ -59,5 +59,51 @@ class DukascopyDownloaderTest {
         // We expect 24 lines of data (1 for each hour) + 1 header line = 25 lines
         assertTrue(lines.size() >= 24, "Should have 24 lines of data");
     }
+
+    @Test
+    void downloadRange_retriesFailedDays(@TempDir Path dir) throws Exception {
+        java.util.concurrent.atomic.AtomicInteger callCount = new java.util.concurrent.atomic.AtomicInteger(0);
+        DukascopyDownloader downloader = new DukascopyDownloader() {
+            @Override
+            byte[] downloadFile(String url) throws java.io.IOException {
+                int count = callCount.incrementAndGet();
+                if (count == 1) {
+                    throw new java.io.IOException("Simulated transient connection error on first call");
+                }
+                try {
+                    // Generate 1440 dummy minutes
+                    ByteArrayOutputStream candleBuf = new ByteArrayOutputStream();
+                    java.io.DataOutputStream dos = new java.io.DataOutputStream(candleBuf);
+                    for (int min = 0; min < 1440; min++) {
+                        dos.writeInt(min * 60);
+                        dos.writeInt(105000);
+                        dos.writeInt(104000);
+                        dos.writeInt(103000);
+                        dos.writeInt(106000);
+                        dos.writeFloat(1.0f);
+                    }
+                    dos.flush();
+                    byte[] raw = candleBuf.toByteArray();
+
+                    ByteArrayOutputStream out = new ByteArrayOutputStream();
+                    org.tukaani.xz.LZMA2Options options = new org.tukaani.xz.LZMA2Options();
+                    try (org.tukaani.xz.LZMAOutputStream lzma = new org.tukaani.xz.LZMAOutputStream(out, options, raw.length)) {
+                        lzma.write(raw);
+                    }
+                    return out.toByteArray();
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        };
+
+        LocalDate testDate = LocalDate.of(2026, 6, 1);
+        Path csvPath = downloader.downloadRange("eurusd", testDate, testDate, "H1", dir);
+
+        assertTrue(Files.exists(csvPath), "CSV file should be created");
+        List<String> lines = Files.readAllLines(csvPath);
+        assertTrue(lines.size() >= 24, "Should have successfully downloaded on retry");
+        assertTrue(callCount.get() >= 2, "Should have been called at least twice");
+    }
 }
 
