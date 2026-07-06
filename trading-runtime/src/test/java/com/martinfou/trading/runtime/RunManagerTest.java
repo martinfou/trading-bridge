@@ -720,4 +720,40 @@ class RunManagerTest {
             assertEquals("trade-1", trades.get(1).id());
         }
     }
+
+    @Test
+    void acquireStreamingClient_sharesInstanceByAccountId() throws Exception {
+        try (RuntimeStores.Bundle stores = RuntimeStores.inMemoryWithBroadcast();
+             RunManager manager = new RunManager(stores.eventStore())) {
+
+            com.martinfou.trading.broker.BrokerCredentials creds1 = new com.martinfou.trading.broker.BrokerCredentials(
+                "OANDA", "acct-foo", "token123", "https://api-fxpractice.oanda.com/v3/"
+            );
+            com.martinfou.trading.broker.BrokerCredentials creds2 = new com.martinfou.trading.broker.BrokerCredentials(
+                "OANDA", "acct-foo", "token123", "https://api-fxpractice.oanda.com/v3/"
+            );
+            com.martinfou.trading.broker.BrokerCredentials credsOther = new com.martinfou.trading.broker.BrokerCredentials(
+                "OANDA", "acct-bar", "token456", "https://api-fxpractice.oanda.com/v3/"
+            );
+
+            var client1 = manager.acquireStreamingClient(creds1);
+            var client2 = manager.acquireStreamingClient(creds2);
+            var clientOther = manager.acquireStreamingClient(credsOther);
+
+            assertNotNull(client1);
+            assertEquals(client1, client2, "Clients with the same accountId should be the same shared instance");
+            assertTrue(client1 != clientOther, "Clients with different accountIds should be different instances");
+
+            // Release client1
+            manager.releaseStreamingClient(creds1, client1);
+            // Verify that calling acquire for same account still gets same instance because ref count > 0 (client2 is still holding it)
+            var client3 = manager.acquireStreamingClient(creds1);
+            assertEquals(client1, client3, "Should still return the same shared instance");
+
+            // Clean up
+            manager.releaseStreamingClient(creds1, client3);
+            manager.releaseStreamingClient(creds2, client2);
+            manager.releaseStreamingClient(credsOther, clientOther);
+        }
+    }
 }

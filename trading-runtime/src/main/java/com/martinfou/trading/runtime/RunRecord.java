@@ -123,6 +123,10 @@ public final class RunRecord {
         this.lastEventAt = timestamp;
     }
 
+    void markCreated() {
+        this.status = Status.CREATED;
+    }
+
     void markRunning() {
         this.status = Status.RUNNING;
         this.startedAt = Instant.now();

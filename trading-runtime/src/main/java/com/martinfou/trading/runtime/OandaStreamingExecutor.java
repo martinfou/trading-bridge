@@ -294,7 +294,7 @@ public final class OandaStreamingExecutor implements AutoCloseable {
         return lastAsk;
     }
 
-    private void bootstrapHistory() {
+    void bootstrapHistory() {
         try {
             log.info("Bootstrapping indicator warm-up with last 500 history bars...");
             // Load history bars (e.g. 500 bars)
@@ -311,6 +311,76 @@ public final class OandaStreamingExecutor implements AutoCloseable {
             }
             
             // Restore active position state if any exists in event log
+            try {
+                List<com.martinfou.trading.core.Position> brokerPositions = broker.getPositions();
+                com.martinfou.trading.core.Position brokerSymbolPos = null;
+                for (var pos : brokerPositions) {
+                    boolean matchesSymbol = pos.symbol().equalsIgnoreCase(config.symbol())
+                        || pos.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(config.symbol().replace("/", "_").replace("-", "_"));
+                    if (matchesSymbol) {
+                        brokerSymbolPos = pos;
+                        break;
+                    }
+                }
+                if (brokerSymbolPos != null) {
+                    List<RunEvent> existingEvents = eventStore.replayAll(runId);
+                    Map<String, JournalPositions.Snapshot> journalPositions = JournalPositions.fromFills(existingEvents);
+                    boolean localHasPos = false;
+                    for (var snap : journalPositions.values()) {
+                        if (snap.symbol().equalsIgnoreCase(config.symbol()) && snap.quantity() > 0.0) {
+                            localHasPos = true;
+                            break;
+                        }
+                    }
+                    if (!localHasPos) {
+                        int activeRuns = 0;
+                        List<String> activeSymbols = activeSymbolsSupplier.get();
+                        if (activeSymbols == null || activeSymbols.isEmpty()) {
+                            activeRuns = 1;
+                        } else {
+                            for (String rs : activeSymbols) {
+                                if (brokerSymbolPos.symbol().equalsIgnoreCase(rs) 
+                                    || brokerSymbolPos.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(rs.replace("/", "_").replace("-", "_"))) {
+                                    activeRuns++;
+                                }
+                            }
+                        }
+                        if (activeRuns == 1) {
+                            log.warn("Reconciliation detected open position at broker ({} {} @ {}) but FLAT locally for run {}. Appending corrective FILL to adopt it.",
+                                brokerSymbolPos.quantity(), brokerSymbolPos.side(), brokerSymbolPos.entryPrice(), runId);
+                            
+                            Map<String, Object> payload = new java.util.LinkedHashMap<>();
+                            payload.put("type", "FILL");
+                            payload.put("timestamp", Instant.now().toString());
+                            payload.put("orderId", brokerSymbolPos.clientTag() != null && !brokerSymbolPos.clientTag().isBlank() 
+                                ? brokerSymbolPos.clientTag() : "reconciliation-adopt-" + System.currentTimeMillis());
+                            payload.put("symbol", config.symbol());
+                            payload.put("side", brokerSymbolPos.side().name());
+                            payload.put("quantity", brokerSymbolPos.quantity());
+                            payload.put("price", brokerSymbolPos.entryPrice());
+                            payload.put("stopLoss", brokerSymbolPos.stopLoss());
+                            payload.put("takeProfit", brokerSymbolPos.takeProfit());
+                            payload.put("reconciliation", true);
+                            payload.put("reason", "BROKER_POSITION_ADOPTED");
+                            
+                            RunEvent correctiveEvent = new RunEvent(
+                                RunEvent.SCHEMA_VERSION,
+                                RunEventType.FILL,
+                                Instant.now(),
+                                runId,
+                                config.strategyId(),
+                                config.symbol(),
+                                runMode.name(),
+                                Map.copyOf(payload)
+                            );
+                            eventStore.append(runId, correctiveEvent);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.error("Failed to check or adopt broker positions during bootstrap warm-up for run {}", runId, e);
+            }
+
             List<RunEvent> allEvents = eventStore.replayAll(runId);
             Map<String, JournalPositions.Snapshot> journalPositions = JournalPositions.fromFills(allEvents);
             Order.Side activeSide = null;

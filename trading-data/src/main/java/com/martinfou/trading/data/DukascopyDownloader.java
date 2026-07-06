@@ -79,41 +79,74 @@ public class DukascopyDownloader {
 
         log.info("Downloading Dukascopy data for {} ({}) from {} to {} in parallel ({} days)", symbol, timeframe, start, end, totalTasks);
 
-        List<CompletableFuture<List<Candle>>> futures = new ArrayList<>();
+        List<LocalDate> targetDates = new ArrayList<>();
+        LocalDate current = start;
+        while (!current.isAfter(end)) {
+            targetDates.add(current);
+            current = current.plusDays(1);
+        }
 
-        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-            LocalDate current = start;
-            while (!current.isAfter(end)) {
-                final LocalDate date = current;
-                futures.add(CompletableFuture.supplyAsync(() -> {
-                    try {
-                        return downloadAndParseDay(symbol, date);
-                    } catch (Exception e) {
-                        log.warn("Failed to download or parse data for date: {}. Error: {}", date, e.getMessage());
-                        if (e instanceof InterruptedException) {
-                            Thread.currentThread().interrupt();
-                        }
-                        throw new RuntimeException("Failed to download data for date: " + date, e);
-                    } finally {
-                        int completed = completedCount.incrementAndGet();
-                        if (listener != null) {
-                            listener.onProgress(completed, totalTasks);
-                        }
-                        if (completed % 10 == 0 || completed == totalTasks) {
-                            double pct = (completed * 100.0) / totalTasks;
-                            log.info("  [{}] Download progress: {}/{} days ({})", 
-                                symbol, completed, totalTasks, String.format(java.util.Locale.ROOT, "%.1f%%", pct));
-                        }
-                    }
-                }, executor));
-                current = current.plusDays(1);
+        java.util.concurrent.ConcurrentHashMap<LocalDate, List<Candle>> successfulResults = new java.util.concurrent.ConcurrentHashMap<>();
+        List<LocalDate> pendingDates = new ArrayList<>(targetDates);
+
+        int maxPasses = 3;
+        for (int pass = 1; pass <= maxPasses && !pendingDates.isEmpty(); pass++) {
+            if (pass > 1) {
+                log.info("Starting retry pass {}/{} for {} failed days of symbol {}", pass, maxPasses, pendingDates.size(), symbol);
+                try {
+                    Thread.sleep(5000L * (pass - 1));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Download range interrupted during backoff", e);
+                }
             }
-        } // try-with-resources auto-closes the executor, waiting for all virtual threads to complete
+
+            final int currentPass = pass;
+            List<LocalDate> currentBatch = new ArrayList<>(pendingDates);
+            List<CompletableFuture<Void>> batchFutures = new ArrayList<>();
+
+            try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+                for (LocalDate date : currentBatch) {
+                    batchFutures.add(CompletableFuture.runAsync(() -> {
+                        try {
+                            List<Candle> dayCandles = downloadAndParseDay(symbol, date);
+                            successfulResults.put(date, dayCandles);
+                            
+                            int completed = completedCount.incrementAndGet();
+                            if (listener != null) {
+                                listener.onProgress(completed, totalTasks);
+                            }
+                            if (completed % 10 == 0 || completed == totalTasks) {
+                                double pct = (completed * 100.0) / totalTasks;
+                                log.info("  [{}] Download progress: {}/{} days ({})", 
+                                    symbol, completed, totalTasks, String.format(java.util.Locale.ROOT, "%.1f%%", pct));
+                            }
+                        } catch (Exception e) {
+                            log.warn("Failed to download or parse data for date: {} in pass {}. Error: {}", date, currentPass, e.getMessage());
+                            if (e instanceof InterruptedException) {
+                                Thread.currentThread().interrupt();
+                            }
+                        }
+                    }, executor));
+                }
+            } // auto-closes executor, waiting for virtual threads in this pass to finish
+
+            pendingDates.removeIf(successfulResults::containsKey);
+        }
+
+        if (!pendingDates.isEmpty()) {
+            throw new IOException("Failed to download data for " + pendingDates.size() + " dates after " + maxPasses + " passes. Failed dates: " + pendingDates);
+        }
 
         // Collect candles chronologically
         List<Candle> allCandles = new ArrayList<>();
-        for (var future : futures) {
-            allCandles.addAll(future.join());
+        LocalDate sortCurrent = start;
+        while (!sortCurrent.isAfter(end)) {
+            List<Candle> dayCandles = successfulResults.get(sortCurrent);
+            if (dayCandles != null) {
+                allCandles.addAll(dayCandles);
+            }
+            sortCurrent = sortCurrent.plusDays(1);
         }
 
         if (allCandles.isEmpty()) {
@@ -237,7 +270,7 @@ public class DukascopyDownloader {
                     HttpRequest request = HttpRequest.newBuilder()
                             .uri(URI.create(url))
                             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                            .timeout(Duration.ofSeconds(10))
+                            .timeout(Duration.ofSeconds(15))
                             .GET()
                             .build();
 

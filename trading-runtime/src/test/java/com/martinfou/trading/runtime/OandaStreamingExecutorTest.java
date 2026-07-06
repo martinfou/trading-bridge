@@ -292,6 +292,78 @@ class OandaStreamingExecutorTest {
         assertFalse(hasAlert, "No reconciliation alert event should be written on transient errors");
     }
 
+    @Test
+    void testBootstrapHistory_adoptsBrokerPosition() {
+        var store = new InMemoryEventStore();
+        String runId = "test-run-adopt";
+        var config = new RunConfigSnapshot(
+            "LondonOpenRangeBreakout",
+            "GBP_USD",
+            "LIVE",
+            "sample",
+            500,
+            null,
+            1000.0,
+            0.07,
+            1e-4,
+            "LIVE_OANDA",
+            "acct1"
+        );
+
+        // Broker returns an open position
+        var broker = new StubBroker() {
+            @Override
+            public List<Position> getPositions() {
+                return List.of(new Position("GBP_USD", Order.Side.BUY, 10000.0, 1.2500, Instant.now(), "old-tag"));
+            }
+        };
+
+        // Strategy to track position state
+        final Order.Side[] syncedSide = {null};
+        final double[] syncedQty = {0.0};
+        var strategy = new Strategy() {
+            @Override public String name() { return "stub"; }
+            @Override public void onBar(com.martinfou.trading.core.Bar bar) {}
+            @Override public void onTick(double bid, double ask, long time) {}
+            @Override public List<Order> getPendingOrders() { return Collections.emptyList(); }
+            @Override public void reset() {}
+            @Override
+            public void syncPosition(Order.Side side, double quantity, double sl, double tp) {
+                syncedSide[0] = side;
+                syncedQty[0] = quantity;
+            }
+        };
+
+        var executor = new OandaStreamingExecutor(
+            runId,
+            null,
+            config,
+            strategy,
+            broker,
+            null,
+            store,
+            new KillSwitchRegistry(),
+            null,
+            new RunRiskContext(new RiskEngine(), (run, cfg, m, check) -> {}, metrics -> {}),
+            () -> List.of("GBP_USD") // Only 1 active run for GBP_USD
+        );
+
+        executor.bootstrapHistory();
+
+        // 1. Verify corrective FILL event was appended to the event store
+        List<RunEvent> events = store.replayAll(runId);
+        boolean hasAdoptedFill = events.stream().anyMatch(e -> 
+            e.type() == RunEventType.FILL && 
+            e.payload() != null && 
+            "BROKER_POSITION_ADOPTED".equalsIgnoreCase(String.valueOf(e.payload().get("reason")))
+        );
+        assertTrue(hasAdoptedFill, "Should have appended a corrective FILL event to adopt broker position");
+
+        // 2. Verify that the strategy position was synced to the adopted position
+        assertEquals(Order.Side.BUY, syncedSide[0]);
+        assertEquals(10000.0, syncedQty[0]);
+    }
+
     private static class StubBroker implements Broker {
         @Override public boolean isConnected() { return true; }
         @Override public void connect() {}
