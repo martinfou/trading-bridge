@@ -281,10 +281,11 @@ public final class OandaBroker implements Broker {
         long duration = System.currentTimeMillis() - startTime;
         log.info("OANDA submitOrder placement completed in {}ms | symbol={} type={} side={} qty={}", duration, order.symbol(), order.type(), order.side(), order.quantity());
 
-        if (!result.success()) {
+        if (!result.success() || (order.type() == Order.Type.MARKET && result.fillPrice() == null)) {
             totalOrdersRejected.incrementAndGet();
             checkRejectRate();
-            String reason = result.errorMessage() != null ? result.errorMessage() : "OANDA order rejected";
+            String reason = result.errorMessage() != null ? result.errorMessage() 
+                : (result.success() ? "Market order not filled (cancelled or rejected by broker)" : "OANDA order rejected");
             log.warn("OANDA reject {} {} type={}: {}", instrument, units, order.type(), reason);
             emit(BrokerEvent.reject(order, reason));
             return OrderSubmitResult.rejected(reason);

@@ -344,6 +344,21 @@ public class HttpOandaRestClient implements OandaRestClient {
                     fillPriceObj = Double.parseDouble(fill.get("price").asText());
                 }
             }
+            if (type.equalsIgnoreCase("MARKET") && fillPriceObj == null) {
+                String rejectReason = "Market order not filled";
+                if (json.has("orderCancelTransaction") && !json.get("orderCancelTransaction").isNull()) {
+                    JsonNode cancelTx = json.get("orderCancelTransaction");
+                    if (cancelTx.has("reason")) {
+                        rejectReason = "Market order cancelled: " + cancelTx.get("reason").asText();
+                    }
+                } else if (json.has("orderRejectTransaction") && !json.get("orderRejectTransaction").isNull()) {
+                    JsonNode rejectTx = json.get("orderRejectTransaction");
+                    if (rejectTx.has("rejectReason")) {
+                        rejectReason = "Market order rejected: " + rejectTx.get("rejectReason").asText();
+                    }
+                }
+                return OandaMarketOrderResult.failure(response.statusCode(), rejectReason);
+            }
             return new OandaMarketOrderResult(response.statusCode(), orderId, tradeId, fillPriceObj, null);
         } catch (Exception e) {
             log.warn("OANDA order placement failed: {}", e.getMessage());

@@ -484,7 +484,13 @@ public final class OandaStreamingExecutor implements AutoCloseable {
                             if (pos.symbol().equalsIgnoreCase(config.symbol())
                                 || pos.symbol().replace("/", "_").replace("-", "_").equalsIgnoreCase(config.symbol().replace("/", "_").replace("-", "_"))) {
                                 runningTradeCount = pos.quantity() > 0 ? 1 : 0;
-                                openPnL = pos.currentPnl(lastMidPrice);
+                                double exitPrice = lastMidPrice;
+                                if (pos.side() == com.martinfou.trading.core.Order.Side.BUY && lastBid > 0.0) {
+                                    exitPrice = lastBid;
+                                } else if (pos.side() == com.martinfou.trading.core.Order.Side.SELL && lastAsk > 0.0) {
+                                    exitPrice = lastAsk;
+                                }
+                                openPnL = pos.currentPnl(exitPrice);
                             }
                         }
                     } catch (Exception ex) {

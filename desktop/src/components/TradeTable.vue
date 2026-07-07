@@ -4,7 +4,26 @@ import type { Trade } from '@/types/control-plane'
 
 const props = defineProps<{
   trades: Trade[]
+  currency?: string
+  rates?: Record<string, { rate: number; symbol: string }>
 }>()
+
+const currencyFactors: Record<string, { rate: number; symbol: string }> = {
+  USD: { rate: 1.0, symbol: '$' },
+  CAD: { rate: 1.40, symbol: 'C$' },
+  EUR: { rate: 0.92, symbol: '€' },
+  GBP: { rate: 0.78, symbol: '£' },
+  JPY: { rate: 155.0, symbol: '¥' }
+}
+
+const activeRates = computed(() => props.rates || currencyFactors)
+
+function formatPnL(pnlInUsd: number): string {
+  const curr = props.currency || 'USD'
+  const config = activeRates.value[curr] || { rate: 1.0, symbol: '$' }
+  const converted = pnlInUsd * config.rate
+  return `${pnlInUsd >= 0 ? '+' : ''}${config.symbol}${converted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
 
 const sortColumn = ref<string>('entryTime')
 const sortDir = ref<'asc' | 'desc'>('desc')
@@ -106,7 +125,7 @@ function next() { if (canNext()) page.value++ }
             Qty {{ sortColumn === 'quantity' ? (sortDir === 'asc' ? '▲' : '▼') : '' }}
           </th>
           <th class="sortable header-num" @click="toggleSort('pnl')">
-            PnL {{ sortColumn === 'pnl' ? (sortDir === 'asc' ? '▲' : '▼') : '' }}
+            PnL ({{ activeRates[currency || 'USD']?.symbol || '$' }}) {{ sortColumn === 'pnl' ? (sortDir === 'asc' ? '▲' : '▼') : '' }}
           </th>
         </tr>
       </thead>
@@ -123,7 +142,7 @@ function next() { if (canNext()) page.value++ }
           <td class="cell-num">{{ t.exitPrice.toFixed(5) }}</td>
           <td class="cell-num">{{ t.quantity }}</td>
           <td :class="['cell-num', 'cell-pnl', t.pnl >= 0 ? 'profit' : 'loss']">
-            {{ t.pnl >= 0 ? '+' : '' }}{{ t.pnl.toFixed(2) }}
+            {{ formatPnL(t.pnl) }}
           </td>
         </tr>
       </tbody>
