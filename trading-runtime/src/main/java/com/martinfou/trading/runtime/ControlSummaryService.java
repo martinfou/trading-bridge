@@ -437,9 +437,13 @@ public final class ControlSummaryService {
 
         // Get latest price if running live/paper
         double currentPrice = 0.0;
+        double currentBid = 0.0;
+        double currentAsk = 0.0;
         Optional<AutoCloseable> execOpt = runManager.getActiveExecutor(record.runId());
         if (execOpt.isPresent() && execOpt.get() instanceof OandaStreamingExecutor exec) {
             currentPrice = exec.getLastMidPrice();
+            currentBid = exec.getLastBid();
+            currentAsk = exec.getLastAsk();
         }
 
         for (RunRecord sibling : siblingRuns) {
@@ -451,10 +455,14 @@ public final class ControlSummaryService {
                 cumulativeRealizedPnL += siblingResult.closedTrades().stream().mapToDouble(com.martinfou.trading.core.Trade::pnl).sum();
 
                 double sibPrice = sibling.runId().equals(record.runId()) ? currentPrice : 0.0;
+                double sibBid = sibling.runId().equals(record.runId()) ? currentBid : 0.0;
+                double sibAsk = sibling.runId().equals(record.runId()) ? currentAsk : 0.0;
                 if (sibPrice == 0.0) {
                     Optional<AutoCloseable> sibExecOpt = runManager.getActiveExecutor(sibling.runId());
                     if (sibExecOpt.isPresent() && sibExecOpt.get() instanceof OandaStreamingExecutor sibExec) {
                         sibPrice = sibExec.getLastMidPrice();
+                        sibBid = sibExec.getLastBid();
+                        sibAsk = sibExec.getLastAsk();
                     }
                 }
 
@@ -465,12 +473,18 @@ public final class ControlSummaryService {
                     } else if (t.side() == Order.Side.SELL) {
                         netSellQty += t.quantity();
                     }
-                    if (sibPrice > 0.0) {
+                    double exitPrice = sibPrice;
+                    if (t.side() == Order.Side.BUY && sibBid > 0.0) {
+                        exitPrice = sibBid;
+                    } else if (t.side() == Order.Side.SELL && sibAsk > 0.0) {
+                        exitPrice = sibAsk;
+                    }
+                    if (exitPrice > 0.0) {
                         openPnL += ForexPnL.pnlUsd(
                             t.symbol(),
                             t.side(),
                             t.entryPrice(),
-                            sibPrice,
+                            exitPrice,
                             t.quantity()
                         );
                     }

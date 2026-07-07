@@ -10,6 +10,66 @@ import EquityChart from '../components/EquityChart.vue'
 import OrderBook from '../components/OrderBook.vue'
 import type { Bar, Trade } from '@/types/control-plane'
 
+const selectedCurrency = ref<string>(localStorage.getItem('trading_display_currency') || 'USD')
+watch(selectedCurrency, (val) => {
+  localStorage.setItem('trading_display_currency', val)
+})
+
+const currencyFactors = ref<Record<string, { rate: number; symbol: string }>>({
+  USD: { rate: 1.0, symbol: '$' },
+  CAD: { rate: 1.40, symbol: 'C$' },
+  EUR: { rate: 0.92, symbol: '€' },
+  GBP: { rate: 0.78, symbol: '£' },
+  JPY: { rate: 155.0, symbol: '¥' }
+})
+
+async function fetchExchangeRates() {
+  try {
+    const res = await fetch('https://open.er-api.com/v6/latest/USD')
+    if (!res.ok) throw new Error('API response not OK')
+    const data = await res.json()
+    if (data && data.rates) {
+      if (data.rates.CAD) currencyFactors.value.CAD.rate = data.rates.CAD
+      if (data.rates.EUR) currencyFactors.value.EUR.rate = data.rates.EUR
+      if (data.rates.GBP) currencyFactors.value.GBP.rate = data.rates.GBP
+      if (data.rates.JPY) currencyFactors.value.JPY.rate = data.rates.JPY
+      console.log('Real-time exchange rates updated:', currencyFactors.value)
+    }
+  } catch (err) {
+    console.warn('Failed to fetch real-time exchange rates, using defaults:', err)
+  }
+}
+
+function formatCurrencyVal(value: number | null | undefined, fromCurrency: string = 'USD'): string {
+  if (value === null || value === undefined) return '—'
+  const toCurr = selectedCurrency.value
+  if (fromCurrency === toCurr) {
+    const symbol = currencyFactors.value[toCurr]?.symbol || '$'
+    return `${symbol}${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  }
+  const fromRate = currencyFactors.value[fromCurrency]?.rate || 1.0
+  const usdValue = value / fromRate
+  const toRate = currencyFactors.value[toCurr]?.rate || 1.0
+  const symbol = currencyFactors.value[toCurr]?.symbol || '$'
+  const converted = usdValue * toRate
+  return `${symbol}${converted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+function formatCurrencyValNoDecimals(value: number | null | undefined, fromCurrency: string = 'USD'): string {
+  if (value === null || value === undefined) return '—'
+  const toCurr = selectedCurrency.value
+  if (fromCurrency === toCurr) {
+    const symbol = currencyFactors.value[toCurr]?.symbol || '$'
+    return `${symbol}${Math.round(value).toLocaleString()}`
+  }
+  const fromRate = currencyFactors.value[fromCurrency]?.rate || 1.0
+  const usdValue = value / fromRate
+  const toRate = currencyFactors.value[toCurr]?.rate || 1.0
+  const symbol = currencyFactors.value[toCurr]?.symbol || '$'
+  const converted = usdValue * toRate
+  return `${symbol}${Math.round(converted).toLocaleString()}`
+}
+
 const { getControlSummary, killStrategy, getBars, getTrades, getEquityCurve, getBrokerAccounts, getBrokerBalances, saveBrokerAccounts, testBrokerAccount } = useControlPlane()
 const route = useRoute()
 const router = useRouter()
@@ -505,6 +565,7 @@ function formatTime(timeStr?: string): string {
 
 
 onMounted(async () => {
+  await fetchExchangeRates()
   await fetchSummary()
   const runId = route.query.runId
   if (typeof runId === 'string') {
@@ -549,7 +610,17 @@ onUnmounted(() => {
         <h2>Trading Desk 📡</h2>
         <p class="subtitle">Prop-shop real-time operations board</p>
       </div>
-      <div style="display: flex; gap: 0.5rem;">
+      <div style="display: flex; gap: 0.5rem; align-items: center;">
+        <div class="currency-select-wrapper" style="display: flex; align-items: center; gap: 0.35rem; margin-right: 0.5rem;">
+          <span style="font-size: 0.8rem; color: var(--text-secondary);">Display:</span>
+          <select v-model="selectedCurrency" style="background: var(--bg-secondary); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px; padding: 0.35rem 0.5rem; font-size: 0.8rem; outline: none; cursor: pointer;">
+            <option value="USD">USD ($)</option>
+            <option value="CAD">CAD (C$)</option>
+            <option value="EUR">EUR (€)</option>
+            <option value="GBP">GBP (£)</option>
+            <option value="JPY">JPY (¥)</option>
+          </select>
+        </div>
         <button class="btn btn-secondary" @click="toggleAccountsConfig">
           🔑 {{ showAccountsConfig ? 'Close Keys Panel' : 'Broker Accounts' }}
         </button>
@@ -695,12 +766,12 @@ onUnmounted(() => {
       </div>
       <div class="stat-card">
         <span class="stat-label" title="The total amount of capital allocated across all active strategies. This is an internal configuration value, independent of your actual broker balance.">Allocated Capital ℹ️</span>
-        <span class="stat-value">${{ stats.totalAllocated.toLocaleString() }}</span>
+        <span class="stat-value">{{ formatCurrencyValNoDecimals(stats.totalAllocated) }}</span>
       </div>
       <div class="stat-card">
         <span class="stat-label">Broker Balance</span>
         <span class="stat-value text-accent">
-          {{ totalBrokerBalance > 0 ? '$' + totalBrokerBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + (brokerCurrency ? ' ' + brokerCurrency : '') : '—' }}
+          {{ totalBrokerBalance > 0 ? formatCurrencyVal(totalBrokerBalance, brokerCurrency) : '—' }}
         </span>
       </div>
       <div class="stat-card">
@@ -765,19 +836,19 @@ onUnmounted(() => {
           <div class="metric-row">
             <span>Realized P&L</span>
             <span :class="['metric-val', (run.realizedPnL ?? 0) > 0 ? 'text-success' : (run.realizedPnL ?? 0) < 0 ? 'text-danger' : '']">
-              ${{ (run.realizedPnL ?? 0).toFixed(2) }}
+              {{ formatCurrencyVal(run.realizedPnL ?? 0) }}
             </span>
           </div>
           <div class="metric-row">
             <span>Floating P&L</span>
             <span :class="['metric-val', (run.openPnL ?? 0) > 0 ? 'text-success' : (run.openPnL ?? 0) < 0 ? 'text-danger' : '']">
-              ${{ (run.openPnL ?? 0).toFixed(2) }}
+              {{ formatCurrencyVal(run.openPnL ?? 0) }}
             </span>
           </div>
           <div class="metric-row">
             <span>Total P&L</span>
             <span :class="['metric-val', (run.totalPnL ?? 0) > 0 ? 'text-success' : (run.totalPnL ?? 0) < 0 ? 'text-danger' : '']">
-              ${{ (run.totalPnL ?? 0).toFixed(2) }}
+              {{ formatCurrencyVal(run.totalPnL ?? 0) }}
             </span>
           </div>
         </div>
@@ -859,7 +930,7 @@ onUnmounted(() => {
             </div>
             <div class="kpi-box">
               <span class="kpi-lbl">Allocated Capital</span>
-              <span class="kpi-val">${{ selectedRun.configSnapshot?.capital?.toLocaleString() ?? '—' }}</span>
+              <span class="kpi-val">{{ formatCurrencyValNoDecimals(selectedRun.configSnapshot?.capital) }}</span>
             </div>
             <div class="kpi-box">
               <span class="kpi-lbl">Event Sequence</span>
@@ -984,7 +1055,7 @@ onUnmounted(() => {
 
         <!-- Trades History tab -->
         <div v-if="activeTab === 'trades'" class="tab-panel">
-          <TradeTable :trades="inspectTrades" />
+          <TradeTable :trades="inspectTrades" :currency="selectedCurrency" :rates="currencyFactors" />
         </div>
 
         <!-- Sentiment / Order Book tab -->

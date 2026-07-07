@@ -138,6 +138,25 @@ class OandaBrokerTest {
         assertEquals(5, broker.totalOrdersRejected());
     }
 
+    @Test
+    void submitOrder_whenMarketOrderNotFilled_rejects() {
+        var client = new RecordingClient() {
+            @Override
+            public OandaMarketOrderResult placeMarketOrder(String instrument, long units, String clientTag) {
+                return new OandaMarketOrderResult(201, "1", null, null, null);
+            }
+        };
+        var broker = new OandaBroker(client);
+        broker.connect();
+
+        var order = new com.martinfou.trading.core.Order(
+            "EUR_USD", com.martinfou.trading.core.Order.Side.BUY,
+            com.martinfou.trading.core.Order.Type.MARKET, 1000, 1.10);
+        var result = broker.submitOrder(order);
+
+        assertFalse(result.accepted());
+    }
+
     private static class RecordingClient implements OandaRestClient {
         String lastInstrument;
         long lastUnits;
