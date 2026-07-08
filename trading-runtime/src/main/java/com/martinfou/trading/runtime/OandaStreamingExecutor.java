@@ -427,7 +427,7 @@ public final class OandaStreamingExecutor implements AutoCloseable {
         }
     }
 
-    private void processTick(Instant timestamp, double bid, double ask) {
+    private synchronized void processTick(Instant timestamp, double bid, double ask) {
         try {
             if (isWeekend(timestamp)) {
                 return;
