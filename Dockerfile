@@ -15,8 +15,8 @@ COPY trading-tui/pom.xml trading-tui/
 RUN mvn dependency:go-offline -q
 
 COPY . .
-RUN mvn install -Dmaven.test.skip=true -q && \
-    mvn dependency:copy-dependencies -DoutputDirectory=/app/libs -q
+RUN mvn install -Dmaven.test.skip=true -q -pl trading-core,trading-data,trading-broker,trading-parser,trading-strategies -am && \
+    mvn dependency:copy-dependencies -DoutputDirectory=/app/libs -q -pl trading-strategies -am
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app
