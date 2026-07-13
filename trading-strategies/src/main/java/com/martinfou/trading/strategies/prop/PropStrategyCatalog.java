@@ -6,7 +6,10 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Function;
 
-/** Registry of all prop-firm mechanical strategies. */
+import com.martinfou.trading.strategies.creative.EmaCloudTrendFilter;
+
+/**
+ * Registry of all prop-firm mechanical strategies. */
 public final class PropStrategyCatalog {
 
     private static final Map<String, Function<String, Strategy>> FACTORIES = new LinkedHashMap<>();
@@ -22,6 +25,7 @@ public final class PropStrategyCatalog {
         register("WeeklyOpenGapFade", WeeklyOpenGapFadeStrategy::new);
         register("InsideBarBreakout", InsideBarBreakoutStrategy::new);
         register("OverlapMomentumBurst", OverlapMomentumBurstStrategy::new);
+        register("EmaCloudTrendFilter", sym -> new EmaCloudTrendFilter("EmaCloudTrendFilter_" + sym));
     }
 
     private PropStrategyCatalog() {}
