@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.function.Function;
 
 import com.martinfou.trading.strategies.creative.EmaCloudTrendFilter;
+import com.martinfou.trading.strategies.creative.RSIPulseMomentumStrategy;
 
 /**
  * Registry of all prop-firm mechanical strategies. */
@@ -26,6 +27,7 @@ public final class PropStrategyCatalog {
         register("InsideBarBreakout", InsideBarBreakoutStrategy::new);
         register("OverlapMomentumBurst", OverlapMomentumBurstStrategy::new);
         register("EmaCloudTrendFilter", sym -> new EmaCloudTrendFilter("EmaCloudTrendFilter_" + sym));
+        register("RSIPulseMomentum", sym -> new RSIPulseMomentumStrategy("RSIPulseMomentum_" + sym, sym));
     }
 
     private PropStrategyCatalog() {}
