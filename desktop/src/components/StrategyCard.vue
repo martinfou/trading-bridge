@@ -20,6 +20,7 @@ const familyColors: Record<string, string> = {
   PROP: '#6366f1',
   SQ_IMPORTED: '#f59e0b',
   GENERATED: '#22c55e',
+  LONG_TERM: '#f97316',
   EXAMPLE: '#a855f7',
 }
 

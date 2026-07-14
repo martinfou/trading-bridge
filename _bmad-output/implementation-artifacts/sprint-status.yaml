@@ -226,6 +226,7 @@ development_status:
   26-3-backtest-query-cli-api: done
   26-4-desktop-backtest-history-view: done
   26-5-desktop-parameter-heatmap-pareto-drift: done
+<<<<<<< HEAD
   26-6-promote-strategy-from-backtest-results: done
   26-7-compare-persistent-backtests: done
   26-8-pending-orders-sl-tp-on-price-chart: done
@@ -349,3 +350,31 @@ development_status:
   41-5-resilience-de-reconciliation-appariement-fallback-et-blocage-d-entrees: done
   41-6-telemetrie-du-signal-et-watchdog-de-liveness: done
   epic-41-retrospective: optional
+=======
+  epic-26-retrospective: optional
+
+  epic-27: done
+  27-1-consolidation-branches: done
+  27-2-structure-package-longterm: done
+  27-3-long-term-strategy-catalog: done
+  27-4-frontend-long-term-color: done
+  27-5-lt-cross-momentum: done
+  27-6-lt-rsi-mean-rev: done
+  27-7-lt-rsi3-momentum: done
+  27-8-lt-range-breakout: done
+  27-9-lt-vol-regime: done
+  27-10-lt-bollinger-squeeze: done
+  27-11-lt-squeeze-momentum: done
+  27-12-lt-pullback-entry: done
+  27-13-lt-double-ma: done
+  27-14-lt-efficiency-ratio: done
+  27-15-calc-risk-position-indicators: done
+  27-16-standardize-position-sizing: done
+  27-17-walkforward-validation: done
+  27-18-validation-reports: done
+  27-19-postmortem-failures: done
+  27-20-lt-strategy-playbook: done
+  27-21-joplin-save: done
+  epic-27-retrospective: optional
+
+>>>>>>> feature/lt-strategies
