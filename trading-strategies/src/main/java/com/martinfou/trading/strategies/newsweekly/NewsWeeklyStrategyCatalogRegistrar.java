@@ -38,10 +38,34 @@ public final class NewsWeeklyStrategyCatalogRegistrar {
             sym -> new NewsWeek8Jun_BojInterventionShortJpy()
         );
 
-        // 4 — NZD Recovery Fade SELL NZD/USD (Moyenne, 0.5%, trail 40)
+        // 4 — NZD Recovery Fade SELL NZD/USD (Haute, 0.7%)
         NewsWeeklyStrategyCatalog.register(
             "NewsWeek8Jun_NzdRecoveryFadeSell",
             sym -> new NewsWeek8Jun_NzdRecoveryFadeSell()
+        );
+
+        // === Week 13-17 July 2026 — News-driven strategies ===
+
+        // 1 — CPI/PPI Momentum Fade (Wed Jul 15, 08:30 ET)
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek13Jul_CpiFade_EUR_USD",
+            sym -> new NewsWeek13Jul_CpiFade.EurUsd()
+        );
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek13Jul_CpiFade_GBP_USD",
+            sym -> new NewsWeek13Jul_CpiFade.GbpUsd()
+        );
+
+        // 2 — Fed Beige Book Pre-Trend (Wed Jul 15, 13:30 ET)
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek13Jul_BeigeBook_EUR_USD",
+            sym -> new NewsWeek13Jul_BeigeBookTrend.EurUsd()
+        );
+
+        // 3 — UK CPI Momentum (Wed Jul 15, 02:00 ET)
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek13Jul_UkCpi_GBP_USD",
+            sym -> new NewsWeek13Jul_UkCpiMomentum.GbpUsd()
         );
     }
 }
