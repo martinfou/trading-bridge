@@ -29,13 +29,14 @@ public class LtEfficiencyRatio implements Strategy {
     private final List<Order> pending = new ArrayList<>();
     private final List<Bar> history = new ArrayList<>();
 
-    private boolean inTrade = false;
+        private boolean inTrade = false;
     private Order.Side direction = Order.Side.BUY;
     private double entryPrice = 0;
     private double entrySl = 0;
     private int tradesToday = 0;
     private int lastTradeDay = -1;
     private int consecutiveLosses = 0;
+    private double positionUnits = 0;
 
     public LtEfficiencyRatio() { this("LtEfficiencyRatio", "EUR_USD"); }
     public LtEfficiencyRatio(String name) { this(name, "EUR_USD"); }
@@ -94,20 +95,22 @@ public class LtEfficiencyRatio implements Strategy {
         double ema50 = Indicators.emaLatest(history, 50);
         if (Double.isNaN(ema50)) return;
 
+        long units = Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, ATR_MULT_SL, symbol);
+
         if (close > ema50) {
             double sl = close - atr * ATR_MULT_SL;
             double tp = close + atr * ATR_MULT_TP;
-            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, ATR_MULT_SL, symbol), close)
+            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, units, close)
                 .withStopLoss(sl).withTakeProfit(tp));
             entryPrice = close; entrySl = sl; direction = Order.Side.BUY;
-            inTrade = true; tradesToday++;
+            inTrade = true; tradesToday++; positionUnits = units;
         } else if (close < ema50) {
             double sl = close + atr * ATR_MULT_SL;
             double tp = close - atr * ATR_MULT_TP;
-            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, ATR_MULT_SL, symbol), close)
+            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, units, close)
                 .withStopLoss(sl).withTakeProfit(tp));
             entryPrice = close; entrySl = sl; direction = Order.Side.SELL;
-            inTrade = true; tradesToday++;
+            inTrade = true; tradesToday++; positionUnits = units;
         }
     }
 
@@ -115,8 +118,9 @@ public class LtEfficiencyRatio implements Strategy {
 
     private void exitTrade(double price) {
         Order.Side exitSide = direction == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
-        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, 1000, price).closeOnly());
+        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, positionUnits, price).closeOnly());
         inTrade = false;
+        positionUnits = 0;
     }
 
     private double calcEfficiencyRatio(int period) {
@@ -143,5 +147,6 @@ public class LtEfficiencyRatio implements Strategy {
         history.clear(); pending.clear();
         inTrade = false; tradesToday = 0; lastTradeDay = -1;
         consecutiveLosses = 0; entryPrice = 0; entrySl = 0;
+        positionUnits = 0;
     }
 }

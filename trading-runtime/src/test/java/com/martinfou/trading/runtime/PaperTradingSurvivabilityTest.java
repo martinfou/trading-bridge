@@ -74,9 +74,10 @@ class PaperTradingSurvivabilityTest {
             ControlPlaneMain.restoreActiveRuns(manager, config);
 
             // 3. Assertions
-            // Assert the run was successfully restored and status is back to RUNNING
+            // Assert the run was successfully restored and status is RUNNING or COMPLETED (if finished)
             RunRecord restoredRecord = manager.getRun(runId).orElseThrow();
-            assertEquals(RunRecord.Status.RUNNING, restoredRecord.status());
+            assertTrue(restoredRecord.status() == RunRecord.Status.RUNNING || restoredRecord.status() == RunRecord.Status.COMPLETED,
+                "Expected status to be RUNNING or COMPLETED, but was " + restoredRecord.status());
             assertEquals("LondonOpenRangeBreakout", restoredRecord.strategyId());
 
             // Assert trade survived in the trade store

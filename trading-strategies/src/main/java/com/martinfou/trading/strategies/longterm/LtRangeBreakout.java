@@ -46,6 +46,7 @@ public class LtRangeBreakout implements Strategy {
     private int cooldownBars;
     private int tradesToday;
     private int lastTradeDay;
+    private double positionUnits = 0;
 
     public LtRangeBreakout(String name, String symbol) {
         this.name = name;
@@ -69,9 +70,9 @@ public class LtRangeBreakout implements Strategy {
         int barDay = bar.timestamp().atZone(java.time.ZoneId.of("America/New_York")).getDayOfYear();
         if (barDay != lastTradeDay) { tradesToday = 0; lastTradeDay = barDay; }
 
-        managePosition(bar);
-
-        if (!inTrade) {
+        if (inTrade) {
+            managePosition(bar);
+        } else {
             if (cooldownBars > 0) { cooldownBars--; return; }
             if (tradesToday >= 1) return;
             evaluateEntry(bar);
@@ -97,6 +98,7 @@ public class LtRangeBreakout implements Strategy {
         cooldownBars = 0;
         tradesToday = 0;
         lastTradeDay = -1;
+        positionUnits = 0;
     }
 
     private void managePosition(Bar bar) {
@@ -154,6 +156,8 @@ public class LtRangeBreakout implements Strategy {
 
         if (Double.isNaN(atr) || atr <= 0) return;
 
+        long units = Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, SL_MULT, symbol);
+
         // Bullish breakout: buy when price breaks above highest high
         if (bar.close() > highestHigh) {
             entryPrice = bar.close();
@@ -161,11 +165,12 @@ public class LtRangeBreakout implements Strategy {
             takeProfit = entryPrice + atr * TP_MULT;
             highestSinceEntry = entryPrice;
             lowestSinceEntry = entryPrice;
-            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, SL_MULT, symbol), entryPrice));
+            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, units, entryPrice));
             inTrade = true;
             tradeDirection = Order.Side.BUY;
             barsInTrade = 0;
             tradesToday++;
+            positionUnits = units;
         }
         // Bearish breakout: sell when price breaks below lowest low
         else if (bar.close() < lowestLow) {
@@ -174,19 +179,21 @@ public class LtRangeBreakout implements Strategy {
             takeProfit = entryPrice - atr * TP_MULT;
             highestSinceEntry = entryPrice;
             lowestSinceEntry = entryPrice;
-            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, SL_MULT, symbol), entryPrice));
+            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, units, entryPrice));
             inTrade = true;
             tradeDirection = Order.Side.SELL;
             barsInTrade = 0;
             tradesToday++;
+            positionUnits = units;
         }
     }
 
     private void closePosition(double price) {
         Order.Side exitSide = tradeDirection == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
-        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, 1000, price).closeOnly());
+        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, positionUnits, price).closeOnly());
         inTrade = false;
         cooldownBars = COOLDOWN_BARS;
+        positionUnits = 0;
     }
 
     private double atr() {

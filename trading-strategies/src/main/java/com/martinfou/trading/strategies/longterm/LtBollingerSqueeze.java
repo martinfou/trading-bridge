@@ -57,6 +57,7 @@ public class LtBollingerSqueeze implements Strategy {
     private double entrySl = 0;
     private double entryTp = 0;
     private LocalDate lastTradeDate = null;
+    private double positionUnits = 0;
 
     public LtBollingerSqueeze() { this("LtBollingerSqueeze", "EUR_USD"); }
     public LtBollingerSqueeze(String name) { this(name, "EUR_USD"); }
@@ -69,6 +70,7 @@ public class LtBollingerSqueeze implements Strategy {
 
     @Override
     public void onBar(Bar bar) {
+        if (!bar.symbol().equals(symbol)) return;
         history.add(bar);
         int size = history.size();
         if (size < BB_PERIOD + ATR_PERIOD + 1) return;
@@ -114,19 +116,27 @@ public class LtBollingerSqueeze implements Strategy {
 
         if (atr == 0) return;
 
-        double entrySl = close - atr * ATR_SL_MULT;
-        double entryTp = close + atr * ATR_TP_MULT;
+        double slVal = atr * ATR_SL_MULT;
+        double tpVal = atr * ATR_TP_MULT;
+
+        long units = Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, ATR_SL_MULT, symbol);
 
         // Squeeze detected → enter on breakout direction
         if (close > sma) {
-            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, ATR_SL_MULT, symbol), close)
-                .withStopLoss(entrySl).withTakeProfit(entryTp));
+            double sl = close - slVal;
+            double tp = close + tpVal;
+            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, units, close)
+                .withStopLoss(sl).withTakeProfit(tp));
             direction = Order.Side.BUY; inTrade = true; lastTradeDate = barDate;
+            entrySl = sl; entryTp = tp; positionUnits = units;
         }
         else if (close < sma) {
-            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, ATR_SL_MULT, symbol), close)
-                .withStopLoss(entrySl).withTakeProfit(entryTp));
+            double sl = close + slVal;
+            double tp = close - tpVal;
+            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, units, close)
+                .withStopLoss(sl).withTakeProfit(tp));
             direction = Order.Side.SELL; inTrade = true; lastTradeDate = barDate;
+            entrySl = sl; entryTp = tp; positionUnits = units;
         }
     }
 
@@ -134,8 +144,9 @@ public class LtBollingerSqueeze implements Strategy {
 
     private void exitTrade(double price) {
         Order.Side exit = direction == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
-        pending.add(new Order(symbol, exit, Order.Type.MARKET, 1000, price).closeOnly());
+        pending.add(new Order(symbol, exit, Order.Type.MARKET, positionUnits, price).closeOnly());
         inTrade = false;
+        positionUnits = 0;
     }
 
     @Override
@@ -147,11 +158,10 @@ public class LtBollingerSqueeze implements Strategy {
 
     @Override
     public void reset() {
-        history.clear();
-        pending.clear();
+        history.clear(); pending.clear();
         inTrade = false;
-        entrySl = 0;
-        entryTp = 0;
         lastTradeDate = null;
+        entrySl = 0; entryTp = 0;
+        positionUnits = 0;
     }
 }

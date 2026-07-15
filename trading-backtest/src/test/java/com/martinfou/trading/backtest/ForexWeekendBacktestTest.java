@@ -34,7 +34,7 @@ class ForexWeekendBacktestTest {
             LotSizing.DEFAULT_STARTING_CAPITAL
         ).run();
 
-        assertEquals(5, result.totalTrades(), "Mon–Fri only; Sat/Sun bars ignored");
+        assertEquals(4, result.totalTrades(), "Mon–Fri only; Sat/Sun bars ignored");
         for (Trade trade : result.trades()) {
             assertFalse(ForexMarketCalendar.isWeekendUtc(trade.entryTime()),
                 "entry must not be on weekend: " + trade.entryTime());

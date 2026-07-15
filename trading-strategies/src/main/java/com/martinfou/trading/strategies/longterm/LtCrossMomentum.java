@@ -57,6 +57,7 @@ public class LtCrossMomentum implements Strategy {
     private double entrySl = 0;
     private double entryTp = 0;
     private int lastTradeDay = -1;  // epoch-day to enforce max 1 trade/day
+    private double positionUnits = 0;
 
     public LtCrossMomentum() { this("LtCrossMomentum", "EUR_USD"); }
     public LtCrossMomentum(String name) { this(name, "EUR_USD"); }
@@ -69,6 +70,7 @@ public class LtCrossMomentum implements Strategy {
 
     @Override
     public void onBar(Bar bar) {
+        if (!bar.symbol().equals(symbol)) return;
         history.add(bar);
         int size = history.size();
         // Need SLOW_PERIOD bars for SMA(100), plus some buffer
@@ -121,16 +123,19 @@ public class LtCrossMomentum implements Strategy {
         // Not in trade — check entry conditions (max 1 trade per day)
         if (currentDay == lastTradeDay) return;
 
+        long units = Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, ATR_SL_MULT, symbol);
+
         // LONG entry: golden cross (SMA20 crosses above SMA100)
         if (smaFastPrev <= smaSlowPrev && smaFast > smaSlow) {
             direction = Order.Side.BUY;
             entryPrice = close;
             entrySl = close - atr * ATR_SL_MULT;
             entryTp = close + atr * ATR_TP_MULT;
-            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, ATR_SL_MULT, symbol), close)
+            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, units, close)
                 .withStopLoss(entrySl).withTakeProfit(entryTp));
             inTrade = true;
             lastTradeDay = currentDay;
+            positionUnits = units;
         }
         // SHORT entry: death cross (SMA20 crosses below SMA100)
         else if (smaFastPrev >= smaSlowPrev && smaFast < smaSlow) {
@@ -138,10 +143,11 @@ public class LtCrossMomentum implements Strategy {
             entryPrice = close;
             entrySl = close + atr * ATR_SL_MULT;
             entryTp = close - atr * ATR_TP_MULT;
-            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, ATR_SL_MULT, symbol), close)
+            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, units, close)
                 .withStopLoss(entrySl).withTakeProfit(entryTp));
             inTrade = true;
             lastTradeDay = currentDay;
+            positionUnits = units;
         }
     }
 
@@ -149,8 +155,9 @@ public class LtCrossMomentum implements Strategy {
 
     private void exitTrade(double price) {
         Order.Side exit = direction == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
-        pending.add(new Order(symbol, exit, Order.Type.MARKET, 1000, price).closeOnly());
+        pending.add(new Order(symbol, exit, Order.Type.MARKET, positionUnits, price).closeOnly());
         inTrade = false;
+        positionUnits = 0;
     }
 
     @Override
@@ -169,5 +176,6 @@ public class LtCrossMomentum implements Strategy {
         entrySl = 0;
         entryTp = 0;
         lastTradeDay = -1;
+        positionUnits = 0;
     }
 }

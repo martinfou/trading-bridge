@@ -48,6 +48,7 @@ public class LtSqueezeMomentum implements Strategy {
     private int barsInTrade = 0;
     private int tradesToday = 0;
     private int lastTradeDay = -1;
+    private double positionUnits = 0;
 
     public LtSqueezeMomentum() { this("LtSqueezeMomentum", "EUR_USD"); }
     public LtSqueezeMomentum(String name) { this(name, "EUR_USD"); }
@@ -60,6 +61,7 @@ public class LtSqueezeMomentum implements Strategy {
 
     @Override
     public void onBar(Bar bar) {
+        if (!bar.symbol().equals(symbol)) return;
         history.add(bar);
         int size = history.size();
         if (size < BB_PERIOD + 10) return;
@@ -105,7 +107,7 @@ public class LtSqueezeMomentum implements Strategy {
                 .withStopLoss(stopLoss).withTakeProfit(takeProfit));
             entryPrice = close; entrySl = stopLoss; entryTp = takeProfit;
             entryBandwidth = bandwidth;
-            direction = Order.Side.BUY; inTrade = true; tradesToday++; barsInTrade = 0;
+            direction = Order.Side.BUY; inTrade = true; tradesToday++; barsInTrade = 0; positionUnits = position;
         } else if (rsi < RSI_BEAR) {
             double stopLoss = close + atr * ATR_MULT_SL;
             double takeProfit = close - atr * ATR_MULT_TP;
@@ -113,7 +115,7 @@ public class LtSqueezeMomentum implements Strategy {
                 .withStopLoss(stopLoss).withTakeProfit(takeProfit));
             entryPrice = close; entrySl = stopLoss; entryTp = takeProfit;
             entryBandwidth = bandwidth;
-            direction = Order.Side.SELL; inTrade = true; tradesToday++; barsInTrade = 0;
+            direction = Order.Side.SELL; inTrade = true; tradesToday++; barsInTrade = 0; positionUnits = position;
         }
     }
 
@@ -121,8 +123,9 @@ public class LtSqueezeMomentum implements Strategy {
 
     private void exitTrade(double price) {
         Order.Side exitSide = direction == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
-        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, 1000, price).closeOnly());
+        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, positionUnits, price).closeOnly());
         inTrade = false;
+        positionUnits = 0;
     }
 
     @Override
@@ -137,5 +140,6 @@ public class LtSqueezeMomentum implements Strategy {
         history.clear(); pending.clear();
         inTrade = false; tradesToday = 0; lastTradeDay = -1;
         entryPrice = 0; entrySl = 0; entryTp = 0; entryBandwidth = 0; barsInTrade = 0;
+        positionUnits = 0;
     }
 }

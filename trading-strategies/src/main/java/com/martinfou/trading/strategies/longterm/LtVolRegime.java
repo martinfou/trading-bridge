@@ -40,12 +40,13 @@ public class LtVolRegime implements Strategy {
     private final List<Order> pending = new ArrayList<>();
     private final List<Bar> history = new ArrayList<>();
 
-    private boolean inTrade = false;
+        private boolean inTrade = false;
     private Order.Side tradeDirection;
     private double entryPrice;
     private double stopLoss;
     private double takeProfit;
     private int lastTradeDayOfYear = -1;
+    private double positionUnits = 0;
 
     public LtVolRegime(String name, String symbol) {
         this.name = name;
@@ -92,45 +93,51 @@ public class LtVolRegime implements Strategy {
         if (atrRatio > HIGH_VOL_THRESHOLD) {
             // High volatility regime → trend follow
             double price = bar.open();
+            long units = Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atrShort, SL_MULT, symbol);
             if (price > ema50) {
                 // Uptrend → BUY
                 entryPrice = price;
                 stopLoss = price - atrShort * SL_MULT;
                 takeProfit = price + atrShort * TP_MULT;
-                pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atrShort, SL_MULT, symbol), price));
+                pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, units, price));
                 inTrade = true;
                 tradeDirection = Order.Side.BUY;
+                positionUnits = units;
                 lastTradeDayOfYear = dayOfYear;
             } else if (price < ema50) {
                 // Downtrend → SELL
                 entryPrice = price;
                 stopLoss = price + atrShort * SL_MULT;
                 takeProfit = price - atrShort * TP_MULT;
-                pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atrShort, SL_MULT, symbol), price));
+                pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, units, price));
                 inTrade = true;
                 tradeDirection = Order.Side.SELL;
+                positionUnits = units;
                 lastTradeDayOfYear = dayOfYear;
             }
         } else if (atrRatio < LOW_VOL_THRESHOLD) {
             // Low volatility regime → mean reversion
             double price = bar.open();
+            long units = Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atrShort, SL_MULT, symbol);
             if (rsi < 30) {
                 // Oversold → BUY
                 entryPrice = price;
                 stopLoss = price - atrShort * SL_MULT;
                 takeProfit = price + atrShort * TP_MULT;
-                pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atrShort, SL_MULT, symbol), price));
+                pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, units, price));
                 inTrade = true;
                 tradeDirection = Order.Side.BUY;
+                positionUnits = units;
                 lastTradeDayOfYear = dayOfYear;
             } else if (rsi > 70) {
                 // Overbought → SELL
                 entryPrice = price;
                 stopLoss = price + atrShort * SL_MULT;
                 takeProfit = price - atrShort * TP_MULT;
-                pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atrShort, SL_MULT, symbol), price));
+                pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, units, price));
                 inTrade = true;
                 tradeDirection = Order.Side.SELL;
+                positionUnits = units;
                 lastTradeDayOfYear = dayOfYear;
             }
         }
@@ -150,8 +157,9 @@ public class LtVolRegime implements Strategy {
 
     private void closePosition(double price) {
         Order.Side exitSide = tradeDirection == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
-        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, 1000, price).closeOnly());
+        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, positionUnits, price).closeOnly());
         inTrade = false;
+        positionUnits = 0;
     }
 
     @Override
@@ -169,6 +177,7 @@ public class LtVolRegime implements Strategy {
         history.clear();
         pending.clear();
         inTrade = false;
+        positionUnits = 0;
         lastTradeDayOfYear = -1;
     }
 }

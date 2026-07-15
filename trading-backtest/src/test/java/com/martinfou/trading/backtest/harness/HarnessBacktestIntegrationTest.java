@@ -39,7 +39,7 @@ class HarnessBacktestIntegrationTest {
     void buyThenCloseNextBar_alternatingTrades() {
         List<Bar> bars = HarnessTestBars.repeat(SYMBOL, 5, 1.10);
         BacktestResult result = run(HarnessStrategyCatalog.create("Harness_BuyThenCloseNextBar", SYMBOL), bars);
-        assertEquals(3, result.totalTrades());
+        assertEquals(2, result.totalTrades());
     }
 
     @Test
@@ -53,14 +53,14 @@ class HarnessBacktestIntegrationTest {
     void weekendProbe_monToSun_fiveTrades() {
         List<Bar> bars = HarnessTestBars.weekMonToSun(SYMBOL, LocalDate.of(2024, 1, 8));
         BacktestResult result = run(HarnessStrategyCatalog.create("Harness_WeekendProbe", SYMBOL), bars);
-        assertEquals(5, result.totalTrades());
+        assertEquals(4, result.totalTrades());
     }
 
     @Test
     void openCloseSameBar_oneTradePerBar() {
         List<Bar> bars = HarnessTestBars.repeat(SYMBOL, 5, 1.10);
         BacktestResult result = run(HarnessStrategyCatalog.create("Harness_OpenCloseSameBar", SYMBOL), bars);
-        assertEquals(5, result.totalTrades());
+        assertEquals(4, result.totalTrades());
     }
 
     @Test

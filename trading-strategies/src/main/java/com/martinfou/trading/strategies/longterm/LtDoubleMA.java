@@ -42,6 +42,7 @@ public class LtDoubleMA implements Strategy {
     private int tradesToday = 0;
     private int lastTradeDay = -1;
     private boolean wasPreviousEmaAboveSma = false;
+    private double positionUnits = 0;
 
     public LtDoubleMA() { this("LtDoubleMA", "EUR_USD"); }
     public LtDoubleMA(String name) { this(name, "EUR_USD"); }
@@ -54,6 +55,7 @@ public class LtDoubleMA implements Strategy {
 
     @Override
     public void onBar(Bar bar) {
+        if (!bar.symbol().equals(symbol)) return;
         history.add(bar);
         int size = history.size();
         if (size < SMA_SLOW + ATR_PERIOD + 1) return;
@@ -94,20 +96,22 @@ public class LtDoubleMA implements Strategy {
         double sl = atr * ATR_MULT_SL;
         double tp = atr * ATR_MULT_TP;
 
+        long units = Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, ATR_MULT_SL, symbol);
+
         if (crossUp) {
             double stopLoss = close - sl;
             double takeProfit = close + tp;
-            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, ATR_MULT_SL, symbol), close)
+            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, units, close)
                 .withStopLoss(stopLoss).withTakeProfit(takeProfit));
             entryPrice = close; entrySl = stopLoss; entryTp = takeProfit;
-            direction = Order.Side.BUY; inTrade = true; tradesToday++; barsInTrade = 0;
+            direction = Order.Side.BUY; inTrade = true; tradesToday++; barsInTrade = 0; positionUnits = units;
         } else if (crossDown) {
             double stopLoss = close + sl;
             double takeProfit = close - tp;
-            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, ATR_MULT_SL, symbol), close)
+            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, units, close)
                 .withStopLoss(stopLoss).withTakeProfit(takeProfit));
             entryPrice = close; entrySl = stopLoss; entryTp = takeProfit;
-            direction = Order.Side.SELL; inTrade = true; tradesToday++; barsInTrade = 0;
+            direction = Order.Side.SELL; inTrade = true; tradesToday++; barsInTrade = 0; positionUnits = units;
         }
     }
 
@@ -115,8 +119,9 @@ public class LtDoubleMA implements Strategy {
 
     private void exitTrade(double price) {
         Order.Side exitSide = direction == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
-        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, 1000, price).closeOnly());
+        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, positionUnits, price).closeOnly());
         inTrade = false;
+        positionUnits = 0;
     }
 
     @Override
@@ -132,5 +137,6 @@ public class LtDoubleMA implements Strategy {
         inTrade = false; tradesToday = 0; lastTradeDay = -1;
         entryPrice = 0; entrySl = 0; entryTp = 0; barsInTrade = 0;
         wasPreviousEmaAboveSma = false;
+        positionUnits = 0;
     }
 }

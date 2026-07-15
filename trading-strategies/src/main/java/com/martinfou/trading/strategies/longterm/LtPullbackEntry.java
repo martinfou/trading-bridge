@@ -45,6 +45,7 @@ public class LtPullbackEntry implements Strategy {
     private int barsInTrade = 0;
     private int tradesToday = 0;
     private int lastTradeDay = -1;
+    private double positionUnits = 0;
 
     public LtPullbackEntry() { this("LtPullbackEntry", "EUR_USD"); }
     public LtPullbackEntry(String name) { this(name, "EUR_USD"); }
@@ -57,6 +58,7 @@ public class LtPullbackEntry implements Strategy {
 
     @Override
     public void onBar(Bar bar) {
+        if (!bar.symbol().equals(symbol)) return;
         history.add(bar);
         int size = history.size();
         if (size < SMA_TREND + ATR_PERIOD + 5) return;
@@ -102,7 +104,7 @@ public class LtPullbackEntry implements Strategy {
             pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, position, close)
                 .withStopLoss(stopLoss).withTakeProfit(takeProfit));
             entryPrice = close; entrySl = stopLoss; entryTp = takeProfit;
-            direction = Order.Side.BUY; inTrade = true; tradesToday++; barsInTrade = 0;
+            direction = Order.Side.BUY; inTrade = true; tradesToday++; barsInTrade = 0; positionUnits = position;
         }
         else if (isDowntrend && emaProximity < EMA_PROXIMITY && rsi > RSI_OVERBOUGHT) {
             double stopLoss = close + atr * ATR_MULT_SL;
@@ -110,7 +112,7 @@ public class LtPullbackEntry implements Strategy {
             pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, position, close)
                 .withStopLoss(stopLoss).withTakeProfit(takeProfit));
             entryPrice = close; entrySl = stopLoss; entryTp = takeProfit;
-            direction = Order.Side.SELL; inTrade = true; tradesToday++; barsInTrade = 0;
+            direction = Order.Side.SELL; inTrade = true; tradesToday++; barsInTrade = 0; positionUnits = position;
         }
     }
 
@@ -118,8 +120,9 @@ public class LtPullbackEntry implements Strategy {
 
     private void exitTrade(double price) {
         Order.Side exitSide = direction == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
-        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, 1000, price).closeOnly());
+        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, positionUnits, price).closeOnly());
         inTrade = false;
+        positionUnits = 0;
     }
 
     @Override
@@ -134,5 +137,6 @@ public class LtPullbackEntry implements Strategy {
         history.clear(); pending.clear();
         inTrade = false; tradesToday = 0; lastTradeDay = -1;
         entryPrice = 0; entrySl = 0; entryTp = 0; barsInTrade = 0;
+        positionUnits = 0;
     }
 }

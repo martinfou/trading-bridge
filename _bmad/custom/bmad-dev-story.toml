@@ -1,0 +1,5 @@
+[workflow]
+
+persistent_facts = [
+  "When a story implementation is finished, the agent MUST transition the story status to 'review' (never 'done' or 'completed'). The story can only be moved to 'done' after running the code-review workflow and obtaining user approval."
+]
