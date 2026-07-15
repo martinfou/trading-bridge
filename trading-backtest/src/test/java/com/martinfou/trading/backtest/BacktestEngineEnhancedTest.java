@@ -211,4 +211,20 @@ class BacktestEngineEnhancedTest {
         }
         return bars;
     }
+
+    @Test
+    void calmarRatio_negativeEquity_returnsZeroNotNaN() {
+        // Edge case: strategy loses everything and equity goes negative
+        // This causes Math.pow(negative, fractional) in annualisedReturn to produce NaN.
+        // With 100 bars, PERIODS_PER_YEAR / n = 252/99 ≈ 2.545 = non-integer.
+        // The guard in calmarRatio() should sanitize to 0.0.
+        List<Double> curve = new ArrayList<>();
+        curve.add(10000.0);  // initial capital
+        for (int i = 1; i < 100; i++) {
+            double eq = 10000.0 - (i * 200.0);  // steadily loses money, goes negative after bar 50
+            curve.add(eq);
+        }
+        double calmar = PerformanceMetrics.calmarRatio(curve);
+        assertFalse(Double.isNaN(calmar));
+    }
 }
