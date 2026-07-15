@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Function;
 
+import com.martinfou.trading.strategies.creative.BollingerBreakoutMomentum;
 import com.martinfou.trading.strategies.creative.EmaCloudTrendFilter;
 import com.martinfou.trading.strategies.creative.RSIPulseMomentumStrategy;
 
@@ -26,6 +27,7 @@ public final class PropStrategyCatalog {
         register("WeeklyOpenGapFade", WeeklyOpenGapFadeStrategy::new);
         register("InsideBarBreakout", InsideBarBreakoutStrategy::new);
         register("OverlapMomentumBurst", OverlapMomentumBurstStrategy::new);
+        register("BollingerBreakoutMomentum", sym -> new BollingerBreakoutMomentum("BollingerBreakoutMomentum_" + sym, sym));
         register("EmaCloudTrendFilter", sym -> new EmaCloudTrendFilter("EmaCloudTrendFilter_" + sym));
         register("RSIPulseMomentum", sym -> new RSIPulseMomentumStrategy("RSIPulseMomentum_" + sym, sym));
     }
