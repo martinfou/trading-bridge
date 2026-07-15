@@ -50,6 +50,7 @@ public class LtRSIMeanRev implements Strategy {
     private double entrySl = 0;
     private double entryTp = 0;
     private String lastTradeDay = ""; // YYYY-MM-DD to enforce 1 trade/day
+    private double positionUnits = 0;
 
     public LtRSIMeanRev() { this("LtRSIMeanRev", "EUR_USD"); }
     public LtRSIMeanRev(String name) { this(name, "EUR_USD"); }
@@ -62,6 +63,7 @@ public class LtRSIMeanRev implements Strategy {
 
     @Override
     public void onBar(Bar bar) {
+        if (!bar.symbol().equals(symbol)) return;
         history.add(bar);
         int size = history.size();
         if (size < EMA_PERIOD + RSI_PERIOD + 1) return;
@@ -101,6 +103,8 @@ public class LtRSIMeanRev implements Strategy {
         // Max 1 trade per calendar day
         if (todayKey.equals(lastTradeDay)) return;
 
+        long units = Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, ATR_SL_MULT, symbol);
+
         // Entry conditions:
         // Oversold (RSI < 25) + price above EMA(200) = BUY (bullish trend, mean reversion up)
         if (rsi < RSI_OVERSOLD && close > ema200) {
@@ -108,10 +112,11 @@ public class LtRSIMeanRev implements Strategy {
             entryPrice = close;
             entrySl = close - atr * ATR_SL_MULT;
             entryTp = close + atr * ATR_TP_MULT;
-            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, ATR_SL_MULT, symbol), close)
+            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, units, close)
                 .withStopLoss(entrySl).withTakeProfit(entryTp));
             inTrade = true;
             lastTradeDay = todayKey;
+            positionUnits = units;
         }
         // Overbought (RSI > 75) + price below EMA(200) = SELL (bearish trend, mean reversion down)
         else if (rsi > RSI_OVERBOUGHT && close < ema200) {
@@ -119,10 +124,11 @@ public class LtRSIMeanRev implements Strategy {
             entryPrice = close;
             entrySl = close + atr * ATR_SL_MULT;
             entryTp = close - atr * ATR_TP_MULT;
-            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, ATR_SL_MULT, symbol), close)
+            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, units, close)
                 .withStopLoss(entrySl).withTakeProfit(entryTp));
             inTrade = true;
             lastTradeDay = todayKey;
+            positionUnits = units;
         }
     }
 
@@ -130,8 +136,9 @@ public class LtRSIMeanRev implements Strategy {
 
     private void exitTrade(double price) {
         Order.Side exit = direction == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
-        pending.add(new Order(symbol, exit, Order.Type.MARKET, 1000, price).closeOnly());
+        pending.add(new Order(symbol, exit, Order.Type.MARKET, positionUnits, price).closeOnly());
         inTrade = false;
+        positionUnits = 0;
     }
 
     @Override
@@ -150,5 +157,6 @@ public class LtRSIMeanRev implements Strategy {
         entrySl = 0;
         entryTp = 0;
         lastTradeDay = "";
+        positionUnits = 0;
     }
 }

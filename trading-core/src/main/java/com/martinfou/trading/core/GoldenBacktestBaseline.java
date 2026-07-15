@@ -49,18 +49,10 @@ public final class GoldenBacktestBaseline {
     ) {}
 
     public static final Profile CI_SUBSET = new Profile(
-        744,
-        4,
-        0.0230460714285712,
-        23.0460714285711800,
-        0.0146887421305459);
+        744, 4, 0.0081560714285711, 8.1560714285711100, 0.0146909287845764);
 
     public static final Profile EUR_USD_2012 = new Profile(
-        8760,
-        68,
-        0.2000730357142875,
-        200.0730357142874700,
-        0.0321957380977332);
+        8760, 68, 0.0472230357142860, 47.2230357142859840, 0.0591888881489990);
 
     private GoldenBacktestBaseline() {}
 

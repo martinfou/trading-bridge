@@ -29,7 +29,7 @@ class BacktestEngineContractTest {
         BacktestResult result = new BacktestEngine(TestStrategies.buyOnce(), bars, CAPITAL).run();
 
         assertEquals(1, result.totalTrades());
-        assertEquals(fillOpen, result.trades().getFirst().entryPrice(), 1e-9, "MARKET fill at bar.open()");
+        assertEquals(1.2510, result.trades().getFirst().entryPrice(), 1e-9, "MARKET fill at next bar open");
     }
 
     @Test
@@ -136,16 +136,16 @@ class BacktestEngineContractTest {
         // closeOnly() should REDUCE the opposite position, not create a hedge
         List<com.martinfou.trading.core.Bar> bars = TestBars.ohlc(new double[][] {
             {1.1000, 1.1010, 1.0990, 1.1005},
-            {1.1010, 1.1020, 1.1000, 1.1015}
+            {1.1010, 1.1020, 1.1000, 1.1015},
+            {1.1020, 1.1030, 1.1010, 1.1025}
         });
 
         BacktestResult result = new BacktestEngine(TestStrategies.buyThenCloseOnlySell(), bars, CAPITAL).run();
 
-        // BUY bar 0 → LONG(10000) @ 1.1000
-        // SELL closeOnly bar 1 → REDUCE_ONLY: closes LONG @ 1.1010 (PnL = (1.1010-1.1000)*10000 = $10)
-        // 1 trade, not 2 (no hedge)
+        // BUY bar 0 → filled LONG(10000) @ 1.1010 (bar 1 open)
+        // SELL closeOnly bar 1 → filled CLOSE @ 1.1020 (bar 2 open)
         assertEquals(1, result.totalTrades(), "closeOnly should reduce, not create hedge");
-        assertEquals(1.1010, result.trades().getFirst().exitPrice(), 1e-9);
+        assertEquals(1.1020, result.trades().getFirst().exitPrice(), 1e-9);
     }
 
     @Test
@@ -296,18 +296,18 @@ class BacktestEngineContractTest {
             .withSlippagePct(0.0001)
             .run();
 
-        // Entry at open of bar 0 = 1.1000. Quantity = 10,000.
-        // Slip per unit = 1.1000 * 0.0001 = 0.00011.
-        // Total cash slippage = 0.00011 * 10,000 = 1.10 USD.
-        assertEquals(1.10, result.totalSlippage(), 1e-6, "Slippage should be cash valued (1.10 USD)");
+        // Entry at open of bar 1 = 1.1010. Quantity = 10,000.
+        // Slip per unit = 1.1010 * 0.0001 = 0.0001101.
+        // Total cash slippage = 0.0001101 * 10,000 = 1.101 USD.
+        assertEquals(1.101, result.totalSlippage(), 1e-6, "Slippage should be cash valued (1.101 USD)");
 
-        double entryPriceWithSlip = 1.10011;
+        double entryPriceWithSlip = 1.1011101;
         double exitPrice = 1.1015; // closed at end close
-        double expectedTradePnl = (exitPrice - entryPriceWithSlip) * 10000; // 13.90 USD
+        double expectedTradePnl = (exitPrice - entryPriceWithSlip) * 10000; // 3.899 USD
         assertEquals(expectedTradePnl, result.trades().getFirst().pnl(), 1e-6);
 
         // Net PnL = trade PnL - commission (no double counting of slippage)
-        double expectedNetPnl = expectedTradePnl - 5.0; // 8.90 USD
+        double expectedNetPnl = expectedTradePnl - 5.0; // -1.101 USD
         assertEquals(expectedNetPnl, result.totalPnl(), 1e-6);
         assertEquals(CAPITAL + expectedNetPnl, result.finalEquity(), 1e-6);
     }

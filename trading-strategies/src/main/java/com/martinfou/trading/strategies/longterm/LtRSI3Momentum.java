@@ -45,6 +45,7 @@ public class LtRSI3Momentum implements Strategy {
     private int lastTradeDay = -1;
     private int tradesToday = 0;
     private int cooldownBars = 0;
+    private double positionUnits = 0;
 
     public LtRSI3Momentum(String name, String symbol) {
         this.name = name;
@@ -98,6 +99,7 @@ public class LtRSI3Momentum implements Strategy {
         lastTradeDay = -1;
         tradesToday = 0;
         cooldownBars = 0;
+        positionUnits = 0;
     }
 
     private void evaluateEntry(Bar bar) {
@@ -107,23 +109,27 @@ public class LtRSI3Momentum implements Strategy {
 
         if (Double.isNaN(rsi) || Double.isNaN(ema200) || Double.isNaN(atr) || atr <= 0) return;
 
+        long units = Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, SL_MULT, symbol);
+
         if (rsi > RSI_BULLISH && bar.close() > ema200) {
             // Bullish momentum drift — enter LONG
             entryPrice = bar.close();
             stopLoss = entryPrice - atr * SL_MULT;
             takeProfit = entryPrice + atr * TP_MULT;
-            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, SL_MULT, symbol), entryPrice));
+            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, units, entryPrice));
             inTrade = true;
             tradeDirection = Order.Side.BUY;
+            positionUnits = units;
             tradesToday++;
         } else if (rsi < RSI_BEARISH && bar.close() < ema200) {
             // Bearish momentum drift — enter SHORT
             entryPrice = bar.close();
             stopLoss = entryPrice + atr * SL_MULT;
             takeProfit = entryPrice - atr * TP_MULT;
-            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, SL_MULT, symbol), entryPrice));
+            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, units, entryPrice));
             inTrade = true;
             tradeDirection = Order.Side.SELL;
+            positionUnits = units;
             tradesToday++;
         }
     }
@@ -161,8 +167,9 @@ public class LtRSI3Momentum implements Strategy {
 
     private void exitPosition(double price) {
         Order.Side exitSide = tradeDirection == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
-        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, 1000, price).closeOnly());
+        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, positionUnits, price).closeOnly());
         inTrade = false;
+        positionUnits = 0;
         cooldownBars = COOLDOWN_BARS;
     }
 }

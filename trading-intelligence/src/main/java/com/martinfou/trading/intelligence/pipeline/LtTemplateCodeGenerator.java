@@ -53,6 +53,8 @@ public class %1$s implements Strategy {
     private final List<Order> pending = new ArrayList<>();
     private final List<Bar> history = new ArrayList<>();
     private boolean inTrade = false;
+    private double positionUnits = 0;
+    private Order.Side direction = Order.Side.BUY;
 
     public %1$s() { this(NAME, "EUR_USD"); }
     public %1$s(String name) { this(name, "EUR_USD"); }
@@ -84,6 +86,8 @@ public class %1$s implements Strategy {
                 pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, units, close)
                     .withStopLoss(sl).withTakeProfit(tp));
                 inTrade = true;
+                positionUnits = units;
+                direction = Order.Side.BUY;
                 return;
             }
             if (%10$s) {
@@ -92,6 +96,8 @@ public class %1$s implements Strategy {
                 pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, units, close)
                     .withStopLoss(sl).withTakeProfit(tp));
                 inTrade = true;
+                positionUnits = units;
+                direction = Order.Side.SELL;
                 return;
             }
         }
@@ -103,9 +109,10 @@ public class %1$s implements Strategy {
     }
 
     private void exitTrade(double price) {
-        Order.Side exit = inTrade ? Order.Side.SELL : Order.Side.BUY;
-        pending.add(new Order(symbol, exit, Order.Type.MARKET, 1000, price).closeOnly());
+        Order.Side exit = direction == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
+        pending.add(new Order(symbol, exit, Order.Type.MARKET, positionUnits, price).closeOnly());
         inTrade = false;
+        positionUnits = 0;
     }
 
     @Override public void onTick(double bid, double ask, long volume) {}
@@ -121,6 +128,7 @@ public class %1$s implements Strategy {
     public void reset() {
         history.clear(); pending.clear();
         inTrade = false;
+        positionUnits = 0;
     }
 }
 """;

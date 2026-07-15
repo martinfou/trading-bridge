@@ -28,12 +28,6 @@ import java.util.*;
  */
 public class RunLtRSI3Momentum {
 
-    static {
-        StrategyCatalog.register("LtRSI3Momentum", Family.EXAMPLE,
-            sym -> new LtRSI3Momentum("LtRSI3Momentum", sym),
-            "EUR_USD");
-    }
-
     public static void main(String[] args) {
         System.out.println("╔══════════════════════════════════════════════════════════╗");
         System.out.println("║       LtRSI3Momentum — RSI(3) Drift Following          ║");

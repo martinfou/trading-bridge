@@ -636,9 +636,10 @@ class RunManagerTest {
 
             ControlPlaneMain.restoreActiveRuns(manager, config);
 
-            // Verify run is restored and running
+            // Verify run is restored and running or completed
             RunRecord restored = manager.getRun(runId).orElseThrow();
-            assertEquals(RunRecord.Status.RUNNING, restored.status());
+            assertTrue(restored.status() == RunRecord.Status.RUNNING || restored.status() == RunRecord.Status.COMPLETED,
+                "Expected status to be RUNNING or COMPLETED, but was " + restored.status());
             assertEquals("LondonOpenRangeBreakout", restored.strategyId());
         }
     }

@@ -170,26 +170,43 @@ public class BacktestEngine {
         boolean isMultiTimeframe = !strategyTimeframe.equalsIgnoreCase(dataTimeframe);
         Map<String, BarAggregator> aggregators = new HashMap<>();
 
+        Bar previousBar = null;
         for (int i = 0; i < bars.size(); i++) {
             Bar bar = bars.get(i);
             if (!ForexMarketCalendar.isTradingBar(bar)) {
                 continue;
             }
 
+            // 1. Strategy Evaluation on completed prior periods
+            // This happens BEFORE we execute orders at the current bar's open, 
+            // preventing look-ahead bias (strategy seeing close price and executing at open of the same bar).
             if (isMultiTimeframe) {
                 BarAggregator aggregator = aggregators.computeIfAbsent(bar.symbol(), s -> new BarAggregator(s, strategyTimeframe));
                 boolean isNew = aggregator.isNewPeriod(bar);
-                boolean hasInProgress = aggregator.getInProgressBar() != null;
-
-                aggregator.add(bar);
-
-                if (isNew && hasInProgress) {
-                    Bar completedBar = aggregator.getLastCompletedBar();
+                if (isNew) {
+                    Bar completedBar = aggregator.getInProgressBar();
                     if (completedBar != null) {
                         strategy.onBar(completedBar);
                     }
                 }
+            } else {
+                if (previousBar != null) {
+                    strategy.onBar(previousBar);
+                }
+            }
 
+            // 2. Intra-bar execution
+            // Process pending MARKET orders at bar.open()
+            // Evaluate LIMIT/STOP orders against bar.high()/low()
+            processOrders(bar);
+
+            // Check SL/TP on open positions against bar.high()/low()
+            checkStopLossesTakeProfits(bar);
+
+            // 3. Accumulate data and handle final bar
+            if (isMultiTimeframe) {
+                BarAggregator aggregator = aggregators.get(bar.symbol());
+                aggregator.add(bar);
                 if (i == bars.size() - 1) {
                     aggregator.completePeriod();
                     Bar completedBar = aggregator.getLastCompletedBar();
@@ -198,14 +215,10 @@ public class BacktestEngine {
                     }
                 }
             } else {
-                strategy.onBar(bar);
+                if (i == bars.size() - 1) {
+                    strategy.onBar(bar);
+                }
             }
-
-            // Check SL/TP on open positions before processing new orders
-            checkStopLossesTakeProfits(bar);
-
-            // Process pending orders from the strategy
-            processOrders(bar);
 
             // Recompute equity: cash + floating P&L from open positions
             recomputeEquity(bar);
@@ -213,6 +226,8 @@ public class BacktestEngine {
             // Track equity curve (once per bar, after processing)
             equityCurve.add(equity);
             if (equity > peakEquity) peakEquity = equity;
+
+            previousBar = bar;
         }
 
         // Close any remaining open positions at last trading bar's close

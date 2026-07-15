@@ -73,7 +73,7 @@ class PlatformRobustnessTest {
                     {1.2500, 1.2510, 1.2490, 1.2505},
                     {1.2510, 1.2520, 1.2500, 1.2515}
                 }), 1,
-                r -> assertEquals(1.2500, r.trades().getFirst().entryPrice(), 1e-9)),
+                r -> assertEquals(1.2510, r.trades().getFirst().entryPrice(), 1e-9)),
             new PlatformCase("buyThenSell_createsHedge", TestStrategies.buyThenSell(),
                 TestBars.ohlc(new double[][] {
                     {1.1000, 1.1010, 1.0990, 1.1005},
@@ -89,7 +89,7 @@ class PlatformRobustnessTest {
             new PlatformCase("limitBuy_fillsAtLimit", TestStrategies.limitBuy(1.1000, 10_000),
                 TestBars.ohlc(new double[][] {
                     {1.1010, 1.1020, 1.0990, 1.1015},
-                    {1.1015, 1.1025, 1.1010, 1.1020}
+                    {1.1015, 1.1025, 1.0990, 1.1020}
                 }), 1,
                 r -> assertEquals(1.1000, r.trades().getFirst().entryPrice(), 1e-9)),
             new PlatformCase("stopBuy_fillsOnBreakout", TestStrategies.stopBuy(1.1010, 10_000, 2),
@@ -114,7 +114,7 @@ class PlatformRobustnessTest {
         return Stream.of(
             new PlatformCase("emptyBars_noTrades", TestStrategies.noOp(), List.of(), 0),
             new PlatformCase("singleBar_buyClosedAtClose", TestStrategies.buyOnce(),
-                TestBars.ohlc(new double[][] {{1.2000, 1.2010, 1.1990, 1.2005}}), 1),
+                TestBars.ohlc(new double[][] {{1.2000, 1.2010, 1.1990, 1.2005}}), 0),
             new PlatformCase("limitBuy_neverFills", TestStrategies.limitBuy(1.0500, 10_000, 3),
                 TestBars.flat(3, 1.1000), 0),
             new PlatformCase("stopLoss_triggersAtSl", TestStrategies.buyWithStopLoss(1.1950),
@@ -132,7 +132,7 @@ class PlatformRobustnessTest {
             new PlatformCase("noOrdersUntilBar3", TestStrategies.delayedMarketBuy(3, 5_000),
                 TestBars.flat(5, 1.1000), 1),
             new PlatformCase("sellOnce_singleBar", TestStrategies.sellOnce(),
-                TestBars.ohlc(new double[][] {{1.1000, 1.1010, 1.0990, 1.1005}}), 1),
+                TestBars.ohlc(new double[][] {{1.1000, 1.1010, 1.0990, 1.1005}}), 0),
             new PlatformCase("sellThenBuy_createsHedge", TestStrategies.sellThenBuy(),
                 TestBars.ohlc(new double[][] {
                     {1.1000, 1.1010, 1.0990, 1.1005},
