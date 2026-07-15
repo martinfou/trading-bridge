@@ -170,7 +170,10 @@ public final class PerformanceMetrics {
         double annReturn = annualisedReturn(equityCurve);
         double maxDd = maxDrawdownDecimal(equityCurve);
         if (maxDd == 0.0) return 0.0;
-        return annReturn / maxDd;
+        double ratio = annReturn / maxDd;
+        // Guard against NaN/Infinity when a strategy loses everything
+        // (equity goes negative → annReturn from Math.pow() is NaN)
+        return Double.isFinite(ratio) ? ratio : 0.0;
     }
 
     // ---------------------------------------------------------------
