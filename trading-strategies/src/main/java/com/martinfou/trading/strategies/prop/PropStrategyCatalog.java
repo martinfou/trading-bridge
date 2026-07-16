@@ -9,6 +9,7 @@ import java.util.function.Function;
 import com.martinfou.trading.strategies.creative.BollingerBreakoutMomentum;
 import com.martinfou.trading.strategies.creative.EmaCloudTrendFilter;
 import com.martinfou.trading.strategies.creative.RSIPulseMomentumStrategy;
+import com.martinfou.trading.strategies.creative.RSI3MeanReversion;
 
 /**
  * Registry of all prop-firm mechanical strategies. */
@@ -30,6 +31,7 @@ public final class PropStrategyCatalog {
         register("BollingerBreakoutMomentum", sym -> new BollingerBreakoutMomentum("BollingerBreakoutMomentum_" + sym, sym));
         register("EmaCloudTrendFilter", sym -> new EmaCloudTrendFilter("EmaCloudTrendFilter_" + sym));
         register("RSIPulseMomentum", sym -> new RSIPulseMomentumStrategy("RSIPulseMomentum_" + sym, sym));
+        register("RSI3MeanReversion", sym -> new RSI3MeanReversion("RSI3MeanReversion_" + sym, sym));
     }
 
     private PropStrategyCatalog() {}
