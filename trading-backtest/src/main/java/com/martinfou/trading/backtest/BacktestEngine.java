@@ -64,6 +64,7 @@ public class BacktestEngine {
     private double stopSlippagePct = 0.00005;        // % added to SL fill price (~0.5 pip)
     private double totalCommission = 0.0;
     private double totalSlippage = 0.0;
+    private double totalSwap = 0.0;              // NEW: overnight swap costs/credits
     private double riskFreeRate = PerformanceMetrics.DEFAULT_RISK_FREE_RATE;
     private double usdJpyRate = ForexPnL.DEFAULT_USD_JPY;
     private String dataTimeframe = "h1";
@@ -366,6 +367,12 @@ public class BacktestEngine {
         trades.add(new Trade(order.symbol(), opposite.side(), opposite.entryPrice(), exitPrice,
             qty, opposite.entryTime(), timestamp, usdJpyRate, opposite.stopLoss(), opposite.takeProfit()));
 
+        // Calculate swap for this trade
+        double swapCost = SwapCalculator.calculateSwap(
+            order.symbol(), opposite.side(), qty,
+            opposite.entryTime(), timestamp);
+        totalSwap += swapCost;
+
         opposite.reduceQuantity(qty);
 
         // Remove the position if fully reduced
@@ -528,7 +535,7 @@ public class BacktestEngine {
     // ---------------------------------------------------------------
 
     private BacktestResult buildResult() {
-        double totalPnl = trades.stream().mapToDouble(Trade::pnl).sum() - totalCommission;
+        double totalPnl = trades.stream().mapToDouble(Trade::pnl).sum() - totalCommission - totalSwap;
         double totalReturnPct = initialCapital > 0 ? (totalPnl / initialCapital) * 100 : 0;
         double maxDd = calcMaxDrawdown();
         double winRate = totalTrades > 0 ? (double) winningTrades / totalTrades * 100 : 0;
@@ -548,7 +555,7 @@ public class BacktestEngine {
             strategy.name(), initialCapital, equity, totalPnl, totalReturnPct,
             totalTrades, winningTrades, losingTrades, winRate, maxDd,
             avgTradePnl, sharpe, sortino, profitFactor, calmar,
-            totalCommission, totalSlippage,
+            totalCommission, totalSlippage, totalSwap,
             List.copyOf(equityCurve), List.copyOf(trades),
             bars.isEmpty() ? null : bars.getFirst().timestamp(),
             bars.isEmpty() ? null : bars.getLast().timestamp(),

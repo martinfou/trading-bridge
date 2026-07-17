@@ -398,18 +398,19 @@ class RankingDashboardTest {
             20,                          // losingTrades
             60.0,                        // winRatePct
             maxDD,                       // maxDrawdownPct
-            200.0,                       // avgTradePnl
+            (finalEquity - initialCapital) / 50, // avgTradePnl
             sharpe,                      // sharpeRatio
-            sharpe * 0.8,                // sortinoRatio (approx)
+            sharpe * 0.6,                // sortinoRatio
             profitFactor,                // profitFactor
-            sharpe * 2.0,                // calmarRatio
+            sharpe * finalEquity / 1000, // calmarRatio
             0.0,                         // totalCommission
             0.0,                         // totalSlippage
-            List.of(initialCapital, (initialCapital + finalEquity) / 2, finalEquity), // equityCurve
-            List.<com.martinfou.trading.core.Trade>of(), // trades
-            Instant.parse("2024-01-01T00:00:00Z"), // periodStart
-            Instant.parse("2024-12-31T00:00:00Z"), // periodEnd
-            252.0                                   // periodsPerYear
+            0.0,                         // totalSwap
+            List.of(),                   // equityCurve
+            List.of(),                   // trades
+            Instant.EPOCH,               // periodStart
+            Instant.EPOCH,               // periodEnd
+            252                          // periodsPerYear
         );
     }
 
