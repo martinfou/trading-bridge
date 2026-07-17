@@ -68,8 +68,18 @@ public class BollingerBreakoutMomentum implements Strategy {
     @Override
     public void onBar(Bar bar) {
         if (!bar.symbol().equals(symbol)) return;
+        // Compute indicators on history WITHOUT current bar (avoid look-ahead)
+        int histSize = history.size();
+        if (histSize < MIN_HISTORY - 1) { history.add(bar); return; }
+
+        double[] bb = Indicators.bollingerWidth(history, BB_PERIOD, BB_MULT);
+        double lower = bb[0];
+        double upper = bb[1];
+        double ema50 = Indicators.emaLatest(history, EMA_PERIOD);
+        double atr = Indicators.atr(history, ATR_PERIOD);
+
+        // Now add current bar to history
         history.add(bar);
-        if (history.size() < MIN_HISTORY) return;
 
         // Daily trade counter (reset on new day)
         int barDay = bar.timestamp().atZone(java.time.ZoneId.of("America/New_York")).getDayOfYear();
@@ -83,17 +93,11 @@ public class BollingerBreakoutMomentum implements Strategy {
         } else {
             if (cooldownBars > 0) { cooldownBars--; return; }
             if (tradesToday >= 1) return; // max 1 trade per day
-            evaluateEntry(bar);
+            evaluateEntry(bar, lower, upper, ema50, atr);
         }
     }
 
-    private void evaluateEntry(Bar bar) {
-        double[] bb = Indicators.bollingerWidth(history, BB_PERIOD, BB_MULT);
-        double lower = bb[0];
-        double upper = bb[1];
-        double ema50 = Indicators.emaLatest(history, EMA_PERIOD);
-        double atr = Indicators.atr(history, ATR_PERIOD);
-
+    private void evaluateEntry(Bar bar, double lower, double upper, double ema50, double atr) {
         if (Double.isNaN(lower) || Double.isNaN(upper) || Double.isNaN(ema50) || Double.isNaN(atr) || atr <= 0) return;
 
         if (bar.close() > upper && bar.close() > ema50) {
