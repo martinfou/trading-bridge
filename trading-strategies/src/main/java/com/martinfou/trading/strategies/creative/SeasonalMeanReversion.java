@@ -8,34 +8,38 @@ import java.time.ZonedDateTime;
 import java.util.*;
 
 /**
- * BollingerMeanReversion — BB(20,2) extreme mean reversion with seasonality (H1)
+ * SeasonalMeanReversion — Seasonal window mean reversion on USDCAD (H1)
  *
- * 📊 Concept: When USDCAD closes outside the 2σ Bollinger Band on H1, the market
- *    is statistically overextended. These extremes revert toward the middle band
- *    ~60% of the time within 2-6 bars. Pure BB touch → mean reversion, no
- *    additional trend filter. Seasonality alignment (USDCAD Apr=SELL 72%,
- *    Oct-Nov=BUY 94%) adds directional conviction.
+ * 📊 Concept: Trade only during USDCAD's strongest seasonal windows, fading
+ *    intraday extremes against the seasonal bias. In April (72% SELL bias),
+ *    sell rallies above EMA(100) + 1× ATR. In Oct-Nov (94% BUY bias), buy
+ *    dips below EMA(100) - 1× ATR. Outside these windows, no trades.
+ *
+ *    Key insight: The seasonal patterns represent genuine institutional flow
+ *    (repatriation, reserve rebalancing). Intraday fades within these windows
+ *    capture the snap-back with a strong directional tailwind.
  *
  * 🔧 Mechanism:
- *    - BB(20, 2.0): price outside 2σ bands = extreme oversold/overbought
- *    - ATR(14): dynamic SL/TP sizing (1.2× / 2.0×)
- *    - Inline seasonality filter (USDCAD patterns from 21-year research)
+ *    - Seasonal windows: Apr 1-30 (SELL), Oct 12-Nov 26 (BUY)
+ *    - Entry: price deviates from EMA(100) by > 1.5× ATR → fade
+ *    - SL = 1.2× ATR, TP = 2.0× ATR (tight, capturing the snap-back)
  *    - Manual SL/TP via manageExit(), closeOnly() exit
- *    - Max 1 trade/day
+ *    - Max 1 trade/day, only within seasonal windows
  *
- * 🔬 Backtest target: USDCAD H1, 2024, Sharpe > 0.8, PF > 1.3, > 30 trades
+ * 🎯 Target: 20-40 trades/year, Sharpe > 1.0, PF > 1.5, costs negligible
+ *    (few trades means costs don't eat returns)
  */
-public class BollingerMeanReversion implements Strategy {
+public class SeasonalMeanReversion implements Strategy {
 
-    // --- WFO-optimizable parameters ---
-    private static final int BB_PERIOD = 20;
-    private static final double BB_MULT = 2.0;
+    // --- Parameters ---
+    private static final int EMA_PERIOD = 100;
     private static final int ATR_PERIOD = 14;
-    private static final double SL_ATR_MULT = 1.2;
-    private static final double TP_ATR_MULT = 2.0;
+    private static final double DEVIATION_MULT = 1.5;   // ATR multiplier for deviation threshold
+    private static final double SL_MULT = 1.2;
+    private static final double TP_MULT = 2.0;
     private static final double REFERENCE_CAPITAL = 10_000;
     private static final double RISK_PCT = 0.01;
-    private static final int MIN_HISTORY = Math.max(BB_PERIOD, ATR_PERIOD) + 5;
+    private static final int MIN_HISTORY = Math.max(EMA_PERIOD, ATR_PERIOD) + 5;
 
     private final String name;
     private final String symbol;
@@ -53,15 +57,15 @@ public class BollingerMeanReversion implements Strategy {
     private static final int COOLDOWN_BARS = 2;
 
     // --- Constructors ---
-    public BollingerMeanReversion() {
-        this("BollingerMeanReversion", "USDCAD");
+    public SeasonalMeanReversion() {
+        this("SeasonalMeanReversion", "USDCAD");
     }
 
-    public BollingerMeanReversion(String name) {
+    public SeasonalMeanReversion(String name) {
         this(name, "USDCAD");
     }
 
-    public BollingerMeanReversion(String name, String symbol) {
+    public SeasonalMeanReversion(String name, String symbol) {
         this.name = name;
         this.symbol = symbol;
     }
@@ -71,30 +75,21 @@ public class BollingerMeanReversion implements Strategy {
 
     @Override
     public void onBar(Bar bar) {
-        // Symbol filter — ignore bars for other pairs
         if (!bar.symbol().equals(symbol)) return;
 
-        // ⚠️ LOOK-AHEAD SAFE: compute indicators on CLOSED history first
+        // Look-ahead safe: compute on closed history, then add current bar
         if (history.size() < MIN_HISTORY - 1) {
             history.add(bar);
             return;
         }
 
-        // Compute indicators on closed bars only (no look-ahead)
-        double[] bb = Indicators.bollingerWidth(history, BB_PERIOD, BB_MULT);
-        double bbLower = bb[0];
-        double bbUpper = bb[1];
+        double ema100 = Indicators.emaLatest(history, EMA_PERIOD);
         double atr = Indicators.atr(history, ATR_PERIOD);
-
-        // Now add current bar for next iteration
         history.add(bar);
 
-        // Validate indicators
-        if (Double.isNaN(bbLower) || Double.isNaN(bbUpper) || Double.isNaN(atr) || atr <= 0) {
-            return;
-        }
+        if (Double.isNaN(ema100) || Double.isNaN(atr) || atr <= 0) return;
 
-        // Daily trade limit (NY timezone)
+        // Daily trade limit
         int barDay = bar.timestamp().atZone(ZoneId.of("America/New_York")).getDayOfYear();
         if (barDay != lastTradeDay) {
             tradesToday = 0;
@@ -106,13 +101,13 @@ public class BollingerMeanReversion implements Strategy {
         } else {
             if (cooldownBars > 0) { cooldownBars--; return; }
             if (tradesToday >= 1) return;
-            evaluateEntry(bar, bbLower, bbUpper, atr);
+            evaluateEntry(bar, ema100, atr);
         }
     }
 
     /**
-     * Inline seasonality filter for USDCAD based on 21-year research.
-     * - Oct 12 → Nov 26: BUY (94% hit rate)
+     * Determine seasonal bias for USDCAD based on 21-year research.
+     * - Oct 12 → Nov 26: BUY (94% hit rate!)
      * - April: SELL (72% hit rate)
      */
     private Order.Side getSeasonalBias(Instant timestamp) {
@@ -120,48 +115,35 @@ public class BollingerMeanReversion implements Strategy {
         int month = zdt.getMonthValue();
         int day = zdt.getDayOfMonth();
 
-        // USDCAD: Oct 12 → Nov 26 = BUY (94% hit rate!)
-        if ((month == 10 && day >= 12) || (month == 11 && day <= 26)) {
-            return Order.Side.BUY;
-        }
-        // USDCAD: April = SELL (72% hit rate)
-        if (month == 4) {
-            return Order.Side.SELL;
-        }
-        return null; // neutral
+        if ((month == 10 && day >= 12) || (month == 11 && day <= 26)) return Order.Side.BUY;
+        if (month == 4) return Order.Side.SELL;
+        return null; // neutral → no trade outside seasonal windows
     }
 
-    private void evaluateEntry(Bar bar, double bbLower, double bbUpper, double atr) {
+    private void evaluateEntry(Bar bar, double ema100, double atr) {
         double close = bar.close();
 
-        // Inline seasonality filter
-        Order.Side seasonalBias = getSeasonalBias(bar.timestamp());
+        // Seasonality bias — determines direction AND whether we trade at all
+        Order.Side bias = getSeasonalBias(bar.timestamp());
+        if (bias == null) return; // Outside seasonal window — no trade
 
-        // --- BUY signal: price below lower BB (oversold extreme) ---
-        if (close < bbLower) {
-            // Seasonality check
-            if (seasonalBias == Order.Side.SELL) return; // seasonal veto
-
+        // BUY window (Oct-Nov): fade dips below EMA(100) - ATR
+        if (bias == Order.Side.BUY && close < ema100 - atr * DEVIATION_MULT) {
             entryPrice = close;
-            stopLoss = entryPrice - atr * SL_ATR_MULT;
-            takeProfit = entryPrice + atr * TP_ATR_MULT;
-            double qty = Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, SL_ATR_MULT, symbol);
-
+            stopLoss = entryPrice - atr * SL_MULT;
+            takeProfit = entryPrice + atr * TP_MULT;
+            double qty = Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, SL_MULT, symbol);
             pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, qty, entryPrice));
             inTrade = true;
             tradeDirection = Order.Side.BUY;
             tradesToday++;
         }
-        // --- SELL signal: price above upper BB (overbought extreme) ---
-        else if (close > bbUpper) {
-            // Seasonality check
-            if (seasonalBias == Order.Side.BUY) return; // seasonal veto
-
+        // SELL window (April): fade rallies above EMA(100) + ATR
+        else if (bias == Order.Side.SELL && close > ema100 + atr * DEVIATION_MULT) {
             entryPrice = close;
-            stopLoss = entryPrice + atr * SL_ATR_MULT;
-            takeProfit = entryPrice - atr * TP_ATR_MULT;
-            double qty = Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, SL_ATR_MULT, symbol);
-
+            stopLoss = entryPrice + atr * SL_MULT;
+            takeProfit = entryPrice - atr * TP_MULT;
+            double qty = Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, SL_MULT, symbol);
             pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, qty, entryPrice));
             inTrade = true;
             tradeDirection = Order.Side.SELL;
