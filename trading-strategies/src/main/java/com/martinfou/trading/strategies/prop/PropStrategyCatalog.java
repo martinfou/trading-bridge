@@ -29,7 +29,7 @@ public final class PropStrategyCatalog {
         register("InsideBarBreakout", InsideBarBreakoutStrategy::new);
         register("OverlapMomentumBurst", OverlapMomentumBurstStrategy::new);
         register("BollingerBreakoutMomentum", sym -> new BollingerBreakoutMomentum("BollingerBreakoutMomentum_" + sym, sym));
-        register("EmaCloudTrendFilter", sym -> new EmaCloudTrendFilter("EmaCloudTrendFilter_" + sym));
+        register("EmaCloudTrendFilter", sym -> new EmaCloudTrendFilter("EmaCloudTrendFilter_" + sym, sym));
         register("RSIPulseMomentum", sym -> new RSIPulseMomentumStrategy("RSIPulseMomentum_" + sym, sym));
         register("RSI3MeanReversion", sym -> new RSI3MeanReversion("RSI3MeanReversion_" + sym, sym));
     }

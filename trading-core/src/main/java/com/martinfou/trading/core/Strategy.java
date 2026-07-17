@@ -25,6 +25,36 @@ public interface Strategy {
     }
 
     default void syncPosition(Order.Side side, double quantity, double sl, double tp) {
-        // Default no-op for backward compatibility
+        try {
+            boolean inTrade = (side != null && quantity > 0);
+            setFieldValueOpt("inTrade", inTrade);
+            setFieldValueOpt("positionSide", side);
+            setFieldValueOpt("tradeDirection", side);
+            setFieldValueOpt("positionUnits", quantity);
+            setFieldValueOpt("units", quantity);
+            setFieldValueOpt("stopLoss", sl);
+            setFieldValueOpt("takeProfit", tp);
+        } catch (Exception e) {
+            // Ignore
+        }
+    }
+
+    private void setFieldValueOpt(String fieldName, Object value) {
+        try {
+            java.lang.reflect.Field field = this.getClass().getDeclaredField(fieldName);
+            field.setAccessible(true);
+            if (value == null && field.getType().isPrimitive()) return;
+            if (field.getType() == double.class && value instanceof Number) {
+                field.setDouble(this, ((Number)value).doubleValue());
+            } else if (field.getType() == int.class && value instanceof Number) {
+                field.setInt(this, ((Number)value).intValue());
+            } else if (field.getType() == long.class && value instanceof Number) {
+                field.setLong(this, ((Number)value).longValue());
+            } else {
+                field.set(this, value);
+            }
+        } catch (Exception e) {
+            // Ignore if field doesn't exist
+        }
     }
 }
