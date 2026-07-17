@@ -56,6 +56,7 @@ public record BacktestResult(
     double calmarRatio,
     double totalCommission,
     double totalSlippage,
+    double totalSwap,           // NEW: overnight swap costs/credits
     List<Double> equityCurve,
     List<Trade> trades,
     Instant periodStart,
@@ -88,6 +89,7 @@ public record BacktestResult(
         System.out.println("─── Costs ──────────────────────────────────");
         System.out.println("Commission:    $" + String.format("%.2f", totalCommission));
         System.out.println("Slippage:      $" + String.format("%.2f", totalSlippage));
+        System.out.println("Swap:          $" + String.format("%.2f", totalSwap));
         System.out.println("===============================================\n");
     }
 
@@ -144,6 +146,7 @@ public record BacktestResult(
         private double calmarRatio;
         private double totalCommission;
         private double totalSlippage;
+        private double totalSwap;
         private List<Double> equityCurve = List.of();
         private List<Trade> trades = List.of();
         private Instant periodStart;
@@ -167,6 +170,7 @@ public record BacktestResult(
         public Builder calmarRatio(double v) { this.calmarRatio = v; return this; }
         public Builder totalCommission(double v) { this.totalCommission = v; return this; }
         public Builder totalSlippage(double v) { this.totalSlippage = v; return this; }
+        public Builder totalSwap(double v) { this.totalSwap = v; return this; }
         public Builder equityCurve(List<Double> v) { this.equityCurve = v; return this; }
         public Builder trades(List<Trade> v) { this.trades = v; return this; }
         public Builder periodStart(Instant v) { this.periodStart = v; return this; }
@@ -178,7 +182,7 @@ public record BacktestResult(
                 strategyName, initialCapital, finalEquity, totalPnl, totalReturnPct,
                 totalTrades, winningTrades, losingTrades, winRatePct, maxDrawdownPct,
                 avgTradePnl, sharpeRatio, sortinoRatio, profitFactor, calmarRatio,
-                totalCommission, totalSlippage, equityCurve, trades, periodStart, periodEnd,
+                totalCommission, totalSlippage, totalSwap, equityCurve, trades, periodStart, periodEnd,
                 periodsPerYear
             );
         }
