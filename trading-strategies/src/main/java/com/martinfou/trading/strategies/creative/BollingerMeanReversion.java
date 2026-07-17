@@ -8,18 +8,17 @@ import java.time.ZonedDateTime;
 import java.util.*;
 
 /**
- * BollingerMeanReversion — BB(20,2) extreme mean reversion with trend + seasonality (H1)
+ * BollingerMeanReversion — BB(20,2) extreme mean reversion with seasonality (H1)
  *
  * 📊 Concept: When USDCAD closes outside the 2σ Bollinger Band on H1, the market
  *    is statistically overextended. These extremes revert toward the middle band
- *    ~60% of the time within 3-8 bars. The EMA(50) trend filter ensures we buy
- *    oversold only in uptrends and sell overbought only in downtrends.
- *    Seasonality alignment (USDCAD Apr=SELL 72%, Oct-Nov=BUY 94%) adds conviction.
+ *    ~60% of the time within 2-6 bars. Pure BB touch → mean reversion, no
+ *    additional trend filter. Seasonality alignment (USDCAD Apr=SELL 72%,
+ *    Oct-Nov=BUY 94%) adds directional conviction.
  *
  * 🔧 Mechanism:
- *    - BB(20, 2.0): price outside 2σ bands = extreme
- *    - EMA(50): intermediate trend context
- *    - ATR(14): dynamic SL/TP sizing
+ *    - BB(20, 2.0): price outside 2σ bands = extreme oversold/overbought
+ *    - ATR(14): dynamic SL/TP sizing (1.2× / 2.0×)
  *    - Inline seasonality filter (USDCAD patterns from 21-year research)
  *    - Manual SL/TP via manageExit(), closeOnly() exit
  *    - Max 1 trade/day
@@ -31,13 +30,12 @@ public class BollingerMeanReversion implements Strategy {
     // --- WFO-optimizable parameters ---
     private static final int BB_PERIOD = 20;
     private static final double BB_MULT = 2.0;
-    private static final int EMA_PERIOD = 50;
     private static final int ATR_PERIOD = 14;
-    private static final double SL_ATR_MULT = 1.5;
-    private static final double TP_ATR_MULT = 3.0;
+    private static final double SL_ATR_MULT = 1.2;
+    private static final double TP_ATR_MULT = 2.0;
     private static final double REFERENCE_CAPITAL = 10_000;
     private static final double RISK_PCT = 0.01;
-    private static final int MIN_HISTORY = Math.max(BB_PERIOD, Math.max(EMA_PERIOD, ATR_PERIOD)) + 5;
+    private static final int MIN_HISTORY = Math.max(BB_PERIOD, ATR_PERIOD) + 5;
 
     private final String name;
     private final String symbol;
@@ -86,14 +84,13 @@ public class BollingerMeanReversion implements Strategy {
         double[] bb = Indicators.bollingerWidth(history, BB_PERIOD, BB_MULT);
         double bbLower = bb[0];
         double bbUpper = bb[1];
-        double ema50 = Indicators.emaLatest(history, EMA_PERIOD);
         double atr = Indicators.atr(history, ATR_PERIOD);
 
         // Now add current bar for next iteration
         history.add(bar);
 
         // Validate indicators
-        if (Double.isNaN(bbLower) || Double.isNaN(bbUpper) || Double.isNaN(ema50) || Double.isNaN(atr) || atr <= 0) {
+        if (Double.isNaN(bbLower) || Double.isNaN(bbUpper) || Double.isNaN(atr) || atr <= 0) {
             return;
         }
 
@@ -109,7 +106,7 @@ public class BollingerMeanReversion implements Strategy {
         } else {
             if (cooldownBars > 0) { cooldownBars--; return; }
             if (tradesToday >= 1) return;
-            evaluateEntry(bar, bbLower, bbUpper, ema50, atr);
+            evaluateEntry(bar, bbLower, bbUpper, atr);
         }
     }
 
@@ -134,14 +131,14 @@ public class BollingerMeanReversion implements Strategy {
         return null; // neutral
     }
 
-    private void evaluateEntry(Bar bar, double bbLower, double bbUpper, double ema50, double atr) {
+    private void evaluateEntry(Bar bar, double bbLower, double bbUpper, double atr) {
         double close = bar.close();
 
         // Inline seasonality filter
         Order.Side seasonalBias = getSeasonalBias(bar.timestamp());
 
-        // --- BUY signal: price below lower BB in uptrend ---
-        if (close < bbLower && close > ema50) {
+        // --- BUY signal: price below lower BB (oversold extreme) ---
+        if (close < bbLower) {
             // Seasonality check
             if (seasonalBias == Order.Side.SELL) return; // seasonal veto
 
@@ -155,8 +152,8 @@ public class BollingerMeanReversion implements Strategy {
             tradeDirection = Order.Side.BUY;
             tradesToday++;
         }
-        // --- SELL signal: price above upper BB in downtrend ---
-        else if (close > bbUpper && close < ema50) {
+        // --- SELL signal: price above upper BB (overbought extreme) ---
+        else if (close > bbUpper) {
             // Seasonality check
             if (seasonalBias == Order.Side.BUY) return; // seasonal veto
 

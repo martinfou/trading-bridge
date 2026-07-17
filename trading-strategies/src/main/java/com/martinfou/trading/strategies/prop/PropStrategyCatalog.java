@@ -10,7 +10,7 @@ import com.martinfou.trading.strategies.creative.BollingerBreakoutMomentum;
 import com.martinfou.trading.strategies.creative.EmaCloudTrendFilter;
 import com.martinfou.trading.strategies.creative.RSIPulseMomentumStrategy;
 import com.martinfou.trading.strategies.creative.RSI3MeanReversion;
-import com.martinfou.trading.strategies.creative.BollingerMeanReversion;
+import com.martinfou.trading.strategies.creative.DlrMeanReversion;
 
 /**
  * Registry of all prop-firm mechanical strategies. */
@@ -33,7 +33,7 @@ public final class PropStrategyCatalog {
         register("EmaCloudTrendFilter", sym -> new EmaCloudTrendFilter("EmaCloudTrendFilter_" + sym, sym));
         register("RSIPulseMomentum", sym -> new RSIPulseMomentumStrategy("RSIPulseMomentum_" + sym, sym));
         register("RSI3MeanReversion", sym -> new RSI3MeanReversion("RSI3MeanReversion_" + sym, sym));
-        register("BollingerMeanReversion", sym -> new BollingerMeanReversion("BollingerMeanReversion_" + sym, sym));
+        register("DlrMeanReversion", sym -> new DlrMeanReversion("DlrMeanReversion_" + sym, sym));
     }
 
     private PropStrategyCatalog() {}
