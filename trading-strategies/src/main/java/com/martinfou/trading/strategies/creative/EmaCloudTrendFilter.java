@@ -14,6 +14,7 @@ public class EmaCloudTrendFilter implements Strategy {
     private static final double TP_MULT = 3.0;
 
     private final String name;
+    private final String symbol;
     private final List<Order> pending = new ArrayList<>();
     private final List<Bar> history = new ArrayList<>();
     private boolean inTrade = false;
@@ -21,8 +22,8 @@ public class EmaCloudTrendFilter implements Strategy {
     @SuppressWarnings("unused")
     private double entryPrice = 0;
 
-    public EmaCloudTrendFilter() { this.name = "EmaCloudTrendFilter_EURUSD"; }
-    public EmaCloudTrendFilter(String name) { this.name = name; }
+    public EmaCloudTrendFilter() { this("EmaCloudTrendFilter_EURUSD", "EUR_USD"); }
+    public EmaCloudTrendFilter(String name, String symbol) { this.name = name; this.symbol = symbol; }
 
     @Override public String name() { return name; }
 
@@ -37,13 +38,13 @@ public class EmaCloudTrendFilter implements Strategy {
         double atr = Indicators.atr(history, ATR_PERIOD);
 
         if (emaFast > emaSlow && rsi > 50) {
-            pending.add(new Order(name, Order.Side.BUY, Order.Type.MARKET, 1000, bar.close())
+            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, 1000, bar.close())
                 .withStopLoss(bar.close() - atr * SL_MULT).withTakeProfit(bar.close() + atr * TP_MULT));
             inTrade = true;
             positionSide = Order.Side.BUY;
             entryPrice = bar.close();
         } else if (emaFast < emaSlow && rsi < 50) {
-            pending.add(new Order(name, Order.Side.SELL, Order.Type.MARKET, 1000, bar.close())
+            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, 1000, bar.close())
                 .withStopLoss(bar.close() + atr * SL_MULT).withTakeProfit(bar.close() - atr * TP_MULT));
             inTrade = true;
             positionSide = Order.Side.SELL;
@@ -57,10 +58,10 @@ public class EmaCloudTrendFilter implements Strategy {
         double rsi = Indicators.rsi(history, RSI_PERIOD);
 
         if (positionSide == Order.Side.BUY && (emaFast < emaSlow || rsi < 40)) {
-            pending.add(new Order(name, Order.Side.SELL, Order.Type.MARKET, 1000, bar.close()));
+            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, 1000, bar.close()));
             inTrade = false;
         } else if (positionSide == Order.Side.SELL && (emaFast > emaSlow || rsi > 60)) {
-            pending.add(new Order(name, Order.Side.BUY, Order.Type.MARKET, 1000, bar.close()));
+            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, 1000, bar.close()));
             inTrade = false;
         }
     }
