@@ -67,5 +67,29 @@ public final class NewsWeeklyStrategyCatalogRegistrar {
             "NewsWeek13Jul_UkCpi_GBP_USD",
             sym -> new NewsWeek13Jul_UkCpiMomentum.GbpUsd()
         );
+
+        // === Week 20-24 July 2026 — News-driven strategies ===
+
+        // 1 — ECB Rate Decision (Thu Jul 23, 08:15 ET)
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek20Jul_Ecb_EUR_USD",
+            sym -> new NewsWeek20Jul_EcbRateDecision.EurUsd()
+        );
+
+        // 2 — US GDP Advance Q2 (Thu Jul 23, 08:30 ET)
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek20Jul_UsGdp_EUR_USD",
+            sym -> new NewsWeek20Jul_UsGdpAdvance.EurUsd()
+        );
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek20Jul_UsGdp_GBP_USD",
+            sym -> new NewsWeek20Jul_UsGdpAdvance.GbpUsd()
+        );
+
+        // 3 — US Durable Goods (Fri Jul 24, 08:30 ET)
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek20Jul_UsDurable_EUR_USD",
+            sym -> new NewsWeek20Jul_UsDurableGoods.EurUsd()
+        );
     }
 }
