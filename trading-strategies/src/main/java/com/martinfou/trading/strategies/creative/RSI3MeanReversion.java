@@ -68,8 +68,12 @@ public class RSI3MeanReversion implements Strategy {
     @Override
     public void onBar(Bar bar) {
         if (!bar.symbol().equals(symbol)) return;
+        // Compute indicators on OLD history first (avoid look-ahead bias)
+        if (history.size() < MIN_HISTORY - 1) { history.add(bar); return; }
+        double rsi = Indicators.rsi(history, RSI_PERIOD);
+        double ema = Indicators.emaLatest(history, EMA_PERIOD);
+        double atr = Indicators.atr(history, ATR_PERIOD);
         history.add(bar);
-        if (history.size() < MIN_HISTORY) return;
 
         int barDay = bar.timestamp().atZone(java.time.ZoneId.of("America/New_York")).getDayOfYear();
         if (barDay != lastTradeDay) {
@@ -82,15 +86,11 @@ public class RSI3MeanReversion implements Strategy {
         } else {
             if (cooldownBars > 0) { cooldownBars--; return; }
             if (tradesToday >= 1) return;
-            evaluateEntry(bar);
+            evaluateEntry(bar, rsi, ema, atr);
         }
     }
 
-    private void evaluateEntry(Bar bar) {
-        double rsi = Indicators.rsi(history, RSI_PERIOD);
-        double ema = Indicators.emaLatest(history, EMA_PERIOD);
-        double atr = Indicators.atr(history, ATR_PERIOD);
-
+    private void evaluateEntry(Bar bar, double rsi, double ema, double atr) {
         if (Double.isNaN(rsi) || Double.isNaN(ema) || Double.isNaN(atr) || atr <= 0) return;
 
         // Mean reversion: trade WITH the trend (EMA filter)

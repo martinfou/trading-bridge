@@ -28,23 +28,24 @@ public class EmaCloudTrendFilter implements Strategy {
     @Override public String name() { return name; }
 
     @Override public void onBar(Bar bar) {
-        history.add(bar);
-        if (history.size() < EMA_SLOW + 5) return;
-        if (inTrade) { manageExit(bar); return; }
-
+        // Compute indicators on OLD history first (avoid look-ahead bias)
+        if (history.size() < EMA_SLOW + 4) { history.add(bar); return; }
         double emaFast = Indicators.emaLatest(history, EMA_FAST);
         double emaSlow = Indicators.emaLatest(history, EMA_SLOW);
         double rsi = Indicators.rsi(history, RSI_PERIOD);
         double atr = Indicators.atr(history, ATR_PERIOD);
+        history.add(bar);
+
+        if (inTrade) { manageExit(bar, emaFast, emaSlow, rsi); return; }
 
         if (emaFast > emaSlow && rsi > 50) {
-            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, 1000, bar.close())
+            pending.add(new Order(name, Order.Side.BUY, Order.Type.MARKET, 1000, bar.close())
                 .withStopLoss(bar.close() - atr * SL_MULT).withTakeProfit(bar.close() + atr * TP_MULT));
             inTrade = true;
             positionSide = Order.Side.BUY;
             entryPrice = bar.close();
         } else if (emaFast < emaSlow && rsi < 50) {
-            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, 1000, bar.close())
+            pending.add(new Order(name, Order.Side.SELL, Order.Type.MARKET, 1000, bar.close())
                 .withStopLoss(bar.close() + atr * SL_MULT).withTakeProfit(bar.close() - atr * TP_MULT));
             inTrade = true;
             positionSide = Order.Side.SELL;
@@ -52,10 +53,7 @@ public class EmaCloudTrendFilter implements Strategy {
         }
     }
 
-    private void manageExit(Bar bar) {
-        double emaFast = Indicators.emaLatest(history, EMA_FAST);
-        double emaSlow = Indicators.emaLatest(history, EMA_SLOW);
-        double rsi = Indicators.rsi(history, RSI_PERIOD);
+    private void manageExit(Bar bar, double emaFast, double emaSlow, double rsi) {
 
         if (positionSide == Order.Side.BUY && (emaFast < emaSlow || rsi < 40)) {
             pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, 1000, bar.close()));

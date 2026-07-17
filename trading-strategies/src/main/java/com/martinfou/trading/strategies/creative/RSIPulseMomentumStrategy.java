@@ -68,10 +68,13 @@ public class RSIPulseMomentumStrategy implements Strategy {
     @Override
     public void onBar(Bar bar) {
         if (!bar.symbol().equals(symbol)) return;
+        // Compute indicators on OLD history first (avoid look-ahead bias)
+        if (history.size() < MIN_HISTORY - 1) { history.add(bar); return; }
+        double rsi = Indicators.rsi(history, RSI_PERIOD);
+        double ema200 = Indicators.emaLatest(history, EMA_PERIOD);
+        double atr = Indicators.atr(history, ATR_PERIOD);
         history.add(bar);
-        if (history.size() < MIN_HISTORY) return;
 
-        // Daily trade counter (reset on new day)
         int barDay = bar.timestamp().atZone(java.time.ZoneId.of("America/New_York")).getDayOfYear();
         if (barDay != lastTradeDay) {
             tradesToday = 0;
@@ -81,16 +84,12 @@ public class RSIPulseMomentumStrategy implements Strategy {
         if (inTrade) {
             managePosition(bar);
         } else {
-            if (tradesToday >= 1) return; // max 1 trade per day
-            evaluateEntry(bar);
+            if (tradesToday >= 1) return;
+            evaluateEntry(bar, rsi, ema200, atr);
         }
     }
 
-    private void evaluateEntry(Bar bar) {
-        double rsi = Indicators.rsi(history, RSI_PERIOD);
-        double ema200 = Indicators.emaLatest(history, EMA_PERIOD);
-        double atr = Indicators.atr(history, ATR_PERIOD);
-
+    private void evaluateEntry(Bar bar, double rsi, double ema200, double atr) {
         if (Double.isNaN(rsi) || Double.isNaN(ema200) || Double.isNaN(atr) || atr <= 0) return;
 
         if (rsi > RSI_BULLISH && bar.close() > ema200) {
