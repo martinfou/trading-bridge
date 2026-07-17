@@ -53,12 +53,13 @@ public class BacktestEngine {
      */
     private final Map<String, List<Position>> openPositionsBySymbol = new HashMap<>();
 
-    // Cost configuration
+    // Cost configuration — realistic forex defaults
+    // EUR/USD spread ~0.7 pips (0.00007 of notional), slippage ~0.5 pips (0.00005)
     private double commissionFixed = 0.0;        // USD per trade
-    private double commissionPct = 0.0;          // % of notional (e.g. 0.0007 for 0.7 pip)
+    private double commissionPct = 0.00007;       // % of notional (~0.7 pip spread for EUR/USD)
     private double slippageFixed = 0.0;          // USD per trade
-    private double slippagePct = 0.0;            // % of fill price (e.g. 0.0001)
-    private double stopSlippagePct = 0.0;         // % added to SL fill price (e.g. 0.0001 = ~1 pip)
+    private double slippagePct = 0.00005;         // % of fill price (~0.5 pip)
+    private double stopSlippagePct = 0.00005;     // % added to SL fill price
     private double totalCommission = 0.0;
     private double totalSlippage = 0.0;
     private double riskFreeRate = PerformanceMetrics.DEFAULT_RISK_FREE_RATE;
