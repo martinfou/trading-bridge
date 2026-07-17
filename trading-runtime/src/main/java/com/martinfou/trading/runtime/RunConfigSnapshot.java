@@ -124,6 +124,9 @@ public record RunConfigSnapshot(
     }
 
     public BacktestExecutionCost executionCost() {
+        if (commissionPerTrade == 0.0 && slippagePct == 0.0) {
+            return BacktestExecutionCost.OANDA_SPREAD;
+        }
         return BacktestExecutionCost.ofCommissionAndSlippage(commissionPerTrade, slippagePct);
     }
 
