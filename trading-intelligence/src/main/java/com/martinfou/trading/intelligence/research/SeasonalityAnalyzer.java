@@ -414,4 +414,36 @@ public class SeasonalityAnalyzer {
         if (s == null || s.isEmpty()) return s;
         return s.substring(0, 1).toUpperCase() + s.substring(1).toLowerCase();
     }
+
+    // ====== CLI Runner ======
+
+    public static void main(String[] args) throws Exception {
+        String symbol = args.length > 0 ? args[0] : "EUR_USD";
+        int from = args.length > 1 ? Integer.parseInt(args[1]) : 2006;
+        int to = args.length > 2 ? Integer.parseInt(args[2]) : 2026;
+        String typeStr = args.length > 3 ? args[3] : "monthly";
+
+        WindowType type = switch (typeStr.toLowerCase()) {
+            case "monthly", "month" -> WindowType.MONTH;
+            case "weekday", "dow" -> WindowType.DAY_OF_WEEK;
+            case "quarter", "qtr" -> WindowType.QUARTER;
+            case "session" -> WindowType.SESSION;
+            default -> WindowType.MONTH;
+        };
+
+        System.out.println("Loading data for " + symbol + " (" + from + "-" + to + ")...");
+
+        AnalysisResult result = SeasonalityAnalyzer.analyze(symbol, from, to, type, true);
+        printReport(result);
+
+        System.out.println("\nSignificant patterns:");
+        for (WindowResult wr : result.significant()) {
+            System.out.println("  ✅ " + wr.label() + " — avg " + String.format("%+.2f%%", wr.avgReturn())
+                + " hitRate " + String.format("%.0f%%", wr.hitRate() * 100)
+                + " sharpe " + String.format("%.2f", wr.sharpe()));
+        }
+        if (result.significant().isEmpty()) {
+            System.out.println("  (none at p<0.05 after Bonferroni correction)");
+        }
+    }
 }
