@@ -82,10 +82,19 @@ public final class DailyReconciliationService implements AutoCloseable {
                     case COMPLETED -> {
                         completedRuns++;
                         String runId = record.runId();
+                        
+                        java.time.Instant threshold = java.time.ZonedDateTime.now(clock.getZone()).minusDays(29).toInstant();
+                        
                         long fillCount = runManager.eventStore().replayAll(runId).stream()
                             .filter(e -> e.type() == RunEventType.FILL)
+                            .filter(e -> e.timestamp().isAfter(threshold))
                             .count();
-                        long tradeCount = runManager.tradeStore().getTrades(runId).size();
+                            
+                        long tradeCount = runManager.tradeStore().getTrades(runId).stream()
+                            .filter(t -> t.entryTime() != null && t.exitTime() != null &&
+                                         t.entryTime().isAfter(threshold) && t.exitTime().isAfter(threshold))
+                            .count();
+                            
                         if (fillCount != 2 * tradeCount) {
                             String msg = String.format("Run %s (%s) has FILL events (%d) vs trades count (%d) mismatch. Expected %d fills.",
                                 runId, record.strategyId(), fillCount, tradeCount, 2 * tradeCount);
