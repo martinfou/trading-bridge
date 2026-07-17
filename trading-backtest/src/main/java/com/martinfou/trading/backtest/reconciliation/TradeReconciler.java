@@ -125,7 +125,7 @@ public final class TradeReconciler {
         }
         
         double allowedDrift = bt.priceDriftLimit() > 0.0 ? bt.priceDriftLimit() : config.maxPriceDrift();
-        if (priceDiff > allowedDrift) {
+        if (bt.price() != 0.0 && live.price() != 0.0 && priceDiff > allowedDrift) {
             anomalies.add(new ReconciliationAnomaly(
                 ReconciliationAnomaly.AnomalyType.PRICE_DRIFT,
                 live.id(),

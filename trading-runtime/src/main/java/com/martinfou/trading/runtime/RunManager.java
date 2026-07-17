@@ -1371,7 +1371,10 @@ public class RunManager implements RunLifecycle, AutoCloseable {
                     liveOrder.withId(orderId);
                 }
                 
-                liveOrdersByRun.computeIfAbsent(runId, k -> new CopyOnWriteArrayList<>()).add(liveOrder);
+                java.util.List<com.martinfou.trading.core.Order> currentLive = liveOrdersByRun.computeIfAbsent(runId, k -> new java.util.concurrent.CopyOnWriteArrayList<>());
+                if (orderId == null || currentLive.stream().noneMatch(o -> orderId.equals(o.id()))) {
+                    currentLive.add(liveOrder);
+                }
                 
                 // Trigger reconciliation check!
                 if (triggerActions) {
