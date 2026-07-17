@@ -18,6 +18,14 @@ public record BacktestExecutionCost(
     public static final BacktestExecutionCost ZERO =
         new BacktestExecutionCost(0.0, 0.0, 0.0, 0.0, 0.0);
 
+    /**
+     * OANDA Spread execution cost model.
+     * Realistic representation for EUR/USD: 1 pip total round-trip spread,
+     * modeled as 0.5 pip (0.00005) fixed slippage per leg, no flat commission.
+     */
+    public static final BacktestExecutionCost OANDA_SPREAD =
+        new BacktestExecutionCost(0.0, 0.0, 0.0, 0.00005, 0.0);
+
     public static BacktestExecutionCost ofCommissionAndSlippage(double commissionPerTrade, double slippagePct) {
         return new BacktestExecutionCost(commissionPerTrade, 0.0, slippagePct, 0.0, 0.0);
     }

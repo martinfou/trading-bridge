@@ -10,11 +10,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class RunConfigSnapshotTest {
 
     @Test
-    void defaultsNormalizeNullCostsToZero() {
+    void defaultsNormalizeNullCostsToOandaSpread() {
         RunConfigSnapshot snapshot = baseSnapshot(null, null);
         assertEquals(0.0, snapshot.commissionPerTrade());
         assertEquals(0.0, snapshot.slippagePct());
-        assertTrue(snapshot.executionCost().isZero());
+        assertEquals(com.martinfou.trading.backtest.BacktestExecutionCost.OANDA_SPREAD, snapshot.executionCost());
         assertFalse(snapshot.toMap().containsKey("commissionPerTrade"));
     }
 

@@ -4,6 +4,7 @@ import com.martinfou.trading.backtest.BacktestEngine;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.MonteCarloSimulation;
 import com.martinfou.trading.backtest.WalkForwardOptimizer;
+import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Strategy;
 import org.slf4j.Logger;
@@ -467,7 +468,7 @@ public final class BatchStrategyRunner {
     private static BacktestResult quickBacktest(Chromosome chromosome, List<Bar> bars) {
         Strategy strategy = new StrategyTemplate(chromosome);
         BacktestEngine engine = new BacktestEngine(strategy, bars, 100_000.0);
-        engine.withCommissionPct(0.0007);
+        BacktestExecutionCost.OANDA_SPREAD.configure(engine);
         return engine.run();
     }
 
@@ -537,7 +538,7 @@ public final class BatchStrategyRunner {
     private static void validateStrategy(StrategyBundle bundle, List<Bar> fullBars, double capital) {
         Strategy strategy = new StrategyTemplate(bundle.chromosome);
         BacktestEngine engine = new BacktestEngine(strategy, fullBars, capital);
-        engine.withCommissionPct(0.0007);
+        BacktestExecutionCost.OANDA_SPREAD.configure(engine);
         bundle.fullResult = engine.run();
 
         try {
@@ -545,7 +546,7 @@ public final class BatchStrategyRunner {
                 (isBars, oosBars) -> {
                     Strategy s = new StrategyTemplate(bundle.chromosome);
                     BacktestEngine be = new BacktestEngine(s, oosBars, capital);
-                    be.withCommissionPct(0.0007);
+                    BacktestExecutionCost.OANDA_SPREAD.configure(be);
                     return be.run();
                 },
                 fullBars, WFO_IS_DAYS, WFO_OOS_DAYS
