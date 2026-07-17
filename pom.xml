@@ -124,6 +124,11 @@
                 <artifactId>xz</artifactId>
                 <version>1.12</version>
             </dependency>
+            <dependency>
+                <groupId>org.ta4j</groupId>
+                <artifactId>ta4j-core</artifactId>
+                <version>0.18</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 </project>
