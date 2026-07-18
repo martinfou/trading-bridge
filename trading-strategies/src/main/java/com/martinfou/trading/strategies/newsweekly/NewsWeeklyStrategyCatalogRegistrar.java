@@ -91,5 +91,19 @@ public final class NewsWeeklyStrategyCatalogRegistrar {
             "NewsWeek20Jul_UsDurable_EUR_USD",
             sym -> new NewsWeek20Jul_UsDurableGoods.EurUsd()
         );
+        // === Week 20-24 July 2026 — News-driven strategies ===
+
+        // 1 — UK Unemployment Rate (Tue Jul 21, 02:00 ET)
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek20Jul_UK_Unemployment_GBP_USD",
+            sym -> new NewsWeek20Jul_UkUnemployment.GbpUsd());
+        // 2 — ECB Rate Decision (Thu Jul 23, 08:15 ET)
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek20Jul_ECB_Decision_EUR_USD",
+            sym -> new NewsWeek20Jul_EcbDecision.EurUsd());
+        // 3 — ECB Press Conference (Thu Jul 23, 08:45 ET)
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek20Jul_ECB_Presser_EUR_USD",
+            sym -> new NewsWeek20Jul_EcbPresser.EurUsd());
     }
 }
