@@ -25,4 +25,4 @@ Charger avec `hermes skill load <nom>` ou `skill_view(name='<nom>')`
 - `joplin-para` — structure notes Joplin
 
 ---
-_Généré le 2026-07-13_
+_Généré le 2026-07-20_

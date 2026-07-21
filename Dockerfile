@@ -15,8 +15,8 @@ COPY trading-tui/pom.xml trading-tui/
 RUN mvn dependency:go-offline -q
 
 COPY . .
-RUN mvn install -Dmaven.test.skip=true -q -pl trading-core,trading-data,trading-broker,trading-parser,trading-strategies -am && \
-    mvn dependency:copy-dependencies -DoutputDirectory=/app/libs -q -pl trading-strategies -am
+RUN mvn install -Dmaven.test.skip=true -q -pl trading-core,trading-data,trading-broker,trading-parser,trading-strategies,trading-backtest,trading-examples,trading-intelligence,trading-runtime -am && \
+    mvn dependency:copy-dependencies -DoutputDirectory=/app/libs -q -pl trading-strategies,trading-backtest,trading-examples -am
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app
@@ -27,6 +27,10 @@ COPY --from=build /app/trading-data/target/classes /app/classes/trading-data
 COPY --from=build /app/trading-strategies/target/classes /app/classes/trading-strategies
 COPY --from=build /app/trading-broker/target/classes /app/classes/trading-broker
 COPY --from=build /app/trading-parser/target/classes /app/classes/trading-parser
+COPY --from=build /app/trading-backtest/target/classes /app/classes/trading-backtest
+COPY --from=build /app/trading-examples/target/classes /app/classes/trading-examples
+COPY --from=build /app/trading-intelligence/target/classes /app/classes/trading-intelligence
+COPY --from=build /app/trading-runtime/target/classes /app/classes/trading-runtime
 
 # Copy all dependency JARs
 COPY --from=build /app/libs/ /app/libs/

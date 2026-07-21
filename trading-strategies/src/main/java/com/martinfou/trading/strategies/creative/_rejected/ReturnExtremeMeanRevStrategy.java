@@ -1,0 +1,211 @@
+package com.martinfou.trading.strategies.creative;
+
+import com.martinfou.trading.core.*;
+import com.martinfou.trading.core.indicators.Indicators;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.util.*;
+
+/**
+ * ReturnExtremeMeanRevStrategy — Rolling return percentile mean reversion (H1)
+ *
+ * ❌ REJECTED 2026-07-21: PF 0.92-0.95 on 3 pairs (~3400 trades each).
+ *    Rolling return percentile (5th/95th) with EMA trend filter produces
+ *    consistent small losses after costs. 0/3 pairs passed quality gate.
+ *
+ * 📊 Concept: Calculate the rolling distribution of N-bar returns (close-over-close).
+ *    When the current bar's return is in the bottom 5% (extreme negative),
+ *    selling pressure is statistically exhausted → go long.
+ *    When in the top 5% (extreme positive), buying pressure is exhausted → go short.
+ *    This is pure statistical arbitrage — no indicators, no patterns, just
+ *    the statistical property that extreme moves revert on H1.
+ *
+ * 🔧 Mechanism:
+ *    - Rolling window of 100 bars for return distribution
+ *    - Entry at bottom 5th percentile → BUY, top 95th percentile → SELL
+ *    - EMA(200) macro trend filter
+ *    - ATR(14)-based SL (1.0× ATR, tight) and TP (2.0× ATR)
+ *    - Inline SeasonalityFilter
+ *    - No look-ahead bias: returns computed on past bars only
+ */
+public class ReturnExtremeMeanRevStrategy implements Strategy {
+
+    private static final int RETURN_WINDOW = 100;
+    private static final int ATR_PERIOD = 14;
+    private static final int EMA_TREND = 200;
+
+    /** Entry at this percentile (bottom) */
+    private static final double LOW_PERCENTILE = 5.0;
+    /** Entry at this percentile (top) */
+    private static final double HIGH_PERCENTILE = 95.0;
+
+    private static final double SL_MULT = 1.0;
+    private static final double TP_MULT = 2.0;
+    private static final double REFERENCE_CAPITAL = 50_000;
+    private static final double RISK_PCT = 0.008;
+    private static final int MIN_HISTORY = Math.max(RETURN_WINDOW + 10, Math.max(EMA_TREND, ATR_PERIOD) + 5);
+    private static final int COOLDOWN_BARS = 3;
+
+    private final String name;
+    private final String symbol;
+    private final List<Bar> history = new ArrayList<>();
+    private final List<Order> pending = new ArrayList<>();
+
+    private boolean inTrade = false;
+    private Order.Side tradeDirection;
+    private double entryPrice;
+    private double stopLoss;
+    private double takeProfit;
+    private int lastTradeDay = -1;
+    private int tradesToday = 0;
+    private int cooldownBars = 0;
+
+    public ReturnExtremeMeanRevStrategy() { this("ReturnExtremeMeanRev", "EUR_USD"); }
+    public ReturnExtremeMeanRevStrategy(String name) { this(name, "EUR_USD"); }
+    public ReturnExtremeMeanRevStrategy(String name, String symbol) {
+        this.name = name;
+        this.symbol = symbol;
+    }
+
+    @Override public String name() { return name; }
+
+    @Override
+    public void onBar(Bar bar) {
+        if (!bar.symbol().equals(symbol)) return;
+
+        if (history.size() < MIN_HISTORY - 1) { history.add(bar); return; }
+
+        // 1. Compute indicators on PAST history (ZERO look-ahead bias)
+        double ema200 = Indicators.emaLatest(history, EMA_TREND);
+        double atr = Indicators.atr(history, ATR_PERIOD);
+
+        // 2. Compute return distribution percentile on PAST data
+        double ret = barReturn(history.get(history.size() - 1), bar);
+        double[] pastReturns = getPastReturns(history, RETURN_WINDOW);
+        double percentile = percentileRank(pastReturns, ret);
+
+        // 3. Seasonality bias (RÈGLE CRITIQUE)
+        Order.Side bias = getSeasonalBias(symbol, bar.timestamp());
+
+        // 4. Add current bar (AFTER indicators computed)
+        history.add(bar);
+
+        if (Double.isNaN(ema200) || Double.isNaN(atr) || atr <= 0) return;
+
+        int barDay = bar.timestamp().atZone(ZoneId.of("America/New_York")).getDayOfYear();
+        if (barDay != lastTradeDay) { tradesToday = 0; lastTradeDay = barDay; }
+
+        if (inTrade) {
+            managePosition(bar);
+        } else {
+            if (cooldownBars > 0) { cooldownBars--; return; }
+            if (tradesToday >= 1) return;
+            evaluateEntry(bar, ret, percentile, ema200, atr, bias);
+        }
+    }
+
+    /** Return between previous and current bar (close/close). */
+    private double barReturn(Bar prev, Bar cur) {
+        return (cur.close() - prev.close()) / prev.close() * 100.0;
+    }
+
+    /** Extract N most recent close-to-previous returns from history. */
+    private double[] getPastReturns(List<Bar> bars, int n) {
+        int len = Math.min(n, bars.size() - 1);
+        double[] rets = new double[len];
+        int idx = bars.size() - len - 1;
+        for (int i = 0; i < len; i++) {
+            Bar prev = bars.get(idx + i);
+            Bar cur = bars.get(idx + i + 1);
+            rets[i] = (cur.close() - prev.close()) / prev.close() * 100.0;
+        }
+        return rets;
+    }
+
+    /** Percentile rank of a value within a sample (0-100). */
+    private double percentileRank(double[] sorted, double value) {
+        // Sort a copy
+        double[] copy = sorted.clone();
+        Arrays.sort(copy);
+        int count = 0;
+        for (double v : copy) {
+            if (v < value) count++;
+        }
+        return (double) count / copy.length * 100.0;
+    }
+
+    private void evaluateEntry(Bar bar, double ret, double percentile,
+                                double ema200, double atr, Order.Side bias) {
+        double close = bar.close();
+        boolean macroUptrend = close > ema200;
+
+        // Extreme LOW percentile (bottom 5%) → oversold → BUY
+        if (percentile <= LOW_PERCENTILE && macroUptrend && bias != Order.Side.SELL) {
+            entryPrice = close;
+            stopLoss = entryPrice - atr * SL_MULT;
+            takeProfit = entryPrice + atr * TP_MULT;
+            double qty = Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, SL_MULT, symbol);
+            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, qty, entryPrice));
+            inTrade = true; tradeDirection = Order.Side.BUY; tradesToday++;
+        }
+        // Extreme HIGH percentile (top 5%) → overbought → SELL
+        else if (percentile >= HIGH_PERCENTILE && !macroUptrend && bias != Order.Side.BUY) {
+            entryPrice = close;
+            stopLoss = entryPrice + atr * SL_MULT;
+            takeProfit = entryPrice - atr * TP_MULT;
+            double qty = Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, SL_MULT, symbol);
+            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, qty, entryPrice));
+            inTrade = true; tradeDirection = Order.Side.SELL; tradesToday++;
+        }
+    }
+
+    private void managePosition(Bar bar) {
+        boolean stopHit = (tradeDirection == Order.Side.BUY && bar.low() <= stopLoss)
+            || (tradeDirection == Order.Side.SELL && bar.high() >= stopLoss);
+        boolean tpHit = (tradeDirection == Order.Side.BUY && bar.high() >= takeProfit)
+            || (tradeDirection == Order.Side.SELL && bar.low() <= takeProfit);
+        if (stopHit) { exitPosition(stopLoss); return; }
+        if (tpHit) { exitPosition(takeProfit); return; }
+    }
+
+    private void exitPosition(double price) {
+        Order.Side exitSide = tradeDirection == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
+        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, 1000, price).closeOnly());
+        inTrade = false; cooldownBars = COOLDOWN_BARS;
+    }
+
+    // ── Seasonality Filter (inline) ──────────────────────────────
+
+    private static Order.Side getSeasonalBias(String sym, java.time.Instant now) {
+        ZonedDateTime zdt = now.atZone(ZoneId.of("America/New_York"));
+        int month = zdt.getMonthValue();
+        int day = zdt.getDayOfMonth();
+        if (sym.equals("USDCAD") && inWindow(month, day, 10, 12, 11, 26)) return Order.Side.BUY;
+        if (sym.equals("USD_JPY") && inWindow(month, day, 9, 27, 11, 11)) return Order.Side.BUY;
+        if (sym.equals("GBP_USD") && inWindow(month, day, 3, 11, 4, 25)) return Order.Side.BUY;
+        if (sym.equals("EUR_USD") && inWindow(month, day, 3, 16, 4, 30)) return Order.Side.BUY;
+        if (sym.equals("AUD_USD") && inWindow(month, day, 6, 4, 7, 19)) return Order.Side.BUY;
+        if (sym.equals("USDCAD") && inWindow(month, day, 4, 1, 4, 30)) return Order.Side.SELL;
+        if (sym.equals("GBP_USD") && inWindow(month, day, 4, 1, 4, 30)) return Order.Side.BUY;
+        if (sym.equals("EUR_USD") && inWindow(month, day, 4, 1, 4, 30)) return Order.Side.BUY;
+        return null;
+    }
+
+    private static boolean inWindow(int month, int day, int sm, int sd, int em, int ed) {
+        if (sm > em || (sm == em && sd > ed)) {
+            return (month > sm || (month == sm && day >= sd))
+                || (month < em || (month == em && day <= ed));
+        }
+        return (month > sm || (month == sm && day >= sd))
+            && (month < em || (month == em && day <= ed));
+    }
+
+    @Override public void onTick(double bid, double ask, long volume) {}
+    @Override public List<Order> getPendingOrders() {
+        var copy = List.copyOf(pending); pending.clear(); return copy;
+    }
+    @Override public void reset() {
+        history.clear(); pending.clear(); inTrade = false;
+        lastTradeDay = -1; tradesToday = 0; cooldownBars = 0;
+    }
+}
