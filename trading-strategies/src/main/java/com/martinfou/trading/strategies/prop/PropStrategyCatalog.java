@@ -11,7 +11,6 @@ import com.martinfou.trading.strategies.creative.EmaCloudTrendFilter;
 import com.martinfou.trading.strategies.creative.RSIPulseMomentumStrategy;
 import com.martinfou.trading.strategies.creative.RSI3MeanReversion;
 import com.martinfou.trading.strategies.creative.DlrMeanReversion;
-import com.martinfou.trading.strategies.creative.SmaTrendReversal;
 import com.martinfou.trading.strategies.creative.EngulfingReversalStrategy;
 
 /**
