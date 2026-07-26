@@ -221,6 +221,11 @@ public final class StrategyCatalog {
         return reg.family();
     }
 
+    public static boolean requireBacktest(String id) {
+        Family f = family(id);
+        return f != Family.NEWS_WEEKLY && f != Family.LLM_WEEKLY;
+    }
+
     public static List<String> ids() {
         return List.copyOf(ENTRIES.keySet());
     }

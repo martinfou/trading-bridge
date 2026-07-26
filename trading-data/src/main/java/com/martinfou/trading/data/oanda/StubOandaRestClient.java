@@ -44,7 +44,7 @@ public final class StubOandaRestClient implements OandaRestClient {
     }
 
     @Override
-    public OandaMarketOrderResult placeOrder(String type, String instrument, long units, double price, double stopLoss, double takeProfit, double trailingStop, boolean guaranteed, String clientTag) {
+    public OandaMarketOrderResult placeOrder(String type, String instrument, long units, double price, double stopLoss, double takeProfit, double trailingStop, boolean guaranteed, String clientTag, boolean reduceOnly) {
         if (!scriptedResults.isEmpty()) {
             return scriptedResults.removeFirst();
         }

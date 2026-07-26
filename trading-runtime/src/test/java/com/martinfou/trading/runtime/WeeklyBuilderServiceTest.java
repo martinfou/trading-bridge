@@ -6,6 +6,7 @@ import com.martinfou.trading.intelligence.compile.CompileManifest;
 import com.martinfou.trading.intelligence.compile.CompileManifestIO;
 import com.martinfou.trading.intelligence.deploy.ControlPlaneHttpClient;
 import com.martinfou.trading.intelligence.paths.WeeklyBuilderPaths;
+import com.martinfou.trading.intelligence.llm.LlmClient;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -132,7 +133,9 @@ class WeeklyBuilderServiceTest {
             Clock.fixed(Instant.parse("2026-06-06T18:00:00Z"), ZoneOffset.UTC),
             Executors.newSingleThreadExecutor(),
             "http://127.0.0.1:1",
-            new ControlPlaneHttpClient("http://127.0.0.1:1"));
+            new ControlPlaneHttpClient("http://127.0.0.1:1"),
+            (systemPrompt, userPrompt, temperature) -> "{}"
+        );
 
         assertTrue(service.triggerDeployAsync().accepted());
         awaitDeployComplete(service);
@@ -183,7 +186,9 @@ class WeeklyBuilderServiceTest {
             Clock.systemUTC(),
             holdingExecutor,
             "http://127.0.0.1:1",
-            new ControlPlaneHttpClient("http://127.0.0.1:1"));
+            new ControlPlaneHttpClient("http://127.0.0.1:1"),
+            (systemPrompt, userPrompt, temperature) -> "{}"
+        );
 
         assertTrue(service.triggerPlanAsync().accepted());
         assertFalse(service.triggerPlanAsync().accepted());

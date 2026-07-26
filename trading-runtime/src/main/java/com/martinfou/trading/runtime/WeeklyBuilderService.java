@@ -40,6 +40,7 @@ public final class WeeklyBuilderService implements AutoCloseable {
     private final ExecutorService executor;
     private final String controlPlaneUrl;
     private final ControlPlaneHttpClient controlPlaneClient;
+    private final com.martinfou.trading.intelligence.llm.LlmClient llmClient;
 
     private final AtomicBoolean planProcessing = new AtomicBoolean(false);
     private final AtomicBoolean compileProcessing = new AtomicBoolean(false);
@@ -60,7 +61,9 @@ public final class WeeklyBuilderService implements AutoCloseable {
                 return t;
             }),
             resolveControlPlaneUrl(),
-            ControlPlaneHttpClient.fromEnvironment()
+            ControlPlaneHttpClient.fromEnvironment(),
+            new com.martinfou.trading.intelligence.llm.LangChainLlmClientAdapter(
+                com.martinfou.trading.intelligence.agent.AgenticModelFactory.createChatModel())
         );
     }
 
@@ -75,7 +78,9 @@ public final class WeeklyBuilderService implements AutoCloseable {
                 return t;
             }),
             resolveControlPlaneUrl(),
-            ControlPlaneHttpClient.fromEnvironment()
+            ControlPlaneHttpClient.fromEnvironment(),
+            new com.martinfou.trading.intelligence.llm.LangChainLlmClientAdapter(
+                com.martinfou.trading.intelligence.agent.AgenticModelFactory.createChatModel())
         );
     }
 
@@ -85,7 +90,8 @@ public final class WeeklyBuilderService implements AutoCloseable {
         Clock clock,
         ExecutorService executor,
         String controlPlaneUrl,
-        ControlPlaneHttpClient controlPlaneClient
+        ControlPlaneHttpClient controlPlaneClient,
+        com.martinfou.trading.intelligence.llm.LlmClient llmClient
     ) {
         this.eventStore = eventStore;
         this.repoRoot = repoRoot;
@@ -93,6 +99,7 @@ public final class WeeklyBuilderService implements AutoCloseable {
         this.executor = executor;
         this.controlPlaneUrl = controlPlaneUrl;
         this.controlPlaneClient = controlPlaneClient;
+        this.llmClient = llmClient;
     }
 
     public Map<String, Object> status() {
@@ -167,7 +174,7 @@ public final class WeeklyBuilderService implements AutoCloseable {
     private void runPlanWorker() {
         Instant startedAt = clock.instant();
         try {
-            WeeklyPlanJob job = new WeeklyPlanJob(repoRoot, new IngestPipeline(), new HttpDeepSeekClient());
+            WeeklyPlanJob job = new WeeklyPlanJob(repoRoot, new IngestPipeline(), llmClient);
             WeeklyPlanJob.Result result = job.run();
             lastPlanRun = JobRunSnapshot.fromPlan(startedAt, clock.instant(), result);
             appendEvent("plan", mapPlanStatus(result.status()), result.weekId(), result.weekId(),

@@ -276,7 +276,7 @@ public class HttpOandaRestClient implements OandaRestClient {
     }
 
     @Override
-    public OandaMarketOrderResult placeOrder(String type, String instrument, long units, double price, double stopLoss, double takeProfit, double trailingStop, boolean guaranteed, String clientTag) {
+    public OandaMarketOrderResult placeOrder(String type, String instrument, long units, double price, double stopLoss, double takeProfit, double trailingStop, boolean guaranteed, String clientTag, boolean reduceOnly) {
         try {
             OandaInstrument instMeta = getInstrument(instrument);
             String fmt = "%." + instMeta.displayPrecision() + "f";
@@ -289,6 +289,9 @@ public class HttpOandaRestClient implements OandaRestClient {
             } else {
                 order.put("timeInForce", "GTC");
                 order.put("price", String.format(java.util.Locale.US, fmt, price));
+            }
+            if (reduceOnly) {
+                order.put("positionFill", "REDUCE_ONLY");
             }
             if (stopLoss > 0) {
                 Map<String, Object> sl = new LinkedHashMap<>();

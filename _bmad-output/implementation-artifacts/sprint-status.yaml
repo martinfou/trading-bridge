@@ -130,6 +130,7 @@ development_status:
   16-12-fix-oanda-position-client-tag-matching: done
   16-13-watchdog-weekend-close-and-memory-cleanup: review
   16-14-position-synchronization: review
+  16-15-oanda-close-only-pending-orders: done
   epic-16-retrospective: optional
   epic-17: in-progress
   17-1-get-control-summary-phase-a-observabilite: backlog

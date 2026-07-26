@@ -57,11 +57,11 @@ public class BacktestEngine {
     // For 1k units on EUR/USD: ~$0.08/trade commission + ~$0.06/trade slippage
     // Round-trip cost: ~$0.28. On a 30-pip winner ($3.00): ~9% of profit
     // Impact minimal on strategies targeting 50+ pips
-    private double commissionFixed = 0.07;        // $0.07 per trade (~0.7 pips on 1k units)
-    private double commissionPct = 0.0;            // % of notional (0 when fixed is set)
-    private double slippageFixed = 0.0;            // USD per trade
-    private double slippagePct = 0.00005;           // % of fill price (~0.5 pip)
-    private double stopSlippagePct = 0.00005;        // % added to SL fill price (~0.5 pip)
+    private double commissionFixed = 0.0;
+    private double commissionPct = 0.0;
+    private double slippageFixed = 0.0;
+    private double slippagePct = 0.0;
+    private double stopSlippagePct = 0.0;
     private double totalCommission = 0.0;
     private double totalSlippage = 0.0;
     private double totalSwap = 0.0;              // NEW: overnight swap costs/credits

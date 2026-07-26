@@ -25,7 +25,9 @@ public final class WeeklyPlanJobMain {
 
     static int run() throws Exception {
         var repoRoot = RepoRoots.findRepoRoot();
-        var job = new WeeklyPlanJob(repoRoot, new IngestPipeline(), new HttpDeepSeekClient());
+        var job = new WeeklyPlanJob(repoRoot, new IngestPipeline(), 
+            new com.martinfou.trading.intelligence.llm.LangChainLlmClientAdapter(
+                com.martinfou.trading.intelligence.agent.AgenticModelFactory.createChatModel()));
         WeeklyPlanJob.Result result = job.run();
         return switch (result.status()) {
             case APPROVED -> 0;

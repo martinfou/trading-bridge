@@ -44,7 +44,7 @@ cleanup() {
 trap cleanup EXIT SIGINT SIGTERM
 
 echo "=== 1. Compiling Project ==="
-./mvnw compile
+./mvnw clean compile
 
 # Check if something is already running on port 8080
 CONTROL_PLANE_ALREADY_RUNNING=false

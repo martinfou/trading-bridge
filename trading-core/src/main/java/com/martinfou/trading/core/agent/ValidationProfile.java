@@ -30,4 +30,7 @@ public interface ValidationProfile {
 
     /** Slippage en devise par trade */
     default double slippagePerTrade() { return 0.0; }
+
+    /** Indique si le backtest est obligatoire pour ce profil */
+    default boolean requireBacktest() { return true; }
 }

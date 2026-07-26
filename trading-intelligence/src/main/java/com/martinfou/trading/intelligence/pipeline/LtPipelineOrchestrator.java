@@ -130,9 +130,13 @@ public class LtPipelineOrchestrator {
             }
 
             if (pairResults.isEmpty()) {
-                System.out.println("  ❌ No backtest results — all pairs failed");
-                sessionLessons.add(spec.name() + ": all pairs failed in backtest");
-                continue;
+                if (profile.requireBacktest()) {
+                    System.out.println("  ❌ No backtest results — all pairs failed");
+                    sessionLessons.add(spec.name() + ": all pairs failed in backtest");
+                    continue;
+                } else {
+                    System.out.println("  ⚠️ No backtest results — but profile does not require backtest");
+                }
             }
 
             // Phase 5: Evaluate
