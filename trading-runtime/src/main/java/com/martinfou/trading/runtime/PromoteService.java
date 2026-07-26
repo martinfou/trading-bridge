@@ -15,14 +15,14 @@ import java.util.function.BooleanSupplier;
  */
 public final class PromoteService {
 
-    public record PromoteRequest(String targetMode, String runId, String executionLabel, String brokerAccountId) {
+    public record PromoteRequest(String targetMode, String runId, String executionLabel, String brokerAccountId, Boolean force) {
 
         public PromoteRequest(String targetMode, String runId) {
-            this(targetMode, runId, null, null);
+            this(targetMode, runId, null, null, null);
         }
 
         public PromoteRequest(String targetMode, String runId, String executionLabel) {
-            this(targetMode, runId, executionLabel, null);
+            this(targetMode, runId, executionLabel, null, null);
         }
     }
 
@@ -131,9 +131,15 @@ public final class PromoteService {
 
             Optional<RunRecord> runOpt = findBacktestRun(strategyId, request.runId());
             if (runOpt.isEmpty()) {
-                if (current.isEmpty()) {
+                if (Boolean.TRUE.equals(request.force())) {
                     checks.add(new GateCheckResult(
-                        "backtest_exists", false, "No completed BACKTEST run for strategy " + strategyId));
+                        "backtest_exists", true, "Backtest check bypassed due to force flag"));
+                } else if (!StrategyCatalog.requireBacktest(strategyId)) {
+                    checks.add(new GateCheckResult(
+                        "backtest_exists", true, "Backtest check bypassed: not required for strategy family"));
+                } else if (current.isEmpty()) {
+                    checks.add(new GateCheckResult(
+                        "backtest_exists", false, "No completed BACKTEST run for strategy " + strategyId + " (use force=true to bypass)"));
                 } else {
                     checks.add(new GateCheckResult(
                         "backtest_exists", true, "Backtest check bypassed for existing deployment"));
@@ -297,7 +303,7 @@ public final class PromoteService {
                     throw new IllegalArgumentException("Run does not belong to strategy " + strategyId);
                 }
                 if (run.mode() != RunMode.BACKTEST) {
-                    throw new IllegalArgumentException("Promote to PAPER requires a BACKTEST run");
+                    return Optional.empty();
                 }
                 if (run.status() != RunRecord.Status.COMPLETED) {
                     return Optional.empty();

@@ -36,6 +36,55 @@ class OandaBrokerTest {
     }
 
     @Test
+    void submitOrder_whenCloseOnlyMarket_executesImmediateClose() {
+        var client = new RecordingClient() {
+            @Override
+            public java.util.List<OandaPositionSnapshot> fetchOpenPositions() {
+                return java.util.List.of(new OandaPositionSnapshot(
+                    "T123", "EUR_USD", com.martinfou.trading.core.Order.Side.SELL, 1000, 1.1000, "my-tag-123", null
+                ));
+            }
+            
+            @Override
+            public double closeTrade(String tradeId, String units) {
+                assertEquals("T123", tradeId);
+                assertEquals("1000", units);
+                return 1.1005;
+            }
+        };
+        var broker = new OandaBroker(client);
+        broker.connect();
+
+        var order = new com.martinfou.trading.core.Order(
+            "EUR_USD", com.martinfou.trading.core.Order.Side.BUY,
+            com.martinfou.trading.core.Order.Type.MARKET, 1000, 1.10)
+            .closeOnly();
+        var result = broker.submitOrder(order);
+
+        assertTrue(result.accepted());
+        assertEquals("CLOSE_MULTIPLE", result.brokerOrderId());
+    }
+
+    @Test
+    void submitOrder_whenCloseOnlyStopOrLimit_placesReduceOnlyPendingOrder() {
+        var client = new RecordingClient();
+        var broker = new OandaBroker(client);
+        broker.connect();
+
+        var order = new com.martinfou.trading.core.Order(
+            "EUR_USD", com.martinfou.trading.core.Order.Side.BUY,
+            com.martinfou.trading.core.Order.Type.STOP, 1000, 1.10)
+            .closeOnly();
+        var result = broker.submitOrder(order);
+
+        assertTrue(result.accepted());
+        assertEquals("1", result.brokerOrderId());
+        assertEquals("EUR_USD", client.lastInstrument);
+        assertEquals(1000L, client.lastUnits);
+        assertTrue(client.lastReduceOnly);
+    }
+
+    @Test
     void submitOrder_whenNotConnected_rejects() {
         var broker = new OandaBroker(new RecordingClient());
         var order = new com.martinfou.trading.core.Order(
@@ -163,6 +212,8 @@ class OandaBrokerTest {
         boolean throwOnFetchSummary = false;
         int resetCount = 0;
 
+        boolean lastReduceOnly;
+
         @Override
         public OandaMarketOrderResult placeMarketOrder(String instrument, long units, String clientTag) {
             lastInstrument = instrument;
@@ -171,9 +222,10 @@ class OandaBrokerTest {
         }
 
         @Override
-        public OandaMarketOrderResult placeOrder(String type, String instrument, long units, double price, double stopLoss, double takeProfit, double trailingStop, boolean guaranteed, String clientTag) {
+        public OandaMarketOrderResult placeOrder(String type, String instrument, long units, double price, double stopLoss, double takeProfit, double trailingStop, boolean guaranteed, String clientTag, boolean reduceOnly) {
             lastInstrument = instrument;
             lastUnits = units;
+            lastReduceOnly = reduceOnly;
             return OandaMarketOrderResult.success("1", "T1", price > 0 ? price : 1.1001);
         }
 

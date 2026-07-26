@@ -201,7 +201,7 @@ public final class OandaBroker implements Broker {
 
         enforceRateLimit();
 
-        if (order.isCloseOnly()) {
+        if (order.isCloseOnly() && order.type() == Order.Type.MARKET) {
             double remainingQty = order.quantity();
             String instrument = toOandaInstrument(order.symbol());
             List<Position> openPositions = getPositions();
@@ -271,12 +271,12 @@ public final class OandaBroker implements Broker {
         long startTime = System.currentTimeMillis();
         if (order.type() == Order.Type.MARKET) {
             if (order.stopLoss() > 0 || order.takeProfit() > 0 || order.trailingStop() > 0) {
-                result = client.placeOrder("MARKET", instrument, units, 0.0, order.stopLoss(), order.takeProfit(), order.trailingStop(), order.guaranteed(), order.id());
+                result = client.placeOrder("MARKET", instrument, units, 0.0, order.stopLoss(), order.takeProfit(), order.trailingStop(), order.guaranteed(), order.id(), order.isCloseOnly());
             } else {
                 result = client.placeMarketOrder(instrument, units, order.id());
             }
         } else {
-            result = client.placeOrder(order.type().name(), instrument, units, order.price(), order.stopLoss(), order.takeProfit(), order.trailingStop(), order.guaranteed(), order.id());
+            result = client.placeOrder(order.type().name(), instrument, units, order.price(), order.stopLoss(), order.takeProfit(), order.trailingStop(), order.guaranteed(), order.id(), order.isCloseOnly());
         }
         long duration = System.currentTimeMillis() - startTime;
         log.info("OANDA submitOrder placement completed in {}ms | symbol={} type={} side={} qty={}", duration, order.symbol(), order.type(), order.side(), order.quantity());

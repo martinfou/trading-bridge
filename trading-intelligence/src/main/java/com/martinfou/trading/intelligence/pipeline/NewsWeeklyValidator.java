@@ -80,4 +80,9 @@ public class NewsWeeklyValidator implements ValidationProfile {
     public double referenceCapital() {
         return 10_000;
     }
+
+    @Override
+    public boolean requireBacktest() {
+        return false;
+    }
 }

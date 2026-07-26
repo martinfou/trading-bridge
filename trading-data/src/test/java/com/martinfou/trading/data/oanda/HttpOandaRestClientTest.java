@@ -109,7 +109,7 @@ class HttpOandaRestClientTest {
     @Test
     void placeOrder_propagatesTradeClientExtensions() throws Exception {
         var client = new HttpOandaRestClient("token", "123", "http://localhost:" + port + "/");
-        OandaMarketOrderResult result = client.placeOrder("LIMIT", "EUR_USD", 1000, 1.10, 1.09, 1.12, 0, false, "my-tag-456");
+        OandaMarketOrderResult result = client.placeOrder("LIMIT", "EUR_USD", 1000, 1.10, 1.09, 1.12, 0, false, "my-tag-456", false);
         assertNotNull(result);
         
         String reqBody = lastRequestBody.get();
@@ -128,6 +128,21 @@ class HttpOandaRestClientTest {
         JsonNode tradeExt = order.get("tradeClientExtensions");
         assertNotNull(tradeExt);
         assertEquals("my-tag-456", tradeExt.get("tag").asText());
+    }
+
+    @Test
+    void placeOrder_withReduceOnly_addsPositionFill() throws Exception {
+        var client = new HttpOandaRestClient("token", "123", "http://localhost:" + port + "/");
+        OandaMarketOrderResult result = client.placeOrder("STOP", "EUR_USD", 1000, 1.10, 0, 0, 0, false, "my-tag-456", true);
+        assertNotNull(result);
+        
+        String reqBody = lastRequestBody.get();
+        assertNotNull(reqBody);
+        
+        JsonNode root = mapper.readTree(reqBody);
+        JsonNode order = root.get("order");
+        assertNotNull(order);
+        assertEquals("REDUCE_ONLY", order.get("positionFill").asText());
     }
 
     static class TestHttpOandaRestClient extends HttpOandaRestClient {
