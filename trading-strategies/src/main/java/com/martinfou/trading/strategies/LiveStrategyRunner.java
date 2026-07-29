@@ -547,6 +547,9 @@ public class LiveStrategyRunner implements Runnable {
                 .asSubclass(Strategy.class));
             map.put("monthweekphase", Class.forName("com.martinfou.trading.strategies.creative.MonthWeekPhaseStrategy")
                 .asSubclass(Strategy.class));
+            // Long-term strategies
+            map.put("ltrsi3", Class.forName("com.martinfou.trading.strategies.longterm.LtRSI3Momentum")
+                .asSubclass(Strategy.class));
         } catch (ClassNotFoundException e) {
             throw new RuntimeException("Strategy class not found", e);
         }
@@ -1033,6 +1036,8 @@ public class LiveStrategyRunner implements Runnable {
         if (name.contains("COMPOSITEMOMENTUM")) return "USD_JPY";
         if (name.contains("ATREXPANSIONMOMENTUM")) return "GBP_USD";
         if (name.contains("MONTHWEEKPHASE")) return "USD_JPY";
+        // Long-term strategies
+        if (name.contains("LTRSI3")) return "EUR_USD";
         // Default — safe pair
         return "GBP_JPY";
     }
