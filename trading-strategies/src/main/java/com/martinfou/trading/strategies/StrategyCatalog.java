@@ -1,6 +1,7 @@
 package com.martinfou.trading.strategies;
 
 import com.martinfou.trading.core.Strategy;
+import com.martinfou.trading.strategies.creative.CreativeStrategyCatalog;
 import com.martinfou.trading.strategies.generated.GeneratedStrategyCatalog;
 import com.martinfou.trading.strategies.harness.HarnessStrategyCatalog;
 import com.martinfou.trading.strategies.llmweekly.LlmWeeklyStrategyCatalog;
@@ -22,7 +23,7 @@ import java.util.function.Function;
 public final class StrategyCatalog {
 
     public enum Family {
-        PROP, SQ_IMPORTED, GENERATED, LONG_TERM, LLM_WEEKLY, NEWS_WEEKLY, HARNESS, EXAMPLE
+        PROP, SQ_IMPORTED, GENERATED, LONG_TERM, LLM_WEEKLY, NEWS_WEEKLY, CREATIVE, HARNESS, EXAMPLE
     }
 
     public record Entry(
@@ -176,6 +177,9 @@ public final class StrategyCatalog {
         NewsWeeklyStrategyCatalog.all().keySet().forEach(id ->
             put(id, Family.NEWS_WEEKLY, NewsWeeklyStrategyCatalog.defaultSymbol(id),
                 sym -> NewsWeeklyStrategyCatalog.create(id, sym)));
+        CreativeStrategyCatalog.all().keySet().forEach(id ->
+            put(id, Family.CREATIVE, CreativeStrategyCatalog.defaultSymbol(id),
+                sym -> CreativeStrategyCatalog.create(id, sym)));
         LongTermStrategyCatalog.all().keySet().forEach(id ->
             put(id, Family.LONG_TERM, LongTermStrategyCatalog.defaultSymbol(id),
                 sym -> LongTermStrategyCatalog.create(id, sym)));
