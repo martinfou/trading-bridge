@@ -119,6 +119,32 @@ services:
           cpus: '0.5'
           memory: 256M
 
+  # LtRSI3Momentum — RSI(3) Drift Following (EUR/USD, Sharpe>1.0 post look-ahead fix)
+  lt-rsi3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading-lt-rsi3
+    restart: unless-stopped
+    env_file:
+      - /home/martinfou/projects/trading-dashboard/.env
+    environment:
+      - OANDA_ENV=practice
+      - LOG_LEVEL=INFO
+      - STRATEGY=${LTRSI3_STRATEGY:-ltrsi3}
+      - STRATEGY_PAIR=${LTRSI3_PAIR:-EUR_USD}
+      - GRANULARITY=${LTRSI3_GRANULARITY:-H1}
+      - INTERVAL_SEC=${LTRSI3_INTERVAL:-60}
+    command: ["$${OANDA_API_KEY}", "$${OANDA_ACCOUNT_ID}", "$${STRATEGY}", "$${GRANULARITY}", "$${INTERVAL_SEC}"]
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
 volumes:
   data:
   logs:
