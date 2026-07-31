@@ -66,7 +66,7 @@ public final class CreativeStrategyCatalogRegistrar {
         CreativeStrategyCatalog.register("ZScoreReversion", sym -> new ZScoreReversionStrategy("ZScoreReversion", sym));
 
         // — Session / Time-Based —
-        CreativeStrategyCatalog.register("InsideBarBreakout", sym -> new InsideBarBreakoutStrategy("InsideBarBreakout", sym));
+        CreativeStrategyCatalog.register("CreativeInsideBarBreakout", sym -> new InsideBarBreakoutStrategy("CreativeInsideBarBreakout", sym));
         CreativeStrategyCatalog.register("LondonSessionEMAPullback", sym -> new LondonSessionEMAPullbackStrategy("LondonSessionEMAPullback", sym));
         CreativeStrategyCatalog.register("MidMonthExhaustion", sym -> new MidMonthExhaustionStrategy("MidMonthExhaustion", sym));
         CreativeStrategyCatalog.register("MonthPhaseMomentum", sym -> new MonthPhaseMomentumStrategy("MonthPhaseMomentum", sym));
@@ -80,7 +80,9 @@ public final class CreativeStrategyCatalogRegistrar {
         CreativeStrategyCatalog.register("SessionMomentumFlow", sym -> new SessionMomentumFlowStrategy("SessionMomentumFlow", sym));
         CreativeStrategyCatalog.register("SessionOverlapBreakout", sym -> new SessionOverlapBreakoutStrategy("SessionOverlapBreakout", sym));
         CreativeStrategyCatalog.register("TrendRetestEntry", sym -> new TrendRetestEntryStrategy("TrendRetestEntry", sym));
-        CreativeStrategyCatalog.register("TurnOfMonthFlow", sym -> new TurnOfMonthFlowStrategy("TurnOfMonthFlow", sym));
+        // TurnOfMonthFlow REMOVED 2026-07-31 — rejected after deep dive: trade-count
+        // bug (1 trade in 20y) + no edge after costs (PF 0.32-1.13 across 5 pairs).
+        // Moved to creative/_rejected/TurnOfMonthFlowStrategy.java
         CreativeStrategyCatalog.register("WeekdaySession", sym -> new WeekdaySessionStrategy("WeekdaySession", sym));
         CreativeStrategyCatalog.register("WeekendContinuation", sym -> new WeekendContinuationStrategy("WeekendContinuation", sym));
 

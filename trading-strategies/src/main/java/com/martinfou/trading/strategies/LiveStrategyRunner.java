@@ -535,8 +535,6 @@ public class LiveStrategyRunner implements Runnable {
                 .asSubclass(Strategy.class));
             map.put("vwappremium", Class.forName("com.martinfou.trading.strategies.creative.VwapPremiumReversionStrategy")
                 .asSubclass(Strategy.class));
-            map.put("turnofmonth", Class.forName("com.martinfou.trading.strategies.creative.TurnOfMonthFlowStrategy")
-                .asSubclass(Strategy.class));
             // NFP Week — Short EUR/USD macro play for NFP weeks
             map.put("nfpweek", Class.forName("com.martinfou.trading.strategies.creative.NfpWeekStrategy")
                 .asSubclass(Strategy.class));
