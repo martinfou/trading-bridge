@@ -511,7 +511,8 @@ public class BacktestEngine {
                 floatingPnl += pos.currentPnl(bar.close());
             }
         }
-        equity = initialCapital - totalCommission + realizedPnl + floatingPnl;
+        // totalSwap is signed (negative = cost), matching buildResult().
+        equity = initialCapital - totalCommission + totalSwap + realizedPnl + floatingPnl;
     }
 
     // ---------------------------------------------------------------
@@ -535,7 +536,9 @@ public class BacktestEngine {
     // ---------------------------------------------------------------
 
     private BacktestResult buildResult() {
-        double totalPnl = trades.stream().mapToDouble(Trade::pnl).sum() - totalCommission - totalSwap;
+        // totalSwap is signed (negative = cost). Adding it (not subtracting) yields
+        // realized P&L net of swap; subtracting a negative cost inflated PnL.
+        double totalPnl = trades.stream().mapToDouble(Trade::pnl).sum() - totalCommission + totalSwap;
         double totalReturnPct = initialCapital > 0 ? (totalPnl / initialCapital) * 100 : 0;
         double maxDd = calcMaxDrawdown();
         double winRate = totalTrades > 0 ? (double) winningTrades / totalTrades * 100 : 0;

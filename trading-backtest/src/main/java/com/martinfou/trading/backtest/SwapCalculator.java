@@ -55,6 +55,19 @@ public class SwapCalculator {
     public static double calculateSwap(
             String symbol, Order.Side side, double quantity,
             Instant openTime, Instant closeTime) {
+        return calculateSwap(symbol, side, quantity, openTime, closeTime,
+            com.martinfou.trading.core.ForexPnL.DEFAULT_USD_JPY);
+    }
+
+    /**
+     * Calcule le swap pour une position overnight.
+     *
+     * @param usdJpyRate taux USD/JPY utilisé pour convertir la valeur du pip
+     *                   des paires cotées en JPY en USD (défaut 150)
+     */
+    public static double calculateSwap(
+            String symbol, Order.Side side, double quantity,
+            Instant openTime, Instant closeTime, double usdJpyRate) {
 
         double[] rates = SWAP_RATES.get(symbol);
         if (rates == null) return 0.0;
@@ -65,7 +78,11 @@ public class SwapCalculator {
         // Convert from standard lot pip rate to actual position
         // For EUR/USD 1k units: 1 pip = $0.10. So -3.5 pips = -$0.35/day
         double pipSize = symbol.contains("JPY") ? 0.01 : 0.0001;
-        double pipValueInUSD = quantity * pipSize;  // $ per pip for this position
+        // For JPY-quoted pairs the pip value is in JPY; convert to USD (e.g. ÷150).
+        // Without this, GBP_JPY/EUR_JPY/USD_JPY swaps are overstated ~150x.
+        double pipValueInUSD = symbol.contains("JPY")
+            ? quantity * pipSize / (usdJpyRate > 0 ? usdJpyRate : com.martinfou.trading.core.ForexPnL.DEFAULT_USD_JPY)
+            : quantity * pipSize;
         double dailySwapUSD = pipRate * pipValueInUSD;
 
         // Count rollover days between open and close
