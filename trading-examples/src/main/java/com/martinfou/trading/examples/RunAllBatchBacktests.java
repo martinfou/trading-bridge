@@ -111,12 +111,17 @@ public class RunAllBatchBacktests {
                     double pnl = result.totalPnl();
                     int trades = result.totalTrades();
                     
-                    if (pnl > 0) {
+                    // HARNESS family = engine test probes (e.g. Harness_WeekendProbe),
+                    // not tradeable strategies. Exclude from the profitability report —
+                    // they accumulate positions by design and pollute the top of the ranking.
+                    boolean isHarnessProbe = entry.family() == StrategyCatalog.Family.HARNESS;
+                    
+                    if (pnl > 0 && !isHarnessProbe) {
                         profitableRuns.add(new ProfitResult(strategyId, symbol, result));
-                        System.out.printf("  ✅ %-32s -> Profit: +$%,.2f (%+.2f%%) | Trades: %d | Sharpe: %.2f | DD: %.2f%%%n",
+                        System.out.printf("  ✅ %-32s %-8s -> Profit: +$%,.2f (%+.2f%%) | Trades: %d | Sharpe: %.2f | DD: %.2f%%%n",
                             strategyId, symbol, pnl, returnPct, trades, result.sharpeRatio(), result.maxDrawdownPct());
                     } else {
-                        System.out.printf("  ❌ %-32s -> Loss  : -$%,.2f (%+.2f%%) | Trades: %d | Sharpe: %.2f | DD: %.2f%%%n",
+                        System.out.printf("  ❌ %-32s %-8s -> Loss  : -$%,.2f (%+.2f%%) | Trades: %d | Sharpe: %.2f | DD: %.2f%%%n",
                             strategyId, symbol, Math.abs(pnl), returnPct, trades, result.sharpeRatio(), result.maxDrawdownPct());
                     }
                 } catch (Exception | LinkageError e) {
