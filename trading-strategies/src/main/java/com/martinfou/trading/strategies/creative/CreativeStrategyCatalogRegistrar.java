@@ -24,6 +24,10 @@ public final class CreativeStrategyCatalogRegistrar {
         CreativeStrategyCatalog.register("ADXTrendFilter", sym -> new ADXTrendFilterStrategy("ADXTrendFilter", sym));
         CreativeStrategyCatalog.register("ATRChannelTrail", sym -> new ATRChannelTrailStrategy("ATRChannelTrail", sym));
         CreativeStrategyCatalog.register("ATRExpansionMomentum", sym -> new ATRExpansionMomentumStrategy("ATRExpansionMomentum", sym));
+        // CarryPremium REMOVED 2026-08-03 — rejected: PF standard (sans swap) 0.85-1.04
+        // sur 3 paires carry, profit 100% dépendant d'un swap modélisé à taux constants
+        // 2024-2026 appliqués sur 2006-2026 (artefact : en 2020-2022 le carry réel était nul).
+        // Moved to creative/_rejected/CarryPremiumStrategy.java
         CreativeStrategyCatalog.register("ChaikinMoneyFlow", sym -> new ChaikinMoneyFlowStrategy("ChaikinMoneyFlow", sym));
         CreativeStrategyCatalog.register("ChandelierExitTrend", sym -> new ChandelierExitTrendStrategy("ChandelierExitTrend", sym));
         CreativeStrategyCatalog.register("CompositeMomentumRanking", sym -> new CompositeMomentumRankingStrategy("CompositeMomentumRanking", sym));
