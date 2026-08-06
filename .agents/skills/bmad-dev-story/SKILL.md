@@ -93,18 +93,6 @@ Activation is complete. If `activation_steps_prepend` or `activation_steps_appen
       <goto anchor="task_check" />
     </check>
 
-    <!-- Auto-detect active story from trace file if path is not explicitly given -->
-    <check if="{{story_path}} is not provided">
-      <check if="_bmad-output/last-active-story.txt exists">
-        <action>Read active story key from `_bmad-output/last-active-story.txt` and store as {{story_key}}</action>
-        <action>Set {{story_path}} to `{implementation_artifacts}/{{story_key}}.md`</action>
-        <check if="{{story_path}} file exists">
-          <action>Read COMPLETE story file from {{story_path}}</action>
-          <goto anchor="task_check" />
-        </check>
-      </check>
-    </check>
-
     <!-- Sprint-based story discovery -->
     <check if="{{sprint_status}} file exists">
       <critical>MUST read COMPLETE sprint-status.yaml file from start to end to preserve order</critical>
@@ -203,31 +191,6 @@ Activation is complete. If `activation_steps_prepend` or `activation_steps_appen
     <action>Read COMPLETE story file from discovered path</action>
 
     <anchor id="task_check" />
-
-    <!-- Git Branch Mismatch Guard -->
-    <check if="git version control is available (git rev-parse --is-inside-work-tree passes)">
-      <action>Run `git rev-parse --abbrev-ref HEAD` to get the current Git branch name and store in {{git_branch}}</action>
-      <action>Extract numeric pattern \d+-\d+ (or prefix pattern like dg-\d+, dbj-\d+, dci-\d+) from {{story_key}} as story identifier</action>
-      <check if="current Git branch name contains a story identifier pattern (e.g. \d+-\d+ or prefix pattern)">
-        <check if="current Git branch name does NOT contain the story identifier of {{story_key}}">
-          <check if="sys.stdin.isatty() is true (interactive TTY session)">
-            <output>⚠️ **Git Branch Mismatch Warning**
-              You are developing story **{{story_key}}** but your current Git branch is **{{git_branch}}**.
-            </output>
-            <ask>Do you want to proceed developing {{story_key}} on branch {{git_branch}}? (yes/no):</ask>
-            <check if="user says 'no'">
-              <action>HALT - Please switch branches or checkout a branch for story {{story_key}}</action>
-            </check>
-          </check>
-          <check if="sys.stdin.isatty() is false (headless/CI or non-interactive)">
-            <output>ℹ️ Git branch mismatch detected in non-interactive environment. Bypassing mismatch prompt.</output>
-          </check>
-        </check>
-      </check>
-      <check if="current Git branch name does NOT match any story identifier pattern (e.g. 'main', 'master', 'dev')">
-        <output>ℹ️ Active branch '{{git_branch}}' is a mainline branch. Bypassing mismatch prompt.</output>
-      </check>
-    </check>
 
     <action>Parse sections: Story, Acceptance Criteria, Tasks/Subtasks, Dev Notes, Dev Agent Record, File List, Change Log, Status</action>
 
