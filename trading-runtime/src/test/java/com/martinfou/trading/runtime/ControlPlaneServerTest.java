@@ -1066,6 +1066,33 @@ class ControlPlaneServerTest {
         assertEquals(404, responseNotFound.statusCode());
     }
 
+    @Test
+    void health_returnsReconciliationState() throws Exception {
+        HttpResponse<String> response = get("/api/health");
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("\"reconciliation\":\"IDLE\""));
+    }
+
+    @Test
+    void mutationEndpoints_return503DuringReconciliation() throws Exception {
+        runManager.setReconciliationState(RunManager.ReconciliationState.IN_PROGRESS);
+
+        HttpResponse<String> healthResponse = get("/api/health");
+        assertEquals(200, healthResponse.statusCode());
+        assertTrue(healthResponse.body().contains("\"reconciliation\":\"IN_PROGRESS\""));
+
+        HttpResponse<String> postResponse = post("/api/runs", "{}");
+        assertEquals(503, postResponse.statusCode());
+
+        runManager.setReconciliationState(RunManager.ReconciliationState.COMPLETED);
+        HttpResponse<String> completedHealthResponse = get("/api/health");
+        assertEquals(200, completedHealthResponse.statusCode());
+        assertTrue(completedHealthResponse.body().contains("\"reconciliation\":\"COMPLETED\""));
+
+        HttpResponse<String> postAllowedResponse = post("/api/runs", "{}");
+        assertFalse(postAllowedResponse.statusCode() == 503);
+    }
+
     private HttpResponse<String> get(String path) throws Exception {
         HttpRequest request = HttpRequest.newBuilder()
             .uri(URI.create("http://localhost:" + server.port() + path))

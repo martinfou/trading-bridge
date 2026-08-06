@@ -305,10 +305,19 @@ public final class ControlPlaneServer implements AutoCloseable {
                 ctx.header("Access-Control-Allow-Origin", "*");
                 ctx.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
                 ctx.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+                String method = ctx.method().name();
+                String path = ctx.path();
+                if (("POST".equalsIgnoreCase(method) || "PUT".equalsIgnoreCase(method) || "DELETE".equalsIgnoreCase(method))
+                    && (path.startsWith("/api/runs") || path.startsWith("/api/strategies"))
+                    && !runManager.isReconciliationComplete()) {
+                    throw new io.javalin.http.ServiceUnavailableResponse("Reconciliation in progress");
+                }
             })
             .get("/api/health", ctx -> ctx.json(Map.of(
                 "status", "ok",
                 "version", VERSION,
+                "reconciliation", runManager.reconciliationState().name(),
                 "dataCatalog", true)))
             .get("/api/diagnostics/integrity", ctx -> {
                 if (runManager.eventStore() instanceof SqliteEventStore sqliteStore) {

@@ -37,12 +37,6 @@ public final class SqliteEventStore implements EventStore {
             config.ensureParentDirectories();
             connection = DriverManager.getConnection(JDBC_PREFIX + config.dbPath());
             initSchema(connection);
-            List<String> integrityErrors = checkDatabaseIntegrity(connection);
-            if (!integrityErrors.isEmpty()) {
-                log.error("CRITICAL: SQLite integrity check failed for {}: {}", config.dbPath(), integrityErrors);
-            } else {
-                log.info("SQLite database integrity check passed successfully.");
-            }
         } catch (IOException | SQLException e) {
             throw new IllegalStateException("Failed to open EventStore at " + config.dbPath(), e);
         }

@@ -105,5 +105,39 @@ public final class NewsWeeklyStrategyCatalogRegistrar {
         NewsWeeklyStrategyCatalog.register(
             "NewsWeek20Jul_ECB_Presser_EUR_USD",
             sym -> new NewsWeek20Jul_EcbPresser.EurUsd());
+
+        // === Week 27-31 July 2026 — Macro News Strategies ===
+
+        // 1 — FOMC Rate Decision (Wed Jul 29, 14:00 ET)
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek27Jul_FOMC_EUR_USD",
+            sym -> new NewsWeek27Jul_FomcBoePce.FomcEurUsd());
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek27Jul_FOMC_USD_CAD",
+            sym -> new NewsWeek27Jul_FomcBoePce.FomcUsdCad());
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek27Jul_FOMC_AUD_USD",
+            sym -> new NewsWeek27Jul_FomcBoePce.FomcAudUsd());
+
+        // 2 — BOE Rate Decision (Thu Jul 30, 07:00 ET)
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek27Jul_BOE_GBP_USD",
+            sym -> new NewsWeek27Jul_FomcBoePce.BoeGbpUsd());
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek27Jul_BOE_GBP_JPY",
+            sym -> new NewsWeek27Jul_FomcBoePce.BoeGbpJpy());
+
+        // 3 — US Core PCE Inflation (Thu Jul 30, 08:30 ET)
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek27Jul_PCE_EUR_USD",
+            sym -> new NewsWeek27Jul_FomcBoePce.PceEurUsd());
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek27Jul_PCE_GBP_USD",
+            sym -> new NewsWeek27Jul_FomcBoePce.PceGbpUsd());
+
+        // 4 — BOJ Policy Decision (Thu Jul 30, 23:00 ET)
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek27Jul_BOJ_USD_JPY",
+            sym -> new NewsWeek27Jul_FomcBoePce.BojUsdJpy());
     }
 }

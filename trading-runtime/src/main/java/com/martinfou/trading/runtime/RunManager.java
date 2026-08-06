@@ -36,8 +36,17 @@ import java.nio.file.Path;
  */
 public class RunManager implements RunLifecycle, AutoCloseable {
 
+    public enum ReconciliationState {
+        IDLE,
+        IN_PROGRESS,
+        COMPLETED,
+        FAILED
+    }
+
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(RunManager.class);
     private static final Map<String, java.util.concurrent.locks.ReentrantLock> downloadLocks = new ConcurrentHashMap<>();
+    private final java.util.concurrent.atomic.AtomicReference<ReconciliationState> reconciliationState =
+        new java.util.concurrent.atomic.AtomicReference<>(ReconciliationState.IDLE);
 
     public record StartRunRequest(
         String strategyId,
@@ -299,6 +308,19 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         return new InMemoryRunRecordStore();
     }
 
+
+    public ReconciliationState reconciliationState() {
+        return reconciliationState.get();
+    }
+
+    public void setReconciliationState(ReconciliationState state) {
+        this.reconciliationState.set(state);
+    }
+
+    public boolean isReconciliationComplete() {
+        ReconciliationState state = reconciliationState.get();
+        return state == ReconciliationState.IDLE || state == ReconciliationState.COMPLETED;
+    }
 
     public KillSwitchRegistry killSwitchRegistry() {
         return killSwitchRegistry;

@@ -13,8 +13,6 @@ public final class ControlPlaneMain {
         RuntimeDataPaths.ensureDataDirectories();
         RuntimeStores.Bundle stores = RuntimeStores.sqliteWithBroadcast(config);
         RunManager runManager = new RunManager(stores.eventStore(), stores.deploymentStore());
-        restoreActiveRuns(runManager, config);
-        reconcileCompletedRuns(runManager);
         PromoteGateThresholds thresholds = PromoteGateThresholds.loadDefault();
         PromoteService promoteService = new PromoteService(
             runManager,
@@ -38,8 +36,8 @@ public final class ControlPlaneMain {
         driftReporter.start();
 
         // Stdin watcher daemon thread: exits JVM if standard input closes (EOF) to prevent zombie processes
-        // Skip starting this if DISABLE_STDIN_WATCHER is true (e.g. when running in background without a TTY)
-        if (!"true".equalsIgnoreCase(System.getenv("DISABLE_STDIN_WATCHER"))) {
+        // Skip starting this if running in background without a TTY (System.console() == null) or DISABLE_STDIN_WATCHER is true
+        if (System.console() != null && !"true".equalsIgnoreCase(System.getenv("DISABLE_STDIN_WATCHER"))) {
             Thread stdinWatcher = new Thread(() -> {
                 try {
                     int read;
@@ -78,6 +76,19 @@ public final class ControlPlaneMain {
         System.out.println("Control plane listening on http://localhost:" + server.port());
         System.out.println("Event store: " + config.dbPath());
         System.out.println("WebSocket runs: ws://localhost:" + server.port() + "/ws/runs/{runId}");
+
+        Thread.ofVirtual().start(() -> {
+            try {
+                runManager.setReconciliationState(RunManager.ReconciliationState.IN_PROGRESS);
+                restoreActiveRuns(runManager, config);
+                reconcileCompletedRuns(runManager);
+                runManager.setReconciliationState(RunManager.ReconciliationState.COMPLETED);
+            } catch (Exception e) {
+                runManager.setReconciliationState(RunManager.ReconciliationState.FAILED);
+                System.err.println("Failed to reconcile runs on startup: " + e.getMessage());
+                e.printStackTrace();
+            }
+        });
     }
 
     static void restoreActiveRuns(RunManager runManager, EventStoreConfig config) {
