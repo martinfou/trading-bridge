@@ -79,4 +79,13 @@ public class NewsWeek27Jul_FomcBoePce {
                 40, 70, 0.007);
         }
     }
+
+    /** BOJ Policy Decision Thu Jul 30 23:00 ET / Fri Jul 31 00:00 ET — USD/JPY */
+    public static class BojUsdJpy extends NewsWeeklyStrategy {
+        public BojUsdJpy() {
+            super("BojUsdJpy", "USD_JPY",
+                nyEvent(2026, 7, 30, 23, 0), weekEndAfter(2026, 7, 31),
+                50, 90, 0.007);
+        }
+    }
 }

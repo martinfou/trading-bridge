@@ -4,7 +4,10 @@ stepsCompleted:
   - "step-02-design-epics.md"
   - "step-03-create-stories.md"
 inputDocuments:
-  - "User Prompt (Problèmes Identifiés — Trading Bridge)"
+  - "User Prompt (Strategy PnL & Trade Ledger Dashboard for Trading Bridge Desktop)"
+  - "docs/architecture-trading-bridge-desktop.md"
+  - "docs/api-contracts-trading-bridge-dashboard.md"
+  - "docs/component-inventory-trading-bridge-desktop.md"
 ---
 
 # Trading Bridge - Epic Breakdown
@@ -25,19 +28,30 @@ FR5: Imposer une diversification des actifs en forçant 50% des nouvelles strat�
 FR6: Valider systématiquement out-of-sample (2018-2021) toute stratégie avant de l'ajouter au catalogue live (éviter le data snooping).
 FR7: Mettre à jour les données historiques jusqu'à la date courante en exécutant `./scripts/download-data.sh`.
 FR8: Restreindre l'implémentation Java des stratégies "NewsWeekly" uniquement si le concept peut être transformé en stratégie permanente.
-FR9: Développer un outil d'allocation de portefeuille automatisé qui gère la création de **multiples portefeuilles** distincts, en sélectionnant et équilibrant dynamiquement les stratégies en fonction de leur absence de corrélation.
+FR9: Développer un outil d'allocation de portefeuille automatisé qui gère la création de **multiples portefeuilles** distincts, en sélectionnant et équilibrant dynamiquement les stratégies en fonction de leur absence de correction.
+FR10: Visualiser un bandeau récapitulatif des KPI de portefeuille (PnL Réalisé total, PnL Non-réalisé, Taux de réussite global, Profit Factor, Max Drawdown).
+FR11: Afficher les cartes de performance et statistiques détaillées par stratégie (Ratio de Sharpe, nombre de trades, PnL journalier, exposition active et statut LIVE/STALE).
+FR12: Présenter un registre unifié des trades historiques et temps réel (ID stratégie, ticket ID, symbole, sens ACHAT/VENTE, horodatage UTC, prix d'exécution, quantité, PnL net, frais de spread/commission).
+FR13: Permettre le filtrage dynamique du registre des trades par nom de stratégie, symbole d'actif, sens de trade, plage de dates et résultat (gagnant/perdant).
+FR14: Proposer un graphique chronologique interactif affichant les courbes de capital cumulées du portefeuille et les trajectoires de PnL individuelles par stratégie.
+FR15: Permettre l'exportation des enregistrements de trades filtrés au format CSV ou JSON depuis l'interface utilisateur.
 
 ### NonFunctional Requirements
 
 NFR1: Documenter comme contrainte d'architecture que le framework est H1 uniquement et ne supporte pas tick / M5 / M15.
+NFR2: Le composant de registre des trades doit supporter un défilement virtuel fluide et un filtrage rapide pour jusqu'à 20 000 enregistrements sans figer le thread UI (<150ms).
+NFR3: Tous les horodatages des trades doivent être traités en UTC Instant ISO-8601 avec une option d'affichage en heure locale (`America/Toronto`).
 
 ### Additional Requirements
 
 - Les frais de backtest (commission/slippage) doivent impacter les résultats avec une échelle de 20-30% des profits.
+- AR1: Le serveur Java (`trading-runtime`) doit exposer les points de terminaison REST `/api/v1/trades` et `/api/v1/pnl/summary`.
+- AR2: L'application Electron / Vue 3 (`desktop/`) doit intégrer le composable `useControlPlane.ts` pour consommer l'API REST et le flux WebSocket.
 
 ### UX Design Requirements
 
-Aucun (Projet backend).
+UX-DR1: Thème sombre quant sous Tailwind CSS aligné avec `LiveTradingView.vue`.
+UX-DR2: Tableau de données réactif avec en-têtes fixes, icônes Lucide et volet d'inspection des détails de chaque trade.
 
 ### FR Coverage Map
 
@@ -50,6 +64,12 @@ Aucun (Projet backend).
 - **FR7:** Epic 1 - Mise à jour des données (download-data.sh)
 - **FR8:** Epic 2 - Restriction des stratégies NewsWeekly
 - **FR9:** Epic 4 - Outil d'allocation de portefeuilles multiples non corrélés
+- **FR10:** Epic 5 - Bandeau récapitulatif des KPI de portefeuille
+- **FR11:** Epic 5 - Cartes de performance par stratégie
+- **FR12:** Epic 5 - Registre unifié des trades
+- **FR13:** Epic 5 - Filtrage dynamique des trades
+- **FR14:** Epic 5 - Graphique PnL & Equity multi-stratégies
+- **FR15:** Epic 5 - Exportation des trades CSV/JSON
 
 ## Epic List
 
@@ -68,6 +88,10 @@ Fournir de nouvelles stratégies de "hedging" (market ranging) pour alimenter l'
 ### Epic 4: Automated Multi-Portfolio Allocator
 Permettre aux utilisateurs de générer automatiquement des portefeuilles distincts, diversifiés et non corrélés, remplaçant les règles arbitraires par une allocation mathématique (par actifs, indicateurs et faible corrélation).
 **FRs covered:** FR4, FR5, FR9
+
+### Epic 5: Strategy PnL & Trade Ledger Desktop Dashboard
+Fournir aux quants et opérateurs de stratégies un tableau de bord visuel centralisé et temps réel au sein de l'application de bureau Trading Bridge Desktop (`desktop/`) pour suivre les KPI de portefeuille, les performances par stratégie, le graphique interactif PnL et le registre des trades filtrable et exportable.
+**FRs covered:** FR10, FR11, FR12, FR13, FR14, FR15
 
 ## Epic 1: Backtest Reliability & Data Foundation
 
@@ -228,5 +252,75 @@ So that the future GUI/TUI can easily render visual representations (donut chart
 **Then** it outputs a JSON file containing the combined equity curve array
 **And** the asset allocation distribution weights
 **And** the pairwise correlation matrix of the selected strategies.
+
+## Epic 5: Strategy PnL & Trade Ledger Desktop Dashboard
+
+Fournir aux quants et opérateurs de stratégies un tableau de bord visuel centralisé et temps réel au sein de l'application de bureau Trading Bridge Desktop (`desktop/`) pour suivre les KPI de portefeuille, les performances par stratégie, le graphique interactif PnL et le registre des trades filtrable et exportable.
+
+### Story 5.1: Expose Java Control Plane Trade Ledger & PnL REST API
+
+As a frontend desktop developer,
+I want the Java `trading-runtime` control plane to expose REST endpoints `/api/v1/trades` and `/api/v1/pnl/summary`,
+So that the desktop app can query historical and live trade logs and aggregated PnL metrics.
+
+**Acceptance Criteria:**
+
+**Given** the Java `trading-runtime` server is active on `localhost:8080`
+**When** the desktop app issues a `GET /api/v1/trades` request with optional parameters (`strategyId`, `symbol`, `side`, `limit`, `offset`)
+**Then** the endpoint returns a JSON payload of trade execution records matching the filter criteria with HTTP 200 OK
+**And** `GET /api/v1/pnl/summary` returns the portfolio-level and per-strategy PnL metrics (Realized PnL, Unrealized PnL, Win Rate, Profit Factor, Max Drawdown).
+
+### Story 5.2: Build Desktop Portfolio KPI Strip & Strategy Performance Cards
+
+As a quant strategy operator,
+I want to view a top-level KPI banner and per-strategy cards in Trading Bridge Desktop,
+So that I can monitor portfolio health and individual strategy performance at a glance.
+
+**Acceptance Criteria:**
+
+**Given** the user is viewing the Desktop Dashboard view
+**When** trade data is loaded from the control plane API
+**Then** the KPI strip displays Total Realized PnL, Unrealized PnL, Win Rate %, Profit Factor, and Max Drawdown with color-coded badges
+**And** each strategy card displays its Sharpe Ratio, trade count, daily PnL, active position count, and LIVE/STALE liveness indicator.
+
+### Story 5.3: Build Interactive Unified Trade Ledger Table Component with Filtering & CSV Export
+
+As a trader,
+I want an interactive, filterable trade ledger table in Vue 3 with CSV export capabilities,
+So that I can inspect, filter, and audit all trade executions across all strategies.
+
+**Acceptance Criteria:**
+
+**Given** the `TradeLedgerTable.vue` component is mounted
+**When** the user applies filters for strategy name, asset symbol, side (BUY/SELL), or date range
+**Then** the trade table instantly updates to show matching trade rows with sticky headers
+**And** clicking the "Export CSV" button downloads a standard `.csv` file containing the filtered trade records.
+
+### Story 5.4: Implement Multi-Strategy Equity & PnL Comparison Chart Component
+
+As a quantitative researcher,
+I want an interactive multi-strategy time-series chart component in Vue 3,
+So that I can visually compare PnL trajectories and equity curves across different strategies over time.
+
+**Acceptance Criteria:**
+
+**Given** trade history and PnL time series data are present
+**When** the user toggles individual strategy checkboxes on the chart legend
+**Then** the multi-series line chart updates dynamically to render selected equity/PnL curves
+**And** hovering over any point displays a tooltip with timestamp, strategy name, and cumulative PnL.
+
+### Story 5.5: Integrate Strategy PnL Dashboard View in Trading Bridge Desktop App
+
+As a desktop user,
+I want a dedicated "Strategy PnL & Trade Ledger" navigation tab in Trading Bridge Desktop,
+So that I can access the complete dashboard from the main navigation sidebar.
+
+**Acceptance Criteria:**
+
+**Given** the Electron desktop application is launched
+**When** the user clicks on the "Strategy PnL" item in the sidebar navigation
+**Then** Vue Router navigates to `/strategy-pnl` rendering `StrategyPnlDashboardView.vue`
+**And** real-time WebSocket updates automatically refresh trade logs and PnL metrics as new orders fill.
+
 
 
