@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.core.Position;
@@ -56,13 +57,8 @@ class OandaStreamingExecutorTest {
         );
         store.append(runId, fillEvent);
 
-        // Broker returns empty positions (mismatch)
-        var broker = new StubBroker() {
-            @Override
-            public List<Position> getPositions() {
-                return Collections.emptyList();
-            }
-        };
+        Broker broker = mock(Broker.class);
+        when(broker.getPositions()).thenReturn(Collections.emptyList());
 
         var strategy = new Strategy() {
             @Override public String name() { return "stub"; }
@@ -124,7 +120,7 @@ class OandaStreamingExecutorTest {
             null,
             config,
             strategy,
-            new StubBroker(),
+            mock(Broker.class),
             null,
             store,
             new KillSwitchRegistry(),
@@ -178,7 +174,7 @@ class OandaStreamingExecutorTest {
             null,
             config,
             strategy,
-            new StubBroker(),
+            mock(Broker.class),
             null,
             store,
             new KillSwitchRegistry(),
@@ -253,13 +249,8 @@ class OandaStreamingExecutorTest {
             "acct1"
         );
 
-        // Broker throws IllegalStateException (transient error like 503)
-        var broker = new StubBroker() {
-            @Override
-            public List<Position> getPositions() {
-                throw new IllegalStateException("OANDA API 503 Service Unavailable");
-            }
-        };
+        Broker broker = mock(Broker.class);
+        when(broker.getPositions()).thenThrow(new IllegalStateException("OANDA API 503 Service Unavailable"));
 
         var strategy = new Strategy() {
             @Override public String name() { return "stub"; }
@@ -310,13 +301,8 @@ class OandaStreamingExecutorTest {
             "acct1"
         );
 
-        // Broker returns an open position
-        var broker = new StubBroker() {
-            @Override
-            public List<Position> getPositions() {
-                return List.of(new Position("GBP_USD", Order.Side.BUY, 10000.0, 1.2500, Instant.now(), "old-tag"));
-            }
-        };
+        Broker broker = mock(Broker.class);
+        when(broker.getPositions()).thenReturn(List.of(new Position("GBP_USD", Order.Side.BUY, 10000.0, 1.2500, Instant.now(), "old-tag")));
 
         // Strategy to track position state
         final Order.Side[] syncedSide = {null};
@@ -364,15 +350,4 @@ class OandaStreamingExecutorTest {
         assertEquals(10000.0, syncedQty[0]);
     }
 
-    private static class StubBroker implements Broker {
-        @Override public boolean isConnected() { return true; }
-        @Override public void connect() {}
-        @Override public void disconnect() {}
-        @Override public void reconnect() {}
-        @Override public OrderSubmitResult submitOrder(Order order) { return new OrderSubmitResult(true, "stub-id", null); }
-        @Override public OrderSubmitResult cancelOrder(String brokerOrderId) { return new OrderSubmitResult(true, brokerOrderId, null); }
-        @Override public List<Position> getPositions() { return Collections.emptyList(); }
-        @Override public AccountState getAccountState() { return new AccountState(10000.0, 10000.0, "USD"); }
-        @Override public void addEventListener(Consumer<BrokerEvent> listener) {}
-    }
 }

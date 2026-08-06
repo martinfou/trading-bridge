@@ -167,7 +167,7 @@ public class LtRSI3Momentum implements Strategy {
 
     private void exitPosition(double price) {
         Order.Side exitSide = tradeDirection == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
-        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, positionUnits, price).closeOnly());
+        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, positionUnits, price).asCloseOnly());
         inTrade = false;
         positionUnits = 0;
         cooldownBars = COOLDOWN_BARS;

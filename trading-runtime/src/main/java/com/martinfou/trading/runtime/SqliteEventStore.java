@@ -17,6 +17,9 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
+
 /**
  * SQLite-backed append-only {@link EventStore}.
  */
@@ -26,7 +29,7 @@ public final class SqliteEventStore implements EventStore {
     private static final String JDBC_PREFIX = "jdbc:sqlite:";
 
     private final EventStoreConfig config;
-    private final Connection connection;
+    private final HikariDataSource dataSource;
 
     public SqliteEventStore(EventStoreConfig config) {
         if (config == null) {
@@ -35,8 +38,15 @@ public final class SqliteEventStore implements EventStore {
         this.config = config;
         try {
             config.ensureParentDirectories();
-            connection = DriverManager.getConnection(JDBC_PREFIX + config.dbPath());
-            initSchema(connection);
+            HikariConfig hc = new HikariConfig();
+            hc.setJdbcUrl(JDBC_PREFIX + config.dbPath());
+            hc.setMaximumPoolSize(10);
+            hc.setConnectionInitSql("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;");
+            this.dataSource = new HikariDataSource(hc);
+
+            try (Connection connection = dataSource.getConnection()) {
+                initSchema(connection);
+            }
         } catch (IOException | SQLException e) {
             throw new IllegalStateException("Failed to open EventStore at " + config.dbPath(), e);
         }
@@ -50,7 +60,7 @@ public final class SqliteEventStore implements EventStore {
         String createdAt = Instant.now().toString();
 
         long startTime = System.currentTimeMillis();
-        synchronized (connection) {
+        try (Connection connection = dataSource.getConnection()) {
             try (PreparedStatement ps = connection.prepareStatement(
                 "INSERT INTO events (run_id, json_line, created_at) VALUES (?, ?, ?)",
                 Statement.RETURN_GENERATED_KEYS)) {
@@ -70,9 +80,9 @@ public final class SqliteEventStore implements EventStore {
                     }
                     return sequence;
                 }
-            } catch (SQLException e) {
-                throw new IllegalStateException("Failed to append event for run " + runId, e);
             }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to append event for run " + runId, e);
         }
     }
 
@@ -99,7 +109,7 @@ public final class SqliteEventStore implements EventStore {
     @Override
     public long count(String runId) {
         EventStoreValidation.requireRunId(runId);
-        synchronized (connection) {
+        try (Connection connection = dataSource.getConnection()) {
             try (PreparedStatement ps = connection.prepareStatement(
                 "SELECT COUNT(*) FROM events WHERE run_id = ?")) {
                 ps.setString(1, runId);
@@ -107,9 +117,9 @@ public final class SqliteEventStore implements EventStore {
                     rs.next();
                     return rs.getLong(1);
                 }
-            } catch (SQLException e) {
-                throw new IllegalStateException("Failed to count events for run " + runId, e);
             }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to count events for run " + runId, e);
         }
     }
 
@@ -125,12 +135,8 @@ public final class SqliteEventStore implements EventStore {
 
     @Override
     public void close() {
-        synchronized (connection) {
-            try {
-                connection.close();
-            } catch (SQLException e) {
-                throw new IllegalStateException("Failed to close EventStore", e);
-            }
+        if (dataSource != null) {
+            dataSource.close();
         }
     }
 
@@ -140,7 +146,7 @@ public final class SqliteEventStore implements EventStore {
 
     private List<StoredRunEvent> fetchRecords(String sql, StatementBinder binder) {
         long startTime = System.currentTimeMillis();
-        synchronized (connection) {
+        try (Connection connection = dataSource.getConnection()) {
             try (PreparedStatement ps = connection.prepareStatement(sql)) {
                 binder.bind(ps);
                 try (ResultSet rs = ps.executeQuery()) {
@@ -156,9 +162,9 @@ public final class SqliteEventStore implements EventStore {
                     }
                     return List.copyOf(result);
                 }
-            } catch (SQLException e) {
-                throw new IllegalStateException("Failed to query events", e);
             }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to query events", e);
         }
     }
 
@@ -184,7 +190,11 @@ public final class SqliteEventStore implements EventStore {
     }
 
     public Connection connection() {
-        return connection;
+        try {
+            return dataSource.getConnection();
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to get connection", e);
+        }
     }
 
     public static List<String> checkDatabaseIntegrity(Connection connection) {
@@ -204,17 +214,17 @@ public final class SqliteEventStore implements EventStore {
     }
 
     public int pruneEventsOlderThanDays(int days) {
-        synchronized (connection) {
+        try (Connection connection = dataSource.getConnection()) {
             try (PreparedStatement ps = connection.prepareStatement(
                 "DELETE FROM events WHERE datetime(created_at) < datetime('now', ?)")) {
                 ps.setString(1, "-" + days + " days");
                 int pruned = ps.executeUpdate();
                 log.info("Pruned {} event(s) older than {} days from database", pruned, days);
                 return pruned;
-            } catch (SQLException e) {
-                log.error("Failed to prune old events from database", e);
-                return 0;
             }
+        } catch (SQLException e) {
+            log.error("Failed to prune old events from database", e);
+            return 0;
         }
     }
 }

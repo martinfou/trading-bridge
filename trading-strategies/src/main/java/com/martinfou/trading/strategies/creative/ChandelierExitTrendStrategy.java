@@ -76,7 +76,7 @@ public class ChandelierExitTrendStrategy implements Strategy {
     }
     
     private void closePosition(double price) {
-        pending.add(new Order(symbol, tradeDirection == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY, Order.Type.MARKET, positionSize, price).closeOnly());
+        pending.add(new Order(symbol, tradeDirection == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY, Order.Type.MARKET, positionSize, price).asCloseOnly());
         inTrade = false;
     }
     

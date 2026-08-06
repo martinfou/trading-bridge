@@ -5,6 +5,7 @@ import com.martinfou.trading.data.OandaPriceClient;
 
 import java.time.Instant;
 import java.util.*;
+import java.util.Optional;
 
 public class NewsTradingStrategy {
     private final String name;
@@ -37,8 +38,8 @@ public class NewsTradingStrategy {
         this.quantity = quantity;
     }
 
-    public TradeSignal evaluate(List<Bar> bars, boolean newsExpectedHigher) {
-        if (executed || bars.isEmpty()) return null;
+    public Optional<TradeSignal> evaluate(List<Bar> bars, boolean newsExpectedHigher) {
+        if (executed || bars.isEmpty()) return Optional.empty();
 
         double currentPrice = bars.get(bars.size() - 1).close();
         double rsi = MarketAnalyzer.rsi(bars, 14);
@@ -77,9 +78,9 @@ public class NewsTradingStrategy {
 
         Order.Side orderSide = direction == TradeSide.LONG ? Order.Side.BUY : Order.Side.SELL;
 
-        return new TradeSignal(oandaSymbol, orderSide, entryPrice, sl, tp,
+        return Optional.of(new TradeSignal(oandaSymbol, orderSide, entryPrice, sl, tp,
             quantity, score, name + " | RSI:" + (int) rsi + " Trend:" + trend + " Score:" + score,
-            newsEvent);
+            newsEvent));
     }
 
     public void markExecuted() { this.executed = true; }
