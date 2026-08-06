@@ -125,7 +125,7 @@ class WfaEngineTest {
                 pending.add(new Order(bar.symbol(), Order.Side.BUY, Order.Type.MARKET, 10000, bar.close()));
                 inPosition = true;
             } else if (inPosition && idx % slowPeriod == 0) {
-                pending.add(new Order(bar.symbol(), Order.Side.SELL, Order.Type.MARKET, 10000, bar.close()).closeOnly());
+                pending.add(new Order(bar.symbol(), Order.Side.SELL, Order.Type.MARKET, 10000, bar.close()).asCloseOnly());
                 inPosition = false;
             }
         }

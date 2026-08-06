@@ -197,14 +197,14 @@ public abstract class NewsWeeklyStrategy implements Strategy {
                     pending.clear();
                     pending.add(new Order(symbol,
                         entrySide == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY,
-                        Order.Type.STOP, quantity, stopPrice).closeOnly());
+                        Order.Type.STOP, quantity, stopPrice).asCloseOnly());
                     if (takeProfitPips > 0) {
                         double tp = entrySide == Order.Side.BUY
                             ? entryPrice + takeProfitPips * pipVal
                             : entryPrice - takeProfitPips * pipVal;
                         pending.add(new Order(symbol,
                             entrySide == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY,
-                            Order.Type.LIMIT, quantity, tp).closeOnly());
+                            Order.Type.LIMIT, quantity, tp).asCloseOnly());
                     }
                 }
 
@@ -221,7 +221,7 @@ public abstract class NewsWeeklyStrategy implements Strategy {
                     pending.clear();
                     pending.add(new Order(symbol,
                         entrySide == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY,
-                        Order.Type.STOP, quantity, stopPrice).closeOnly());
+                        Order.Type.STOP, quantity, stopPrice).asCloseOnly());
                 }
                 break;
 
@@ -250,7 +250,7 @@ public abstract class NewsWeeklyStrategy implements Strategy {
         if (stopLossPips > 0 && trailingStopPips == 0) {
             pending.add(new Order(symbol,
                 side == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY,
-                Order.Type.STOP, quantity, stopPrice).closeOnly());
+                Order.Type.STOP, quantity, stopPrice).asCloseOnly());
         }
     }
 
@@ -265,7 +265,7 @@ public abstract class NewsWeeklyStrategy implements Strategy {
     private Order closeOrder(Order.Side currentSide) {
         return new Order(symbol,
             currentSide == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY,
-            Order.Type.MARKET, quantity, 0).closeOnly();
+            Order.Type.MARKET, quantity, 0).asCloseOnly();
     }
 
     // ====== Static helpers ======

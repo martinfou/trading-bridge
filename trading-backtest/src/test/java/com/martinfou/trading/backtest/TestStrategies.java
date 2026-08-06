@@ -713,7 +713,7 @@ public final class TestStrategies {
             if (barIndex == 0) {
                 pending.add(new Order(bar.symbol(), Order.Side.BUY, Order.Type.MARKET, 10_000, 0));
             } else if (barIndex == 1) {
-                pending.add(new Order(bar.symbol(), Order.Side.SELL, Order.Type.MARKET, 10_000, 0).closeOnly());
+                pending.add(new Order(bar.symbol(), Order.Side.SELL, Order.Type.MARKET, 10_000, 0).asCloseOnly());
             }
             barIndex++;
         }
@@ -737,7 +737,7 @@ public final class TestStrategies {
         public void onBar(Bar bar) {
             pending.clear();
             if (!sent) {
-                pending.add(new Order(bar.symbol(), Order.Side.SELL, Order.Type.MARKET, 10_000, 0).closeOnly());
+                pending.add(new Order(bar.symbol(), Order.Side.SELL, Order.Type.MARKET, 10_000, 0).asCloseOnly());
                 sent = true;
             }
         }

@@ -26,6 +26,7 @@ public final class ProfitFactor {
         if (losses == 0.0) {
             return wins > 0 ? wins : 0.0;
         }
-        return wins / losses;
+        double pf = wins / losses;
+        return Double.isFinite(pf) ? pf : 0.0;
     }
 }

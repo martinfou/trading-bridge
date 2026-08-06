@@ -130,7 +130,7 @@ public class NfpWeekStrategy implements Strategy {
     }
 
     private void closePosition(double price) {
-        pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, baseQuantity, price).closeOnly());
+        pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, baseQuantity, price).asCloseOnly());
         inTrade = false;
         weekStarted = false; // reset for next week
         entryPrice = 0;

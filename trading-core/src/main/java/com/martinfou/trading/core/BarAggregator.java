@@ -5,6 +5,7 @@ import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Dynamically aggregates smaller timeframe bars (e.g., M1) into larger
@@ -73,15 +74,15 @@ public final class BarAggregator {
         }
     }
 
-    public Bar getInProgressBar() {
+    public Optional<Bar> getInProgressBar() {
         if (currentPeriodStart == null) {
-            return null;
+            return Optional.empty();
         }
-        return new Bar(symbol, currentPeriodStart, open, high, low, close, volume);
+        return Optional.of(new Bar(symbol, currentPeriodStart, open, high, low, close, volume));
     }
 
-    public Bar getLastCompletedBar() {
-        return lastCompletedBar;
+    public Optional<Bar> getLastCompletedBar() {
+        return Optional.ofNullable(lastCompletedBar);
     }
 
     private Instant getPeriodStart(Instant timestamp) {

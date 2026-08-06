@@ -1,23 +1,18 @@
 package com.martinfou.trading.core;
 
-public class Position {
-    private final String symbol;
-    private final Order.Side side;
-    private double quantity;
-    private double entryPrice;
-    private double stopLoss;
-    private double takeProfit;
-
-    private final java.time.Instant entryTime;
-    private final String clientTag;
-    private final String brokerTradeId;
-
+public record Position(
+    String symbol,
+    Order.Side side,
+    double quantity,
+    double entryPrice,
+    java.time.Instant entryTime,
+    String clientTag,
+    String brokerTradeId,
+    double stopLoss,
+    double takeProfit
+) {
     public Position(String symbol, Order.Side side, double quantity, double entryPrice, java.time.Instant entryTime, String clientTag, String brokerTradeId) {
-        this.symbol = symbol; this.side = side;
-        this.quantity = quantity; this.entryPrice = entryPrice;
-        this.entryTime = entryTime;
-        this.clientTag = clientTag;
-        this.brokerTradeId = brokerTradeId;
+        this(symbol, side, quantity, entryPrice, entryTime, clientTag, brokerTradeId, 0.0, 0.0);
     }
 
     public Position(String symbol, Order.Side side, double quantity, double entryPrice, java.time.Instant entryTime, String clientTag) {
@@ -46,31 +41,27 @@ public class Position {
             : (entryPrice - currentPrice) / entryPrice * 100;
     }
 
-    // Getters
-    public String symbol() { return symbol; }
-    public Order.Side side() { return side; }
-    public double quantity() { return quantity; }
-    public double entryPrice() { return entryPrice; }
-    public double stopLoss() { return stopLoss; }
-    public double takeProfit() { return takeProfit; }
-    public java.time.Instant entryTime() { return entryTime; }
-    public String clientTag() { return clientTag; }
-    public String brokerTradeId() { return brokerTradeId; }
-    public Position withStopLoss(double sl) { this.stopLoss = sl; return this; }
-    public Position withTakeProfit(double tp) { this.takeProfit = tp; return this; }
-
-    public void addQuantity(double qty, double avgPrice) {
-        double totalQty = this.quantity + qty;
-        this.entryPrice = (this.entryPrice * this.quantity + avgPrice * qty) / totalQty;
-        this.quantity = totalQty;
+    public Position withStopLoss(double sl) { 
+        return new Position(symbol, side, quantity, entryPrice, entryTime, clientTag, brokerTradeId, sl, takeProfit);
+    }
+    
+    public Position withTakeProfit(double tp) { 
+        return new Position(symbol, side, quantity, entryPrice, entryTime, clientTag, brokerTradeId, stopLoss, tp);
     }
 
-    public double reduceQuantity(double qty) {
-        if (qty > quantity) qty = quantity;
-        this.quantity -= qty;
-        return qty;
+    public Position addQuantity(double qty, double avgPrice) {
+        double totalQty = this.quantity + qty;
+        double newEntryPrice = (this.entryPrice * this.quantity + avgPrice * qty) / totalQty;
+        return new Position(symbol, side, totalQty, newEntryPrice, entryTime, clientTag, brokerTradeId, stopLoss, takeProfit);
+    }
+
+    public Position reduceQuantity(double qty) {
+        double newQty = this.quantity - (qty > this.quantity ? this.quantity : qty);
+        return new Position(symbol, side, newQty, entryPrice, entryTime, clientTag, brokerTradeId, stopLoss, takeProfit);
     }
 
     @Override
-    public String toString() { return String.format("%s %s %.4f@%.5f", symbol, side, quantity, entryPrice); }
+    public String toString() { 
+        return String.format("%s %s %.4f@%.5f", symbol, side, quantity, entryPrice); 
+    }
 }

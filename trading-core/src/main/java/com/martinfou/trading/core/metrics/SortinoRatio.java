@@ -32,9 +32,10 @@ public final class SortinoRatio {
             return 0.0;
         }
         double downsideStd = Math.sqrt(sumSq / (count - 1));
-        if (downsideStd == 0.0) {
+        if (downsideStd == 0.0 || Double.isNaN(downsideStd)) {
             return 0.0;
         }
-        return mean / downsideStd;
+        double result = mean / downsideStd;
+        return Double.isFinite(result) ? result : 0.0;
     }
 }

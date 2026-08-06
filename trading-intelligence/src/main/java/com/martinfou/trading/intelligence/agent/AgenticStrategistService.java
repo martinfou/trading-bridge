@@ -68,11 +68,7 @@ public class AgenticStrategistService implements AutoCloseable {
             this.executor = executor;
             this.ownExecutor = false;
         } else {
-            this.executor = Executors.newCachedThreadPool(r -> {
-                Thread t = new Thread(r, "agentic-strategist-pool");
-                t.setDaemon(true);
-                return t;
-            });
+            this.executor = Executors.newVirtualThreadPerTaskExecutor();
             this.ownExecutor = true;
         }
     }

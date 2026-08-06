@@ -1,9 +1,14 @@
 package com.martinfou.trading.runtime;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * Starts the HTTP control plane on {@code CONTROL_PLANE_PORT} (default 8080).
  */
 public final class ControlPlaneMain {
+
+    private static final Logger log = LoggerFactory.getLogger(ControlPlaneMain.class);
 
     private ControlPlaneMain() {}
 
@@ -44,7 +49,7 @@ public final class ControlPlaneMain {
                     while ((read = System.in.read()) != -1) {
                         // consume input
                     }
-                    System.out.println("Stdin EOF. Shutting down control plane...");
+                    log.info("Stdin EOF. Shutting down control plane...");
                     System.exit(0);
                 } catch (Exception e) {
                     System.exit(0);
@@ -73,9 +78,9 @@ public final class ControlPlaneMain {
             historicalDataService,
             port
         );
-        System.out.println("Control plane listening on http://localhost:" + server.port());
-        System.out.println("Event store: " + config.dbPath());
-        System.out.println("WebSocket runs: ws://localhost:" + server.port() + "/ws/runs/{runId}");
+        log.info("Control plane listening on http://localhost:{}", server.port());
+        log.info("Event store: {}", config.dbPath());
+        log.info("WebSocket runs: ws://localhost:{}/ws/runs/{{}}", server.port(), "runId");
 
         Thread.ofVirtual().start(() -> {
             try {
@@ -85,8 +90,7 @@ public final class ControlPlaneMain {
                 runManager.setReconciliationState(RunManager.ReconciliationState.COMPLETED);
             } catch (Exception e) {
                 runManager.setReconciliationState(RunManager.ReconciliationState.FAILED);
-                System.err.println("Failed to reconcile runs on startup: " + e.getMessage());
-                e.printStackTrace();
+                log.error("Failed to reconcile runs on startup", e);
             }
         });
     }
@@ -98,18 +102,16 @@ public final class ControlPlaneMain {
             for (RunRecord record : all) {
                 if (record.status() == RunRecord.Status.RUNNING || record.status() == RunRecord.Status.PAUSED) {
                     try {
-                        System.out.println("Restoring active run " + record.runId() + " (" + record.strategyId() + " on " + record.symbol() + ")...");
+                        log.info("Restoring active run {} ({} on {})...", record.runId(), record.strategyId(), record.symbol());
                         runManager.restoreRun(record);
                         runManager.start(record.runId());
                     } catch (Exception e) {
-                        System.err.println("Failed to restore run " + record.runId() + ": " + e.getMessage());
-                        e.printStackTrace();
+                        log.error("Failed to restore run {}", record.runId(), e);
                     }
                 }
             }
         } catch (Exception e) {
-            System.err.println("Failed to restore active runs from database: " + e.getMessage());
-            e.printStackTrace();
+            log.error("Failed to restore active runs from database", e);
         }
     }
 
@@ -125,13 +127,12 @@ public final class ControlPlaneMain {
                         .count();
                     long tradeCount = runManager.tradeStore().getTrades(runId).size();
                     if (fillCount != 2 * tradeCount) {
-                        System.err.println("Reconciliation warning: Run " + runId + " (" + record.strategyId() + ") has a mismatch between FILL events (" + fillCount + ") and trades count (" + tradeCount + "). Expected " + (2 * tradeCount) + " fills.");
+                        log.warn("Reconciliation warning: Run {} ({}) has a mismatch between FILL events ({}) and trades count ({}). Expected {} fills.", runId, record.strategyId(), fillCount, tradeCount, 2 * tradeCount);
                     }
                 }
             }
         } catch (Exception e) {
-            System.err.println("Failed to reconcile completed runs: " + e.getMessage());
-            e.printStackTrace();
+            log.error("Failed to reconcile completed runs", e);
         }
     }
 }

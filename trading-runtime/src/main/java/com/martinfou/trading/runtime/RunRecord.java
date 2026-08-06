@@ -5,6 +5,7 @@ import com.martinfou.trading.backtest.RunMode;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 /** In-memory run metadata tracked by {@link RunManager}. */
 public final class RunRecord {
@@ -17,26 +18,20 @@ public final class RunRecord {
     private final String strategyId;
     private final String symbol;
     private final RunMode mode;
-    private volatile Instant startedAt;
     private final Map<String, Object> configSnapshot;
     private final String configHash;
-    private volatile Status status;
-    private volatile Instant completedAt;
-    private volatile String errorMessage;
-    private volatile Map<String, Object> endedPayload;
-    private volatile Instant lastEventAt;
-    private volatile int restartCount;
-    private volatile Instant lastRestartAt;
+    private final AtomicReference<RunState> state;
 
     RunRecord(String runId, String strategyId, String symbol, RunMode mode, RunConfigSnapshot configSnapshot) {
         this.runId = runId;
         this.strategyId = strategyId;
         this.symbol = symbol;
         this.mode = mode;
-        this.startedAt = Instant.now();
         this.configSnapshot = configSnapshot.toMap();
         this.configHash = configSnapshot.hash();
-        this.status = Status.CREATED;
+        this.state = new AtomicReference<>(new RunState(
+            Status.CREATED, Instant.now(), null, null, null, null, 0, null
+        ));
     }
 
     RunRecord(
@@ -59,16 +54,11 @@ public final class RunRecord {
         this.strategyId = strategyId;
         this.symbol = symbol;
         this.mode = mode;
-        this.startedAt = startedAt;
         this.configSnapshot = configSnapshot;
         this.configHash = configHash;
-        this.status = status;
-        this.completedAt = completedAt;
-        this.errorMessage = errorMessage;
-        this.endedPayload = endedPayload;
-        this.lastEventAt = lastEventAt;
-        this.restartCount = restartCount;
-        this.lastRestartAt = lastRestartAt;
+        this.state = new AtomicReference<>(new RunState(
+            status, startedAt, completedAt, errorMessage, endedPayload, lastEventAt, restartCount, lastRestartAt
+        ));
     }
 
     public String runId() {
@@ -88,7 +78,7 @@ public final class RunRecord {
     }
 
     public Instant startedAt() {
-        return startedAt;
+        return state.get().startedAt();
     }
 
     public Map<String, Object> configSnapshot() {
@@ -100,59 +90,56 @@ public final class RunRecord {
     }
 
     public Status status() {
-        return status;
+        return state.get().status();
     }
 
     public Optional<Instant> completedAt() {
-        return Optional.ofNullable(completedAt);
+        return Optional.ofNullable(state.get().completedAt());
     }
 
     public Optional<String> errorMessage() {
-        return Optional.ofNullable(errorMessage);
+        return Optional.ofNullable(state.get().errorMessage());
     }
 
     public Optional<Map<String, Object>> endedPayload() {
-        return Optional.ofNullable(endedPayload);
+        return Optional.ofNullable(state.get().endedPayload());
     }
 
     public Optional<Instant> lastEventAt() {
-        return Optional.ofNullable(lastEventAt);
+        return Optional.ofNullable(state.get().lastEventAt());
     }
 
     void noteEventAt(Instant timestamp) {
-        this.lastEventAt = timestamp;
+        state.updateAndGet(s -> s.withEventAt(timestamp));
     }
 
     void markCreated() {
-        this.status = Status.CREATED;
+        state.updateAndGet(s -> s.withStatus(Status.CREATED));
     }
 
     void markRunning() {
-        this.status = Status.RUNNING;
-        this.startedAt = Instant.now();
+        state.updateAndGet(s -> s.withStatusAndStartedAt(Status.RUNNING, Instant.now()));
     }
 
     void markPaused() {
-        this.status = Status.PAUSED;
+        state.updateAndGet(s -> s.withStatus(Status.PAUSED));
     }
 
     void markCompleted(Map<String, Object> payload) {
-        this.status = Status.COMPLETED;
-        this.completedAt = Instant.now();
-        this.endedPayload = payload;
+        state.updateAndGet(s -> s.withCompletedAtAndPayload(Status.COMPLETED, Instant.now(), payload));
     }
 
     void markFailed(String message) {
-        this.status = Status.FAILED;
-        this.completedAt = Instant.now();
-        this.errorMessage = message;
+        state.updateAndGet(s -> s.withCompletedAtAndError(Status.FAILED, Instant.now(), message));
     }
 
     void markArchived() {
-        this.status = Status.ARCHIVED;
-        if (this.completedAt == null) {
-            this.completedAt = Instant.now();
-        }
+        state.updateAndGet(s -> {
+            if (s.completedAt() == null) {
+                return s.withCompletedAtAndError(Status.ARCHIVED, Instant.now(), s.errorMessage());
+            }
+            return s.withStatus(Status.ARCHIVED);
+        });
     }
 
     /**
@@ -160,38 +147,37 @@ public final class RunRecord {
      * as opposed to ARCHIVED (evicted by age) or FAILED (error-driven).
      */
     void markRetired(String reason) {
-        this.status = Status.RETIRED;
-        this.errorMessage = reason;
-        if (this.completedAt == null) {
-            this.completedAt = Instant.now();
-        }
+        state.updateAndGet(s -> {
+            if (s.completedAt() == null) {
+                return s.withCompletedAtAndError(Status.RETIRED, Instant.now(), reason);
+            }
+            return s.withCompletedAtAndError(Status.RETIRED, s.completedAt(), reason);
+        });
     }
 
     public int restartCount() {
-        return restartCount;
+        return state.get().restartCount();
     }
 
     public Optional<Instant> lastRestartAt() {
-        return Optional.ofNullable(lastRestartAt);
+        return Optional.ofNullable(state.get().lastRestartAt());
     }
 
     public void incrementRestartCount(Instant timestamp) {
-        this.restartCount++;
-        this.lastRestartAt = timestamp;
+        state.updateAndGet(s -> s.withRestartCount(s.restartCount() + 1, timestamp));
     }
 
     public void resetRestartCount() {
-        this.restartCount = 0;
-        this.lastRestartAt = null;
+        state.updateAndGet(s -> s.withRestartCount(0, null));
     }
 
     public void setRestartCount(int count, Instant timestamp) {
-        this.restartCount = count;
-        this.lastRestartAt = timestamp;
+        state.updateAndGet(s -> s.withRestartCount(count, timestamp));
     }
 
     boolean isTerminal() {
-        return status == Status.COMPLETED || status == Status.FAILED
-            || status == Status.ARCHIVED || status == Status.RETIRED;
+        Status current = state.get().status();
+        return current == Status.COMPLETED || current == Status.FAILED
+            || current == Status.ARCHIVED || current == Status.RETIRED;
     }
 }
