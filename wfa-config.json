@@ -4,24 +4,32 @@
   "inSampleDays": 180,
   "outOfSampleDays": 60,
   "anchored": false,
+  "newsBlackoutBufferMinutes": 15,
+  "weeklyStrategyRegime": "Post-News Volatility Expansion & Momentum Drift",
   "parameterRanges": [
     {
       "name": "emaFastPeriod",
-      "min": 10.0,
-      "max": 30.0,
-      "step": 10.0
+      "min": 5.0,
+      "max": 50.0,
+      "step": 5.0
     },
     {
       "name": "emaSlowPeriod",
-      "min": 100.0,
-      "max": 200.0,
-      "step": 50.0
+      "min": 50.0,
+      "max": 300.0,
+      "step": 25.0
     },
     {
       "name": "atrPeriod",
       "min": 10.0,
       "max": 20.0,
-      "step": 5.0
+      "step": 2.0
+    },
+    {
+      "name": "atrMultiplier",
+      "min": 1.5,
+      "max": 3.0,
+      "step": 0.5
     }
   ]
 }

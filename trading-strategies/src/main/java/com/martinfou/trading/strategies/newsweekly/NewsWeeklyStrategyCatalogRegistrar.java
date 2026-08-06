@@ -139,5 +139,28 @@ public final class NewsWeeklyStrategyCatalogRegistrar {
         NewsWeeklyStrategyCatalog.register(
             "NewsWeek27Jul_BOJ_USD_JPY",
             sym -> new NewsWeek27Jul_FomcBoePce.BojUsdJpy());
+
+        // === Week 10-14 August 2026 — CPI, PPI & Retail Sales Strategies ===
+
+        // 1 — CPI Inflation Rate (Wed Aug 12, 08:30 ET)
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek10Aug_CPI_EUR_USD",
+            sym -> new NewsWeek10Aug_CpiRetailSales.CpiEurUsd());
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek10Aug_CPI_GBP_USD",
+            sym -> new NewsWeek10Aug_CpiRetailSales.CpiGbpUsd());
+
+        // 2 — PPI Producer Price Index (Thu Aug 13, 08:30 ET)
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek10Aug_PPI_USD_JPY",
+            sym -> new NewsWeek10Aug_CpiRetailSales.PpiUsdJpy());
+
+        // 3 — Retail Sales (Fri Aug 14, 08:30 ET)
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek10Aug_RetailSales_EUR_USD",
+            sym -> new NewsWeek10Aug_CpiRetailSales.RetailSalesEurUsd());
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek10Aug_RetailSales_USD_CAD",
+            sym -> new NewsWeek10Aug_CpiRetailSales.RetailSalesUsdCad());
     }
 }
