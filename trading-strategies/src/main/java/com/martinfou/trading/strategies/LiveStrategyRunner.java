@@ -531,8 +531,7 @@ public class LiveStrategyRunner implements Runnable {
             map.put("consecbar", Class.forName("com.martinfou.trading.strategies.creative.ConsecutiveBarExhaustionStrategy")
                 .asSubclass(Strategy.class));
             // Lab — new strategies (R&D pipeline)
-            map.put("hmmregime", Class.forName("com.martinfou.trading.strategies.creative.HmmRegimeMomentumStrategy")
-                .asSubclass(Strategy.class));
+            // hmmregime REMOVED 2026-08-07 — rejected after deep dive with costs (see CreativeStrategyCatalogRegistrar)
             map.put("vwappremium", Class.forName("com.martinfou.trading.strategies.creative.VwapPremiumReversionStrategy")
                 .asSubclass(Strategy.class));
             // NFP Week — Short EUR/USD macro play for NFP weeks
