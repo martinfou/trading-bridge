@@ -28,6 +28,12 @@ public final class CreativeStrategyCatalogRegistrar {
         // sur 3 paires carry, profit 100% dépendant d'un swap modélisé à taux constants
         // 2024-2026 appliqués sur 2006-2026 (artefact : en 2020-2022 le carry réel était nul).
         // Moved to creative/_rejected/CarryPremiumStrategy.java
+        // HMMRegimeMomentum / HmmRegimeMomentum REMOVED 2026-08-07 — rejected after deep dive
+        // with costs: both pre-fix (May 31 / Jun 3) never re-validated; 11-12 trades/20y at
+        // baseline threshold (0.55) = zombie; full threshold sweep (0.15-0.55 × sideways
+        // 0.05-0.2%) on 4 pairs shows NO PF plateau ≥ 1.2 (best single cell 1.79 on GBP_USD
+        // at pmin=0.40 = sharp pic, neighbors 0.84/0.98; everything else PF 0.26-0.99).
+        // Moved to creative/_rejected/ (HMMRegimeMomentumStrategy.java, HmmRegimeMomentumStrategy.java)
         CreativeStrategyCatalog.register("ChaikinMoneyFlow", sym -> new ChaikinMoneyFlowStrategy("ChaikinMoneyFlow", sym));
         CreativeStrategyCatalog.register("ChandelierExitTrend", sym -> new ChandelierExitTrendStrategy("ChandelierExitTrend", sym));
         CreativeStrategyCatalog.register("CompositeMomentumRanking", sym -> new CompositeMomentumRankingStrategy("CompositeMomentumRanking", sym));
@@ -36,8 +42,6 @@ public final class CreativeStrategyCatalogRegistrar {
         CreativeStrategyCatalog.register("EMAPullback", sym -> new EMAPullbackStrategy("EMAPullback", sym));
         CreativeStrategyCatalog.register("FisherTransformRSI", sym -> new FisherTransformRSIStrategy("FisherTransformRSI", sym));
         CreativeStrategyCatalog.register("HeikinAshiTrend", sym -> new HeikinAshiTrendStrategy("HeikinAshiTrend", sym));
-        CreativeStrategyCatalog.register("HmmRegimeMomentum", sym -> new HmmRegimeMomentumStrategy("HmmRegimeMomentum", sym));
-        CreativeStrategyCatalog.register("HMMRegimeMomentum", sym -> new HMMRegimeMomentumStrategy("HMMRegimeMomentum", sym));
         CreativeStrategyCatalog.register("IchimokuCloud", sym -> new IchimokuCloudStrategy("IchimokuCloud", sym));
         CreativeStrategyCatalog.register("MomentumAcceleration", sym -> new MomentumAccelerationStrategy("MomentumAcceleration", sym));
         CreativeStrategyCatalog.register("MomentumDivergence", sym -> new MomentumDivergenceStrategy("MomentumDivergence", sym));
