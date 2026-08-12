@@ -31,11 +31,35 @@ class RunContextTest {
         Strategy strategy = TestStrategies.smaCrossover(5, 20);
 
         BacktestResult direct = new BacktestEngine(strategy, bars, CAPITAL).run();
-        BacktestResult viaContext = RunContext.forStrategy(strategy, "EUR_USD", RunMode.BACKTEST, bars, CAPITAL).run();
+        BacktestResult viaContext = RunContext.forStrategy(
+            null, null, strategy, "EUR_USD", RunMode.BACKTEST, bars, CAPITAL, null,
+            BacktestExecutionCost.ZERO).run();
 
         assertEquals(direct.totalTrades(), viaContext.totalTrades());
         assertEquals(direct.totalPnl(), viaContext.totalPnl(), 0.01);
         assertEquals(direct.totalReturnPct(), viaContext.totalReturnPct(), 0.0001);
+    }
+
+    @Test
+    void forStrategy_defaultExecutionCostIsNotZero() {
+        var ctx = RunContext.forStrategy(
+            TestStrategies.noOp(), "EUR_USD", RunMode.BACKTEST, List.of(), CAPITAL);
+
+        assertTrue(ctx.executionCost() != null && !ctx.executionCost().isZero(),
+            "default execution cost must be non-zero so backtests are not cost-free artifacts");
+    }
+
+    @Test
+    void forStrategy_defaultCost_chargesCommissionOnTrades() {
+        List<Bar> bars = sampleBars("EUR_USD", 500);
+        Strategy strategy = TestStrategies.smaCrossover(5, 20);
+
+        BacktestResult result = RunContext.forStrategy(
+            strategy, "EUR_USD", RunMode.BACKTEST, bars, CAPITAL).run();
+
+        assertTrue(result.totalTrades() > 0);
+        assertTrue(result.totalCommission() > 0,
+            "default cost model must apply commission to trades");
     }
 
     @Test
@@ -45,7 +69,8 @@ class RunContextTest {
             {1.1010, 1.1020, 1.1000, 1.1015}
         });
         BacktestResult noCost = RunContext.forStrategy(
-            TestStrategies.buyOnce(), "EUR_USD", RunMode.BACKTEST, bars, CAPITAL).run();
+            null, null, TestStrategies.buyOnce(), "EUR_USD", RunMode.BACKTEST, bars, CAPITAL, null,
+            BacktestExecutionCost.ZERO).run();
 
         var cost = BacktestExecutionCost.ofCommissionAndSlippage(5.0, 0.0001);
         List<RunEvent> events = new CopyOnWriteArrayList<>();

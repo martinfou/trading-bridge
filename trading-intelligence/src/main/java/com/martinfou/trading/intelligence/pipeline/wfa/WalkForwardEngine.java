@@ -107,8 +107,8 @@ public class WalkForwardEngine {
     }
 
     private BacktestResult runBacktest(Strategy strategy, List<Bar> bars, String symbol) {
-        RunContext context = RunContext.forStrategy(strategy, symbol,
-            RunMode.BACKTEST, bars, CAPITAL);
+        RunContext context = RunContext.forStrategy(
+            null, null, strategy, symbol, RunMode.BACKTEST, bars, CAPITAL, null, costs);
         return context.run();
     }
 
