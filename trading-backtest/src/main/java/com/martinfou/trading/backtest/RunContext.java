@@ -32,7 +32,7 @@ public record RunContext(
     public RunContext {
         bars = List.copyOf(bars);
         if (executionCost == null) {
-            executionCost = BacktestExecutionCost.ZERO;
+            executionCost = BacktestExecutionCost.DEFAULT;
         }
         if (dataTimeframe == null) {
             dataTimeframe = "H1";
@@ -103,7 +103,7 @@ public record RunContext(
             strategy,
             eventListener,
             assignedRunId,
-            BacktestExecutionCost.ZERO,
+            BacktestExecutionCost.DEFAULT,
             null,
             null,
             true);

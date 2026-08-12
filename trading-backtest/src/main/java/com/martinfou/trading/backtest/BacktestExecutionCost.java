@@ -5,7 +5,8 @@ import java.util.Map;
 
 /**
  * Configurable execution costs for {@link BacktestEngine} runs.
- * Zero-cost is the default — preserves legacy fill semantics when unset.
+ * Zero-cost must be requested explicitly (sensitivity tests); the default
+ * used by {@link RunContext#forStrategy} is {@link #DEFAULT} (US-39.1).
  */
 public record BacktestExecutionCost(
     double commissionPerTrade,
@@ -17,6 +18,15 @@ public record BacktestExecutionCost(
 
     public static final BacktestExecutionCost ZERO =
         new BacktestExecutionCost(0.0, 0.0, 0.0, 0.0, 0.0);
+
+    /**
+     * Realistic default cost model (US-39.1): $0.07 flat commission per trade
+     * plus 0.5 pip (0.00005) fixed slippage per leg. Keeps published backtests
+     * honest instead of zero-cost artifacts; override with {@link #ZERO} for
+     * sensitivity runs.
+     */
+    public static final BacktestExecutionCost DEFAULT =
+        new BacktestExecutionCost(0.07, 0.0, 0.0, 0.00005, 0.0);
 
     /**
      * OANDA Spread execution cost model.
