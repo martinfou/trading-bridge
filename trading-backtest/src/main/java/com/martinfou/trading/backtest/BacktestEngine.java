@@ -476,6 +476,13 @@ public class BacktestEngine {
         trades.add(new Trade(pos.symbol(), pos.side(), pos.entryPrice(), exitPrice,
             pos.quantity(), pos.entryTime(), timestamp, usdJpyRate, pos.stopLoss(), pos.takeProfit()));
 
+        // Calculate swap for this trade (story 39.2: SL/TP/force-close exits must
+        // accrue overnight swap like closeOnly reductions do in reduceOppositeSide)
+        double swapCost = SwapCalculator.calculateSwap(
+            pos.symbol(), pos.side(), pos.quantity(),
+            pos.entryTime(), timestamp);
+        totalSwap += swapCost;
+
         // Remove from the symbol's position list
         List<Position> posList = openPositionsBySymbol.get(pos.symbol());
         if (posList != null) {
