@@ -84,10 +84,13 @@ de la Fed — publiée AVANT Jackson Hole, elle conditionne le ton du discours) 
 ### Fenêtres saisonnières
 | Paire | Fenêtre | Hit Rate | Statut |
 |-------|---------|:--------:|--------|
-| USD/JPY | Sep 27 - Nov 11 (BUY) | 88% | ⏳ Dans 39 jours |
-| USDCAD | Oct 12 - Nov 26 (BUY) | 94% | ⏳ Dans 54 jours |
+| USD/JPY | Sep 27 - Nov 11 (BUY) | 88% | ⏳ Dans 37 jours |
+| USDCAD | Oct 12 - Nov 26 (BUY) | 94% | ⏳ Dans 52 jours |
+| GBP/USD | Avr (BUY) + Mai/Août (SELL) — SeasonalCalendar 4+5+8 | 68-89% | ⏳ Fenêtre août SELL se termine le 31 août |
 | GBP/USD | Mai + Août (SELL — BearishMonthsFade MAY+AUG) | 68-71% | ⏳ Fenêtre août se termine le 31 août |
 | Aucune | — | — | **Aucune fenêtre à trader cette semaine** |
+
+**Mise à jour 21 août (deep dive) :** la piste « 2e long leg octobre » est REJECT — octobre meurt en OOS (GBP IS hit 77.8% → OOS 28.6%, EUR pareil) et empoisonne le calendrier 4+5+8+10 (GBP net -20%, OOS +$158 vs +$1 096). Le calendrier validé reste **4+5+8** (GBP PF 2.83).
 
 ---
 
