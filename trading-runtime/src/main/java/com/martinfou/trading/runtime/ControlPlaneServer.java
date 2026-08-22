@@ -57,6 +57,7 @@ public final class ControlPlaneServer implements AutoCloseable {
     private final WeeklyBuilderService weeklyBuilderService;
     private final HistoricalDataService historicalDataService;
     private final SqliteBacktestRunStore backtestRunStore;
+    private final com.martinfou.trading.runtime.wfa.WfaManager wfaManager;
     private final StaleRunWatchdog watchdog;
     private final Javalin app;
     private final Map<String, CachedStats> weeklyStatsCache = new java.util.concurrent.ConcurrentHashMap<>();
@@ -101,6 +102,22 @@ public final class ControlPlaneServer implements AutoCloseable {
         HistoricalDataService historicalDataService,
         int port
     ) {
+        this(runManager, eventHub, promoteService, killSwitchService, summaryService,
+            sqBridgeService, weeklyBuilderService, historicalDataService, null, port);
+    }
+
+    ControlPlaneServer(
+        RunManager runManager,
+        RunEventHub eventHub,
+        PromoteService promoteService,
+        KillSwitchService killSwitchService,
+        ControlSummaryService summaryService,
+        SqBridgeService sqBridgeService,
+        WeeklyBuilderService weeklyBuilderService,
+        HistoricalDataService historicalDataService,
+        com.martinfou.trading.runtime.wfa.WfaManager wfaManager,
+        int port
+    ) {
         if (runManager == null) {
             throw new IllegalArgumentException("runManager must not be null");
         }
@@ -131,9 +148,10 @@ public final class ControlPlaneServer implements AutoCloseable {
         this.weeklyBuilderService = weeklyBuilderService;
         this.historicalDataService = historicalDataService != null ? historicalDataService : new HistoricalDataService();
         this.backtestRunStore = new SqliteBacktestRunStore(BacktestPersistenceService.resolveDefaultDbPath());
+        this.wfaManager = wfaManager != null ? wfaManager : new com.martinfou.trading.runtime.wfa.WfaManager(new com.martinfou.trading.backtest.persistence.SqliteWfaRunStore(BacktestPersistenceService.resolveDefaultDbPath()));
         this.watchdog = new StaleRunWatchdog(runManager, summaryService);
         this.app = createApp(runManager, eventHub, promoteService, killSwitchService, summaryService,
-            sqBridgeService, weeklyBuilderService, this.historicalDataService, this.backtestRunStore, this.weeklyStatsCache, this.activeSubscriptions);
+            sqBridgeService, weeklyBuilderService, this.historicalDataService, this.backtestRunStore, this.wfaManager, this.weeklyStatsCache, this.activeSubscriptions);
 
         runManager.addTransitionListener((before, after, cause) -> {
             if (after.status() == RunRecord.Status.COMPLETED || 
@@ -268,6 +286,13 @@ public final class ControlPlaneServer implements AutoCloseable {
                 log.error("Failed to close BacktestRunStore database connection", e);
             }
         }
+        if (wfaManager != null) {
+            try {
+                wfaManager.close();
+            } catch (Exception e) {
+                log.error("Failed to close WfaManager", e);
+            }
+        }
         for (var sub : activeSubscriptions.values()) {
             try {
                 sub.close();
@@ -276,6 +301,10 @@ public final class ControlPlaneServer implements AutoCloseable {
             }
         }
         activeSubscriptions.clear();
+    }
+
+    public com.martinfou.trading.runtime.wfa.WfaManager wfaManager() {
+        return wfaManager;
     }
 
     private static Javalin createApp(
@@ -288,6 +317,7 @@ public final class ControlPlaneServer implements AutoCloseable {
         WeeklyBuilderService weeklyBuilderService,
         HistoricalDataService historicalDataService,
         SqliteBacktestRunStore backtestRunStore,
+        com.martinfou.trading.runtime.wfa.WfaManager wfaManager,
         Map<String, CachedStats> weeklyStatsCache,
         Map<String, AutoCloseable> activeSubscriptions
     ) {
@@ -810,6 +840,48 @@ public final class ControlPlaneServer implements AutoCloseable {
                 });
 
                 ctx.json(Map.of("runs", items));
+            })
+            .post("/api/runs/walk-forward", ctx -> {
+                try {
+                    com.martinfou.trading.runtime.wfa.WfaRunRequest req = ctx.bodyAsClass(com.martinfou.trading.runtime.wfa.WfaRunRequest.class);
+                    String wfaId = wfaManager.startWfaRun(req);
+                    ctx.status(HttpStatus.ACCEPTED).json(Map.of(
+                        "wfaId", wfaId,
+                        "status", "RUNNING",
+                        "message", "Walk-Forward Analysis task started successfully"
+                    ));
+                } catch (IllegalStateException e) {
+                    ctx.status(HttpStatus.CONFLICT).json(Map.of(
+                        "error", e.getMessage(),
+                        "status", "CONFLICT"
+                    ));
+                } catch (Exception e) {
+                    ctx.status(HttpStatus.BAD_REQUEST).json(Map.of(
+                        "error", e.getMessage() != null ? e.getMessage() : "Invalid WFA request"
+                    ));
+                }
+            })
+            .get("/api/runs/walk-forward/{id}/report", ctx -> {
+                String id = ctx.pathParam("id");
+                var reportJson = wfaManager.getReportJson(id);
+                if (reportJson.isPresent()) {
+                    ctx.contentType("application/json").result(reportJson.get());
+                } else {
+                    ctx.status(HttpStatus.NOT_FOUND).json(Map.of("error", "WFA report not found for run: " + id));
+                }
+            })
+            .get("/api/runs/walk-forward/{id}", ctx -> {
+                String id = ctx.pathParam("id");
+                var progress = wfaManager.getProgress(id);
+                if (progress.isPresent()) {
+                    ctx.json(progress.get());
+                } else {
+                    ctx.status(HttpStatus.NOT_FOUND).json(Map.of("error", "WFA run not found: " + id));
+                }
+            })
+            .get("/api/runs/walk-forward", ctx -> {
+                int limit = ctx.queryParam("limit") != null ? Integer.parseInt(ctx.queryParam("limit")) : 50;
+                ctx.json(wfaManager.listRuns(limit));
             })
             .get("/api/runs/{runId}", ctx -> {
                 String runId = ctx.pathParam("runId");

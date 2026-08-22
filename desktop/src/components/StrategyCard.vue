@@ -57,6 +57,9 @@ function onPromoted() {
           <span v-if="strategy.deployedMode" class="meta-item deploy-badge">
             🟢 {{ strategy.deployedMode }}
           </span>
+          <span v-if="(strategy as any).calibrationFreshness" :class="['meta-item', 'cal-badge', (strategy as any).calibrationFreshness.status.toLowerCase()]">
+            🎯 Cal: {{ (strategy as any).calibrationFreshness.status }}
+          </span>
         </div>
       </div>
       <span class="expand-icon">{{ expanded ? '▾' : '▸' }}</span>
