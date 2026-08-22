@@ -19,7 +19,7 @@ const props = defineProps<{
   folds: WfaFoldResult[]
 }>()
 
-const totalFolds = computed(() => props.folds.length)
+const totalFolds = computed(() => props.folds?.length || 0)
 
 function formatDate(isoStr: string): string {
   if (!isoStr) return ''
@@ -28,43 +28,43 @@ function formatDate(isoStr: string): string {
 </script>
 
 <template>
-  <div class="wfa-timeline bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
-    <div class="flex items-center justify-between mb-4">
-      <h3 class="text-base font-semibold text-slate-100 flex items-center gap-2">
-        <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
-        Walk-Forward Fold Timeline ({{ totalFolds }} Folds)
-      </h3>
-      <div class="flex items-center gap-4 text-xs">
-        <div class="flex items-center gap-1.5">
-          <span class="w-3 h-3 rounded bg-blue-600/80 border border-blue-500"></span>
-          <span class="text-slate-300">In-Sample (Training)</span>
+  <div class="wfa-timeline-card">
+    <div class="timeline-header">
+      <div class="timeline-title">
+        <span class="timeline-dot"></span>
+        <h4>Walk-Forward Fold Timeline ({{ totalFolds }} Folds)</h4>
+      </div>
+      <div class="timeline-legend">
+        <div class="legend-item">
+          <span class="legend-box is"></span>
+          <span>In-Sample Training (IS)</span>
         </div>
-        <div class="flex items-center gap-1.5">
-          <span class="w-3 h-3 rounded bg-emerald-600/80 border border-emerald-500"></span>
-          <span class="text-slate-300">Out-of-Sample (Testing)</span>
+        <div class="legend-item">
+          <span class="legend-box oos"></span>
+          <span>Out-of-Sample Testing (OOS)</span>
         </div>
       </div>
     </div>
 
-    <div class="space-y-3.5 mt-4">
+    <div class="folds-list">
       <div
         v-for="fold in folds"
         :key="fold.foldIndex"
-        class="fold-row bg-slate-950/60 border border-slate-800/80 rounded-lg p-3 hover:border-slate-700 transition"
+        class="fold-row"
       >
-        <div class="flex items-center justify-between text-xs mb-2">
-          <span class="font-bold text-slate-200">Fold #{{ fold.foldIndex + 1 }}</span>
-          <div class="flex items-center gap-4 text-xs">
-            <span class="text-slate-400">IS Sharpe: <strong class="text-blue-400 font-mono">{{ fold.inSampleSharpe.toFixed(2) }}</strong></span>
-            <span class="text-slate-400">OOS Sharpe: <strong class="text-emerald-400 font-mono">{{ fold.outOfSampleSharpe.toFixed(2) }}</strong></span>
-            <span class="text-slate-400">WFE: <strong :class="fold.wfe >= 0.6 ? 'text-emerald-400' : 'text-amber-400'" class="font-mono">{{ (fold.wfe * 100).toFixed(0) }}%</strong></span>
+        <div class="fold-meta">
+          <span class="fold-badge">Fold #{{ fold.foldIndex + 1 }}</span>
+          <div class="fold-metrics">
+            <span class="metric">IS Sharpe: <strong>{{ fold.inSampleSharpe.toFixed(2) }}</strong></span>
+            <span class="metric">OOS Sharpe: <strong class="text-oos">{{ fold.outOfSampleSharpe.toFixed(2) }}</strong></span>
+            <span class="metric">WFE: <strong :class="fold.wfe >= 0.6 ? 'text-green' : 'text-amber'">{{ (fold.wfe * 100).toFixed(0) }}%</strong></span>
           </div>
         </div>
 
-        <!-- Visual Split Bar -->
-        <div class="w-full flex h-6 rounded-md overflow-hidden bg-slate-800/50 border border-slate-700/50 text-[10px] font-mono">
+        <!-- Visual Bar -->
+        <div class="split-bar-track">
           <div
-            class="bg-blue-600/70 border-r border-blue-400/50 flex items-center px-2 text-blue-100 truncate justify-between"
+            class="split-bar is-bar"
             style="width: 70%"
             :title="`IS: ${formatDate(fold.inSampleStart)} to ${formatDate(fold.inSampleEnd)}`"
           >
@@ -72,7 +72,7 @@ function formatDate(isoStr: string): string {
             <span>{{ formatDate(fold.inSampleEnd) }}</span>
           </div>
           <div
-            class="bg-emerald-600/70 flex items-center px-2 text-emerald-100 truncate justify-between"
+            class="split-bar oos-bar"
             style="width: 30%"
             :title="`OOS: ${formatDate(fold.outOfSampleStart)} to ${formatDate(fold.outOfSampleEnd)}`"
           >
@@ -86,7 +86,161 @@ function formatDate(isoStr: string): string {
 </template>
 
 <style scoped>
-.wfa-timeline {
-  font-family: inherit;
+.wfa-timeline-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.25rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.timeline-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.timeline-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.timeline-title h4 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.timeline-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--info);
+  box-shadow: 0 0 8px var(--info);
+}
+
+.timeline-legend {
+  display: flex;
+  gap: 1.25rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.legend-box {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+}
+
+.legend-box.is {
+  background: rgba(59, 130, 246, 0.8);
+  border: 1px solid #3b82f6;
+}
+
+.legend-box.oos {
+  background: rgba(16, 185, 129, 0.8);
+  border: 1px solid #10b981;
+}
+
+.folds-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.fold-row {
+  background: rgba(10, 10, 10, 0.6);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.75rem;
+  transition: border-color 0.2s;
+}
+
+.fold-row:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.fold-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.fold-badge {
+  font-weight: 600;
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+.fold-metrics {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.metric strong {
+  font-family: monospace;
+  color: #93c5fd;
+}
+
+.metric strong.text-oos {
+  color: #6ee7b7;
+}
+
+.metric strong.text-green {
+  color: #34d399;
+}
+
+.metric strong.text-amber {
+  color: #fbbf24;
+}
+
+.split-bar-track {
+  width: 100%;
+  display: flex;
+  height: 24px;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-family: monospace;
+  font-size: 0.7rem;
+}
+
+.split-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0.5rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.is-bar {
+  background: rgba(37, 99, 235, 0.75);
+  border-right: 1px solid rgba(147, 197, 253, 0.5);
+  color: #dbeafe;
+}
+
+.oos-bar {
+  background: rgba(5, 150, 105, 0.75);
+  color: #d1fae5;
 }
 </style>

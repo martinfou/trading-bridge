@@ -3,12 +3,27 @@ import { ref, computed, onUnmounted, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useControlPlane } from '@/composables/useControlPlane'
 import { useStatusBar } from '@/composables/useStatusBar'
+import {
+  Database,
+  RefreshCw,
+  Zap,
+  DownloadCloud,
+  CheckCircle2,
+  AlertCircle,
+  Clock,
+  Layers,
+  Server,
+  Trash2
+} from '@lucide/vue'
 
 const route = useRoute()
 const { getHistoricalDataStatus, downloadHistoricalData, deleteHistoricalData } = useControlPlane()
 const { setStatus } = useStatusBar()
 
 const dataTimeframe = ref<'h1' | 'm1'>('h1')
+const selectedAssetCategory = ref<'forex' | 'futures' | 'equities'>('forex')
+const selectedProvider = ref<'yahoo' | 'dukascopy' | 'oanda' | 'ibkr'>('yahoo')
+
 const dataStatus = ref<any[]>([])
 const activeDownloads = ref<string[]>([])
 const activeTasks = ref<any[]>([])
@@ -23,7 +38,35 @@ const downloadMode = ref<'single' | 'range' | 'all'>('single')
 const selectedStartYear = ref(2006)
 const selectedEndYear = ref(new Date().getFullYear())
 
-const pairsList = ['eurusd', 'gbpusd', 'gbpjpy', 'usdcad', 'usdjpy', 'audusd', 'nzdusd', 'usdchf']
+const instrumentsByCategory = {
+  forex: [
+    { symbol: 'eurusd', label: 'EUR/USD', desc: 'Euro / US Dollar', type: 'Forex' },
+    { symbol: 'gbpusd', label: 'GBP/USD', desc: 'British Pound / US Dollar', type: 'Forex' },
+    { symbol: 'gbpjpy', label: 'GBP/JPY', desc: 'British Pound / Japanese Yen', type: 'Forex' },
+    { symbol: 'usdcad', label: 'USD/CAD', desc: 'US Dollar / Canadian Dollar', type: 'Forex' },
+    { symbol: 'usdjpy', label: 'USD/JPY', desc: 'US Dollar / Japanese Yen', type: 'Forex' },
+    { symbol: 'audusd', label: 'AUD/USD', desc: 'Australian Dollar / US Dollar', type: 'Forex' },
+    { symbol: 'nzdusd', label: 'NZD/USD', desc: 'New Zealand Dollar / US Dollar', type: 'Forex' },
+    { symbol: 'usdchf', label: 'USD/CHF', desc: 'US Dollar / Swiss Franc', type: 'Forex' }
+  ],
+  futures: [
+    { symbol: 'mes', label: 'MES', desc: 'Micro E-mini S&P 500 ($5/pt multiplier)', type: 'CME Futures' },
+    { symbol: 'm2k', label: 'M2K', desc: 'Micro Russell 2000 Small Cap ($5/pt multiplier)', type: 'CME Futures' },
+    { symbol: 'emd', label: 'EMD', desc: 'E-mini S&P MidCap 400 ($100/pt multiplier)', type: 'CME Futures' },
+    { symbol: 'mnq', label: 'MNQ', desc: 'Micro E-mini Nasdaq 100 ($2/pt multiplier)', type: 'CME Futures' }
+  ],
+  equities: [
+    { symbol: 'iwm', label: 'IWM', desc: 'iShares Russell 2000 ETF (Small Cap)', type: 'US Equities' },
+    { symbol: 'mdy', label: 'MDY', desc: 'SPDR S&P MidCap 400 ETF (Mid Cap)', type: 'US Equities' },
+    { symbol: 'aapl', label: 'AAPL', desc: 'Apple Inc. (Large Cap Stock)', type: 'US Equities' },
+    { symbol: 'spy', label: 'SPY', desc: 'SPDR S&P 500 ETF Trust', type: 'US Equities' },
+    { symbol: 'qqq', label: 'QQQ', desc: 'Invesco QQQ Trust (Nasdaq 100)', type: 'US Equities' }
+  ]
+}
+
+const currentInstruments = computed(() => instrumentsByCategory[selectedAssetCategory.value] || [])
+const currentSymbolList = computed(() => currentInstruments.value.map(i => i.symbol))
+
 const yearsList = computed(() => {
   const current = new Date().getFullYear()
   const years = []
@@ -32,6 +75,14 @@ const yearsList = computed(() => {
   }
   return years
 })
+
+function onCategoryChange(cat: 'forex' | 'futures' | 'equities') {
+  selectedAssetCategory.value = cat
+  const insts = instrumentsByCategory[cat]
+  if (insts && insts.length > 0) {
+    selectedPair.value = insts[0].symbol
+  }
+}
 
 async function refreshDataStatus() {
   try {
@@ -47,8 +98,8 @@ async function refreshDataStatus() {
 
 const groupedStatus = computed(() => {
   const map: Record<string, Record<number, any>> = {}
-  pairsList.forEach(p => {
-    map[p] = {}
+  Object.values(instrumentsByCategory).flat().forEach(inst => {
+    map[inst.symbol] = {}
   })
   dataStatus.value.forEach(item => {
     const p = item.pair.toLowerCase()
@@ -64,33 +115,36 @@ async function triggerDownload(sync = false) {
   actionLoading.value = true
   const infoMsg = sync 
     ? 'Syncing current year historical data...' 
-    : `Starting ingestion for ${selectedPair.value.toUpperCase()} (${selectedTf.value.toUpperCase()})...`
+    : `Starting ingestion for ${selectedPair.value.toUpperCase()} (${selectedTf.value.toUpperCase()}) via ${selectedProvider.value.toUpperCase()}...`
   setStatus(infoMsg, 'info')
   try {
     dataTimeframe.value = selectedTf.value
     let params: any
     if (sync) {
-      params = { syncMode: true, tf: selectedTf.value }
+      params = { syncMode: true, tf: selectedTf.value, provider: selectedProvider.value }
     } else {
       if (downloadMode.value === 'all') {
         params = {
           pair: selectedPair.value,
           startYear: 2006,
           endYear: new Date().getFullYear(),
-          tf: selectedTf.value
+          tf: selectedTf.value,
+          provider: selectedProvider.value
         }
       } else if (downloadMode.value === 'range') {
         params = {
           pair: selectedPair.value,
           startYear: selectedStartYear.value,
           endYear: selectedEndYear.value,
-          tf: selectedTf.value
+          tf: selectedTf.value,
+          provider: selectedProvider.value
         }
       } else {
         params = {
           pair: selectedPair.value,
           year: selectedYear.value,
-          tf: selectedTf.value
+          tf: selectedTf.value,
+          provider: selectedProvider.value
         }
       }
     }
@@ -123,309 +177,730 @@ async function triggerDelete(pair: string, year: number) {
   }
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
+function formatBytes(bytes?: number): string {
+  if (!bytes || bytes === 0) return '0 B'
   const k = 1024
   const sizes = ['B', 'KB', 'MB', 'GB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
 }
 
-let statusPollTimer: ReturnType<typeof setInterval> | null = null
+let pollTimer: any = null
 
-onMounted(async () => {
+onMounted(() => {
   refreshDataStatus()
-  statusPollTimer = setInterval(refreshDataStatus, 5000)
-
-  // Check for auto-play download redirect
-  if (route.query.autoplay === 'true' && route.query.pair && route.query.year) {
-    const pair = String(route.query.pair).toLowerCase()
-    const yearSpec = String(route.query.year)
-    const tf = String(route.query.tf || 'h1').toLowerCase()
-
-    infoMessage.value = `ℹ️ No historical data was found for ${pair.toUpperCase().replace('_', '/')} (${yearSpec.toUpperCase()}). We have automatically started the ingestion process for you.`
-    
-    // Set form fields to match the requested download
-    selectedPair.value = pair
-    selectedTf.value = tf as any
-    if (yearSpec === 'all') {
-      downloadMode.value = 'all'
-    } else if (yearSpec.includes('-')) {
-      downloadMode.value = 'range'
-      const parts = yearSpec.split('-')
-      selectedStartYear.value = parseInt(parts[0]) || 2020
-      selectedEndYear.value = parseInt(parts[1]) || 2025
-    } else {
-      downloadMode.value = 'single'
-      selectedYear.value = parseInt(yearSpec) || new Date().getFullYear()
-    }
-
-    // Trigger the download automatically!
-    try {
-      actionLoading.value = true
-      let params: any
-      if (downloadMode.value === 'all') {
-        params = {
-          pair: selectedPair.value,
-          startYear: 2006,
-          endYear: new Date().getFullYear(),
-          tf: selectedTf.value
-        }
-      } else if (downloadMode.value === 'range') {
-        params = {
-          pair: selectedPair.value,
-          startYear: selectedStartYear.value,
-          endYear: selectedEndYear.value,
-          tf: selectedTf.value
-        }
-      } else {
-        params = {
-          pair: selectedPair.value,
-          year: selectedYear.value,
-          tf: selectedTf.value
-        }
-      }
-      await downloadHistoricalData(params)
-      refreshDataStatus()
-    } catch (err: any) {
-      loadError.value = err.message
-    } finally {
-      actionLoading.value = false
-    }
+  pollTimer = setInterval(refreshDataStatus, 5000)
+  if (route.query.pair) {
+    selectedPair.value = String(route.query.pair).toLowerCase()
   }
 })
 
 onUnmounted(() => {
-  if (statusPollTimer) clearInterval(statusPollTimer)
+  if (pollTimer) clearInterval(pollTimer)
 })
 </script>
 
 <template>
-  <div class="view">
-    <div class="page-header">
-      <div>
-        <h1>Data Management</h1>
-        <p class="subtitle">Ingest, sync, and inspect historical bars for backtesting</p>
+  <div class="data-manager-container">
+    <!-- Header -->
+    <header class="page-header">
+      <div class="header-left">
+        <div class="header-badge">
+          <Database class="icon-sm text-accent" />
+          <span>Historical Repository</span>
+        </div>
+        <h1 class="header-title">Data Management Hub</h1>
+        <p class="header-subtitle">
+          Ingest, sync, and inspect historical bars across CME Futures, US Equities (Small/Mid Cap), and Forex.
+        </p>
       </div>
-      <div class="page-actions">
-        <button class="btn secondary" @click="refreshDataStatus">🔄 Refresh Status</button>
+
+      <div class="header-actions">
+        <button class="btn secondary" @click="refreshDataStatus">
+          <RefreshCw class="icon-xs" />
+          Refresh
+        </button>
         <button
           class="btn primary"
           :disabled="actionLoading"
           @click="triggerDownload(true)"
         >
-          ⚡ Sync Current Year
+          <Zap class="icon-xs" />
+          Sync Current Year
         </button>
       </div>
+    </header>
+
+    <!-- Error Banner -->
+    <div v-if="loadError" class="banner error">
+      <AlertCircle class="icon-sm" />
+      <span>{{ loadError }}</span>
     </div>
 
-    <div v-if="loadError" class="banner error">{{ loadError }}</div>
-    <div v-if="infoMessage" class="banner info animate-fade-in">{{ infoMessage }}</div>
-
-    <!-- Active Ingestion Processes -->
-    <div v-if="activeTasks.length > 0" class="active-downloads-section">
-      <h3>Active Ingestion Processes</h3>
-      <div class="active-tasks-list">
-        <div v-for="task in activeTasks" :key="task.key" class="task-progress-card">
-          <div class="task-info">
-            <span class="task-name">{{ task.key.toUpperCase() }}</span>
-            <span class="task-action">{{ task.currentAction }}</span>
-            <span class="task-pct">{{ task.progress }}%</span>
-          </div>
-          <div class="progress-bar-bg">
-            <div class="progress-bar-fill" :style="{ width: task.progress + '%' }"></div>
-          </div>
+    <!-- Active Tasks Progress Card -->
+    <div v-if="activeDownloads.length > 0 || activeTasks.length > 0" class="active-tasks-card mb-4">
+      <div class="tasks-header">
+        <div class="flex items-center gap-2">
+          <div class="spinner-sm"></div>
+          <h4>Active Background Ingestions ({{ activeDownloads.length + activeTasks.length }})</h4>
+        </div>
+        <span class="text-xs text-muted">Downloading via broker / proxy API...</span>
+      </div>
+      <div class="tasks-list">
+        <div v-for="task in activeDownloads" :key="task" class="task-row">
+          <DownloadCloud class="icon-sm text-accent" />
+          <span class="task-name">{{ task.toUpperCase() }}</span>
+          <span class="task-status">Downloading & Parsing Parquet/CSV...</span>
         </div>
       </div>
     </div>
 
-    <div class="data-grid-layout">
-      <!-- Matrix Status View -->
-      <div class="matrix-card">
-        <div class="matrix-card-header">
-          <h3>Historical Data Coverage</h3>
-          <div class="tf-selector">
-            <button
-              :class="['tf-btn', { active: dataTimeframe === 'h1' }]"
-              @click="dataTimeframe = 'h1'; refreshDataStatus()"
-            >
-              H1 Data
-            </button>
-            <button
-              :class="['tf-btn', { active: dataTimeframe === 'm1' }]"
-              @click="dataTimeframe = 'm1'; refreshDataStatus()"
-            >
-              M1 Data
-            </button>
-          </div>
-        </div>
-
-        <div class="matrix-container">
-          <table class="matrix-table">
-            <thead>
-              <tr>
-                <th>Pair</th>
-                <th v-for="year in yearsList" :key="year" class="year-header">
-                  {{ year.toString().slice(2) }}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="pair in pairsList" :key="pair">
-                <td class="pair-name">{{ pair.toUpperCase().replace('_', '') }}</td>
-                <td
-                  v-for="year in yearsList"
-                  :key="year"
-                  class="matrix-cell"
-                >
-                  <div
-                    v-if="groupedStatus[pair] && groupedStatus[pair][year]"
-                    :class="[
-                      'status-indicator',
-                      {
-                        complete: groupedStatus[pair][year].csvExists && groupedStatus[pair][year].barsExists,
-                        partial: groupedStatus[pair][year].csvExists !== groupedStatus[pair][year].barsExists,
-                        missing: !groupedStatus[pair][year].csvExists && !groupedStatus[pair][year].barsExists,
-                        syncing: activeDownloads.includes(pair + '-' + year + '-' + dataTimeframe)
-                      }
-                    ]"
-                    :title="`${pair.toUpperCase()} ${year} (${dataTimeframe.toUpperCase()})\nCSV: ${groupedStatus[pair][year].csvExists ? formatBytes(groupedStatus[pair][year].csvSize) : 'None'}\nBARS: ${groupedStatus[pair][year].barsExists ? formatBytes(groupedStatus[pair][year].barsSize) : 'None'}\nClick to Delete`"
-                    @click="groupedStatus[pair][year].csvExists || groupedStatus[pair][year].barsExists ? triggerDelete(pair, year) : null"
-                  ></div>
-                  <div v-else class="status-indicator missing"></div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div class="matrix-legend">
-          <div class="legend-item"><span class="dot complete"></span> Available</div>
-          <div class="legend-item"><span class="dot partial"></span> Partial (CSV or Bars only)</div>
-          <div class="legend-item"><span class="dot missing"></span> Missing</div>
-          <div class="legend-item"><span class="dot syncing"></span> Syncing</div>
-          <span style="flex-grow: 1;"></span>
-          <span class="legend-note">* Hover cells for size detail, click to delete a dataset.</span>
-        </div>
-      </div>
-
-      <!-- Download Specific Dataset Form -->
-      <div class="download-form-section">
-        <h3>Ingest Custom Dataset</h3>
-        <p class="section-subtitle">Download historical prices directly from the broker API</p>
-        
-        <div class="download-fields">
-          <div class="field">
-            <label>Currency Pair</label>
-            <select v-model="selectedPair">
-              <option v-for="p in pairsList" :key="p" :value="p">
-                {{ p.toUpperCase() }}
-              </option>
-            </select>
-          </div>
-          
-          <div class="field">
-            <label>Granularity</label>
-            <select v-model="selectedTf">
-              <option value="h1">H1</option>
-              <option value="m1">M1</option>
-            </select>
-          </div>
-
-          <div class="field">
-            <label>Mode</label>
-            <select v-model="downloadMode">
-              <option value="single">Single Year</option>
-              <option value="range">Year Range</option>
-              <option value="all">All History</option>
-            </select>
-          </div>
-
-          <div class="field" v-if="downloadMode === 'single'">
-            <label>Year</label>
-            <select v-model="selectedYear">
-              <option v-for="y in yearsList" :key="y" :value="y">
-                {{ y }}
-              </option>
-            </select>
-          </div>
-
-          <div class="field" v-if="downloadMode === 'range'">
-            <label>Start Year</label>
-            <select v-model="selectedStartYear">
-              <option v-for="y in yearsList" :key="y" :value="y">
-                {{ y }}
-              </option>
-            </select>
-          </div>
-
-          <div class="field" v-if="downloadMode === 'range'">
-            <label>End Year</label>
-            <select v-model="selectedEndYear">
-              <option v-for="y in yearsList" :key="y" :value="y">
-                {{ y }}
-              </option>
-            </select>
-          </div>
-
+    <!-- Main Coverage Section -->
+    <div class="card coverage-card">
+      <div class="coverage-toolbar">
+        <!-- Asset Class Tabs -->
+        <div class="asset-category-tabs">
           <button
-            class="btn primary download-btn"
-            :disabled="actionLoading"
-            @click="triggerDownload(false)"
+            class="category-tab forex"
+            :class="{ active: selectedAssetCategory === 'forex' }"
+            @click="onCategoryChange('forex')"
           >
-            📥 Start Ingestion
+            Forex Majors (8)
+          </button>
+          <button
+            class="category-tab futures"
+            :class="{ active: selectedAssetCategory === 'futures' }"
+            @click="onCategoryChange('futures')"
+          >
+            CME Micro/Mini Futures (4)
+          </button>
+          <button
+            class="category-tab equities"
+            :class="{ active: selectedAssetCategory === 'equities' }"
+            @click="onCategoryChange('equities')"
+          >
+            US Small/Mid Cap Equities (5)
           </button>
         </div>
+
+        <!-- Timeframe Toggle -->
+        <div class="tf-selector">
+          <button
+            :class="['tf-btn', { active: dataTimeframe === 'h1' }]"
+            @click="dataTimeframe = 'h1'; refreshDataStatus()"
+          >
+            H1 Bars
+          </button>
+          <button
+            :class="['tf-btn', { active: dataTimeframe === 'm1' }]"
+            @click="dataTimeframe = 'm1'; refreshDataStatus()"
+          >
+            M1 Bars
+          </button>
+        </div>
+      </div>
+
+      <!-- Provider Selector Bar -->
+      <div class="provider-bar">
+        <span class="provider-label">Data Ingestion Source:</span>
+        <div class="provider-pills">
+          <button
+            class="provider-pill"
+            :class="{ active: selectedProvider === 'yahoo' }"
+            @click="selectedProvider = 'yahoo'"
+          >
+            Yahoo Finance / Stooq (Continuous Futures & Stocks)
+          </button>
+          <button
+            class="provider-pill"
+            :class="{ active: selectedProvider === 'dukascopy' }"
+            @click="selectedProvider = 'dukascopy'"
+          >
+            Dukascopy (Forex & Metals)
+          </button>
+          <button
+            class="provider-pill"
+            :class="{ active: selectedProvider === 'oanda' }"
+            @click="selectedProvider = 'oanda'"
+          >
+            OANDA API (Forex Live)
+          </button>
+          <button
+            class="provider-pill"
+            :class="{ active: selectedProvider === 'ibkr' }"
+            @click="selectedProvider = 'ibkr'"
+          >
+            IBKR TWS API (Direct Futures & Stocks)
+          </button>
+        </div>
+      </div>
+
+      <!-- Coverage Heatmap Matrix Table -->
+      <div class="matrix-container">
+        <table class="matrix-table">
+          <thead>
+            <tr>
+              <th class="inst-col">Instrument</th>
+              <th class="spec-col">Specs</th>
+              <th v-for="year in yearsList" :key="year" class="year-header">
+                {{ year.toString().slice(2) }}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="inst in currentInstruments" :key="inst.symbol">
+              <td class="inst-cell">
+                <span class="symbol-tag" :class="selectedAssetCategory">{{ inst.label }}</span>
+              </td>
+              <td class="spec-cell text-muted">
+                {{ inst.desc }}
+              </td>
+              <td
+                v-for="year in yearsList"
+                :key="year"
+                class="matrix-cell"
+              >
+                <div
+                  v-if="groupedStatus[inst.symbol] && groupedStatus[inst.symbol][year]"
+                  :class="[
+                    'status-indicator',
+                    {
+                      complete: groupedStatus[inst.symbol][year].csvExists && groupedStatus[inst.symbol][year].barsExists,
+                      partial: groupedStatus[inst.symbol][year].csvExists !== groupedStatus[inst.symbol][year].barsExists,
+                      missing: !groupedStatus[inst.symbol][year].csvExists && !groupedStatus[inst.symbol][year].barsExists,
+                      syncing: activeDownloads.includes(inst.symbol + '-' + year + '-' + dataTimeframe)
+                    }
+                  ]"
+                  :title="`${inst.label} ${year} (${dataTimeframe.toUpperCase()})\nCSV: ${groupedStatus[inst.symbol][year].csvExists ? formatBytes(groupedStatus[inst.symbol][year].csvSize) : 'None'}\nBARS: ${groupedStatus[inst.symbol][year].barsExists ? formatBytes(groupedStatus[inst.symbol][year].barsSize) : 'None'}\nClick to Delete`"
+                  @click="groupedStatus[inst.symbol][year].csvExists || groupedStatus[inst.symbol][year].barsExists ? triggerDelete(inst.symbol, year) : null"
+                ></div>
+                <div v-else class="status-indicator missing"></div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Matrix Legend -->
+      <div class="matrix-legend">
+        <div class="legend-item"><span class="dot complete"></span> Available in Local Store</div>
+        <div class="legend-item"><span class="dot partial"></span> Partial (CSV or Binary Bars)</div>
+        <div class="legend-item"><span class="dot missing"></span> Missing / Unsynced</div>
+        <div class="legend-item"><span class="dot syncing"></span> Ingestion in Progress</div>
+        <span class="spacer"></span>
+        <span class="legend-note">* Click on any active cell to purge dataset.</span>
+      </div>
+    </div>
+
+    <!-- Ingestion Command Card -->
+    <div class="card download-form-section mt-4">
+      <div class="form-header">
+        <DownloadCloud class="icon-sm text-accent" />
+        <div>
+          <h3>Ingest Historical Dataset</h3>
+          <p class="section-subtitle">Fetch candles directly from selected source and build Parquet / CSV bar cache</p>
+        </div>
+      </div>
+      
+      <div class="download-fields">
+        <div class="field">
+          <label>Target Instrument</label>
+          <select v-model="selectedPair" class="form-select">
+            <optgroup label="Forex Majors">
+              <option v-for="p in instrumentsByCategory.forex" :key="p.symbol" :value="p.symbol">
+                {{ p.label }} — {{ p.desc }}
+              </option>
+            </optgroup>
+            <optgroup label="CME Futures">
+              <option v-for="p in instrumentsByCategory.futures" :key="p.symbol" :value="p.symbol">
+                {{ p.label }} — {{ p.desc }}
+              </option>
+            </optgroup>
+            <optgroup label="US Equities Small/Mid Cap">
+              <option v-for="p in instrumentsByCategory.equities" :key="p.symbol" :value="p.symbol">
+                {{ p.label }} — {{ p.desc }}
+              </option>
+            </optgroup>
+          </select>
+        </div>
+        
+        <div class="field">
+          <label>Granularity</label>
+          <select v-model="selectedTf" class="form-select">
+            <option value="h1">H1 (1-Hour)</option>
+            <option value="m1">M1 (1-Minute)</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Mode</label>
+          <select v-model="downloadMode" class="form-select">
+            <option value="single">Single Year</option>
+            <option value="range">Year Range</option>
+            <option value="all">All History (2006-2026)</option>
+          </select>
+        </div>
+
+        <div class="field" v-if="downloadMode === 'single'">
+          <label>Year</label>
+          <select v-model="selectedYear" class="form-select">
+            <option v-for="y in yearsList" :key="y" :value="y">
+              {{ y }}
+            </option>
+          </select>
+        </div>
+
+        <div class="field" v-if="downloadMode === 'range'">
+          <label>Start Year</label>
+          <select v-model="selectedStartYear" class="form-select">
+            <option v-for="y in yearsList" :key="y" :value="y">
+              {{ y }}
+            </option>
+          </select>
+        </div>
+
+        <div class="field" v-if="downloadMode === 'range'">
+          <label>End Year</label>
+          <select v-model="selectedEndYear" class="form-select">
+            <option v-for="y in yearsList" :key="y" :value="y">
+              {{ y }}
+            </option>
+          </select>
+        </div>
+
+        <button
+          class="btn primary download-btn"
+          :disabled="actionLoading"
+          @click="triggerDownload(false)"
+        >
+          <DownloadCloud class="icon-xs" />
+          <span>{{ actionLoading ? 'Ingesting...' : 'Start Ingestion' }}</span>
+        </button>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.view {
-  max-width: 1200px;
+.data-manager-container {
+  max-width: 1280px;
   margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
 }
 
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
 }
 
-h1 {
-  font-size: 1.5rem;
+.header-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--accent);
   margin-bottom: 0.25rem;
 }
 
-.subtitle {
-  color: var(--text-secondary);
-  font-size: 0.875rem;
-  margin-bottom: 0;
+.header-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
 }
 
-.page-actions {
+.header-subtitle {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-top: 0.2rem;
+}
+
+.header-actions {
   display: flex;
+  gap: 0.5rem;
+}
+
+/* Card */
+.card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.25rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+/* Toolbar */
+.coverage-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
   gap: 0.75rem;
 }
 
-.banner {
-  padding: 0.75rem 1rem;
+.asset-category-tabs {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.category-tab {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 0.45rem 0.8rem;
   border-radius: 6px;
-  margin-bottom: 1.5rem;
-  font-size: 0.85rem;
-}
-
-.banner.error {
-  background: #2d1212;
-  color: #fca5a5;
-  border: 1px solid #7f1d1d;
-}
-
-.btn {
-  padding: 0.5rem 1rem;
   font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.category-tab.forex.active {
+  background: var(--asset-forex-bg);
+  border-color: var(--asset-forex);
+  color: #fde047;
+}
+
+.category-tab.futures.active {
+  background: var(--asset-futures-bg);
+  border-color: var(--asset-futures);
+  color: #d8b4fe;
+}
+
+.category-tab.equities.active {
+  background: var(--asset-equity-bg);
+  border-color: var(--asset-equity);
+  color: #67e8f9;
+}
+
+.tf-selector {
+  display: flex;
+  background: #0f0f0f;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.2rem;
+}
+
+.tf-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  padding: 0.35rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tf-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* Provider Bar */
+.provider-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: #0d0d0d;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.provider-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.provider-pills {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.provider-pill {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 0.3rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.provider-pill.active {
+  background: rgba(217, 119, 6, 0.15);
+  border-color: var(--accent);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* Matrix Table */
+.matrix-container {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.matrix-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+}
+
+.matrix-table th {
+  padding: 0.6rem 0.5rem;
+  background: #111;
+  color: var(--text-secondary);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  text-align: center;
+}
+
+.matrix-table th.inst-col {
+  text-align: left;
+  padding-left: 0.75rem;
+  width: 140px;
+}
+
+.matrix-table th.spec-col {
+  text-align: left;
+  width: 240px;
+}
+
+.matrix-table td {
+  padding: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.inst-cell {
+  padding-left: 0.75rem !important;
+}
+
+.symbol-tag {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-weight: 700;
+  font-family: monospace;
+}
+
+.symbol-tag.forex {
+  background: var(--asset-forex-bg);
+  color: #fde047;
+  border: 1px solid var(--asset-forex-border);
+}
+
+.symbol-tag.futures {
+  background: var(--asset-futures-bg);
+  color: #d8b4fe;
+  border: 1px solid var(--asset-futures-border);
+}
+
+.symbol-tag.equities {
+  background: var(--asset-equity-bg);
+  color: #67e8f9;
+  border: 1px solid var(--asset-equity-border);
+}
+
+.spec-cell {
+  font-size: 0.7rem;
+}
+
+.matrix-cell {
+  text-align: center;
+}
+
+.status-indicator {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin: 0 auto;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.status-indicator:hover {
+  transform: scale(1.3);
+}
+
+.status-indicator.complete {
+  background: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+}
+
+.status-indicator.partial {
+  background: #f59e0b;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.6);
+}
+
+.status-indicator.missing {
+  background: #262626;
+}
+
+.status-indicator.syncing {
+  background: #38bdf8;
+  animation: pulse 1s infinite;
+}
+
+/* Legend */
+.matrix-legend {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  margin-top: 1rem;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.dot.complete { background: #10b981; }
+.dot.partial { background: #f59e0b; }
+.dot.missing { background: #262626; }
+.dot.syncing { background: #38bdf8; }
+
+.spacer { flex-grow: 1; }
+.legend-note { color: var(--text-muted); }
+
+/* Download Form */
+.form-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.form-header h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.section-subtitle {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: 0.15rem;
+}
+
+.download-fields {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.field label {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+.form-select {
+  background: #0f0f0f;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.form-select:focus {
+  border-color: var(--accent);
+}
+
+.download-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 1rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* Active tasks */
+.active-tasks-card {
+  background: rgba(217, 119, 6, 0.08);
+  border: 1px solid rgba(217, 119, 6, 0.3);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.tasks-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.tasks-header h4 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--accent);
+  margin: 0;
+}
+
+.tasks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.task-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.75rem;
+}
+
+.task-name {
+  font-weight: 700;
+  font-family: monospace;
+}
+
+.task-status {
+  color: var(--text-secondary);
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.8rem;
+  font-size: 0.78rem;
   font-weight: 600;
   border-radius: 6px;
   cursor: pointer;
@@ -435,342 +910,52 @@ h1 {
 .btn.primary {
   background: var(--accent);
   border: 1px solid var(--accent);
-  color: #000;
+  color: #fff;
 }
 
 .btn.primary:hover:not(:disabled) {
   background: var(--accent-hover);
-  border-color: var(--accent-hover);
 }
 
 .btn.secondary {
-  background: transparent;
+  background: var(--bg-card);
   border: 1px solid var(--border);
   color: var(--text-primary);
 }
 
 .btn.secondary:hover {
-  background: var(--bg-secondary);
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* Active Ingestion Processes */
-.active-downloads-section {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 1.25rem;
-  margin-bottom: 1.5rem;
-}
-
-.active-downloads-section h3 {
-  font-size: 0.95rem;
-  margin-bottom: 1rem;
-  color: var(--text-primary);
-}
-
-.active-tasks-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.task-progress-card {
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0.75rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.task-info {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.8rem;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.task-name {
-  font-weight: 700;
-  font-family: 'JetBrains Mono', monospace;
+  border-color: var(--accent);
   color: var(--accent);
 }
 
-.task-action {
-  color: var(--text-secondary);
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
-.task-pct {
-  font-weight: 600;
-  font-family: 'JetBrains Mono', monospace;
-}
+/* Icons */
+.icon-sm { width: 16px; height: 16px; flex-shrink: 0; }
+.icon-xs { width: 14px; height: 14px; flex-shrink: 0; }
+.text-accent { color: var(--accent); }
+.text-muted { color: var(--text-muted); }
+.mt-4 { margin-top: 1rem; }
+.mb-4 { margin-bottom: 1rem; }
 
-.progress-bar-bg {
-  width: 100%;
-  height: 6px;
-  background: #262626;
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.progress-bar-fill {
-  height: 100%;
-  background: var(--accent);
-  box-shadow: 0 0 8px var(--accent);
-  border-radius: 3px;
-  transition: width 0.3s ease;
-}
-
-.data-grid-layout {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-}
-
-/* Matrix Card */
-.matrix-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 1.25rem;
-}
-
-.matrix-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-}
-
-.matrix-card-header h3 {
-  font-size: 0.95rem;
-  color: var(--text-primary);
-  margin: 0;
-}
-
-.tf-selector {
-  display: flex;
-  background: var(--bg-primary);
-  padding: 0.25rem;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-}
-
-.tf-btn {
-  background: transparent;
-  border: none;
-  color: var(--text-secondary);
-  padding: 0.4rem 1rem;
-  border-radius: 4px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.tf-btn.active {
-  background: var(--bg-card);
-  color: var(--text-primary);
-}
-
-/* Matrix Table */
-.matrix-container {
-  overflow-x: auto;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  margin-bottom: 1rem;
-}
-
-.matrix-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.8rem;
-  text-align: center;
-}
-
-.matrix-table th,
-.matrix-table td {
-  padding: 0.6rem 0.4rem;
-  border: 1px solid var(--border);
-}
-
-.matrix-table th {
-  background: var(--bg-card);
-  color: var(--text-secondary);
-  font-weight: 600;
-}
-
-.year-header {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.75rem;
-}
-
-.pair-name {
-  font-weight: 700;
-  color: var(--text-primary);
-  text-align: left;
-  padding-left: 0.75rem;
-  width: 90px;
-}
-
-.matrix-cell {
-  width: 38px;
-  vertical-align: middle;
-}
-
-.status-indicator {
-  width: 12px;
-  height: 12px;
+.spinner-sm {
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
-  margin: 0 auto;
-  transition: all 0.15s;
+  border: 2px solid var(--accent);
+  border-top-color: transparent;
+  animation: spin 0.8s linear infinite;
 }
 
-.status-indicator.complete {
-  background: var(--success);
-  box-shadow: 0 0 4px var(--success);
-  cursor: pointer;
-}
-
-.status-indicator.complete:hover {
-  transform: scale(1.3);
-  background: var(--danger);
-  box-shadow: 0 0 6px var(--danger);
-}
-
-.status-indicator.partial {
-  background: var(--warning);
-  box-shadow: 0 0 4px var(--warning);
-  cursor: pointer;
-}
-
-.status-indicator.partial:hover {
-  transform: scale(1.3);
-  background: var(--danger);
-  box-shadow: 0 0 6px var(--danger);
-}
-
-.status-indicator.missing {
-  background: #262626;
-}
-
-.status-indicator.syncing {
-  background: #3b82f6;
-  animation: pulse 1s infinite;
-  box-shadow: 0 0 6px #3b82f6;
-}
-
-.matrix-legend {
-  display: flex;
-  gap: 1.25rem;
-  align-items: center;
-  flex-wrap: wrap;
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-}
-
-.legend-item {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.legend-item .dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-.legend-item .dot.complete { background: var(--success); }
-.legend-item .dot.partial { background: var(--warning); }
-.legend-item .dot.missing { background: #262626; }
-.legend-item .dot.syncing { background: #3b82f6; }
-
-.legend-note {
-  font-style: italic;
-}
-
-/* Download Form Section */
-.download-form-section {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 1.25rem;
-}
-
-.download-form-section h3 {
-  font-size: 0.95rem;
-  margin-bottom: 0.25rem;
-  color: var(--text-primary);
-}
-
-.section-subtitle {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  margin-bottom: 1.25rem;
-}
-
-.download-fields {
-  display: flex;
-  gap: 1.25rem;
-  align-items: flex-end;
-  flex-wrap: wrap;
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-.field label {
-  font-size: 0.7rem;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  font-weight: 600;
-}
-
-.field select {
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  color: var(--text-primary);
-  border-radius: 6px;
-  padding: 0.45rem 1rem;
-  font-size: 0.8rem;
-  outline: none;
-  min-width: 140px;
-}
-
-.download-btn {
-  margin-left: auto;
-  padding: 0.5rem 1.5rem;
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
-}
-.banner.info {
-  background: #0f1d2d;
-  color: #93c5fd;
-  border: 1px solid #1e3a5f;
-}
-
-.animate-fade-in {
-  animation: fadeIn 0.3s ease-out;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(-5px); }
-  to { opacity: 1; transform: translateY(0); }
+  50% { opacity: 0.4; }
 }
 </style>

@@ -367,3 +367,11 @@ development_status:
   41-5-resilience-de-reconciliation-appariement-fallback-et-blocage-d-entrees: done
   41-6-telemetrie-du-signal-et-watchdog-de-liveness: done
   epic-41-retrospective: optional
+  epic-42: done
+  42-1-wfa-hub-redesign-et-resolution-des-erreurs-vue: done
+  42-2-gestionnaire-de-donnees-multi-actifs-et-selecteur-de-fournisseurs: done
+  42-3-trading-desk-live-jauges-de-marge-et-selecteur-multi-broker: done
+  42-4-catalogue-de-strategies-et-backtests-badges-multi-actifs-et-action-wfa: done
+  42-5-design-system-global-typographie-et-micro-animations: done
+  epic-42-retrospective: optional
+
