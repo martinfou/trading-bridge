@@ -21,12 +21,20 @@ const props = defineProps<{
 
 const paramNames = computed(() => {
   if (!props.folds || props.folds.length === 0) return []
-  const first = props.folds[0].selectedParameters
-  return Object.keys(first || {})
+  for (const f of props.folds as any[]) {
+    const params = f.selectedParameters || f.chosenParameters
+    if (params && Object.keys(params).length > 0) {
+      return Object.keys(params)
+    }
+  }
+  return []
 })
 
 function getParamValues(name: string): number[] {
-  return props.folds.map(f => f.selectedParameters[name] ?? 0)
+  return (props.folds as any[]).map(f => {
+    const params = f.selectedParameters || f.chosenParameters || {}
+    return params[name] ?? 0
+  })
 }
 
 function getParamStats(name: string) {

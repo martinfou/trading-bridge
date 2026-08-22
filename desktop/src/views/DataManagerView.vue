@@ -3,6 +3,8 @@ import { ref, computed, onUnmounted, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useControlPlane } from '@/composables/useControlPlane'
 import { useStatusBar } from '@/composables/useStatusBar'
+import UniverseManagerDrawer from '@/components/UniverseManagerDrawer.vue'
+import type { InstrumentDefinition } from '@/types/control-plane'
 import {
   Database,
   RefreshCw,
@@ -13,11 +15,12 @@ import {
   Clock,
   Layers,
   Server,
-  Trash2
+  Trash2,
+  Sliders
 } from '@lucide/vue'
 
 const route = useRoute()
-const { getHistoricalDataStatus, downloadHistoricalData, deleteHistoricalData } = useControlPlane()
+const { getHistoricalDataStatus, downloadHistoricalData, deleteHistoricalData, getInstruments } = useControlPlane()
 const { setStatus } = useStatusBar()
 
 const dataTimeframe = ref<'h1' | 'm1'>('h1')
@@ -30,6 +33,7 @@ const activeTasks = ref<any[]>([])
 const loadError = ref<string | null>(null)
 const infoMessage = ref<string | null>(null)
 const actionLoading = ref(false)
+const isUniverseDrawerOpen = ref(false)
 
 const selectedPair = ref('eurusd')
 const selectedYear = ref(new Date().getFullYear())
@@ -38,33 +42,25 @@ const downloadMode = ref<'single' | 'range' | 'all'>('single')
 const selectedStartYear = ref(2006)
 const selectedEndYear = ref(new Date().getFullYear())
 
-const instrumentsByCategory = {
-  forex: [
-    { symbol: 'eurusd', label: 'EUR/USD', desc: 'Euro / US Dollar', type: 'Forex' },
-    { symbol: 'gbpusd', label: 'GBP/USD', desc: 'British Pound / US Dollar', type: 'Forex' },
-    { symbol: 'gbpjpy', label: 'GBP/JPY', desc: 'British Pound / Japanese Yen', type: 'Forex' },
-    { symbol: 'usdcad', label: 'USD/CAD', desc: 'US Dollar / Canadian Dollar', type: 'Forex' },
-    { symbol: 'usdjpy', label: 'USD/JPY', desc: 'US Dollar / Japanese Yen', type: 'Forex' },
-    { symbol: 'audusd', label: 'AUD/USD', desc: 'Australian Dollar / US Dollar', type: 'Forex' },
-    { symbol: 'nzdusd', label: 'NZD/USD', desc: 'New Zealand Dollar / US Dollar', type: 'Forex' },
-    { symbol: 'usdchf', label: 'USD/CHF', desc: 'US Dollar / Swiss Franc', type: 'Forex' }
-  ],
-  futures: [
-    { symbol: 'mes', label: 'MES', desc: 'Micro E-mini S&P 500 ($5/pt multiplier)', type: 'CME Futures' },
-    { symbol: 'm2k', label: 'M2K', desc: 'Micro Russell 2000 Small Cap ($5/pt multiplier)', type: 'CME Futures' },
-    { symbol: 'emd', label: 'EMD', desc: 'E-mini S&P MidCap 400 ($100/pt multiplier)', type: 'CME Futures' },
-    { symbol: 'mnq', label: 'MNQ', desc: 'Micro E-mini Nasdaq 100 ($2/pt multiplier)', type: 'CME Futures' }
-  ],
-  equities: [
-    { symbol: 'iwm', label: 'IWM', desc: 'iShares Russell 2000 ETF (Small Cap)', type: 'US Equities' },
-    { symbol: 'mdy', label: 'MDY', desc: 'SPDR S&P MidCap 400 ETF (Mid Cap)', type: 'US Equities' },
-    { symbol: 'aapl', label: 'AAPL', desc: 'Apple Inc. (Large Cap Stock)', type: 'US Equities' },
-    { symbol: 'spy', label: 'SPY', desc: 'SPDR S&P 500 ETF Trust', type: 'US Equities' },
-    { symbol: 'qqq', label: 'QQQ', desc: 'Invesco QQQ Trust (Nasdaq 100)', type: 'US Equities' }
-  ]
-}
+const rawInstruments = ref<InstrumentDefinition[]>([])
 
-const currentInstruments = computed(() => instrumentsByCategory[selectedAssetCategory.value] || [])
+const instrumentsByCategory = computed(() => {
+  const forex = rawInstruments.value
+    .filter(i => i.assetClass.toUpperCase() === 'FOREX')
+    .map(i => ({ symbol: i.symbol.toLowerCase().replace('_', ''), rawSymbol: i.symbol, label: i.symbol.replace('_', '/'), desc: i.name, type: 'Forex' }))
+  
+  const futures = rawInstruments.value
+    .filter(i => i.assetClass.toUpperCase() === 'FUTURES')
+    .map(i => ({ symbol: i.symbol.toLowerCase(), rawSymbol: i.symbol, label: i.symbol, desc: i.name, type: 'CME Futures' }))
+
+  const equities = rawInstruments.value
+    .filter(i => i.assetClass.toUpperCase() === 'EQUITIES')
+    .map(i => ({ symbol: i.symbol.toLowerCase(), rawSymbol: i.symbol, label: i.symbol, desc: i.name, type: 'US Equities' }))
+
+  return { forex, futures, equities }
+})
+
+const currentInstruments = computed(() => instrumentsByCategory.value[selectedAssetCategory.value] || [])
 const currentSymbolList = computed(() => currentInstruments.value.map(i => i.symbol))
 
 const yearsList = computed(() => {
@@ -78,9 +74,22 @@ const yearsList = computed(() => {
 
 function onCategoryChange(cat: 'forex' | 'futures' | 'equities') {
   selectedAssetCategory.value = cat
-  const insts = instrumentsByCategory[cat]
+  const insts = instrumentsByCategory.value[cat]
   if (insts && insts.length > 0) {
     selectedPair.value = insts[0].symbol
+  }
+}
+
+async function loadInstrumentsUniverse() {
+  try {
+    const list = await getInstruments()
+    rawInstruments.value = list
+    const currentList = instrumentsByCategory.value[selectedAssetCategory.value]
+    if (currentList && currentList.length > 0 && !currentList.some(i => i.symbol === selectedPair.value)) {
+      selectedPair.value = currentList[0].symbol
+    }
+  } catch (err: any) {
+    console.error('Failed to load instruments universe:', err)
   }
 }
 
@@ -96,9 +105,14 @@ async function refreshDataStatus() {
   }
 }
 
+async function onUniverseUpdated() {
+  await loadInstrumentsUniverse()
+  await refreshDataStatus()
+}
+
 const groupedStatus = computed(() => {
   const map: Record<string, Record<number, any>> = {}
-  Object.values(instrumentsByCategory).flat().forEach(inst => {
+  Object.values(instrumentsByCategory.value).flat().forEach(inst => {
     map[inst.symbol.toLowerCase()] = {}
   })
   dataStatus.value.forEach(item => {
@@ -187,8 +201,9 @@ function formatBytes(bytes?: number): string {
 
 let pollTimer: any = null
 
-onMounted(() => {
-  refreshDataStatus()
+onMounted(async () => {
+  await loadInstrumentsUniverse()
+  await refreshDataStatus()
   pollTimer = setInterval(refreshDataStatus, 5000)
   if (route.query.pair) {
     selectedPair.value = String(route.query.pair).toLowerCase()
@@ -216,6 +231,10 @@ onUnmounted(() => {
       </div>
 
       <div class="header-actions">
+        <button class="btn secondary manage-btn" @click="isUniverseDrawerOpen = true">
+          <Sliders class="icon-xs" />
+          ⚡ Manage Universe
+        </button>
         <button class="btn secondary" @click="refreshDataStatus">
           <RefreshCw class="icon-xs" />
           Refresh
@@ -265,21 +284,21 @@ onUnmounted(() => {
             :class="{ active: selectedAssetCategory === 'forex' }"
             @click="onCategoryChange('forex')"
           >
-            Forex Majors (8)
+            Forex Majors ({{ instrumentsByCategory.forex.length }})
           </button>
           <button
             class="category-tab futures"
             :class="{ active: selectedAssetCategory === 'futures' }"
             @click="onCategoryChange('futures')"
           >
-            CME Micro/Mini Futures (4)
+            CME Micro/Mini Futures ({{ instrumentsByCategory.futures.length }})
           </button>
           <button
             class="category-tab equities"
             :class="{ active: selectedAssetCategory === 'equities' }"
             @click="onCategoryChange('equities')"
           >
-            US Small/Mid Cap Equities (5)
+            US Small/Mid Cap Equities ({{ instrumentsByCategory.equities.length }})
           </button>
         </div>
 
@@ -478,6 +497,13 @@ onUnmounted(() => {
         </button>
       </div>
     </div>
+
+    <!-- Universe Manager Drawer -->
+    <UniverseManagerDrawer
+      :is-open="isUniverseDrawerOpen"
+      @close="isUniverseDrawerOpen = false"
+      @updated="onUniverseUpdated"
+    />
   </div>
 </template>
 
@@ -525,6 +551,18 @@ onUnmounted(() => {
 .header-actions {
   display: flex;
   gap: 0.5rem;
+}
+
+.manage-btn {
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #f59e0b;
+  font-weight: 600;
+}
+
+.manage-btn:hover {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: #f59e0b;
+  color: #fbbf24;
 }
 
 /* Card */
