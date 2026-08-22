@@ -99,10 +99,10 @@ async function refreshDataStatus() {
 const groupedStatus = computed(() => {
   const map: Record<string, Record<number, any>> = {}
   Object.values(instrumentsByCategory).flat().forEach(inst => {
-    map[inst.symbol] = {}
+    map[inst.symbol.toLowerCase()] = {}
   })
   dataStatus.value.forEach(item => {
-    const p = item.pair.toLowerCase()
+    const p = (item.pair || item.symbol || '').toLowerCase()
     if (map[p]) {
       map[p][item.year] = item
     }
@@ -361,18 +361,18 @@ onUnmounted(() => {
                 class="matrix-cell"
               >
                 <div
-                  v-if="groupedStatus[inst.symbol] && groupedStatus[inst.symbol][year]"
+                  v-if="groupedStatus[inst.symbol.toLowerCase()] && groupedStatus[inst.symbol.toLowerCase()][year]"
                   :class="[
                     'status-indicator',
                     {
-                      complete: groupedStatus[inst.symbol][year].csvExists && groupedStatus[inst.symbol][year].barsExists,
-                      partial: groupedStatus[inst.symbol][year].csvExists !== groupedStatus[inst.symbol][year].barsExists,
-                      missing: !groupedStatus[inst.symbol][year].csvExists && !groupedStatus[inst.symbol][year].barsExists,
+                      complete: groupedStatus[inst.symbol.toLowerCase()][year].barsExists,
+                      partial: groupedStatus[inst.symbol.toLowerCase()][year].csvExists && !groupedStatus[inst.symbol.toLowerCase()][year].barsExists,
+                      missing: !groupedStatus[inst.symbol.toLowerCase()][year].csvExists && !groupedStatus[inst.symbol.toLowerCase()][year].barsExists,
                       syncing: activeDownloads.includes(inst.symbol + '-' + year + '-' + dataTimeframe)
                     }
                   ]"
-                  :title="`${inst.label} ${year} (${dataTimeframe.toUpperCase()})\nCSV: ${groupedStatus[inst.symbol][year].csvExists ? formatBytes(groupedStatus[inst.symbol][year].csvSize) : 'None'}\nBARS: ${groupedStatus[inst.symbol][year].barsExists ? formatBytes(groupedStatus[inst.symbol][year].barsSize) : 'None'}\nClick to Delete`"
-                  @click="groupedStatus[inst.symbol][year].csvExists || groupedStatus[inst.symbol][year].barsExists ? triggerDelete(inst.symbol, year) : null"
+                  :title="`${inst.label} ${year} (${dataTimeframe.toUpperCase()})\nBARS: ${groupedStatus[inst.symbol.toLowerCase()][year].barsExists ? formatBytes(groupedStatus[inst.symbol.toLowerCase()][year].barsSize) : 'None'}\nCSV: ${groupedStatus[inst.symbol.toLowerCase()][year].csvExists ? formatBytes(groupedStatus[inst.symbol.toLowerCase()][year].csvSize) : 'None'}\nClick to Delete`"
+                  @click="groupedStatus[inst.symbol.toLowerCase()][year].barsExists || groupedStatus[inst.symbol.toLowerCase()][year].csvExists ? triggerDelete(inst.symbol, year) : null"
                 ></div>
                 <div v-else class="status-indicator missing"></div>
               </td>
