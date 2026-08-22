@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useControlPlaneConfig } from '@/composables/controlPlaneConfig'
+import { useControlPlane } from '@/composables/useControlPlane'
+import type { InstrumentDefinition } from '@/types/control-plane'
 import WfaTimeline from '@/components/WfaTimeline.vue'
 import WfaParameterStability from '@/components/WfaParameterStability.vue'
 import {
@@ -19,6 +21,7 @@ import {
 } from '@lucide/vue'
 
 const { controlPlaneUrl } = useControlPlaneConfig()
+const { getInstruments } = useControlPlane()
 
 // ── State ─────────────────────────────────────────────────────────────
 const selectedStrategy = ref('LtCrossMomentum')
@@ -53,49 +56,77 @@ const showHistory = ref(false)
 const runStartTime = ref<number | null>(null)
 const elapsedSeconds = ref(0)
 
+const rawUniverse = ref<InstrumentDefinition[]>([])
+
 let pollInterval: any = null
 let timerInterval: any = null
 
 // ── Multi-Asset Symbols ───────────────────────────────────────────────
 const availableStrategies = [
-  { id: 'LtCrossMomentum', name: 'LT Cross Momentum', description: 'Dual Moving Average Trend Following' },
-  { id: 'LtBollingerSqueeze', name: 'LT Bollinger Squeeze', description: 'Volatility Breakout & Mean Reversion' },
-  { id: 'LtEfficiencyRatio', name: 'LT Efficiency Ratio', description: 'Kaufman Adaptive Moving Average' },
-  { id: 'LtPullbackEntry', name: 'LT Pullback Entry', description: 'Trend Pullback & Continuation' },
+  { id: 'LtCrossMomentum', name: 'LT Cross Momentum', description: 'Dual EMA with ATR Volatility Filter' },
+  { id: 'LtSupertrendBreakout', name: 'LT Supertrend Breakout', description: 'ATR Volatility Trend Capture' },
+  { id: 'LtDonchianBreakout', name: 'LT Donchian Breakout', description: 'Turtle-Style 20/55-Day Channel Break' },
+  { id: 'LtMacdReversal', name: 'LT MACD Reversal', description: 'MACD Histogram Momentum Shift' },
   { id: 'LtRSI3Momentum', name: 'LT RSI-3 Momentum', description: 'Short-Cycle RSI Momentum' },
   { id: 'LtRangeBreakout', name: 'LT Range Breakout', description: 'Multi-Day Range Expansion' },
   { id: 'LtSqueezeMomentum', name: 'LT Squeeze Momentum', description: 'TTM Squeeze Volatility Expansion' }
 ]
 
-const symbolsByAssetClass = {
-  FUTURES: [
-    { symbol: 'MES', name: 'Micro E-mini S&P 500 ($5/pt)', badge: 'Futures' },
-    { symbol: 'M2K', name: 'Micro Russell 2000 Small Cap ($5/pt)', badge: 'Futures' },
-    { symbol: 'EMD', name: 'E-mini S&P MidCap 400 ($100/pt)', badge: 'Futures' },
-    { symbol: 'MNQ', name: 'Micro E-mini Nasdaq 100 ($2/pt)', badge: 'Futures' }
-  ],
-  EQUITY: [
-    { symbol: 'IWM', name: 'iShares Russell 2000 ETF (Small Cap)', badge: 'Equities' },
-    { symbol: 'MDY', name: 'SPDR S&P MidCap 400 ETF (Mid Cap)', badge: 'Equities' },
-    { symbol: 'AAPL', name: 'Apple Inc. (Large Cap)', badge: 'Equities' },
-    { symbol: 'SPY', name: 'SPDR S&P 500 ETF Trust', badge: 'Equities' },
-    { symbol: 'QQQ', name: 'Invesco QQQ Trust (Nasdaq 100)', badge: 'Equities' }
-  ],
-  FOREX: [
-    { symbol: 'EUR_USD', name: 'Euro / US Dollar', badge: 'Forex' },
-    { symbol: 'GBP_USD', name: 'British Pound / US Dollar', badge: 'Forex' },
-    { symbol: 'USD_JPY', name: 'US Dollar / Japanese Yen', badge: 'Forex' },
-    { symbol: 'AUD_USD', name: 'Australian Dollar / US Dollar', badge: 'Forex' }
-  ]
-}
+const symbolsByAssetClass = computed(() => {
+  const futures = rawUniverse.value
+    .filter(i => i.assetClass.toUpperCase() === 'FUTURES')
+    .map(i => ({ symbol: i.symbol, name: i.name, badge: 'Futures' }))
+  
+  const equity = rawUniverse.value
+    .filter(i => i.assetClass.toUpperCase() === 'EQUITIES')
+    .map(i => ({ symbol: i.symbol, name: i.name, badge: 'Equities' }))
 
-const currentSymbols = computed(() => symbolsByAssetClass[selectedAssetClass.value] || [])
+  const forex = rawUniverse.value
+    .filter(i => i.assetClass.toUpperCase() === 'FOREX')
+    .map(i => ({ symbol: i.symbol, name: i.name, badge: 'Forex' }))
+
+  return {
+    FUTURES: futures.length > 0 ? futures : [
+      { symbol: 'MES', name: 'Micro E-mini S&P 500 ($5/pt)', badge: 'Futures' },
+      { symbol: 'M2K', name: 'Micro Russell 2000 Small Cap ($5/pt)', badge: 'Futures' },
+      { symbol: 'EMD', name: 'E-mini S&P MidCap 400 ($100/pt)', badge: 'Futures' },
+      { symbol: 'MNQ', name: 'Micro E-mini Nasdaq 100 ($2/pt)', badge: 'Futures' }
+    ],
+    EQUITY: equity.length > 0 ? equity : [
+      { symbol: 'IWM', name: 'iShares Russell 2000 ETF (Small Cap)', badge: 'Equities' },
+      { symbol: 'MDY', name: 'SPDR S&P MidCap 400 ETF (Mid Cap)', badge: 'Equities' },
+      { symbol: 'AAPL', name: 'Apple Inc. (Large Cap)', badge: 'Equities' },
+      { symbol: 'SPY', name: 'SPDR S&P 500 ETF Trust', badge: 'Equities' },
+      { symbol: 'QQQ', name: 'Invesco QQQ Trust (Nasdaq 100)', badge: 'Equities' }
+    ],
+    FOREX: forex.length > 0 ? forex : [
+      { symbol: 'EUR_USD', name: 'Euro / US Dollar', badge: 'Forex' },
+      { symbol: 'GBP_USD', name: 'British Pound / US Dollar', badge: 'Forex' },
+      { symbol: 'USD_JPY', name: 'US Dollar / Japanese Yen', badge: 'Forex' },
+      { symbol: 'AUD_USD', name: 'Australian Dollar / US Dollar', badge: 'Forex' }
+    ]
+  }
+})
+
+const currentSymbols = computed(() => symbolsByAssetClass.value[selectedAssetClass.value] || [])
 
 function onAssetClassSelect(asset: 'FUTURES' | 'EQUITY' | 'FOREX') {
   selectedAssetClass.value = asset
-  const list = symbolsByAssetClass[asset]
+  const list = symbolsByAssetClass.value[asset]
   if (list && list.length > 0) {
     selectedSymbol.value = list[0].symbol
+  }
+}
+
+async function loadUniverse() {
+  try {
+    rawUniverse.value = await getInstruments()
+    const list = symbolsByAssetClass.value[selectedAssetClass.value]
+    if (list && list.length > 0 && !list.some(s => s.symbol === selectedSymbol.value)) {
+      selectedSymbol.value = list[0].symbol
+    }
+  } catch (err) {
+    console.error('Failed to load universe in WfaView:', err)
   }
 }
 
@@ -259,7 +290,36 @@ async function loadReport(wfaId: string) {
   try {
     const res = await fetch(`${controlPlaneUrl.value}/api/runs/walk-forward/${wfaId}/report`)
     if (res.ok) {
-      activeReport.value = await res.json()
+      const data = await res.json()
+      const wfe = data.wfe ?? data.walkForwardEfficiency ?? 0
+      const oosSharpe = data.oosSharpe ?? data.overallOosSharpe ?? 0
+      const annualizedReturn = data.oosReturnPct ?? data.annualizedReturnPct ?? 0
+      const maxDd = data.oosMaxDrawdownPct ?? data.maxDrawdownPct ?? 0
+
+      activeReport.value = {
+        ...data,
+        wfe,
+        oosSharpe,
+        annualizedReturn,
+        maxDd,
+        robustnessVerdict: (wfe >= 0.6 && oosSharpe >= 1.0) ? 'ROBUST' : (wfe >= 0.5 ? 'MODERATE' : 'OVERFITTED'),
+        folds: (data.folds || []).map((f: any, idx: number) => {
+          const isSharpe = f.inSampleSharpe ?? f.isSharpe ?? 0
+          const foldOosSharpe = f.outOfSampleSharpe ?? f.oosSharpe ?? 0
+          const foldWfe = f.wfe ?? (isSharpe > 0 ? foldOosSharpe / isSharpe : 0)
+          return {
+            foldIndex: f.foldIndex ?? f.index ?? idx,
+            inSampleStart: f.inSampleStart || f.isStart || '',
+            inSampleEnd: f.inSampleEnd || f.isEnd || '',
+            outOfSampleStart: f.outOfSampleStart || f.oosStart || '',
+            outOfSampleEnd: f.outOfSampleEnd || f.oosEnd || '',
+            inSampleSharpe: isSharpe,
+            outOfSampleSharpe: foldOosSharpe,
+            wfe: foldWfe,
+            selectedParameters: f.selectedParameters || f.chosenParameters || {}
+          }
+        })
+      }
       currentWfaId.value = wfaId
     }
   } catch (err) {
@@ -279,6 +339,7 @@ function formatDuration(seconds: number): string {
 }
 
 onMounted(() => {
+  loadUniverse()
   fetchPreviousRuns()
 })
 
@@ -549,25 +610,25 @@ onUnmounted(() => {
           <!-- Top Verdict Banner -->
           <div
             class="verdict-banner"
-            :class="activeReport.robustnessVerdict === 'ROBUST' || activeReport.walkForwardEfficiency >= 0.6 ? 'robust' : 'warning'"
+            :class="activeReport.robustnessVerdict === 'ROBUST' || activeReport.wfe >= 0.6 ? 'robust' : 'warning'"
           >
             <div class="verdict-left">
               <CheckCircle
-                v-if="activeReport.robustnessVerdict === 'ROBUST' || activeReport.walkForwardEfficiency >= 0.6"
+                v-if="activeReport.robustnessVerdict === 'ROBUST' || activeReport.wfe >= 0.6"
                 class="icon-md"
               />
               <AlertTriangle v-else class="icon-md" />
               <div>
                 <h3 class="verdict-title">
-                  {{ activeReport.robustnessVerdict === 'ROBUST' || activeReport.walkForwardEfficiency >= 0.6 ? 'ROBUST STRATEGY DETECTED' : 'OVERFITTING DETECTED (CAUTION)' }}
+                  {{ activeReport.robustnessVerdict === 'ROBUST' || activeReport.wfe >= 0.6 ? 'ROBUST STRATEGY DETECTED' : 'OVERFITTING DETECTED (CAUTION)' }}
                 </h3>
                 <p class="verdict-desc">
-                  WFE of {{ (activeReport.walkForwardEfficiency * 100).toFixed(1) }}% indicates out-of-sample performance holds up strongly against in-sample optimization.
+                  WFE of {{ (activeReport.wfe * 100).toFixed(1) }}% indicates out-of-sample performance holds up strongly against in-sample optimization.
                 </p>
               </div>
             </div>
             <div class="verdict-badge">
-              <span>WFE: {{ (activeReport.walkForwardEfficiency * 100).toFixed(0) }}%</span>
+              <span>WFE: {{ (activeReport.wfe * 100).toFixed(0) }}%</span>
             </div>
           </div>
 
@@ -575,27 +636,27 @@ onUnmounted(() => {
           <div class="kpi-grid">
             <div class="kpi-card">
               <span class="kpi-label">OOS Sharpe Ratio</span>
-              <span class="kpi-value text-emerald">{{ activeReport.overallOosSharpe.toFixed(2) }}</span>
+              <span class="kpi-value text-emerald">{{ (activeReport.oosSharpe ?? 0).toFixed(2) }}</span>
               <span class="kpi-sub">Out-of-sample aggregate</span>
             </div>
             <div class="kpi-card">
               <span class="kpi-label">Walk-Forward Efficiency</span>
               <span
                 class="kpi-value"
-                :class="activeReport.walkForwardEfficiency >= 0.6 ? 'text-emerald' : 'text-amber'"
+                :class="activeReport.wfe >= 0.6 ? 'text-emerald' : 'text-amber'"
               >
-                {{ (activeReport.walkForwardEfficiency * 100).toFixed(1) }}%
+                {{ (activeReport.wfe * 100).toFixed(1) }}%
               </span>
               <span class="kpi-sub">Threshold: &gt; 60%</span>
             </div>
             <div class="kpi-card">
               <span class="kpi-label">Annualized Return</span>
-              <span class="kpi-value text-cyan">{{ (activeReport.annualizedReturnPct ?? 0).toFixed(1) }}%</span>
+              <span class="kpi-value text-cyan">{{ (activeReport.annualizedReturn ?? 0).toFixed(1) }}%</span>
               <span class="kpi-sub">Compound yearly growth</span>
             </div>
             <div class="kpi-card">
               <span class="kpi-label">Max Drawdown</span>
-              <span class="kpi-value text-rose">{{ (activeReport.maxDrawdownPct ?? 0).toFixed(1) }}%</span>
+              <span class="kpi-value text-rose">{{ (activeReport.maxDd ?? 0).toFixed(1) }}%</span>
               <span class="kpi-sub">Worst peak-to-trough</span>
             </div>
           </div>

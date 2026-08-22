@@ -19,7 +19,26 @@ const props = defineProps<{
   folds: WfaFoldResult[]
 }>()
 
-const totalFolds = computed(() => props.folds?.length || 0)
+const normalizedFolds = computed(() => {
+  return (props.folds || []).map((f: any, idx: number) => {
+    const isSharpe = f.inSampleSharpe ?? f.isSharpe ?? 0
+    const oosSharpe = f.outOfSampleSharpe ?? f.oosSharpe ?? 0
+    const wfe = f.wfe ?? (isSharpe > 0 ? oosSharpe / isSharpe : 0)
+    return {
+      index: f.foldIndex ?? f.index ?? idx,
+      isStart: f.inSampleStart || f.isStart || '',
+      isEnd: f.inSampleEnd || f.isEnd || '',
+      oosStart: f.outOfSampleStart || f.oosStart || '',
+      oosEnd: f.outOfSampleEnd || f.oosEnd || '',
+      isSharpe,
+      oosSharpe,
+      wfe,
+      params: f.selectedParameters || f.chosenParameters || {}
+    }
+  })
+})
+
+const totalFolds = computed(() => normalizedFolds.value.length)
 
 function formatDate(isoStr: string): string {
   if (!isoStr) return ''
@@ -48,15 +67,15 @@ function formatDate(isoStr: string): string {
 
     <div class="folds-list">
       <div
-        v-for="fold in folds"
-        :key="fold.foldIndex"
+        v-for="fold in normalizedFolds"
+        :key="fold.index"
         class="fold-row"
       >
         <div class="fold-meta">
-          <span class="fold-badge">Fold #{{ fold.foldIndex + 1 }}</span>
+          <span class="fold-badge">Fold #{{ fold.index + 1 }}</span>
           <div class="fold-metrics">
-            <span class="metric">IS Sharpe: <strong>{{ fold.inSampleSharpe.toFixed(2) }}</strong></span>
-            <span class="metric">OOS Sharpe: <strong class="text-oos">{{ fold.outOfSampleSharpe.toFixed(2) }}</strong></span>
+            <span class="metric">IS Sharpe: <strong>{{ fold.isSharpe.toFixed(2) }}</strong></span>
+            <span class="metric">OOS Sharpe: <strong class="text-oos">{{ fold.oosSharpe.toFixed(2) }}</strong></span>
             <span class="metric">WFE: <strong :class="fold.wfe >= 0.6 ? 'text-green' : 'text-amber'">{{ (fold.wfe * 100).toFixed(0) }}%</strong></span>
           </div>
         </div>
@@ -66,18 +85,18 @@ function formatDate(isoStr: string): string {
           <div
             class="split-bar is-bar"
             style="width: 70%"
-            :title="`IS: ${formatDate(fold.inSampleStart)} to ${formatDate(fold.inSampleEnd)}`"
+            :title="`IS: ${formatDate(fold.isStart)} to ${formatDate(fold.isEnd)}`"
           >
-            <span>IS: {{ formatDate(fold.inSampleStart) }}</span>
-            <span>{{ formatDate(fold.inSampleEnd) }}</span>
+            <span>IS: {{ formatDate(fold.isStart) }}</span>
+            <span>{{ formatDate(fold.isEnd) }}</span>
           </div>
           <div
             class="split-bar oos-bar"
             style="width: 30%"
-            :title="`OOS: ${formatDate(fold.outOfSampleStart)} to ${formatDate(fold.outOfSampleEnd)}`"
+            :title="`OOS: ${formatDate(fold.oosStart)} to ${formatDate(fold.oosEnd)}`"
           >
             <span>OOS</span>
-            <span>{{ formatDate(fold.outOfSampleEnd) }}</span>
+            <span>{{ formatDate(fold.oosEnd) }}</span>
           </div>
         </div>
       </div>

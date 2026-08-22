@@ -144,3 +144,14 @@ export interface WeeklyStat {
   startCapital: number
   endCapital: number
 }
+
+export interface InstrumentDefinition {
+  symbol: string
+  name: string
+  assetClass: 'FOREX' | 'FUTURES' | 'EQUITIES' | string
+  pointValue: number
+  tickSize: number
+  currency: string
+  isCustom: boolean
+  providerTicker: string
+}

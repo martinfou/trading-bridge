@@ -19,6 +19,7 @@ import com.martinfou.trading.backtest.events.RunEvent;
 import com.martinfou.trading.backtest.events.RunEventType;
 import com.martinfou.trading.core.Trade;
 import com.martinfou.trading.core.Order;
+import com.martinfou.trading.core.InstrumentDefinition;
 import com.martinfou.trading.backtest.MonteCarloSimulation;
 import com.martinfou.trading.backtest.BacktestResult;
 import java.util.Arrays;
@@ -435,6 +436,35 @@ public final class ControlPlaneServer implements AutoCloseable {
                 historicalDataService.deleteDataset(pair, year, tf);
                 ctx.status(HttpStatus.OK);
                 ctx.json(Map.of("success", true));
+            })
+            .get("/api/instruments", ctx -> {
+                String assetClass = ctx.queryParam("assetClass");
+                if (assetClass != null && !assetClass.isBlank()) {
+                    ctx.json(historicalDataService.getUniverseStore().listByAssetClass(assetClass));
+                } else {
+                    ctx.json(historicalDataService.getUniverseStore().listAll());
+                }
+            })
+            .get("/api/universe", ctx -> {
+                ctx.json(historicalDataService.getUniverseStore().listAll());
+            })
+            .post("/api/instruments", ctx -> {
+                InstrumentDefinition req = ctx.bodyAsClass(InstrumentDefinition.class);
+                boolean saved = historicalDataService.getUniverseStore().save(req);
+                if (saved) {
+                    ctx.status(HttpStatus.CREATED).json(req);
+                } else {
+                    ctx.status(HttpStatus.BAD_REQUEST).json(Map.of("error", "Failed to save instrument: " + req.symbol()));
+                }
+            })
+            .delete("/api/instruments/{symbol}", ctx -> {
+                String symbol = ctx.pathParam("symbol");
+                boolean deleted = historicalDataService.getUniverseStore().delete(symbol);
+                if (deleted) {
+                    ctx.status(HttpStatus.NO_CONTENT);
+                } else {
+                    ctx.status(HttpStatus.BAD_REQUEST).json(Map.of("error", "Cannot delete built-in or non-existent instrument: " + symbol));
+                }
             })
             .post("/api/weekly-builder/plan", ctx -> respondWeeklyTrigger(ctx, weeklyBuilderService.triggerPlanAsync()))
             .post("/api/weekly-builder/compile", ctx -> respondWeeklyTrigger(ctx, weeklyBuilderService.triggerCompileAsync()))
