@@ -7,6 +7,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.*;
@@ -71,11 +72,11 @@ public final class HistoricalDataService implements AutoCloseable {
         for (int y = 2006; y <= currentYear; y++) {
             for (String pair : PAIRS) {
                 String symbol = pairToSym(pair);
-                Path csvFile = findCsvFile(pair, tf, y);
+                Optional<Path> csvOpt = findCsvFile(pair, tf, y);
                 Path barsFile = barsDir.resolve(symbol + "_" + tf.toUpperCase() + "_" + y + ".bars");
 
-                boolean csvExists = csvFile != null && Files.isRegularFile(csvFile);
-                long csvSize = csvExists ? getFileSize(csvFile) : 0;
+                boolean csvExists = csvOpt.isPresent();
+                long csvSize = csvExists ? getFileSize(csvOpt.get()) : 0;
                 boolean barsExists = Files.isRegularFile(barsFile);
                 long barsSize = barsExists ? getFileSize(barsFile) : 0;
 
@@ -95,17 +96,17 @@ public final class HistoricalDataService implements AutoCloseable {
         }
     }
 
-    private Path findCsvFile(String pair, String tf, int year) {
+    private Optional<Path> findCsvFile(String pair, String tf, int year) {
         File[] files = dukascopyDir.toFile().listFiles();
-        if (files == null) return null;
+        if (files == null) return Optional.empty();
         String prefix = pair + "-" + tf.toLowerCase();
         for (File f : files) {
             String name = f.getName();
             if (name.startsWith(prefix) && name.contains(String.valueOf(year)) && name.endsWith(".csv")) {
-                return f.toPath();
+                return Optional.of(f.toPath());
             }
         }
-        return null;
+        return Optional.empty();
     }
 
     public synchronized boolean triggerDownload(String pair, Integer year, String tf, boolean syncMode) {
@@ -161,11 +162,11 @@ public final class HistoricalDataService implements AutoCloseable {
 
                     activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(basePct, 1, 99), "Syncing " + pairToSym(p) + " " + y + "..."));
 
-                    Path csv = findCsvFile(p, tf, y);
+                    Optional<Path> csvOpt = findCsvFile(p, tf, y);
                     Path bars = barsDir.resolve(pairToSym(p) + "_" + tf.toUpperCase() + "_" + y + ".bars");
 
                     boolean shouldDownload = false;
-                    if (csv == null || !Files.exists(csv)) {
+                    if (csvOpt.isEmpty() || !Files.exists(csvOpt.get())) {
                         shouldDownload = true;
                     } else if (y == LocalDate.now().getYear()) {
                         // Current year: refresh
@@ -188,11 +189,11 @@ public final class HistoricalDataService implements AutoCloseable {
                         } catch (Exception e) {
                             log.error("Failed to sync pair {} for year {}", p, y, e);
                         }
-                    } else if (!Files.exists(bars) && csv != null) {
+                    } else if (!Files.exists(bars) && csvOpt.isPresent()) {
                         try {
                             activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(convertBase, 1, 99), "Converting " + pairToSym(p) + " " + y + " to binary..."));
                             var store = new BarStore(pairToSym(p), tf.toUpperCase() + "_" + y, barsDir);
-                            store.writeFromCSV(csv);
+                            store.writeFromCSV(csvOpt.get());
                         } catch (Exception e) {
                             log.error("Failed to convert existing CSV to bars for pair {} year {}", p, y, e);
                         }
@@ -238,13 +239,13 @@ public final class HistoricalDataService implements AutoCloseable {
 
     public synchronized void deleteDataset(String pair, int year, String tf) {
         String symbol = pairToSym(pair);
-        Path csvFile = findCsvFile(pair, tf, year);
+        Optional<Path> csvFileOpt = findCsvFile(pair, tf, year);
         Path barsFile = barsDir.resolve(symbol + "_" + tf.toUpperCase() + "_" + year + ".bars");
 
         try {
-            if (csvFile != null && Files.exists(csvFile)) {
-                Files.delete(csvFile);
-                log.info("Deleted CSV file: {}", csvFile);
+            if (csvFileOpt.isPresent() && Files.exists(csvFileOpt.get())) {
+                Files.delete(csvFileOpt.get());
+                log.info("Deleted CSV file: {}", csvFileOpt.get());
             }
             if (Files.exists(barsFile)) {
                 Files.delete(barsFile);

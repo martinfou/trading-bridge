@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -85,9 +86,9 @@ public final class HistoricalDataLoader {
 
     public static List<Bar> loadYear(String symbol, int year, String tf, Path barsDir) throws IOException {
         String timeframe = tf != null ? tf.toUpperCase() : "H1";
-        Path csv = findDukascopyCsv(symbol, year, timeframe);
-        if (csv != null) {
-            return DataLoader.loadDukascopyCSV(csv, symbol);
+        Optional<Path> csv = findDukascopyCsv(symbol, year, timeframe);
+        if (csv.isPresent()) {
+            return DataLoader.loadDukascopyCSV(csv.get(), symbol);
         }
         var store = new BarStore(symbol, timeframe + "_" + year, barsDir);
         store.open();
@@ -199,12 +200,12 @@ public final class HistoricalDataLoader {
         };
     }
 
-    private static Path findDukascopyCsv(String symbol, int year) throws IOException {
+    private static Optional<Path> findDukascopyCsv(String symbol, int year) throws IOException {
         return findDukascopyCsv(symbol, year, "H1");
     }
 
-    private static Path findDukascopyCsv(String symbol, int year, String tf) throws IOException {
-        if (!Files.isDirectory(DEFAULT_CSV_DIR)) return null;
+    private static Optional<Path> findDukascopyCsv(String symbol, int year, String tf) throws IOException {
+        if (!Files.isDirectory(DEFAULT_CSV_DIR)) return Optional.empty();
         String pair = symbol.replace("_", "").toLowerCase();
         String yearStr = String.valueOf(year);
         String tfLower = tf.toLowerCase();
@@ -215,8 +216,7 @@ public final class HistoricalDataLoader {
                     String n = p.getFileName().toString().toLowerCase();
                     return n.startsWith(pair + "-" + tfLower) && n.contains(yearStr);
                 })
-                .findFirst()
-                .orElse(null);
+                .findFirst();
         }
     }
 
@@ -233,16 +233,16 @@ public final class HistoricalDataLoader {
             String[] parts = spec.split("-");
             int start = Integer.parseInt(parts[0]);
             int end = Integer.parseInt(parts[1]);
-            Path csv = findDukascopyCsv(symbol, start, timeframe);
-            if (csv != null) {
-                return csv + " … " + end;
+            Optional<Path> csv = findDukascopyCsv(symbol, start, timeframe);
+            if (csv.isPresent()) {
+                return csv.get() + " … " + end;
             }
             return barsDir.resolve(symbol + "_" + timeframe + "_" + spec + ".bars").toString();
         }
         int year = Integer.parseInt(spec);
-        Path csv = findDukascopyCsv(symbol, year, timeframe);
-        if (csv != null) {
-            return csv.toString();
+        Optional<Path> csv = findDukascopyCsv(symbol, year, timeframe);
+        if (csv.isPresent()) {
+            return csv.get().toString();
         }
         return barsDir.resolve(symbol + "_" + timeframe + "_" + year + ".bars").toString();
     }

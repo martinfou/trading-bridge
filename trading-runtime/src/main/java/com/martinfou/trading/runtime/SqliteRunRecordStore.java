@@ -19,26 +19,28 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
+
 /** SQLite implementation of {@link RunRecordStore} (Story 34-1, 34-2). */
 public final class SqliteRunRecordStore implements RunRecordStore {
 
     private static final String JDBC_PREFIX = "jdbc:sqlite:";
     private static final ObjectMapper MAPPER = new ObjectMapper().registerModule(new JavaTimeModule());
 
-    private final Connection connection;
+    private final HikariDataSource dataSource;
 
     public SqliteRunRecordStore(EventStoreConfig config) {
         try {
             config.ensureParentDirectories();
-            Connection conn = DriverManager.getConnection(JDBC_PREFIX + config.dbPath());
-            try {
+            HikariConfig hc = new HikariConfig();
+            hc.setJdbcUrl(JDBC_PREFIX + config.dbPath());
+            hc.setMaximumPoolSize(10);
+            hc.setConnectionInitSql("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;");
+            this.dataSource = new HikariDataSource(hc);
+            
+            try (Connection conn = dataSource.getConnection()) {
                 initSchema(conn);
-                this.connection = conn;
-            } catch (SQLException e) {
-                try {
-                    conn.close();
-                } catch (SQLException ignored) {}
-                throw e;
             }
         } catch (IOException | SQLException e) {
             throw new IllegalStateException("Failed to open SqliteRunRecordStore at " + config.dbPath(), e);
@@ -47,7 +49,7 @@ public final class SqliteRunRecordStore implements RunRecordStore {
 
     @Override
     public void save(RunRecord record) {
-        synchronized (connection) {
+        try (Connection connection = dataSource.getConnection()) {
             try (PreparedStatement ps = connection.prepareStatement("""
                 INSERT INTO run_records (
                     run_id, strategy_id, symbol, mode, config_snapshot, config_hash, status, started_at,
@@ -78,15 +80,15 @@ public final class SqliteRunRecordStore implements RunRecordStore {
                 ps.setInt(13, record.restartCount());
                 ps.setString(14, record.lastRestartAt().map(Instant::toString).orElse(null));
                 ps.executeUpdate();
-            } catch (SQLException e) {
-                throw new IllegalStateException("Failed to save run record: " + record.runId(), e);
             }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to save run record: " + record.runId(), e);
         }
     }
 
     @Override
     public Optional<RunRecord> get(String runId) {
-        synchronized (connection) {
+        try (Connection connection = dataSource.getConnection()) {
             try (PreparedStatement ps = connection.prepareStatement("""
                 SELECT run_id, strategy_id, symbol, mode, config_snapshot, config_hash, status, started_at,
                        completed_at, error_message, ended_payload, last_event_at, restart_count, last_restart_at
@@ -99,15 +101,15 @@ public final class SqliteRunRecordStore implements RunRecordStore {
                     }
                     return Optional.of(readRecord(rs));
                 }
-            } catch (SQLException e) {
-                throw new IllegalStateException("Failed to read run record: " + runId, e);
             }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to read run record: " + runId, e);
         }
     }
 
     @Override
     public List<RunRecord> listAll() {
-        synchronized (connection) {
+        try (Connection connection = dataSource.getConnection()) {
             try (Statement stmt = connection.createStatement();
                  ResultSet rs = stmt.executeQuery("""
                      SELECT run_id, strategy_id, symbol, mode, config_snapshot, config_hash, status, started_at,
@@ -119,32 +121,28 @@ public final class SqliteRunRecordStore implements RunRecordStore {
                     list.add(readRecord(rs));
                 }
                 return List.copyOf(list);
-            } catch (SQLException e) {
-                throw new IllegalStateException("Failed to list run records", e);
             }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to list run records", e);
         }
     }
 
     @Override
     public void delete(String runId) {
-        synchronized (connection) {
+        try (Connection connection = dataSource.getConnection()) {
             try (PreparedStatement ps = connection.prepareStatement("DELETE FROM run_records WHERE run_id = ?")) {
                 ps.setString(1, runId);
                 ps.executeUpdate();
-            } catch (SQLException e) {
-                throw new IllegalStateException("Failed to delete run record: " + runId, e);
             }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to delete run record: " + runId, e);
         }
     }
 
     @Override
     public void close() {
-        synchronized (connection) {
-            try {
-                connection.close();
-            } catch (SQLException e) {
-                throw new IllegalStateException("Failed to close SqliteRunRecordStore", e);
-            }
+        if (dataSource != null) {
+            dataSource.close();
         }
     }
 

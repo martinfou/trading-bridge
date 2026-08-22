@@ -218,7 +218,7 @@ public class WeekendContinuationStrategy implements Strategy {
 
     private void closePosition(double price) {
         Order.Side exitSide = tradeDirection == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
-        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, MIN_POSITION, price).closeOnly());
+        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, MIN_POSITION, price).asCloseOnly());
         inTrade = false;
     }
 

@@ -168,7 +168,7 @@ public class PriceDeviationMeanReversion implements Strategy {
 
     private void exitPosition(double price) {
         Order.Side exitSide = tradeDirection == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
-        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, 1000, price).closeOnly());
+        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, 1000, price).asCloseOnly());
         inTrade = false;
         cooldownBars = COOLDOWN_BARS;
     }

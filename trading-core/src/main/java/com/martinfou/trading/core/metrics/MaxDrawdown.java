@@ -32,9 +32,11 @@ public final class MaxDrawdown {
             if (eq > peak) {
                 peak = eq;
             }
-            double dd = (peak - eq) / peak;
-            if (dd > maxDd) {
-                maxDd = dd;
+            if (peak > 0.0) {
+                double dd = (peak - eq) / peak;
+                if (dd > maxDd) {
+                    maxDd = dd;
+                }
             }
         }
         return maxDd * 100.0; // returns in percentage (e.g. 15.0 for 15%)
