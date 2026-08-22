@@ -95,8 +95,8 @@ public final class SqInterpretedStrategy implements Strategy {
                 continue;
             }
             entry.toOrder(symbol).ifPresent(order -> {
-                enrichWithExitPips(order, entry);
-                pendingOrders.add(order);
+                Order finalOrder = enrichWithExitPips(order, entry);
+                pendingOrders.add(finalOrder);
                 if (entry.side() == Order.Side.BUY) {
                     longOpen = true;
                     longQuantity = entry.quantity();
@@ -190,23 +190,26 @@ public final class SqInterpretedStrategy implements Strategy {
         return true;
     }
 
-    private void enrichWithExitPips(Order order, SqOrderIntent intent) {
+    private Order enrichWithExitPips(Order order, SqOrderIntent intent) {
         double reference = order.price();
-        intent.stopLossPips().ifPresent(pips -> {
+        if (intent.stopLossPips().isPresent()) {
+            double pips = intent.stopLossPips().get();
             double offset = pips * pipSize;
             if (order.side() == Order.Side.BUY) {
-                order.withStopLoss(reference - offset);
+                order = order.withStopLoss(reference - offset);
             } else {
-                order.withStopLoss(reference + offset);
+                order = order.withStopLoss(reference + offset);
             }
-        });
-        intent.profitTargetPips().ifPresent(pips -> {
+        }
+        if (intent.profitTargetPips().isPresent()) {
+            double pips = intent.profitTargetPips().get();
             double offset = pips * pipSize;
             if (order.side() == Order.Side.BUY) {
-                order.withTakeProfit(reference + offset);
+                order = order.withTakeProfit(reference + offset);
             } else {
-                order.withTakeProfit(reference - offset);
+                order = order.withTakeProfit(reference - offset);
             }
-        });
+        }
+        return order;
     }
 }

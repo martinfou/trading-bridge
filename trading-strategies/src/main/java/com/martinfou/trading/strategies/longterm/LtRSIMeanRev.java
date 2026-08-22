@@ -136,7 +136,7 @@ public class LtRSIMeanRev implements Strategy {
 
     private void exitTrade(double price) {
         Order.Side exit = direction == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
-        pending.add(new Order(symbol, exit, Order.Type.MARKET, positionUnits, price).closeOnly());
+        pending.add(new Order(symbol, exit, Order.Type.MARKET, positionUnits, price).asCloseOnly());
         inTrade = false;
         positionUnits = 0;
     }

@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -475,8 +476,9 @@ public final class OandaStreamingExecutor implements AutoCloseable {
 
             if (aggregator.isNewPeriod(tickBar)) {
                 aggregator.completePeriod();
-                Bar completed = aggregator.getLastCompletedBar();
-                if (completed != null) {
+                Optional<Bar> completedOpt = aggregator.getLastCompletedBar();
+                if (completedOpt.isPresent()) {
+                    Bar completed = completedOpt.get();
                     int runningTradeCount = 0;
                     double openPnL = 0.0;
                     try {
@@ -508,9 +510,9 @@ public final class OandaStreamingExecutor implements AutoCloseable {
             }
             aggregator.add(tickBar);
 
-            Bar currentBar = aggregator.getInProgressBar();
-            if (currentBar != null) {
-                RunEvent barEvent = RunEvent.bar(runId, config.strategyId(), config.symbol(), runMode, currentBar, timestamp, bid, ask);
+            Optional<Bar> currentBarOpt = aggregator.getInProgressBar();
+            if (currentBarOpt.isPresent()) {
+                RunEvent barEvent = RunEvent.bar(runId, config.strategyId(), config.symbol(), runMode, currentBarOpt.get(), timestamp, bid, ask);
                 eventStore.publishEphemeral(runId, barEvent);
             }
         } catch (Exception e) {
@@ -765,7 +767,7 @@ public final class OandaStreamingExecutor implements AutoCloseable {
                         Order.Type.MARKET,
                         pos.quantity(),
                         0.0
-                    ).closeOnly();
+                    ).asCloseOnly();
                     log.info("Submitting emergency close order due to breach: {}", marketClose);
                     broker.submitOrder(marketClose);
                 }
@@ -923,7 +925,7 @@ public final class OandaStreamingExecutor implements AutoCloseable {
                         Order.Type.MARKET,
                         pos.quantity(),
                         0.0
-                    ).closeOnly();
+                    ).asCloseOnly();
                     log.info("Submitting emergency close order: {}", marketClose);
                     broker.submitOrder(marketClose);
                 }
@@ -944,7 +946,7 @@ public final class OandaStreamingExecutor implements AutoCloseable {
             if (pending.price() <= 0.0) {
                 order = new Order(pending.symbol(), pending.side(), pending.type(), pending.quantity(), lastBar.close());
                 if (pending.isCloseOnly()) {
-                    order.closeOnly();
+                    order.asCloseOnly();
                 }
                 order.withStopLoss(pending.stopLoss())
                      .withTakeProfit(pending.takeProfit())

@@ -37,9 +37,10 @@ public class StrategyRunner {
                 // Determine if news expected to be positive based on strategy direction
                 boolean newsPositive = strategy.name().contains("Long");
                 
-                var signal = strategy.evaluate(bars, newsPositive);
+                Optional<TradeSignal> signalOpt = strategy.evaluate(bars, newsPositive);
                 
-                if (signal != null) {
+                if (signalOpt.isPresent()) {
+                    TradeSignal signal = signalOpt.get();
                     String status = signal.isConfident() ? "🔴 EXECUTABLE" : "⚪ Watching";
                     log.info("{} | {} | Score: {}% | {} | Price: {:.5f}", 
                         status, signal.pair(), signal.confidence(), 

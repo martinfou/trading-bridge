@@ -40,9 +40,9 @@ public class OandaTransactionStreamer implements AutoCloseable {
 
     public void start() {
         if (running.compareAndSet(false, true)) {
-            streamThread = new Thread(this::runStream, "OandaTransactionStream-" + accountId);
-            streamThread.setDaemon(true);
-            streamThread.start();
+            streamThread = Thread.ofVirtual()
+                .name("OandaTransactionStream-" + accountId)
+                .start(() -> ExecutionBoundary.executeGlobal("OandaTransactionStreamer", this::runStream));
         }
     }
 

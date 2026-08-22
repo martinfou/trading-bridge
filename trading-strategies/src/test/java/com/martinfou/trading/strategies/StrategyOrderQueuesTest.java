@@ -26,7 +26,7 @@ class StrategyOrderQueuesTest {
     void drainPending_removesFilledOrdersBeforeCopy() {
         List<Order> pending = new ArrayList<>();
         Order filled = new Order("EUR_USD", Order.Side.BUY, Order.Type.MARKET, 10_000, 0);
-        filled.fill();
+        filled = filled.fill();
         pending.add(filled);
         pending.add(new Order("EUR_USD", Order.Side.SELL, Order.Type.MARKET, 10_000, 0));
 

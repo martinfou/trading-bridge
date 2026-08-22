@@ -130,7 +130,7 @@ public class VolContractionBreakoutStrategy implements Strategy {
 
     private void closePosition(Bar bar) {
         Order.Side closeSide = tradeDirection == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
-        pending.add(new Order(SYMBOL, closeSide, Order.Type.MARKET, positionSize, bar.close()).closeOnly());
+        pending.add(new Order(SYMBOL, closeSide, Order.Type.MARKET, positionSize, bar.close()).asCloseOnly());
         inTrade = false;
     }
 

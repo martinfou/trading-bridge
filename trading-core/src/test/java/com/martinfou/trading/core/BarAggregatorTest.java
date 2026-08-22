@@ -2,6 +2,7 @@ package com.martinfou.trading.core;
 
 import org.junit.jupiter.api.Test;
 import java.time.Instant;
+import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
 
 class BarAggregatorTest {
@@ -27,8 +28,9 @@ class BarAggregatorTest {
         aggregator.add(b3);
 
         // Current in progress H1 bar checks
-        Bar inProgress = aggregator.getInProgressBar();
-        assertNotNull(inProgress);
+        Optional<Bar> inProgressOpt = aggregator.getInProgressBar();
+        assertTrue(inProgressOpt.isPresent());
+        Bar inProgress = inProgressOpt.get();
         assertEquals(Instant.parse("2026-05-20T10:00:00Z"), inProgress.timestamp());
         assertEquals(1.0800, inProgress.open());
         assertEquals(1.0830, inProgress.high());
@@ -41,8 +43,9 @@ class BarAggregatorTest {
         aggregator.add(b4);
 
         // Previous period should be completed
-        Bar completed = aggregator.getLastCompletedBar();
-        assertNotNull(completed);
+        Optional<Bar> completedOpt = aggregator.getLastCompletedBar();
+        assertTrue(completedOpt.isPresent());
+        Bar completed = completedOpt.get();
         assertEquals(Instant.parse("2026-05-20T10:00:00Z"), completed.timestamp());
         assertEquals(1.0830, completed.high());
         assertEquals(1.0780, completed.low());
@@ -50,8 +53,9 @@ class BarAggregatorTest {
         assertEquals(450, completed.volume());
 
         // In progress now contains the 11:00:00 bar
-        Bar nextInProgress = aggregator.getInProgressBar();
-        assertNotNull(nextInProgress);
+        Optional<Bar> nextInProgressOpt = aggregator.getInProgressBar();
+        assertTrue(nextInProgressOpt.isPresent());
+        Bar nextInProgress = nextInProgressOpt.get();
         assertEquals(Instant.parse("2026-05-20T11:00:00Z"), nextInProgress.timestamp());
         assertEquals(1.0800, nextInProgress.open());
         assertEquals(300, nextInProgress.volume());
@@ -69,17 +73,23 @@ class BarAggregatorTest {
         aggregator.add(b2);
         assertTrue(aggregator.isNewPeriod(b3));
         
-        Bar inProgress = aggregator.getInProgressBar();
+        Optional<Bar> inProgressOpt = aggregator.getInProgressBar();
+        assertTrue(inProgressOpt.isPresent());
+        Bar inProgress = inProgressOpt.get();
         assertEquals(Instant.parse("2026-05-20T10:00:00Z"), inProgress.timestamp());
         assertEquals(1.00, inProgress.open());
         assertEquals(1.02, inProgress.close());
         assertEquals(20, inProgress.volume());
 
         aggregator.add(b3);
-        Bar completed = aggregator.getLastCompletedBar();
+        Optional<Bar> completedOpt = aggregator.getLastCompletedBar();
+        assertTrue(completedOpt.isPresent());
+        Bar completed = completedOpt.get();
         assertEquals(Instant.parse("2026-05-20T10:00:00Z"), completed.timestamp());
         
-        Bar inProgressNext = aggregator.getInProgressBar();
+        Optional<Bar> inProgressNextOpt = aggregator.getInProgressBar();
+        assertTrue(inProgressNextOpt.isPresent());
+        Bar inProgressNext = inProgressNextOpt.get();
         assertEquals(Instant.parse("2026-05-20T10:30:00Z"), inProgressNext.timestamp());
     }
 }

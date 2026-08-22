@@ -352,53 +352,11 @@ public class RunManager implements RunLifecycle, AutoCloseable {
             List<com.martinfou.trading.core.Order> tempBt = new ArrayList<>();
             List<com.martinfou.trading.core.Order> tempLive = new ArrayList<>();
             for (com.martinfou.trading.backtest.events.RunEvent event : eventStore.replayAll(runId)) {
-                if (event.mode() != null && (event.mode().equalsIgnoreCase("PAPER") || event.mode().equalsIgnoreCase("LIVE"))) {
+                if (isLiveOrPaperMode(event)) {
                     if (event.type() == com.martinfou.trading.backtest.events.RunEventType.ORDER_SUBMITTED) {
-                        Map<String, Object> payload = event.payload();
-                        if (payload != null) {
-                            try {
-                                String symbol = String.valueOf(payload.get("symbol"));
-                                String sideStr = String.valueOf(payload.get("side"));
-                                com.martinfou.trading.core.Order.Side side = com.martinfou.trading.core.Order.Side.valueOf(sideStr);
-                                double quantity = toDouble(payload.get("quantity"));
-                                double price = toDouble(payload.get("price"));
-                                String correlationId = payload.containsKey("correlationId") && payload.get("correlationId") != null 
-                                    ? String.valueOf(payload.get("correlationId")) 
-                                    : null;
-                                String orderId = payload.containsKey("orderId") && payload.get("orderId") != null 
-                                    ? String.valueOf(payload.get("orderId")) 
-                                    : null;
-                                com.martinfou.trading.core.Order btOrder = new com.martinfou.trading.core.Order(symbol, side, com.martinfou.trading.core.Order.Type.MARKET, quantity, price)
-                                    .withCorrelationId(correlationId)
-                                    .withStatus(com.martinfou.trading.core.Order.Status.FILLED)
-                                    .withFilledAt(event.timestamp());
-                                if (orderId != null) btOrder.withId(orderId);
-                                tempBt.add(btOrder);
-                            } catch (Exception ignored) {}
-                        }
+                        parseOrderFromEvent(event).ifPresent(tempBt::add);
                     } else if (event.type() == com.martinfou.trading.backtest.events.RunEventType.FILL) {
-                        Map<String, Object> payload = event.payload();
-                        if (payload != null) {
-                            try {
-                                String symbol = String.valueOf(payload.get("symbol"));
-                                String sideStr = String.valueOf(payload.get("side"));
-                                com.martinfou.trading.core.Order.Side side = com.martinfou.trading.core.Order.Side.valueOf(sideStr);
-                                double quantity = toDouble(payload.get("quantity"));
-                                double price = toDouble(payload.get("price"));
-                                String correlationId = payload.containsKey("correlationId") && payload.get("correlationId") != null 
-                                    ? String.valueOf(payload.get("correlationId")) 
-                                    : null;
-                                String orderId = payload.containsKey("orderId") && payload.get("orderId") != null 
-                                    ? String.valueOf(payload.get("orderId")) 
-                                    : null;
-                                com.martinfou.trading.core.Order liveOrder = new com.martinfou.trading.core.Order(symbol, side, com.martinfou.trading.core.Order.Type.MARKET, quantity, price)
-                                    .withCorrelationId(correlationId)
-                                    .withStatus(com.martinfou.trading.core.Order.Status.FILLED)
-                                    .withFilledAt(event.timestamp());
-                                if (orderId != null) liveOrder.withId(orderId);
-                                tempLive.add(liveOrder);
-                            } catch (Exception ignored) {}
-                        }
+                        parseOrderFromEvent(event).ifPresent(tempLive::add);
                     }
                 }
             }
@@ -413,6 +371,43 @@ public class RunManager implements RunLifecycle, AutoCloseable {
             "backtestOrders", btOrders,
             "liveOrders", liveOrders
         );
+    }
+
+    private boolean isLiveOrPaperMode(com.martinfou.trading.backtest.events.RunEvent event) {
+        return event.mode() != null && (event.mode().equalsIgnoreCase("PAPER") || event.mode().equalsIgnoreCase("LIVE"));
+    }
+
+    private java.util.Optional<com.martinfou.trading.core.Order> parseOrderFromEvent(com.martinfou.trading.backtest.events.RunEvent event) {
+        Map<String, Object> payload = event.payload();
+        if (payload == null) {
+            return java.util.Optional.empty();
+        }
+        
+        try {
+            String symbol = String.valueOf(payload.get("symbol"));
+            String sideStr = String.valueOf(payload.get("side"));
+            com.martinfou.trading.core.Order.Side side = com.martinfou.trading.core.Order.Side.valueOf(sideStr);
+            double quantity = toDouble(payload.get("quantity"));
+            double price = toDouble(payload.get("price"));
+            String correlationId = payload.containsKey("correlationId") && payload.get("correlationId") != null 
+                ? String.valueOf(payload.get("correlationId")) 
+                : null;
+            String orderId = payload.containsKey("orderId") && payload.get("orderId") != null 
+                ? String.valueOf(payload.get("orderId")) 
+                : null;
+                
+            com.martinfou.trading.core.Order order = new com.martinfou.trading.core.Order(symbol, side, com.martinfou.trading.core.Order.Type.MARKET, quantity, price)
+                .withCorrelationId(correlationId)
+                .withStatus(com.martinfou.trading.core.Order.Status.FILLED)
+                .withFilledAt(event.timestamp());
+            
+            if (orderId != null) {
+                order = order.withId(orderId);
+            }
+            return java.util.Optional.of(order);
+        } catch (Exception ignored) {
+            return java.util.Optional.empty();
+        }
     }
 
     @Override
@@ -1086,7 +1081,6 @@ public class RunManager implements RunLifecycle, AutoCloseable {
                 if (timeframe == null || timeframe.isBlank()) {
                     timeframe = "H1";
                 }
-                System.out.println("No bars available for strategy symbol " + symbol + " and year " + year + ". Downloading data... This will take a while.");
                 log.info("No bars available for strategy symbol {} and year {}. Downloading data... This will take a while.", symbol, year);
                 downloadYearSync(symbol, year, timeframe);
             }
@@ -1362,7 +1356,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
                     .withStatus(com.martinfou.trading.core.Order.Status.FILLED)
                     .withFilledAt(event.timestamp());
                 if (orderId != null) {
-                    btOrder.withId(orderId);
+                    btOrder = btOrder.withId(orderId);
                 }
                 
                 btOrdersByRun.computeIfAbsent(runId, k -> new CopyOnWriteArrayList<>()).add(btOrder);

@@ -125,7 +125,7 @@ public class Strategy_2_15_195_Adapted implements Strategy {
     }
 
     private void closePosition(String symbol, double price, Order.Type type) {
-        pendingOrders.add(new Order(symbol, Order.Side.SELL, type, positionQty, price).closeOnly());
+        pendingOrders.add(new Order(symbol, Order.Side.SELL, type, positionQty, price).asCloseOnly());
         resetPositionState();
     }
 
