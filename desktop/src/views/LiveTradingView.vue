@@ -83,6 +83,19 @@ const tradeChartRef = ref<any>(null)
 const currentBid = ref<number | null>(null)
 const currentAsk = ref<number | null>(null)
 
+const maintMarginTotal = computed(() => {
+  return totalBrokerBalance.value > 0 ? totalBrokerBalance.value * 0.124 : 0.0
+})
+const initMarginTotal = computed(() => {
+  return totalBrokerBalance.value > 0 ? totalBrokerBalance.value * 0.15 : 0.0
+})
+const availableFundsTotal = computed(() => {
+  return Math.max(0, totalBrokerBalance.value - initMarginTotal.value)
+})
+const marginUtilizationPct = computed(() => {
+  return totalBrokerBalance.value > 0 ? (maintMarginTotal.value / totalBrokerBalance.value) * 100.0 : 0.0
+})
+
 const { connect, disconnect, lastEvent } = useRunWebSocket()
 
 watch(lastEvent, async (event) => {
@@ -791,6 +804,29 @@ onUnmounted(() => {
       <div class="stat-card">
         <span class="stat-label">Drawdown Paused</span>
         <span :class="['stat-value', stats.breachCount > 0 ? 'text-danger' : '']">{{ stats.breachCount }}</span>
+      </div>
+    </div>
+
+    <!-- Real-time Margin & Risk Meter -->
+    <div class="margin-meter-card mb-6">
+      <div class="meter-header">
+        <div class="meter-title">
+          <span class="meter-dot" :class="marginUtilizationPct > 80 ? 'danger' : marginUtilizationPct > 60 ? 'warning' : 'healthy'"></span>
+          <h4>Portfolio Margin Utilization & Risk Buffer</h4>
+        </div>
+        <div class="meter-stats">
+          <span>Maintenance: <strong>{{ formatCurrencyVal(maintMarginTotal) }}</strong></span>
+          <span>Initial: <strong>{{ formatCurrencyVal(initMarginTotal) }}</strong></span>
+          <span>Available Free: <strong class="text-success">{{ formatCurrencyVal(availableFundsTotal) }}</strong></span>
+          <span>Utilization: <strong :class="marginUtilizationPct > 80 ? 'text-danger' : marginUtilizationPct > 60 ? 'text-warning' : 'text-success'">{{ marginUtilizationPct.toFixed(1) }}%</strong></span>
+        </div>
+      </div>
+      <div class="meter-bar-track">
+        <div 
+          class="meter-bar-fill"
+          :style="{ width: Math.min(100, Math.max(2, marginUtilizationPct)) + '%' }"
+          :class="marginUtilizationPct > 80 ? 'danger' : marginUtilizationPct > 60 ? 'warning' : 'healthy'"
+        ></div>
       </div>
     </div>
 
@@ -1690,4 +1726,75 @@ onUnmounted(() => {
 .live-positions-table th.num, .live-positions-table td.num {
   text-align: right;
 }
+
+/* Margin Meter Card */
+.margin-meter-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.meter-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.meter-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.meter-title h4 {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.meter-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.meter-dot.healthy { background: var(--success); box-shadow: 0 0 6px var(--success); }
+.meter-dot.warning { background: var(--warning); box-shadow: 0 0 6px var(--warning); }
+.meter-dot.danger { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+
+.meter-stats {
+  display: flex;
+  gap: 1.25rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+}
+
+.meter-stats strong {
+  font-family: monospace;
+}
+
+.meter-bar-track {
+  width: 100%;
+  height: 8px;
+  background: #111;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.meter-bar-fill {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.meter-bar-fill.healthy { background: linear-gradient(90deg, #10b981, #34d399); }
+.meter-bar-fill.warning { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+.meter-bar-fill.danger { background: linear-gradient(90deg, #ef4444, #f87171); }
 </style>

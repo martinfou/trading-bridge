@@ -33,6 +33,11 @@ function runBacktest() {
   router.push(`/dashboard?strategyId=${props.strategy.id}&symbol=${symbol}`)
 }
 
+function runWfa() {
+  const symbol = props.strategy.defaultSymbol || 'MES'
+  router.push(`/wfa?strategyId=${props.strategy.id}&symbol=${symbol}`)
+}
+
 function onPromoted() {
   // Stay on the current page instead of routing to the trading desk
 }
@@ -117,6 +122,9 @@ function onPromoted() {
       <div class="actions-row">
         <button class="run-btn" @click="runBacktest">
           ▶ Run Backtest
+        </button>
+        <button class="wfa-btn" @click="runWfa">
+          📈 Run WFA
         </button>
         <button class="promote-btn" @click="showPromoteModal = true">
           🚀 Promote Strategy
@@ -342,5 +350,22 @@ code.detail-value {
 
 .promote-btn:hover {
   background: rgba(217, 119, 6, 0.08);
+}
+
+.wfa-btn {
+  background: var(--asset-futures-bg);
+  border: 1px solid var(--asset-futures-border);
+  color: #d8b4fe;
+  border-radius: 6px;
+  padding: 0.5rem 1.25rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.wfa-btn:hover {
+  background: rgba(168, 85, 247, 0.25);
+  border-color: var(--asset-futures);
 }
 </style>

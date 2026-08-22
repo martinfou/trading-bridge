@@ -49,54 +49,54 @@ function getParamStats(name: string) {
 </script>
 
 <template>
-  <div class="wfa-param-stability bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
-    <div class="flex items-center justify-between mb-4">
-      <h3 class="text-base font-semibold text-slate-100 flex items-center gap-2">
-        <span class="w-2.5 h-2.5 rounded-full bg-purple-400"></span>
-        Parameter Stability & Drift Matrix
-      </h3>
-      <span class="text-xs text-slate-400">Robustness Gate: CV &lt; 35%</span>
+  <div class="stability-card">
+    <div class="stability-header">
+      <div class="stability-title">
+        <span class="stability-dot"></span>
+        <h4>Parameter Stability & Drift Matrix</h4>
+      </div>
+      <span class="stability-hint">Robustness Gate: CV &lt; 35%</span>
     </div>
 
-    <div v-if="paramNames.length === 0" class="text-xs text-slate-500 py-4 text-center">
+    <div v-if="paramNames.length === 0" class="empty-state">
       No optimized parameters recorded in this run.
     </div>
 
-    <div v-else class="overflow-x-auto">
-      <table class="w-full text-xs text-left border-collapse">
+    <div v-else class="table-wrapper">
+      <table class="stability-table">
         <thead>
-          <tr class="border-b border-slate-800 text-slate-400">
-            <th class="py-2.5 px-3">Parameter</th>
-            <th v-for="f in folds" :key="f.foldIndex" class="py-2.5 px-2 text-center">
+          <tr>
+            <th class="text-left">Parameter</th>
+            <th v-for="f in folds" :key="f.foldIndex" class="text-center">
               Fold #{{ f.foldIndex + 1 }}
             </th>
-            <th class="py-2.5 px-3 text-right">Mean ± StdDev</th>
-            <th class="py-2.5 px-3 text-center">Status</th>
+            <th class="text-right">Mean ± StdDev</th>
+            <th class="text-center">Status</th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-slate-800/60 font-mono">
-          <tr v-for="pName in paramNames" :key="pName" class="hover:bg-slate-800/30">
-            <td class="py-2.5 px-3 font-medium text-slate-300">{{ pName }}</td>
+        <tbody>
+          <tr v-for="pName in paramNames" :key="pName">
+            <td class="param-name">{{ pName }}</td>
             <td
               v-for="f in folds"
               :key="f.foldIndex"
-              class="py-2.5 px-2 text-center text-slate-200"
+              class="fold-val text-center"
             >
               {{ f.selectedParameters[pName] }}
             </td>
-            <td class="py-2.5 px-3 text-right text-slate-300">
-              {{ getParamStats(pName).mean }} <span class="text-slate-500">± {{ getParamStats(pName).stdDev }}</span>
+            <td class="stats-col text-right">
+              {{ getParamStats(pName).mean }} <span class="std-dev">± {{ getParamStats(pName).stdDev }}</span>
             </td>
-            <td class="py-2.5 px-3 text-center">
+            <td class="status-col text-center">
               <span
                 v-if="getParamStats(pName).stable"
-                class="px-2 py-0.5 rounded-full text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800"
+                class="status-pill stable"
               >
                 Stable
               </span>
               <span
                 v-else
-                class="px-2 py-0.5 rounded-full text-[10px] bg-amber-950 text-amber-400 border border-amber-800"
+                class="status-pill warning"
               >
                 Drift High
               </span>
@@ -107,3 +107,123 @@ function getParamStats(name: string) {
     </div>
   </div>
 </template>
+
+<style scoped>
+.stability-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.25rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.stability-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.stability-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.stability-title h4 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.stability-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--asset-futures);
+  box-shadow: 0 0 8px var(--asset-futures);
+}
+
+.stability-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.empty-state {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 1rem;
+}
+
+.table-wrapper {
+  overflow-x: auto;
+}
+
+.stability-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+}
+
+.stability-table th {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.stability-table td {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-family: monospace;
+}
+
+.stability-table tr:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.param-name {
+  font-family: inherit !important;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.fold-val {
+  color: var(--text-primary);
+}
+
+.stats-col {
+  color: var(--text-primary);
+}
+
+.std-dev {
+  color: var(--text-muted);
+}
+
+.status-pill {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.status-pill.stable {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.status-pill.warning {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.text-left { text-align: left; }
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+</style>
