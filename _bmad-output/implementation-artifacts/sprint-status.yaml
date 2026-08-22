@@ -255,13 +255,13 @@ development_status:
   27-20-lt-strategy-playbook: done
   27-21-joplin-save: done
   epic-27-retrospective: optional
-  epic-28: in-progress
-  28-1-endpoints-rest-api-and-persistance: ready-for-dev
-  28-2-interface-graphique-desktop-timeline-et-stabilite: backlog
-  28-3-suivi-de-la-fraicheur-de-calibration-et-alertes-tuigui: backlog
+  epic-28: done
+  28-1-endpoints-rest-api-and-persistance: done
+  28-2-interface-graphique-desktop-timeline-et-stabilite: done
+  28-3-suivi-de-la-fraicheur-de-calibration-et-alertes-tuigui: done
   epic-28-retrospective: optional
-  epic-29: backlog
-  29-1-refactoring-de-valorisation-d-actifs-et-multiplicateur-mes-pnl: backlog
+  epic-29: in-progress
+  29-1-refactoring-de-valorisation-d-actifs-et-multiplicateur-mes-pnl: ready-for-dev
   29-2-simulation-des-marges-et-liquidation-forcee: backlog
   29-3-serie-de-prix-continue-et-execution-de-rollover: backlog
   29-4-ingesteur-de-donnees-historiques-via-tws-api: backlog
