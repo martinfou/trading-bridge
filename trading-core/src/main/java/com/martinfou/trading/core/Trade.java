@@ -14,11 +14,12 @@ public class Trade {
     private final double pnl;
     private final double stopLoss;
     private final double takeProfit;
+    private final String rolloverGroupId;
 
     public Trade(String id, String symbol, Order.Side side, double entryPrice, double exitPrice,
                  double quantity, Instant entryTime, Instant exitTime, double pnl,
-                 double stopLoss, double takeProfit) {
-        this.id = id != null ? id : java.util.UUID.randomUUID().toString();
+                 double stopLoss, double takeProfit, String rolloverGroupId) {
+        this.id = id != null ? id : UUID.randomUUID().toString();
         this.symbol = symbol;
         this.side = side;
         this.entryPrice = entryPrice;
@@ -29,25 +30,39 @@ public class Trade {
         this.pnl = pnl;
         this.stopLoss = stopLoss;
         this.takeProfit = takeProfit;
+        this.rolloverGroupId = rolloverGroupId;
+    }
+
+    public Trade(String id, String symbol, Order.Side side, double entryPrice, double exitPrice,
+                 double quantity, Instant entryTime, Instant exitTime, double pnl,
+                 double stopLoss, double takeProfit) {
+        this(id, symbol, side, entryPrice, exitPrice, quantity, entryTime, exitTime, pnl, stopLoss, takeProfit, null);
     }
 
     public Trade(String symbol, Order.Side side, double entryPrice, double exitPrice,
                  double quantity, Instant entryTime, Instant exitTime) {
-        this(java.util.UUID.randomUUID().toString(), symbol, side, entryPrice, exitPrice, quantity, entryTime, exitTime,
-             ForexPnL.pnlUsd(symbol, side, entryPrice, exitPrice, quantity, ForexPnL.DEFAULT_USD_JPY), 0.0, 0.0);
+        this(UUID.randomUUID().toString(), symbol, side, entryPrice, exitPrice, quantity, entryTime, exitTime,
+             AssetValuationRegistry.calculatePnL(symbol, side, entryPrice, exitPrice, quantity, ForexPnL.DEFAULT_USD_JPY), 0.0, 0.0, null);
     }
 
     public Trade(String symbol, Order.Side side, double entryPrice, double exitPrice,
                  double quantity, Instant entryTime, Instant exitTime, double usdJpyRate) {
-        this(java.util.UUID.randomUUID().toString(), symbol, side, entryPrice, exitPrice, quantity, entryTime, exitTime,
-             ForexPnL.pnlUsd(symbol, side, entryPrice, exitPrice, quantity, usdJpyRate), 0.0, 0.0);
+        this(UUID.randomUUID().toString(), symbol, side, entryPrice, exitPrice, quantity, entryTime, exitTime,
+             AssetValuationRegistry.calculatePnL(symbol, side, entryPrice, exitPrice, quantity, usdJpyRate), 0.0, 0.0, null);
     }
 
     public Trade(String symbol, Order.Side side, double entryPrice, double exitPrice,
                  double quantity, Instant entryTime, Instant exitTime, double usdJpyRate,
                  double stopLoss, double takeProfit) {
-        this(java.util.UUID.randomUUID().toString(), symbol, side, entryPrice, exitPrice, quantity, entryTime, exitTime,
-             ForexPnL.pnlUsd(symbol, side, entryPrice, exitPrice, quantity, usdJpyRate), stopLoss, takeProfit);
+        this(UUID.randomUUID().toString(), symbol, side, entryPrice, exitPrice, quantity, entryTime, exitTime,
+             AssetValuationRegistry.calculatePnL(symbol, side, entryPrice, exitPrice, quantity, usdJpyRate), stopLoss, takeProfit, null);
+    }
+
+    public Trade(String symbol, Order.Side side, double entryPrice, double exitPrice,
+                 double quantity, Instant entryTime, Instant exitTime, double usdJpyRate,
+                 double stopLoss, double takeProfit, String rolloverGroupId) {
+        this(UUID.randomUUID().toString(), symbol, side, entryPrice, exitPrice, quantity, entryTime, exitTime,
+             AssetValuationRegistry.calculatePnL(symbol, side, entryPrice, exitPrice, quantity, usdJpyRate), stopLoss, takeProfit, rolloverGroupId);
     }
 
     public String id() { return id; }
@@ -62,6 +77,7 @@ public class Trade {
     public double quantity() { return quantity; }
     public double stopLoss() { return stopLoss; }
     public double takeProfit() { return takeProfit; }
+    public String rolloverGroupId() { return rolloverGroupId; }
 
     @Override
     public String toString() {

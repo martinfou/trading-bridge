@@ -260,14 +260,14 @@ development_status:
   28-2-interface-graphique-desktop-timeline-et-stabilite: done
   28-3-suivi-de-la-fraicheur-de-calibration-et-alertes-tuigui: done
   epic-28-retrospective: optional
-  epic-29: in-progress
-  29-1-refactoring-de-valorisation-d-actifs-et-multiplicateur-mes-pnl: ready-for-dev
-  29-2-simulation-des-marges-et-liquidation-forcee: backlog
-  29-3-serie-de-prix-continue-et-execution-de-rollover: backlog
-  29-4-ingesteur-de-donnees-historiques-via-tws-api: backlog
+  epic-29: done
+  29-1-refactoring-de-valorisation-d-actifs-et-multiplicateur-mes-pnl: done
+  29-2-simulation-des-marges-et-liquidation-forcee: done
+  29-3-serie-de-prix-continue-et-execution-de-rollover: done
+  29-4-ingesteur-de-donnees-historiques-via-tws-api: done
   epic-29-retrospective: optional
-  epic-30: backlog
-  30-1-resolution-de-contrat-et-soumission-d-ordres-market-fut: backlog
+  epic-30: in-progress
+  30-1-resolution-de-contrat-et-soumission-d-ordres-market-fut: ready-for-dev
   30-2-interception-des-fills-et-reconciliation-double-barriere-des-commissions: backlog
   30-3-resume-de-compte-et-metriques-de-marge-api-rest-generique-cache: backlog
   30-4-heartbeat-de-connexion-cache-de-fraicheur-et-notifications-temps-reel-websocket-ui: backlog
