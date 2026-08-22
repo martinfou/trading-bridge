@@ -199,6 +199,14 @@ public class BacktestEngine {
 
             previousBar = bar;
         }
+
+        // Close any remaining open positions at last trading bar's close
+        Bar lastTradingBar = lastTradingBar(bars);
+        if (lastTradingBar != null) {
+            closeRemainingPositions(lastTradingBar);
+            recomputeEquity(lastTradingBar);
+        }
+
         return buildResult();
     }
 
@@ -223,13 +231,6 @@ public class BacktestEngine {
             }
         } else if (index == bars.size() - 1) {
             strategy.onBar(bar);
-        }
-
-        // Close any remaining open positions at last trading bar's close
-        Bar lastTradingBar = lastTradingBar(bars);
-        if (lastTradingBar != null) {
-            closeRemainingPositions(lastTradingBar);
-            recomputeEquity(lastTradingBar);
         }
     }
 

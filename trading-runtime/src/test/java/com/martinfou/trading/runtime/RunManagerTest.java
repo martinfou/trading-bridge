@@ -471,10 +471,8 @@ class RunManagerTest {
         }
     }
 
-    private void setCompletedAt(RunRecord record, Instant instant) throws Exception {
-        java.lang.reflect.Field field = RunRecord.class.getDeclaredField("completedAt");
-        field.setAccessible(true);
-        field.set(record, instant);
+    private void setCompletedAt(RunRecord record, Instant instant) {
+        record.setCompletedAt(instant);
     }
 
     @Test
