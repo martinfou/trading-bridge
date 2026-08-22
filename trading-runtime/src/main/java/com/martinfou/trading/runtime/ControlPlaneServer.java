@@ -57,6 +57,7 @@ public final class ControlPlaneServer implements AutoCloseable {
     private final WeeklyBuilderService weeklyBuilderService;
     private final HistoricalDataService historicalDataService;
     private final SqliteBacktestRunStore backtestRunStore;
+    private final com.martinfou.trading.runtime.wfa.WfaManager wfaManager;
     private final StaleRunWatchdog watchdog;
     private final Javalin app;
     private final Map<String, CachedStats> weeklyStatsCache = new java.util.concurrent.ConcurrentHashMap<>();
@@ -101,6 +102,22 @@ public final class ControlPlaneServer implements AutoCloseable {
         HistoricalDataService historicalDataService,
         int port
     ) {
+        this(runManager, eventHub, promoteService, killSwitchService, summaryService,
+            sqBridgeService, weeklyBuilderService, historicalDataService, null, port);
+    }
+
+    ControlPlaneServer(
+        RunManager runManager,
+        RunEventHub eventHub,
+        PromoteService promoteService,
+        KillSwitchService killSwitchService,
+        ControlSummaryService summaryService,
+        SqBridgeService sqBridgeService,
+        WeeklyBuilderService weeklyBuilderService,
+        HistoricalDataService historicalDataService,
+        com.martinfou.trading.runtime.wfa.WfaManager wfaManager,
+        int port
+    ) {
         if (runManager == null) {
             throw new IllegalArgumentException("runManager must not be null");
         }
@@ -131,9 +148,10 @@ public final class ControlPlaneServer implements AutoCloseable {
         this.weeklyBuilderService = weeklyBuilderService;
         this.historicalDataService = historicalDataService != null ? historicalDataService : new HistoricalDataService();
         this.backtestRunStore = new SqliteBacktestRunStore(BacktestPersistenceService.resolveDefaultDbPath());
+        this.wfaManager = wfaManager != null ? wfaManager : new com.martinfou.trading.runtime.wfa.WfaManager(new com.martinfou.trading.backtest.persistence.SqliteWfaRunStore(BacktestPersistenceService.resolveDefaultDbPath()));
         this.watchdog = new StaleRunWatchdog(runManager, summaryService);
         this.app = createApp(runManager, eventHub, promoteService, killSwitchService, summaryService,
-            sqBridgeService, weeklyBuilderService, this.historicalDataService, this.backtestRunStore, this.weeklyStatsCache, this.activeSubscriptions);
+            sqBridgeService, weeklyBuilderService, this.historicalDataService, this.backtestRunStore, this.wfaManager, this.weeklyStatsCache, this.activeSubscriptions);
 
         runManager.addTransitionListener((before, after, cause) -> {
             if (after.status() == RunRecord.Status.COMPLETED || 
@@ -268,6 +286,13 @@ public final class ControlPlaneServer implements AutoCloseable {
                 log.error("Failed to close BacktestRunStore database connection", e);
             }
         }
+        if (wfaManager != null) {
+            try {
+                wfaManager.close();
+            } catch (Exception e) {
+                log.error("Failed to close WfaManager", e);
+            }
+        }
         for (var sub : activeSubscriptions.values()) {
             try {
                 sub.close();
@@ -276,6 +301,10 @@ public final class ControlPlaneServer implements AutoCloseable {
             }
         }
         activeSubscriptions.clear();
+    }
+
+    public com.martinfou.trading.runtime.wfa.WfaManager wfaManager() {
+        return wfaManager;
     }
 
     private static Javalin createApp(
@@ -288,6 +317,7 @@ public final class ControlPlaneServer implements AutoCloseable {
         WeeklyBuilderService weeklyBuilderService,
         HistoricalDataService historicalDataService,
         SqliteBacktestRunStore backtestRunStore,
+        com.martinfou.trading.runtime.wfa.WfaManager wfaManager,
         Map<String, CachedStats> weeklyStatsCache,
         Map<String, AutoCloseable> activeSubscriptions
     ) {
@@ -463,6 +493,89 @@ public final class ControlPlaneServer implements AutoCloseable {
                     }
                 }
                 ctx.json(Map.of("balances", balances));
+            })
+            .get("/api/brokers/{brokerId}/account-summary", ctx -> {
+                String brokerId = ctx.pathParam("brokerId").toLowerCase();
+                var registry = runManager.brokerAccountRegistry();
+                BrokerAccountRegistry.AccountEntry entry = registry.getRawAccount(brokerId);
+                if (entry == null) {
+                    entry = registry.getRawAccounts().stream()
+                        .filter(a -> a.provider().equalsIgnoreCase(brokerId))
+                        .findFirst()
+                        .orElse(null);
+                }
+                if (entry == null) {
+                    ctx.status(HttpStatus.NOT_FOUND);
+                    ctx.json(Map.of("error", "Broker account not found: " + brokerId));
+                    return;
+                }
+
+                if ("ibkr".equalsIgnoreCase(entry.provider())) {
+                    com.martinfou.trading.data.ibkr.IbkrAccountCache cache = new com.martinfou.trading.data.ibkr.IbkrAccountCache(entry.accountId());
+                    try (com.martinfou.trading.broker.Broker broker = registry.broker(entry.id()).orElse(null)) {
+                        if (broker != null) {
+                            broker.connect();
+                            com.martinfou.trading.broker.AccountState st = broker.getAccountState();
+                            cache.updateValue("NetLiquidation", st.equity());
+                            cache.updateValue("TotalCashBalance", st.balance());
+                        }
+                    } catch (Exception ignored) {}
+                    ctx.json(cache.snapshot().toMap());
+                } else {
+                    try (com.martinfou.trading.broker.Broker broker = registry.broker(entry.id()).orElse(null)) {
+                        if (broker != null) {
+                            broker.connect();
+                            com.martinfou.trading.broker.AccountState st = broker.getAccountState();
+                            Map<String, Object> resp = new LinkedHashMap<>();
+                            resp.put("accountId", entry.accountId());
+                            resp.put("provider", entry.provider());
+                            resp.put("netLiquidation", st.equity());
+                            resp.put("totalCashBalance", st.balance());
+                            resp.put("availableFunds", st.equity() * 0.9);
+                            resp.put("marginUtilizationPct", 0.0);
+                            resp.put("pdtRestricted", false);
+                            ctx.json(resp);
+                        } else {
+                            ctx.status(HttpStatus.BAD_GATEWAY);
+                            ctx.json(Map.of("error", "Failed to connect to broker " + brokerId));
+                        }
+                    }
+                }
+            })
+            .get("/api/portfolio/margins", ctx -> {
+                double totalEquity = 0.0;
+                double totalInitialMargin = 0.0;
+                double totalMaintMargin = 0.0;
+                boolean anyPdtRestricted = false;
+                List<Map<String, Object>> brokerMargins = new ArrayList<>();
+
+                for (BrokerAccountRegistry.AccountEntry entry : runManager.brokerAccountRegistry().getRawAccounts()) {
+                    if (runManager.brokerAccountRegistry().credentialsConfigured(entry.id())) {
+                        try (com.martinfou.trading.broker.Broker broker = runManager.brokerAccountRegistry().broker(entry.id()).orElse(null)) {
+                            if (broker != null) {
+                                broker.connect();
+                                com.martinfou.trading.broker.AccountState st = broker.getAccountState();
+                                totalEquity += st.equity();
+                                Map<String, Object> item = new LinkedHashMap<>();
+                                item.put("id", entry.id());
+                                item.put("provider", entry.provider());
+                                item.put("equity", st.equity());
+                                item.put("balance", st.balance());
+                                brokerMargins.add(item);
+                            }
+                        } catch (Exception ignored) {}
+                    }
+                }
+
+                Map<String, Object> resp = new LinkedHashMap<>();
+                resp.put("totalEquity", totalEquity);
+                resp.put("totalInitialMargin", totalInitialMargin);
+                resp.put("totalMaintenanceMargin", totalMaintMargin);
+                resp.put("availableFunds", Math.max(0.0, totalEquity - totalInitialMargin));
+                resp.put("marginUtilizationPct", totalEquity > 0 ? (totalMaintMargin / totalEquity) * 100.0 : 0.0);
+                resp.put("pdtRestricted", anyPdtRestricted);
+                resp.put("brokers", brokerMargins);
+                ctx.json(resp);
             })
             .post("/api/broker-accounts", ctx -> {
                 try {
@@ -810,6 +923,48 @@ public final class ControlPlaneServer implements AutoCloseable {
                 });
 
                 ctx.json(Map.of("runs", items));
+            })
+            .post("/api/runs/walk-forward", ctx -> {
+                try {
+                    com.martinfou.trading.runtime.wfa.WfaRunRequest req = ctx.bodyAsClass(com.martinfou.trading.runtime.wfa.WfaRunRequest.class);
+                    String wfaId = wfaManager.startWfaRun(req);
+                    ctx.status(HttpStatus.ACCEPTED).json(Map.of(
+                        "wfaId", wfaId,
+                        "status", "RUNNING",
+                        "message", "Walk-Forward Analysis task started successfully"
+                    ));
+                } catch (IllegalStateException e) {
+                    ctx.status(HttpStatus.CONFLICT).json(Map.of(
+                        "error", e.getMessage(),
+                        "status", "CONFLICT"
+                    ));
+                } catch (Exception e) {
+                    ctx.status(HttpStatus.BAD_REQUEST).json(Map.of(
+                        "error", e.getMessage() != null ? e.getMessage() : "Invalid WFA request"
+                    ));
+                }
+            })
+            .get("/api/runs/walk-forward/{id}/report", ctx -> {
+                String id = ctx.pathParam("id");
+                var reportJson = wfaManager.getReportJson(id);
+                if (reportJson.isPresent()) {
+                    ctx.contentType("application/json").result(reportJson.get());
+                } else {
+                    ctx.status(HttpStatus.NOT_FOUND).json(Map.of("error", "WFA report not found for run: " + id));
+                }
+            })
+            .get("/api/runs/walk-forward/{id}", ctx -> {
+                String id = ctx.pathParam("id");
+                var progress = wfaManager.getProgress(id);
+                if (progress.isPresent()) {
+                    ctx.json(progress.get());
+                } else {
+                    ctx.status(HttpStatus.NOT_FOUND).json(Map.of("error", "WFA run not found: " + id));
+                }
+            })
+            .get("/api/runs/walk-forward", ctx -> {
+                int limit = ctx.queryParam("limit") != null ? Integer.parseInt(ctx.queryParam("limit")) : 50;
+                ctx.json(wfaManager.listRuns(limit));
             })
             .get("/api/runs/{runId}", ctx -> {
                 String runId = ctx.pathParam("runId");
