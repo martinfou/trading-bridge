@@ -129,6 +129,10 @@ public final class RunRecord {
         state.updateAndGet(s -> s.withCompletedAtAndPayload(Status.COMPLETED, Instant.now(), payload));
     }
 
+    void setCompletedAt(Instant completedAt) {
+        state.updateAndGet(s -> s.withCompletedAtAndPayload(s.status(), completedAt, s.endedPayload()));
+    }
+
     void markFailed(String message) {
         state.updateAndGet(s -> s.withCompletedAtAndError(Status.FAILED, Instant.now(), message));
     }
