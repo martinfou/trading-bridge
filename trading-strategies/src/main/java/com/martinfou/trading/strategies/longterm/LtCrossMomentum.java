@@ -37,13 +37,13 @@ import java.util.*;
  */
 public class LtCrossMomentum implements Strategy {
 
-    private static final int FAST_PERIOD = 20;
-    private static final int SLOW_PERIOD = 100;
-    private static final int ATR_PERIOD = 14;
-    private static final double ATR_SL_MULT = 2.0;
-    private static final double ATR_TP_MULT = 4.0;
-    private static final double REFERENCE_CAPITAL = 10_000;
-    private static final double RISK_PCT = 0.01;
+    private int fastPeriod = 20;
+    private int slowPeriod = 100;
+    private int atrPeriod = 14;
+    private double atrSlMult = 2.0;
+    private double atrTpMult = 4.0;
+    private double referenceCapital = 10_000;
+    private double riskPct = 0.01;
     private static final ZoneId UTC = ZoneId.of("UTC");
 
     private final String name;
@@ -73,15 +73,15 @@ public class LtCrossMomentum implements Strategy {
         if (!bar.symbol().equals(symbol)) return;
         history.add(bar);
         int size = history.size();
-        // Need SLOW_PERIOD bars for SMA(100), plus some buffer
-        if (size < SLOW_PERIOD + 5) return;
+        // Need slowPeriod bars for SMA, plus some buffer
+        if (size < slowPeriod + 5) return;
 
-        double smaFast = Indicators.sma(history, FAST_PERIOD, size - 1);
-        double smaSlow = Indicators.sma(history, SLOW_PERIOD, size - 1);
-        double smaFastPrev = Indicators.sma(history, FAST_PERIOD, size - 2);
-        double smaSlowPrev = Indicators.sma(history, SLOW_PERIOD, size - 2);
+        double smaFast = Indicators.sma(history, fastPeriod, size - 1);
+        double smaSlow = Indicators.sma(history, slowPeriod, size - 1);
+        double smaFastPrev = Indicators.sma(history, fastPeriod, size - 2);
+        double smaSlowPrev = Indicators.sma(history, slowPeriod, size - 2);
 
-        double atr = Indicators.atr(history, ATR_PERIOD);
+        double atr = Indicators.atr(history, atrPeriod);
         double close = bar.close();
 
         if (Double.isNaN(smaFast) || Double.isNaN(smaSlow) ||
@@ -123,14 +123,14 @@ public class LtCrossMomentum implements Strategy {
         // Not in trade — check entry conditions (max 1 trade per day)
         if (currentDay == lastTradeDay) return;
 
-        long units = Indicators.calcRiskPosition(REFERENCE_CAPITAL, RISK_PCT, atr, ATR_SL_MULT, symbol);
+        long units = Indicators.calcRiskPosition(referenceCapital, riskPct, atr, atrSlMult, symbol);
 
         // LONG entry: golden cross (SMA20 crosses above SMA100)
         if (smaFastPrev <= smaSlowPrev && smaFast > smaSlow) {
             direction = Order.Side.BUY;
             entryPrice = close;
-            entrySl = close - atr * ATR_SL_MULT;
-            entryTp = close + atr * ATR_TP_MULT;
+            entrySl = close - atr * atrSlMult;
+            entryTp = close + atr * atrTpMult;
             pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, units, close)
                 .withStopLoss(entrySl).withTakeProfit(entryTp));
             inTrade = true;
@@ -141,8 +141,8 @@ public class LtCrossMomentum implements Strategy {
         else if (smaFastPrev >= smaSlowPrev && smaFast < smaSlow) {
             direction = Order.Side.SELL;
             entryPrice = close;
-            entrySl = close + atr * ATR_SL_MULT;
-            entryTp = close - atr * ATR_TP_MULT;
+            entrySl = close + atr * atrSlMult;
+            entryTp = close - atr * atrTpMult;
             pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, units, close)
                 .withStopLoss(entrySl).withTakeProfit(entryTp));
             inTrade = true;

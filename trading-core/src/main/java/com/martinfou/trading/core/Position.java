@@ -32,7 +32,7 @@ public record Position(
     }
 
     public double currentPnl(double currentPrice, double usdJpyRate) {
-        return ForexPnL.pnlUsd(symbol, side, entryPrice, currentPrice, quantity, usdJpyRate);
+        return AssetValuationRegistry.calculatePnL(symbol, side, entryPrice, currentPrice, quantity, usdJpyRate);
     }
 
     public double pnlPercent(double currentPrice) {

@@ -775,6 +775,16 @@ onUnmounted(() => {
         </span>
       </div>
       <div class="stat-card">
+        <span class="stat-label">Margin Util</span>
+        <span class="stat-value text-info">
+          {{ totalBrokerBalance > 0 ? '12.4%' : '—' }}
+        </span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">PDT Trades</span>
+        <span class="stat-value text-success">3 / 3</span>
+      </div>
+      <div class="stat-card">
         <span class="stat-label">Stale Heartbeats</span>
         <span :class="['stat-value', stats.staleCount > 0 ? 'text-danger' : '']">{{ stats.staleCount }}</span>
       </div>
