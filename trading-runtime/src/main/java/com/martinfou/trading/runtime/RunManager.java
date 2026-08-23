@@ -746,26 +746,28 @@ public class RunManager implements RunLifecycle, AutoCloseable {
             String strategyId = targetRecord.strategyId();
             RunMode mode = targetRecord.mode();
 
-            List<RunRecord> siblingRuns = runRecordStore.listAll().stream()
-                .filter(r -> java.util.Objects.equals(strategyId, r.strategyId())
-                    && mode == r.mode()
-                    && java.util.Objects.equals(targetRecord.symbol(), r.symbol()))
-                .toList();
+            if (mode != RunMode.BACKTEST) {
+                List<RunRecord> siblingRuns = runRecordStore.listAll().stream()
+                    .filter(r -> java.util.Objects.equals(strategyId, r.strategyId())
+                        && mode == r.mode()
+                        && java.util.Objects.equals(targetRecord.symbol(), r.symbol()))
+                    .toList();
 
-            List<com.martinfou.trading.core.Trade> cumulativeTrades = new ArrayList<>();
-            for (RunRecord sibling : siblingRuns) {
-                List<com.martinfou.trading.core.Trade> siblingTrades = tradeStore.getTrades(sibling.runId());
-                if (siblingTrades.isEmpty()) {
-                    siblingTrades = com.martinfou.trading.backtest.persistence.TradeReconstructor.reconstruct(eventStore.replayAll(sibling.runId()));
+                List<com.martinfou.trading.core.Trade> cumulativeTrades = new ArrayList<>();
+                for (RunRecord sibling : siblingRuns) {
+                    List<com.martinfou.trading.core.Trade> siblingTrades = tradeStore.getTrades(sibling.runId());
+                    if (siblingTrades.isEmpty()) {
+                        siblingTrades = com.martinfou.trading.backtest.persistence.TradeReconstructor.reconstruct(eventStore.replayAll(sibling.runId()));
+                    }
+                    cumulativeTrades.addAll(siblingTrades);
                 }
-                cumulativeTrades.addAll(siblingTrades);
+                // Sort by entry time
+                cumulativeTrades.sort(Comparator.comparing(
+                    com.martinfou.trading.core.Trade::entryTime,
+                    Comparator.nullsLast(Instant::compareTo)
+                ));
+                return cumulativeTrades;
             }
-            // Sort by entry time
-            cumulativeTrades.sort(Comparator.comparing(
-                com.martinfou.trading.core.Trade::entryTime,
-                Comparator.nullsLast(Instant::compareTo)
-            ));
-            return cumulativeTrades;
         }
 
         List<com.martinfou.trading.core.Trade> list = tradeStore.getTrades(runId);
