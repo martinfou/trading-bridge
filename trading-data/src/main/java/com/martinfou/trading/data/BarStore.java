@@ -48,6 +48,10 @@ public class BarStore {
      */
     private static final ByteOrder DATA_BYTE_ORDER = ByteOrder.LITTLE_ENDIAN;
 
+    /** Plausible epoch-seconds window for a bar timestamp (2000-01-01 .. 2100-01-01). */
+    private static final long MIN_PLAUSIBLE_EPOCH_SEC = 946_684_800L;
+    private static final long MAX_PLAUSIBLE_EPOCH_SEC = 4_102_444_800L;
+
     public BarStore(String symbol, String timeframe, Path dataDir) {
         this.symbol = symbol;
         this.timeframe = timeframe;
@@ -129,7 +133,31 @@ public class BarStore {
             this.barCount = (int) (size / BAR_SIZE);
             this.buffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, size);
             this.buffer.order(DATA_BYTE_ORDER);
+            detectEndianness();
         }
+    }
+
+    /**
+     * Auto-detect the byte order of the first bar's timestamp. Files written by
+     * {@link #write(List)} (and the unit tests) are little-endian, but the legacy
+     * historical files in {@code data/historical/bars/} are big-endian. We keep
+     * little-endian unless the big-endian interpretation is the only plausible one.
+     */
+    private void detectEndianness() {
+        if (barCount == 0 || buffer.capacity() < Long.BYTES) return;
+        long little = buffer.order(ByteOrder.LITTLE_ENDIAN).getLong(0);
+        long big = buffer.order(ByteOrder.BIG_ENDIAN).getLong(0);
+        if (isPlausibleTimestamp(big) && !isPlausibleTimestamp(little)) {
+            buffer.order(ByteOrder.BIG_ENDIAN);
+        } else {
+            buffer.order(DATA_BYTE_ORDER);
+        }
+    }
+
+    /** A raw value is a plausible timestamp if it is an epoch (seconds or millis) in [2000, 2100]. */
+    private static boolean isPlausibleTimestamp(long raw) {
+        long epochSec = raw > 1_000_000_000_000L ? raw / 1000 : raw;
+        return epochSec >= MIN_PLAUSIBLE_EPOCH_SEC && epochSec <= MAX_PLAUSIBLE_EPOCH_SEC;
     }
 
     /** Nombre de barres dans le fichier */
