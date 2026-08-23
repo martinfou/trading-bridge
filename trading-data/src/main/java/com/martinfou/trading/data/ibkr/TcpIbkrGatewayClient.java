@@ -21,6 +21,7 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
     private final IbkrConnectionConfig config;
     private final StubIbkrGatewayClient session = new StubIbkrGatewayClient();
     private volatile boolean gatewayReachable;
+    private volatile Socket socket;
 
     public TcpIbkrGatewayClient(IbkrConnectionConfig config) {
         if (config == null) {
@@ -31,8 +32,9 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
 
     @Override
     public void connect() {
-        try (Socket socket = new Socket()) {
-            socket.connect(new InetSocketAddress(config.host(), config.port()), (int) CONNECT_TIMEOUT.toMillis());
+        try {
+            this.socket = new Socket();
+            this.socket.connect(new InetSocketAddress(config.host(), config.port()), (int) CONNECT_TIMEOUT.toMillis());
             gatewayReachable = true;
             session.connect();
             log.info("IB Gateway reachable at {}:{} (clientId={}, account={})",
@@ -46,6 +48,15 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
     @Override
     public void disconnect() {
         gatewayReachable = false;
+        Socket s = this.socket;
+        this.socket = null;
+        if (s != null) {
+            try {
+                s.close();
+            } catch (IOException e) {
+                log.warn("Failed to close IB Gateway socket", e);
+            }
+        }
         session.disconnect();
     }
 
