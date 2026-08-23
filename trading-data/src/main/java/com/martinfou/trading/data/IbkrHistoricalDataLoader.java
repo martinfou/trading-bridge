@@ -27,15 +27,25 @@ public final class IbkrHistoricalDataLoader {
     private static final DateTimeFormatter IBKR_COMPACT_FMT = DateTimeFormatter.ofPattern("yyyyMMdd HH:mm:ss");
     private static final DateTimeFormatter IBKR_DATE_ONLY_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
+    public static final java.time.ZoneId DEFAULT_ZONE = java.time.ZoneId.of("America/New_York");
+
     private IbkrHistoricalDataLoader() {}
 
     public static List<Bar> loadCsv(Path path, String symbol) throws IOException {
+        return loadCsv(path, symbol, DEFAULT_ZONE);
+    }
+
+    public static List<Bar> loadCsv(Path path, String symbol, java.time.ZoneId sourceZone) throws IOException {
         try (InputStream in = Files.newInputStream(path)) {
-            return loadCsv(in, symbol);
+            return loadCsv(in, symbol, sourceZone);
         }
     }
 
     public static List<Bar> loadCsv(InputStream in, String symbol) throws IOException {
+        return loadCsv(in, symbol, DEFAULT_ZONE);
+    }
+
+    public static List<Bar> loadCsv(InputStream in, String symbol, java.time.ZoneId sourceZone) throws IOException {
         List<Bar> bars = new ArrayList<>();
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
             String line = reader.readLine(); // Header
@@ -50,7 +60,7 @@ public final class IbkrHistoricalDataLoader {
 
                 try {
                     String timeStr = parts[0].trim();
-                    Instant timestamp = parseIbkrTime(timeStr);
+                    Instant timestamp = parseIbkrTime(timeStr, sourceZone);
                     double open = Double.parseDouble(parts[1].trim());
                     double high = Double.parseDouble(parts[2].trim());
                     double low = Double.parseDouble(parts[3].trim());
@@ -65,6 +75,10 @@ public final class IbkrHistoricalDataLoader {
     }
 
     public static Instant parseIbkrTime(String timeStr) {
+        return parseIbkrTime(timeStr, DEFAULT_ZONE);
+    }
+
+    public static Instant parseIbkrTime(String timeStr, java.time.ZoneId sourceZone) {
         if (timeStr == null || timeStr.isBlank()) {
             return Instant.EPOCH;
         }
@@ -77,18 +91,21 @@ public final class IbkrHistoricalDataLoader {
             return epoch > 1_000_000_000_000L ? Instant.ofEpochMilli(epoch) : Instant.ofEpochSecond(epoch);
         } catch (NumberFormatException ignored) {}
 
+        java.time.ZoneId zone = sourceZone != null ? sourceZone : DEFAULT_ZONE;
+
         if (clean.contains("  ")) {
             LocalDateTime ldt = LocalDateTime.parse(clean, IBKR_DATETIME_FMT);
-            return ldt.toInstant(ZoneOffset.UTC);
+            return ldt.atZone(zone).toInstant();
         }
         if (clean.contains(" ")) {
             LocalDateTime ldt = LocalDateTime.parse(clean, IBKR_COMPACT_FMT);
-            return ldt.toInstant(ZoneOffset.UTC);
+            return ldt.atZone(zone).toInstant();
         }
         if (clean.length() == 8) {
             LocalDateTime ldt = LocalDateTime.parse(clean + " 00:00:00", IBKR_COMPACT_FMT);
-            return ldt.toInstant(ZoneOffset.UTC);
+            return ldt.atZone(zone).toInstant();
         }
         return Instant.EPOCH;
     }
 }
+

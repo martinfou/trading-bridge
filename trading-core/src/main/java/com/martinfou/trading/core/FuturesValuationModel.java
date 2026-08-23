@@ -27,16 +27,20 @@ public final class FuturesValuationModel implements AssetValuationModel {
     public double calculatePnL(Order.Side side, double entryPrice, double exitPrice, double quantity, double usdJpyRate) {
         double contracts = validateQuantity(quantity);
         double multiplier = contract.multiplier();
+        double qExit = contract.quantizePrice(exitPrice);
         double priceDiff = side == Order.Side.BUY
-            ? (exitPrice - entryPrice)
-            : (entryPrice - exitPrice);
+            ? (qExit - entryPrice)
+            : (entryPrice - qExit);
         return priceDiff * multiplier * contracts;
     }
 
+
     @Override
     public double notionalValue(double price, double quantity) {
-        return price * contract.multiplier() * validateQuantity(quantity);
+        double qPrice = contract.quantizePrice(price);
+        return qPrice * contract.multiplier() * validateQuantity(quantity);
     }
+
 
     @Override
     public double validateQuantity(double quantity) {

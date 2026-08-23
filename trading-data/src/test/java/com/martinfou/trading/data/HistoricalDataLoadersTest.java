@@ -59,8 +59,10 @@ class HistoricalDataLoadersTest {
         assertEquals(2, bars.size());
         Bar b0 = bars.get(0);
         assertEquals("MES", b0.symbol());
-        assertEquals(Instant.parse("2024-01-02T09:30:00Z"), b0.timestamp());
+        // 09:30:00 EST (America/New_York) is 14:30:00 UTC
+        assertEquals(Instant.parse("2024-01-02T14:30:00Z"), b0.timestamp());
         assertEquals(4980.0, b0.open(), 1e-6);
         assertEquals(5005.0, bars.get(1).close(), 1e-6);
     }
 }
+
