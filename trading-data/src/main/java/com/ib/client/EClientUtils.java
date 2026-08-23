@@ -1,21 +1,5 @@
-/*
- * Java TWS API Client
- *
- * Copyright (C) 2013-2026  Interactive Brokers LLC
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <https://www.gnu.org/licenses/>.
- */
+/* Copyright (C) 2025 Interactive Brokers LLC. All rights reserved. This code is subject to the terms
+ * and conditions of the IB API Non-Commercial License or the IB API Commercial License, as applicable. */
 
 package com.ib.client;
 
@@ -38,6 +22,7 @@ import com.ib.client.protobuf.CancelAccountUpdatesMultiProto;
 import com.ib.client.protobuf.CancelCalculateImpliedVolatilityProto;
 import com.ib.client.protobuf.CancelCalculateOptionPriceProto;
 import com.ib.client.protobuf.CancelContractDataProto;
+import com.ib.client.protobuf.CancelFundamentalsDataProto;
 import com.ib.client.protobuf.CancelHeadTimestampProto;
 import com.ib.client.protobuf.CancelHistogramDataProto;
 import com.ib.client.protobuf.CancelHistoricalDataProto;
@@ -68,6 +53,7 @@ import com.ib.client.protobuf.ExerciseOptionsRequestProto;
 import com.ib.client.protobuf.FAReplaceProto;
 import com.ib.client.protobuf.FARequestProto;
 import com.ib.client.protobuf.FamilyCodesRequestProto;
+import com.ib.client.protobuf.FundamentalsDataRequestProto;
 import com.ib.client.protobuf.GlobalCancelRequestProto;
 import com.ib.client.protobuf.HeadTimestampRequestProto;
 import com.ib.client.protobuf.HistogramDataRequestProto;
@@ -975,6 +961,19 @@ public class EClientUtils {
         }
         return scannerSubscriptionBuilder.build();
     }
+    
+    public static FundamentalsDataRequestProto.FundamentalsDataRequest createFundamentalsDataRequestProto(int reqId, Contract contract, String reportType, List<TagValue> fundamentalsDataOptionsList) {
+        FundamentalsDataRequestProto.FundamentalsDataRequest.Builder fundamentalsDataRequestBuilder = FundamentalsDataRequestProto.FundamentalsDataRequest.newBuilder();
+        if (Util.isValidValue(reqId)) fundamentalsDataRequestBuilder.setReqId(reqId);
+        ContractProto.Contract contractProto = createContractProto(contract, null);
+        if (contractProto != null) fundamentalsDataRequestBuilder.setContract(contractProto);
+        if (!Util.StringIsEmpty(reportType)) fundamentalsDataRequestBuilder.setReportType(reportType);
+        if (fundamentalsDataOptionsList != null && !fundamentalsDataOptionsList.isEmpty()) {
+            Map<String, String> fundamentalsDataOptions = fundamentalsDataOptionsList.stream().collect(Collectors.toMap(e -> e.m_tag, e -> e.m_value));
+            fundamentalsDataRequestBuilder.putAllFundamentalsDataOptions(fundamentalsDataOptions);
+        }
+        return fundamentalsDataRequestBuilder.build();
+    }
 
     public static PnLRequestProto.PnLRequest createPnLRequestProto(int reqId, String account, String modelCode) {
         PnLRequestProto.PnLRequest.Builder pnlRequestBuilder = PnLRequestProto.PnLRequest.newBuilder();
@@ -997,6 +996,12 @@ public class EClientUtils {
         CancelScannerSubscriptionProto.CancelScannerSubscription.Builder cancelScannerSubscriptionBuilder = CancelScannerSubscriptionProto.CancelScannerSubscription.newBuilder();
         if (Util.isValidValue(reqId)) cancelScannerSubscriptionBuilder.setReqId(reqId);
         return cancelScannerSubscriptionBuilder.build();
+    }
+
+    public static CancelFundamentalsDataProto.CancelFundamentalsData createCancelFundamentalsDataProto(int reqId) {
+        CancelFundamentalsDataProto.CancelFundamentalsData.Builder cancelFundamentalsDataBuilder = CancelFundamentalsDataProto.CancelFundamentalsData.newBuilder();
+        if (Util.isValidValue(reqId)) cancelFundamentalsDataBuilder.setReqId(reqId);
+        return cancelFundamentalsDataBuilder.build();
     }
 
     public static CancelPnLProto.CancelPnL createCancelPnLProto(int reqId) {

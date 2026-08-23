@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.time.LocalDate;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -66,6 +67,18 @@ class IbkrContractResolverTest {
 
             client.connect();
             assertTrue(client.isConnected());
+
+            // The mock server increments its connection counter on a separate acceptLoop thread,
+            // so poll briefly instead of asserting synchronously (race condition).
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+            while (server.connectionCount() == 0 && System.nanoTime() < deadline) {
+                try {
+                    Thread.sleep(10);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("interrupted while waiting for mock server", ie);
+                }
+            }
             assertEquals(1, server.connectionCount());
 
             client.disconnect();
