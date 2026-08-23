@@ -58,6 +58,15 @@ function onPromoted() {
         </div>
         <div class="card-meta">
           <span class="meta-item">📊 {{ strategy.defaultSymbol || '—' }}</span>
+          <span v-if="strategy.assetClasses && strategy.assetClasses.length" class="meta-item asset-badge">
+            {{ strategy.assetClasses[0] === 'FUTURES' ? '⚡' : (strategy.assetClasses[0] === 'EQUITY' ? '📈' : '💱') }} {{ strategy.assetClasses.join(', ') }}
+          </span>
+          <span v-if="strategy.tradingStyle" class="meta-item style-badge">
+            🎯 {{ strategy.tradingStyle.replace('_', ' ') }}
+          </span>
+          <span v-if="strategy.complexity" class="meta-item complexity-badge" :class="'complexity-' + strategy.complexity.toLowerCase()">
+            {{ strategy.complexity }}
+          </span>
           <span v-if="strategy.type" class="meta-item type-badge">🏷️ {{ strategy.type }}</span>
           <span v-if="strategy.deployedMode" class="meta-item deploy-badge">
             🟢 {{ strategy.deployedMode }}
@@ -74,6 +83,19 @@ function onPromoted() {
       <!-- Strategy Description -->
       <div v-if="strategy.description" class="description-block">
         <p class="description-text">{{ strategy.description }}</p>
+      </div>
+
+      <!-- Recommended Instruments & Timeframes -->
+      <div v-if="strategy.recommendedSymbols && strategy.recommendedSymbols.length" class="rec-symbols-block">
+        <span class="detail-label">Recommended Instruments</span>
+        <div class="symbol-chips">
+          <span v-for="sym in strategy.recommendedSymbols" :key="sym" class="symbol-chip">
+            {{ sym }}
+          </span>
+          <span v-if="strategy.timeframeSuitability && strategy.timeframeSuitability.length" class="tf-chip">
+            ⏱️ {{ strategy.timeframeSuitability.join(', ') }}
+          </span>
+        </div>
       </div>
 
       <!-- Indicators Used -->
@@ -367,5 +389,66 @@ code.detail-value {
 .wfa-btn:hover {
   background: rgba(168, 85, 247, 0.25);
   border-color: var(--asset-futures);
+}
+
+.asset-badge {
+  background: rgba(41, 98, 255, 0.15);
+  color: #2962ff;
+  border: 1px solid rgba(41, 98, 255, 0.3);
+}
+
+.style-badge {
+  background: rgba(255, 255, 255, 0.08);
+  color: #d1d4dc;
+}
+
+.complexity-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+}
+
+.complexity-beginner {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+
+.complexity-intermediate {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.complexity-advanced {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.rec-symbols-block {
+  margin-bottom: 0.75rem;
+}
+
+.symbol-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+}
+
+.symbol-chip {
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: rgba(41, 98, 255, 0.15);
+  color: #60a5fa;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  border: 1px solid rgba(41, 98, 255, 0.3);
+}
+
+.tf-chip {
+  font-size: 0.75rem;
+  color: #fbbf24;
+  padding: 0.15rem 0.45rem;
 }
 </style>

@@ -374,4 +374,11 @@ development_status:
   42-4-catalogue-de-strategies-et-backtests-badges-multi-actifs-et-action-wfa: done
   42-5-design-system-global-typographie-et-micro-animations: done
   epic-42-retrospective: optional
+  epic-44: done
+  44-1-backend-strategy-catalog-metadata-enrichment-taxonomy-api: done
+  44-2-strategy-discovery-composable-and-filtering-engine: done
+  44-3-interactive-strategy-selector-component: done
+  44-4-view-integration-dashboard-wfa-strategies-compare: done
+  44-5-realistic-cost-and-sizing-auto-preset-engine: done
+  epic-44-retrospective: optional
 
