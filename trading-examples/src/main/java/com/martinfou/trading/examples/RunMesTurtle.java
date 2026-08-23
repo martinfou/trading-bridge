@@ -30,6 +30,7 @@ public class RunMesTurtle {
         boolean longOnly = args.length > 6 && args[6].equalsIgnoreCase("L");
         int startYear = args.length > 7 ? Integer.parseInt(args[7]) : 0;
         int endYear = args.length > 8 ? Integer.parseInt(args[8]) : 9999;
+        int regimeMa = args.length > 9 ? Integer.parseInt(args[9]) : 0;
 
         Path csv = Path.of("data/historical/futures/" + symbol + "_" + tf + ".csv");
         if (!Files.exists(csv)) {
@@ -45,8 +46,9 @@ public class RunMesTurtle {
                 .toList();
         }
 
-        String stratName = String.format("MesTurtle_%s_%s_%d_%d%s", symbol, tf, entry, exit, longOnly ? "_L" : "");
-        MesTurtleStrategy strat = new MesTurtleStrategy(stratName, symbol, entry, exit, contracts, longOnly);
+        String stratName = String.format("MesTurtle_%s_%s_%d_%d%s%s", symbol, tf, entry, exit,
+            longOnly ? "_L" : "", regimeMa > 0 ? "_r" + regimeMa : "");
+        MesTurtleStrategy strat = new MesTurtleStrategy(stratName, symbol, entry, exit, contracts, longOnly, regimeMa);
 
         MarginTracker margin = new MarginTracker();
         BacktestEngine engine = new BacktestEngine(strat, bars, capital)
