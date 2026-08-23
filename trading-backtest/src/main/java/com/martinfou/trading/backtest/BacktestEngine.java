@@ -72,6 +72,9 @@ public class BacktestEngine {
     private boolean marginTrackingEnabled = false;
     private MarginTracker marginTracker = new MarginTracker();
     private boolean rolloverEnabled = false;
+    private FillMode fillMode = FillMode.TOUCH;
+
+
 
     // ---------------------------------------------------------------
     //  Constructors
@@ -109,6 +112,18 @@ public class BacktestEngine {
         this.rolloverEnabled = enabled;
         return this;
     }
+
+    public BacktestEngine withFillMode(FillMode fillMode) {
+        if (fillMode != null) {
+            this.fillMode = fillMode;
+        }
+        return this;
+    }
+
+    public FillMode fillMode() {
+        return fillMode;
+    }
+
 
     // ---------------------------------------------------------------
     //  Configuration setters (fluent)
@@ -198,9 +213,10 @@ public class BacktestEngine {
         Bar previousBar = null;
         for (int i = 0; i < bars.size(); i++) {
             Bar bar = bars.get(i);
-            if (!ForexMarketCalendar.isTradingBar(bar)) {
+            if (!isTradingBar(bar)) {
                 continue;
             }
+
 
             if (marginTrackingEnabled && marginTracker.currentHealth() == MarginTracker.MarginHealth.MARGIN_CALL) {
                 // Forced liquidation triggered by previous bar close -> liquidate all open positions at bar open
@@ -283,15 +299,24 @@ public class BacktestEngine {
         }
     }
 
-    private static Bar lastTradingBar(List<Bar> bars) {
+    private boolean isTradingBar(Bar bar) {
+        if (bar == null) return false;
+        if (FuturesRegistry.isFutures(bar.symbol())) {
+            return CmeGlobexMarketCalendar.isTradingBar(bar);
+        }
+        return ForexMarketCalendar.isTradingBar(bar);
+    }
+
+    private Bar lastTradingBar(List<Bar> bars) {
         Bar last = null;
         for (Bar bar : bars) {
-            if (ForexMarketCalendar.isTradingBar(bar)) {
+            if (isTradingBar(bar)) {
                 last = bar;
             }
         }
         return last;
     }
+
 
     // ---------------------------------------------------------------
     //  Position helpers
@@ -345,26 +370,37 @@ public class BacktestEngine {
     }
 
     private double calculateLimitFillPrice(Order order, Bar bar) {
-        if (order.side() == Order.Side.BUY && bar.low() <= order.price()) {
-            return order.price();
-        } else if (order.side() == Order.Side.SELL && bar.high() >= order.price()) {
-            return order.price();
+        double orderPrice = FuturesRegistry.quantizePrice(order.symbol(), order.price());
+        if (fillMode == FillMode.TRADE_THROUGH) {
+            if (order.side() == Order.Side.BUY && bar.low() < orderPrice) {
+                return orderPrice;
+            } else if (order.side() == Order.Side.SELL && bar.high() > orderPrice) {
+                return orderPrice;
+            }
+        } else {
+            if (order.side() == Order.Side.BUY && bar.low() <= orderPrice) {
+                return orderPrice;
+            } else if (order.side() == Order.Side.SELL && bar.high() >= orderPrice) {
+                return orderPrice;
+            }
         }
         return 0;
     }
 
     private double calculateStopFillPrice(Order order, Bar bar) {
-        if (order.side() == Order.Side.BUY && bar.high() >= order.price()) {
-            return Math.max(bar.open(), order.price());
-        } else if (order.side() == Order.Side.SELL && bar.low() <= order.price()) {
-            return Math.min(bar.open(), order.price());
+        double orderPrice = FuturesRegistry.quantizePrice(order.symbol(), order.price());
+        if (order.side() == Order.Side.BUY && bar.high() >= orderPrice) {
+            return Math.max(bar.open(), orderPrice);
+        } else if (order.side() == Order.Side.SELL && bar.low() <= orderPrice) {
+            return Math.min(bar.open(), orderPrice);
         }
         return 0;
     }
 
     private void executeFill(Order order, Bar bar, double fillPrice) {
-        double adjustedPrice = applySlippage(fillPrice, order.side(), order.quantity());
+        double adjustedPrice = applySlippage(order.symbol(), fillPrice, order.side(), order.quantity());
         double commission = calcCommission(adjustedPrice, order.quantity());
+
 
         order.fill();
         totalCommission += commission;
@@ -481,10 +517,20 @@ public class BacktestEngine {
                 ? pos.stopLoss() : pos.takeProfit();
             // Apply stop slippage (only on SL fills, not TP — TPs are limit orders)
             if (pos.stopLoss() > 0 && hitStopLoss(pos, bar) && stopSlippagePct > 0) {
-                double slipAmount = exitPrice * stopSlippagePct;
+                Optional<FuturesContract> fut = FuturesRegistry.find(pos.symbol());
+                double slipAmount;
+                if (fut.isPresent()) {
+                    FuturesContract c = fut.get();
+                    slipAmount = Math.max(c.minTick(), c.quantizePrice(exitPrice * stopSlippagePct));
+                } else {
+                    slipAmount = exitPrice * stopSlippagePct;
+                }
                 exitPrice = pos.side() == Order.Side.BUY
                     ? exitPrice - slipAmount   // LONG: SL sell, slippage pushes exit lower
                     : exitPrice + slipAmount;  // SHORT: SL buy back, slippage pushes exit higher
+                if (fut.isPresent()) {
+                    exitPrice = fut.get().quantizePrice(exitPrice);
+                }
                 totalSlippage += Math.abs(slipAmount * pos.quantity());
             }
             closePosition(pos, exitPrice, bar.timestamp());
@@ -549,7 +595,15 @@ public class BacktestEngine {
                 log.info("FUTURES ROLLOVER: Rolling {} from {} to {} at {}", bar.symbol(), activeSpec.contractCode(), nextSpec.contractCode(), bar.timestamp());
                 List<Position> toRoll = new ArrayList<>(posList);
                 for (Position pos : toRoll) {
-                    Trade closingTrade = new Trade(pos.symbol(), pos.side(), pos.entryPrice(), bar.open(),
+                    Order.Side closeSide = pos.side() == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
+                    double closeSlipped = applySlippage(pos.symbol(), bar.open(), closeSide, pos.quantity());
+                    double openSlipped = applySlippage(pos.symbol(), bar.open(), pos.side(), pos.quantity());
+
+                    double closeComm = calcCommission(closeSlipped, pos.quantity());
+                    double openComm = calcCommission(openSlipped, pos.quantity());
+                    totalCommission += (closeComm + openComm);
+
+                    Trade closingTrade = new Trade(pos.symbol(), pos.side(), pos.entryPrice(), closeSlipped,
                         pos.quantity(), pos.entryTime(), bar.timestamp(), usdJpyRate, pos.stopLoss(), pos.takeProfit(), rolloverGroupId);
                     trades.add(closingTrade);
                     totalTrades++;
@@ -557,7 +611,7 @@ public class BacktestEngine {
                     else if (closingTrade.pnl() < 0) losingTrades++;
                     posList.remove(pos);
 
-                    Position rolledPos = new Position(pos.symbol(), pos.side(), pos.quantity(), bar.open(),
+                    Position rolledPos = new Position(pos.symbol(), pos.side(), pos.quantity(), openSlipped,
                         bar.timestamp(), rolloverGroupId, null, pos.stopLoss(), pos.takeProfit());
                     posList.add(rolledPos);
                 }
@@ -585,14 +639,32 @@ public class BacktestEngine {
     //  Cost helpers
     // ---------------------------------------------------------------
 
-    private double applySlippage(double price, Order.Side side, double quantity) {
-        double slipAmount = slippageFixed > 0 ? slippageFixed : price * slippagePct;
+    private double applySlippage(String symbol, double price, Order.Side side, double quantity) {
+        double slipAmount;
+        Optional<FuturesContract> fut = FuturesRegistry.find(symbol);
+        if (fut.isPresent()) {
+            FuturesContract c = fut.get();
+            if (slippageFixed > 0) {
+                slipAmount = slippageFixed;
+            } else if (slippagePct > 0) {
+                slipAmount = Math.max(c.minTick(), c.quantizePrice(price * slippagePct));
+            } else {
+                slipAmount = 0;
+            }
+        } else {
+            slipAmount = slippageFixed > 0 ? slippageFixed : price * slippagePct;
+        }
         totalSlippage += slipAmount * quantity;
-        // Slippage always works against the trader
-        return side == Order.Side.BUY ? price + slipAmount : price - slipAmount;
+        double rawSlipped = side == Order.Side.BUY ? price + slipAmount : price - slipAmount;
+        return fut.isPresent() ? fut.get().quantizePrice(rawSlipped) : rawSlipped;
+    }
+
+    private double applySlippage(double price, Order.Side side, double quantity) {
+        return applySlippage("", price, side, quantity);
     }
 
     private double calcCommission(double price, double quantity) {
+
         double notional = price * quantity;
         return commissionFixed + notional * commissionPct;
     }

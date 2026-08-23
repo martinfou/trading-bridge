@@ -55,6 +55,18 @@ public final class FuturesRegistry {
         return find(symbol).isPresent();
     }
 
+    public static double quantizePrice(String symbol, double price) {
+        return find(symbol)
+            .map(contract -> contract.quantizePrice(price))
+            .orElse(price);
+    }
+
+    public static boolean isValidTick(String symbol, double price) {
+        return find(symbol)
+            .map(contract -> contract.isValidTick(price))
+            .orElse(true);
+    }
+
     public static Map<String, FuturesContract> all() {
         return Map.copyOf(CONTRACTS);
     }
@@ -64,3 +76,4 @@ public final class FuturesRegistry {
         return symbol.trim().toUpperCase().replace('/', '_');
     }
 }
+
