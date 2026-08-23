@@ -570,7 +570,7 @@ function formatTime(timeStr?: string): string {
     const d = new Date(timeStr)
     if (isNaN(d.getTime()) || d.getTime() < 86400000) return '—'
     const pad = (n: number) => n.toString().padStart(2, '0')
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
   } catch {
     return '—'
   }
@@ -731,6 +731,9 @@ onUnmounted(() => {
               <div class="field mb-3">
                 <label>TWS / Gateway Port</label>
                 <input v-model.number="editingAccount.port" type="number" placeholder="7497" />
+                <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem;">
+                  Defaults: TWS Live (7496), TWS Paper (7497) | Gateway Live (4001), Gateway Paper (4002)
+                </div>
               </div>
             </div>
 

@@ -42,6 +42,8 @@ public class ConnectorRunner {
             System.out.println("║  4. Seasonality Analysis (Historical)  ║");
             System.out.println("║  5. Full Market Outlook (All Sources)  ║");
             System.out.println("║  6. Quick Summary (One-Liner)          ║");
+            System.out.println("║  7. Setup IBKR Connection              ║");
+            System.out.println("║  8. Download IBKR Historical Data      ║");
             System.out.println("║  0. Exit                               ║");
             System.out.println("╚══════════════════════════════════════════╝");
             System.out.print("Choice: ");
@@ -56,6 +58,16 @@ public class ConnectorRunner {
                     case "4" -> demoSeasonality();
                     case "5" -> demoFullOutlook(apiKey, accountId);
                     case "6" -> demoQuickSummary(apiKey, accountId);
+                    case "7" -> com.martinfou.trading.data.ibkr.IbkrConfigurationTool.main(new String[0]);
+                    case "8" -> {
+                        System.out.print("Enter symbol [MES]: ");
+                        String sym = scanner.nextLine().trim();
+                        if (sym.isEmpty()) sym = "MES";
+                        System.out.print("Enter security type [FUT]: ");
+                        String sec = scanner.nextLine().trim();
+                        if (sec.isEmpty()) sec = "FUT";
+                        com.martinfou.trading.data.ibkr.IbkrHistoricalDataDownloader.main(new String[]{sym, "CME", sec});
+                    }
                     case "0" -> { done = true; System.out.println("Bye!"); }
                     default -> System.out.println("Invalid choice.");
                 }

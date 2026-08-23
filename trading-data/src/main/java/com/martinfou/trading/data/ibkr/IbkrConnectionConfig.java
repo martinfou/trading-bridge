@@ -29,15 +29,31 @@ public record IbkrConnectionConfig(
 
     public static Optional<IbkrConnectionConfig> fromEnvironment(boolean paper) {
         String account = System.getenv(ENV_ACCOUNT);
+        String host = System.getenv(ENV_HOST);
+        String portStr = System.getenv(ENV_PORT);
+        String clientIdStr = System.getenv(ENV_CLIENT_ID);
+
+        // Fallback to properties file
+        java.nio.file.Path configFile = java.nio.file.Paths.get(System.getProperty("user.home"), ".trading-bridge", "ibkr.properties");
+        if (java.nio.file.Files.exists(configFile)) {
+            java.util.Properties props = new java.util.Properties();
+            try (java.io.InputStream in = java.nio.file.Files.newInputStream(configFile)) {
+                props.load(in);
+                if (account == null || account.isBlank()) account = props.getProperty("accountId");
+                if (host == null || host.isBlank()) host = props.getProperty("host");
+                if (portStr == null || portStr.isBlank()) portStr = props.getProperty("port");
+                if (clientIdStr == null || clientIdStr.isBlank()) clientIdStr = props.getProperty("clientId");
+            } catch (java.io.IOException ignored) {}
+        }
+
         if (account == null || account.isBlank()) {
             return Optional.empty();
         }
-        String host = System.getenv(ENV_HOST);
         if (host == null || host.isBlank()) {
             host = "127.0.0.1";
         }
-        int port = parsePort(System.getenv(ENV_PORT), paper ? DEFAULT_PAPER_PORT : DEFAULT_LIVE_PORT);
-        int clientId = parseClientId(System.getenv(ENV_CLIENT_ID));
+        int port = parsePort(portStr, paper ? DEFAULT_PAPER_PORT : DEFAULT_LIVE_PORT);
+        int clientId = parseClientId(clientIdStr);
         return Optional.of(new IbkrConnectionConfig(host, port, clientId, account));
     }
 
