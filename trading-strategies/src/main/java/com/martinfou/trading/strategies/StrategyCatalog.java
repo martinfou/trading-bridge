@@ -305,7 +305,7 @@ public final class StrategyCatalog {
             throw new IllegalArgumentException("Unknown strategy: " + id);
         }
         Strategy strategy = reg.factory().apply(symbol);
-        return new FixedQuantityStrategy(strategy, com.martinfou.trading.core.LotSizing.resolveQuantityUnits(quantityUnits));
+        return new FixedQuantityStrategy(strategy, com.martinfou.trading.core.LotSizing.resolveQuantityUnits(quantityUnits, symbol));
     }
 
     public static String defaultSymbol(String id) {
