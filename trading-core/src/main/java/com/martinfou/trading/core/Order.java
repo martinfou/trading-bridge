@@ -32,6 +32,13 @@ public record Order(
              null, null, null, 0.0);
     }
 
+    public Order(String symbol, Side side, Type type, double quantity, double price, double stopLoss, double takeProfit) {
+        this(UUID.randomUUID().toString(), symbol, side, type, quantity, price, 
+             stopLoss, takeProfit, 0.0, false, false, Status.PENDING, Instant.now(), 
+             null, null, null, 0.0);
+    }
+
+
     public boolean isCloseOnly() { return closeOnly; }
 
     public Order withStopLoss(double sl) { return new Order(id, symbol, side, type, quantity, price, sl, takeProfit, trailingStop, guaranteed, closeOnly, status, createdAt, filledAt, strategyId, correlationId, priceDriftLimit); }

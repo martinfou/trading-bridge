@@ -51,6 +51,8 @@ public class MarginTracker {
         double initialMarginSum = 0.0;
         double maintenanceMarginSum = 0.0;
 
+        boolean hasEquityPositions = false;
+
         for (Position pos : openPositions) {
             String symbol = pos.symbol();
             AssetValuationModel model = AssetValuationRegistry.resolve(symbol);
@@ -62,6 +64,7 @@ public class MarginTracker {
                 double baseMaint = contract.maintenanceMargin() * contracts;
                 maintenanceMarginSum += baseMaint * (1.0 + futuresSafetyBufferPct);
             } else if (model instanceof StockValuationModel stockModel) {
+                hasEquityPositions = true;
                 double shares = stockModel.validateQuantity(pos.quantity());
                 double notional = currentPrice > 0 ? currentPrice * shares : pos.entryPrice() * shares;
                 // Reg-T 50% initial margin, 25% maintenance margin
@@ -78,13 +81,15 @@ public class MarginTracker {
         double available = Math.max(0.0, currentEquity - initialMarginSum);
         double utilization = currentEquity > 0 ? (maintenanceMarginSum / currentEquity) * 100.0 : 100.0;
 
+        // PDT (Pattern Day Trader) is a FINRA/SEC rule for US Equities. CME Futures & Forex are exempt.
         boolean pdtRestricted = false;
-        if (pdtEnforced && currentEquity < pdtMinimumEquity) {
+        if (pdtEnforced && hasEquityPositions && currentEquity < pdtMinimumEquity) {
             cleanOldDayTrades(currentTimestamp);
             if (dayTradeTimestamps.size() >= 3) {
                 pdtRestricted = true;
             }
         }
+
 
         MarginHealth health;
         if (maintenanceMarginSum > 0 && currentEquity < maintenanceMarginSum) {
