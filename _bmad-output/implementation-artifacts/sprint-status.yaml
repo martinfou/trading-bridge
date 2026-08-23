@@ -98,11 +98,11 @@ development_status:
   13-8-mini-dataset-ci-golden: done
   13-9-run-lifecycle-interface: done
   epic-13-retrospective: done
-  epic-14: backlog
-  14-1-enregistrement-strategie-java-au-catalog: backlog
-  14-2-import-sq-jforex-strategie-pilote-firstsqjforx: backlog
-  14-3-rapport-de-conversion-partielle: backlog
-  14-4-export-genetics-vers-catalog: backlog
+  epic-14: superseded
+  14-1-enregistrement-strategie-java-au-catalog: superseded
+  14-2-import-sq-jforex-strategie-pilote-firstsqjforx: superseded
+  14-3-rapport-de-conversion-partielle: superseded
+  14-4-export-genetics-vers-catalog: superseded
   epic-14-retrospective: optional
   epic-15: in-progress
   15-1-gate-backtest-mvp-golden-metriques-minimales: backlog
@@ -146,12 +146,12 @@ development_status:
   17-11-execution-label-ui: done
   17-12-drift-post-broker: done
   epic-17-retrospective: done
-  epic-18: backlog
-  18-1-module-trading-node-scaffold: backlog
-  18-2-localoutboxstore-et-buffer-hub-down: backlog
-  18-3-ingestion-idempotente-runid-eventid: backlog
-  18-4-noderegistry-et-heartbeat: backlog
-  18-5-replay-complet-apres-recovery-hub: backlog
+  epic-18: superseded
+  18-1-module-trading-node-scaffold: superseded
+  18-2-localoutboxstore-et-buffer-hub-down: superseded
+  18-3-ingestion-idempotente-runid-eventid: superseded
+  18-4-noderegistry-et-heartbeat: superseded
+  18-5-replay-complet-apres-recovery-hub: superseded
   epic-18-retrospective: optional
   epic-19: in-progress
   19-1-interface-modules-de-validation-pluggables: backlog
@@ -292,16 +292,16 @@ development_status:
   32-8-market-hours-weekend-detection: done
   32-9-stale-price-detection: done
   epic-32-retrospective: optional
-  epic-33: backlog
-  33-1-fix-totaltrades-oanda-backtestresult: backlog
-  33-2-enrich-heartbeat-with-trade-metadata: backlog
-  33-3-duplicate-run-prevention: backlog
-  33-4-run-startup-race-condition-lock: backlog
-  33-5-get-api-broker-health: backlog
-  33-6-lasttradeat-in-control-summary: backlog
-  33-7-log4j-structured-mdc-markers: backlog
-  33-8-tui-health-command: backlog
-  33-9-fix-runrecord-status-model: backlog
+  epic-33: superseded
+  33-1-fix-totaltrades-oanda-backtestresult: superseded
+  33-2-enrich-heartbeat-with-trade-metadata: superseded
+  33-3-duplicate-run-prevention: superseded
+  33-4-run-startup-race-condition-lock: superseded
+  33-5-get-api-broker-health: superseded
+  33-6-lasttradeat-in-control-summary: superseded
+  33-7-log4j-structured-mdc-markers: superseded
+  33-8-tui-health-command: superseded
+  33-9-fix-runrecord-status-model: superseded
   epic-33-retrospective: optional
   epic-34: done
   34-1-create-run-records-table: done
@@ -381,4 +381,20 @@ development_status:
   44-4-view-integration-dashboard-wfa-strategies-compare: done
   44-5-realistic-cost-and-sizing-auto-preset-engine: done
   epic-44-retrospective: optional
+  epic-45: done
+  45-1-discrete-tick-alignment-and-quantization-engine: done
+  45-2-conservative-limit-order-fill-and-slippage-model: done
+  45-3-futures-rollover-spread-and-cost-accounting: done
+  45-4-cme-globex-session-calendar-and-pdt-exemption: done
+  45-5-ibkr-historical-data-timezone-normalization: done
+  45-6-volatility-adaptive-sizing-and-regime-validation: done
+  epic-45-retrospective: optional
+  epic-46: done
+  46-1-headless-ib-gateway-supervisor-heartbeat-watchdog-reconnection-sync: done
+  46-2-cme-native-oca-bracket-order-router-hybrid-stop-loss-engine: done
+  46-3-idempotent-order-tagging-partial-fill-handling-rejection-guard: done
+  46-4-autonomous-cme-quarterly-rollover-calendar-spread-engine: done
+  46-5-small-account-margin-shield-global-concurrent-position-limiter: done
+  46-6-deterministic-h1-d1-bar-close-scheduler-multi-regime-ensemble-runner: done
+  epic-46-retrospective: optional
 

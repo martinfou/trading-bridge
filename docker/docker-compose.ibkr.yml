@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  ibgateway:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ibgateway
+    container_name: trading-bridge-ibgateway
+    restart: unless-stopped
+    environment:
+      - TWS_USERID=${IBKR_USERID}
+      - TWS_PASSWORD=${IBKR_PASSWORD}
+      - TRADING_MODE=${IBKR_TRADING_MODE:-paper}
+      - READ_ONLY_API=no
+      - IBKR_PORT=4002
+    ports:
+      - "4002:4002"
+      - "4001:4001"
+    volumes:
+      - ibgateway-data:/root/Jts
+
+  trading-daemon:
+    image: eclipse-temurin:21-jdk-jammy
+    container_name: trading-bridge-daemon
+    restart: unless-stopped
+    depends_on:
+      - ibgateway
+    environment:
+      - IBKR_HOST=ibgateway
+      - IBKR_PORT=4002
+      - IBKR_CLIENT_ID=1
+      - APP_ENV=production
+    volumes:
+      - ../data:/app/data
+      - ../config:/app/config
+    working_dir: /app
+    command: ["java", "-jar", "trading-runtime.jar", "--daemon", "--mode=live"]
+
+volumes:
+  ibgateway-data:

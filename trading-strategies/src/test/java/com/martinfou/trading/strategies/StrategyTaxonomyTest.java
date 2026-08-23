@@ -41,21 +41,21 @@ public class StrategyTaxonomyTest {
     @Test
     @DisplayName("Futures strategies must contain FUTURES in assetClasses")
     void futuresStrategiesContainFuturesAssetClass() {
-        StrategyCatalog.Entry totm = StrategyCatalog.entries().stream()
-            .filter(e -> e.id().equals("FuturesTurnOfMonth"))
+        StrategyCatalog.Entry cross = StrategyCatalog.entries().stream()
+            .filter(e -> e.id().equals("LtCrossMomentum"))
             .findFirst()
             .orElseThrow();
-        assertTrue(totm.assetClasses().contains("FUTURES"), "FuturesTurnOfMonth must contain FUTURES");
-        assertEquals("SEASONALITY", totm.tradingStyle());
-        assertTrue(totm.recommendedSymbols().contains("MES"));
-        assertTrue(totm.recommendedSymbols().contains("MNQ"));
+        assertTrue(cross.assetClasses().contains("FUTURES"), "LtCrossMomentum must contain FUTURES");
+        assertEquals("MOMENTUM", cross.tradingStyle());
+        assertTrue(cross.recommendedSymbols().contains("MES"));
+        assertTrue(cross.recommendedSymbols().contains("MNQ"));
 
-        StrategyCatalog.Entry orb = StrategyCatalog.entries().stream()
-            .filter(e -> e.id().equals("FuturesOpeningRangeBreakout"))
+        StrategyCatalog.Entry range = StrategyCatalog.entries().stream()
+            .filter(e -> e.id().equals("LtRangeBreakout"))
             .findFirst()
             .orElseThrow();
-        assertTrue(orb.assetClasses().contains("FUTURES"), "FuturesOpeningRangeBreakout must contain FUTURES");
-        assertEquals("BREAKOUT", orb.tradingStyle());
+        assertTrue(range.assetClasses().contains("FUTURES"), "LtRangeBreakout must contain FUTURES");
+        assertEquals("BREAKOUT", range.tradingStyle());
     }
 
     @Test
