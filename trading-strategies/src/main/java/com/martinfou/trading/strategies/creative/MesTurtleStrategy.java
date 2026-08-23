@@ -25,6 +25,7 @@ public class MesTurtleStrategy implements Strategy {
     private final int exitChannel;
     private final int contracts;
     private final boolean longOnly;
+    private final int regimeMa;
 
     private final List<Order> pending = new ArrayList<>();
     private final List<Bar> history = new ArrayList<>();
@@ -33,24 +34,29 @@ public class MesTurtleStrategy implements Strategy {
     private Order.Side positionSide = null;
 
     public MesTurtleStrategy() {
-        this("MesTurtleStrategy", "MES", 55, 20, 1, false);
+        this("MesTurtleStrategy", "MES", 55, 20, 1, false, 0);
     }
 
     public MesTurtleStrategy(String name) {
-        this(name, "MES", 55, 20, 1, false);
+        this(name, "MES", 55, 20, 1, false, 0);
     }
 
     public MesTurtleStrategy(String name, String symbol, int entryChannel, int exitChannel, int contracts) {
-        this(name, symbol, entryChannel, exitChannel, contracts, false);
+        this(name, symbol, entryChannel, exitChannel, contracts, false, 0);
     }
 
     public MesTurtleStrategy(String name, String symbol, int entryChannel, int exitChannel, int contracts, boolean longOnly) {
+        this(name, symbol, entryChannel, exitChannel, contracts, longOnly, 0);
+    }
+
+    public MesTurtleStrategy(String name, String symbol, int entryChannel, int exitChannel, int contracts, boolean longOnly, int regimeMa) {
         this.name = name;
         this.symbol = symbol;
         this.entryChannel = entryChannel;
         this.exitChannel = exitChannel;
         this.contracts = contracts;
         this.longOnly = longOnly;
+        this.regimeMa = regimeMa;
     }
 
     @Override
@@ -60,11 +66,17 @@ public class MesTurtleStrategy implements Strategy {
 
     @Override
     public void onBar(Bar bar) {
+        // Regime filter: only long when above the long MA (bullish regime).
+        boolean regimeBull = regimeMa <= 0
+            || (history.size() >= regimeMa && bar.close() > sma(history, regimeMa));
+        boolean regimeBear = regimeMa > 0
+            && history.size() >= regimeMa && bar.close() < sma(history, regimeMa);
+
         // Manage open position first (exit channel on PAST bars)
         if (inTrade && history.size() >= exitChannel) {
             double exitHigh = donchianHigh(history, exitChannel);
             double exitLow = donchianLow(history, exitChannel);
-            if (positionSide == Order.Side.BUY && bar.close() < exitLow) {
+            if (positionSide == Order.Side.BUY && (bar.close() < exitLow || regimeBear)) {
                 closePosition(bar.close());
                 history.add(bar);
                 return;
@@ -80,7 +92,7 @@ public class MesTurtleStrategy implements Strategy {
         if (!inTrade && history.size() >= entryChannel) {
             double entryHigh = donchianHigh(history, entryChannel);
             double entryLow = donchianLow(history, entryChannel);
-            if (bar.close() > entryHigh) {
+            if (bar.close() > entryHigh && regimeBull) {
                 enterPosition(Order.Side.BUY, bar.close());
             } else if (!longOnly && bar.close() < entryLow) {
                 enterPosition(Order.Side.SELL, bar.close());
@@ -136,5 +148,13 @@ public class MesTurtleStrategy implements Strategy {
             min = Math.min(min, bars.get(i).low());
         }
         return min;
+    }
+
+    private static double sma(List<Bar> bars, int n) {
+        double sum = 0;
+        for (int i = bars.size() - n; i < bars.size(); i++) {
+            sum += bars.get(i).close();
+        }
+        return sum / n;
     }
 }
