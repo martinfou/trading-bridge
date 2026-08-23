@@ -36,9 +36,7 @@ import java.util.Set;
 import com.ib.client.Types.FundAssetType;
 import com.ib.client.Types.FundDistributionPolicyIndicator;
 import com.ib.client.Types.SecType;
-
-class EDecoder implements ObjectInput {
-    static final int MAX_MSG_LENGTH = 0xffffff;
+public class EDecoder {
 
     private EClientMsgSink m_clientMsgSink;
     private EWrapper m_EWrapper;
@@ -104,15 +102,7 @@ class EDecoder implements ObjectInput {
             return 0;
         }
 
-            switch (msgId) {
-                    
-                default -> {
-                    m_EWrapper.error(EClientErrors.NO_VALID_ID, Util.currentTimeMillis(), EClientErrors.UNKNOWN_ID.code(), EClientErrors.UNKNOWN_ID.msg(), null);
-                    return 0;
-                }
-            }
-        } else {
-            switch (msgId) {
+        switch (msgId) {
                 case END_CONN -> { return 0; }
                 case TICK_PRICE -> processTickPriceMsg();
                 case TICK_SIZE -> processTickSizeMsg();
@@ -201,11 +191,7 @@ class EDecoder implements ObjectInput {
                     m_EWrapper.error(EClientErrors.NO_VALID_ID, Util.currentTimeMillis(), EClientErrors.UNKNOWN_ID.code(), EClientErrors.UNKNOWN_ID.msg(), null);
                     return 0;
                 }
-            }
-        }
-        
-        m_messageReader.close();
-        return m_messageReader.msgLength();
+        return 1;
     }
 
     private void processHistoricalTicksLast() throws IOException {
@@ -234,17 +220,7 @@ class EDecoder implements ObjectInput {
         m_EWrapper.historicalTicksLast(reqId, ticks, done);
     }
 
-        byte[] byteArray = readByteArray();
 
-
-
-        List<HistoricalTickLast> historicalTicksLast = new ArrayList<>();
-                historicalTicksLast.add(EDecoderUtils.decodeHistoricalTickLast(historicalTickLast));
-            }
-        }
-
-        m_EWrapper.historicalTicksLast(reqId, historicalTicksLast, done);
-    }
 
     private void processHistoricalTicksBidAsk() throws IOException {
         int reqId = readInt(),
@@ -272,17 +248,7 @@ class EDecoder implements ObjectInput {
         m_EWrapper.historicalTicksBidAsk(reqId, ticks, done);       
     }
     
-        byte[] byteArray = readByteArray();
 
-
-
-        List<HistoricalTickBidAsk> historicalTicksBidAsk = new ArrayList<>();
-                historicalTicksBidAsk.add(EDecoderUtils.decodeHistoricalTickBidAsk(historicalTickBidAsk));
-            }
-        }
-
-        m_EWrapper.historicalTicksBidAsk(reqId, historicalTicksBidAsk, done);
-    }
 
     private void processHistoricalTicks() throws IOException {
         int reqId = readInt(),
@@ -304,17 +270,7 @@ class EDecoder implements ObjectInput {
         m_EWrapper.historicalTicks(reqId, ticks, done);       
     }
 
-        byte[] byteArray = readByteArray();
 
-
-
-        List<HistoricalTick> historicalTicks = new ArrayList<>();
-                historicalTicks.add(EDecoderUtils.decodeHistoricalTick(historicalTick));
-            }
-        }
-
-        m_EWrapper.historicalTicks(reqId, historicalTicks, isDone);
-    }
 
     private void processMarketRuleMsg() throws IOException {
         int marketRuleId = readInt();
@@ -333,16 +289,7 @@ class EDecoder implements ObjectInput {
         m_EWrapper.marketRule(marketRuleId, priceIncrements);
     }
 
-        byte[] byteArray = readByteArray();
 
-
-
-        PriceIncrement[] priceIncrements = new PriceIncrement[0];
-            }
-        }
-
-        m_EWrapper.marketRule(marketRuleId, priceIncrements);
-    }
 
     private void processRerouteMktDepthReq() throws IOException {
         int reqId = readInt();
@@ -352,12 +299,6 @@ class EDecoder implements ObjectInput {
         m_EWrapper.rerouteMktDepthReq(reqId, conId, exchange);
     }
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.rerouteMktDepthReq(reqId, conId, exchange);
-    }
 
     private void processRerouteMktDataReq() throws IOException {
         int reqId = readInt();
@@ -367,12 +308,6 @@ class EDecoder implements ObjectInput {
         m_EWrapper.rerouteMktDataReq(reqId, conId, exchange);
     }
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.rerouteMktDataReq(reqId, conId, exchange);
-    }
 
     private void processHistoricalDataUpdateMsg() throws IOException {
         int reqId = readInt();
@@ -388,15 +323,7 @@ class EDecoder implements ObjectInput {
         m_EWrapper.historicalDataUpdate(reqId, new Bar(date, open, high, low, close, volume, barCount, WAP));
     }
 
-        byte[] byteArray = readByteArray();
 
-
-
-            return;
-        }
-
-        m_EWrapper.historicalDataUpdate(reqId, bar);
-    }
 
     private void processPnLSingleMsg() throws IOException {
     	int reqId = readInt();
@@ -419,12 +346,6 @@ class EDecoder implements ObjectInput {
 	}
 
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.pnlSingle(reqId, pos, dailyPnL, unrealizedPnL, realizedPnL, value);
-    }
 
 	private void processPnLMsg() throws IOException {
 		int reqId = readInt();
@@ -444,12 +365,6 @@ class EDecoder implements ObjectInput {
 	}
 
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.pnl(reqId, dailyPnL, unrealizedPnL, realizedPnL);
-    }
 
     private void processHistogramDataMsg() throws IOException {
     	int reqId = readInt();
@@ -463,17 +378,7 @@ class EDecoder implements ObjectInput {
     	m_EWrapper.histogramData(reqId, items);
 	}
     
-        byte[] byteArray = readByteArray();
 
-
-
-        List<HistogramEntry> histogramEntries = new ArrayList<>();
-                histogramEntries.add(EDecoderUtils.decodeHistogramDataEntry(histogramDataEntry));
-            }
-        }
-
-        m_EWrapper.histogramData(reqId, histogramEntries);
-    }
 
 	private void processHistoricalNewsEndMsg() throws IOException {
         int requestId = readInt();
@@ -482,12 +387,6 @@ class EDecoder implements ObjectInput {
         m_EWrapper.historicalNewsEnd(requestId, hasMore);
     }
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.historicalNewsEnd(requestId, hasMore);
-    }
 
     private void processHistoricalNewsMsg() throws IOException {
         int requestId = readInt();
@@ -499,12 +398,6 @@ class EDecoder implements ObjectInput {
         m_EWrapper.historicalNews(requestId, time, providerCode, articleId, headline);
     }
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.historicalNews(requestId, time, providerCode, articleId, headline);
-    }
 
     private void processNewsArticleMsg() throws IOException {
         int requestId = readInt();
@@ -514,12 +407,6 @@ class EDecoder implements ObjectInput {
         m_EWrapper.newsArticle(requestId, articleType, articleText);
     }
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.newsArticle(requestId, articleType, articleText);
-    }
 
     private void processNewsProvidersMsg() throws IOException {
         NewsProvider[] newsProviders = new NewsProvider[0];
@@ -537,16 +424,7 @@ class EDecoder implements ObjectInput {
         m_EWrapper.newsProviders(newsProviders);
     }
 
-        byte[] byteArray = readByteArray();
 
-
-        NewsProvider[] newsProviders = new NewsProvider[0];
-                newsProviders[i] = new NewsProvider(code, name);
-            }
-        }
-
-        m_EWrapper.newsProviders(newsProviders);
-    }
 
     private void processTickNewsMsg() throws IOException {
         int tickerId = readInt();
@@ -559,12 +437,6 @@ class EDecoder implements ObjectInput {
         m_EWrapper.tickNews(tickerId, timeStamp, providerCode, articleId, headline, extraData);
     }
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.tickNews(reqId, timestamp, providerCode, articleId, headline, extraData);
-    }
 
     private void processHeadTimestampMsg() throws IOException {
 		int reqId = readInt();
@@ -573,12 +445,6 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.headTimestamp(reqId, headTimestamp);
 	}
 
-        byte[] byteArray = readByteArray();
-
-
-        
-        m_EWrapper.headTimestamp(reqId, headTimestamp);
-    }
 
     private void processMktDepthExchangesMsg() throws IOException {
         DepthMktDataDescription[] depthMktDataDescriptions = new DepthMktDataDescription[0];
@@ -600,15 +466,7 @@ class EDecoder implements ObjectInput {
         m_EWrapper.mktDepthExchanges(depthMktDataDescriptions);
     }
 
-        byte[] byteArray = readByteArray();
 
-
-        DepthMktDataDescription[] depthMktDataDescriptions = new DepthMktDataDescription[0];
-            }
-        }
-
-        m_EWrapper.mktDepthExchanges(depthMktDataDescriptions);
-    }
 
     private void processSymbolSamplesMsg() throws IOException {
         int reqId = readInt();
@@ -653,24 +511,9 @@ class EDecoder implements ObjectInput {
         m_EWrapper.symbolSamples(reqId, contractDescriptions);
     }
 
-        byte[] byteArray = readByteArray();
 
 
-        
-        ContractDescription[] contractDescriptions = new ContractDescription[0];
 
-                    continue;
-                }
-
-                String[] derivativeSecTypes = new String[0];
-                }
-
-                contractDescriptions[i] = new ContractDescription(contract, derivativeSecTypes);
-            }
-        }
-
-        m_EWrapper.symbolSamples(reqId, contractDescriptions);
-    }
 
     private void processFamilyCodesMsg() throws IOException {
         FamilyCode[] familyCodes = new FamilyCode[0];
@@ -688,15 +531,7 @@ class EDecoder implements ObjectInput {
         m_EWrapper.familyCodes(familyCodes);
     }
 
-        byte[] byteArray = readByteArray();
 
-
-        FamilyCode[] familyCodes = new FamilyCode[0];
-            }
-        }
-
-        m_EWrapper.familyCodes(familyCodes);
-    }
 
 	private void processSoftDollarTiersMsg() throws IOException {
 		int reqId = readInt();
@@ -710,16 +545,7 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.softDollarTiers(reqId, tiers);
 	}
 
-        byte[] byteArray = readByteArray();
 
-
-
-        SoftDollarTier[] tiers = new SoftDollarTier[0];
-            }
-        }
-
-        m_EWrapper.softDollarTiers(reqId, tiers);
-    }
 
 	private void processSecurityDefinitionOptionalParameterEndMsg() throws IOException {
 		int reqId = readInt();
@@ -727,12 +553,6 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.securityDefinitionOptionalParameterEnd(reqId);
 	}
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.securityDefinitionOptionalParameterEnd(reqId);
-    }
 
 	private void processSecurityDefinitionOptionalParameterMsg() throws IOException {
 		int reqId = readInt();	
@@ -757,22 +577,8 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.securityDefinitionOptionalParameter(reqId, exchange, underlyingConId, tradingClass, multiplier, expirations, strikes);
 	}
 
-        byte[] byteArray = readByteArray();
 
 
-
-        Set<String> expirations = new HashSet<>();
-                expirations.add(expiration);
-            }
-        }
-
-        Set<Double> strikes = new HashSet<>();
-                strikes.add(strike);
-            }
-        }
-
-        m_EWrapper.securityDefinitionOptionalParameter(reqId, exchange, underlyingConId, tradingClass, multiplier, expirations, strikes);
-    }
 
 	private void processVerifyAndAuthCompletedMsg() throws IOException {
 		/*int version =*/ readInt();
@@ -799,12 +605,6 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.displayGroupUpdated(reqId, contractInfo);
 	}
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.displayGroupUpdated(reqId, contractInfo);
-    }
 
 	private void processDisplayGroupListMsg() throws IOException {
 		/*int version =*/ readInt();
@@ -814,12 +614,6 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.displayGroupList(reqId, groups);
 	}
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.displayGroupList(reqId, groups);
-    }
 
 	private void processVerifyCompletedMsg() throws IOException {
 		/*int version =*/ readInt();
@@ -830,12 +624,6 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.verifyCompleted(isSuccessful, errorText);
 	}
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.verifyCompleted(isSuccessful, errorText);
-    }
 
 	private void processVerifyMessageApiMsg() throws IOException {
 		/*int version =*/ readInt();
@@ -844,12 +632,6 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.verifyMessageAPI(apiData);
 	}
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.verifyMessageAPI(apiData);
-    }
 
 	private void processCommissionAndFeesReportMsg() throws IOException {
 		/*int version =*/ readInt();
@@ -865,12 +647,6 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.commissionAndFeesReport( commissionAndFeesReport);
 	}
 
-        byte[] byteArray = readByteArray();
-
-
-        CommissionAndFeesReport commissionAndFeesReport = new CommissionAndFeesReport();
-        m_EWrapper.commissionAndFeesReport(commissionAndFeesReport);
-    }
 
 	private void processMarketDataTypeMsg() throws IOException {
 		/*int version =*/ readInt();
@@ -880,12 +656,6 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.marketDataType( reqId, marketDataType);
 	}
 	
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.marketDataType(reqId, marketDataType);
-    }
 
 	private void processTickSnapshotEndMsg() throws IOException {
 		/*int version =*/ readInt();
@@ -894,12 +664,6 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.tickSnapshotEnd( reqId);
 	}
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.tickSnapshotEnd(reqId);
-    }
 
 	private void processDeltaNeutralValidationMsg() throws IOException {
 		/*int version =*/ readInt();
@@ -915,9 +679,6 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.execDetailsEnd( reqId);
 	}
 
-        byte[] byteArray = readByteArray();
-        m_EWrapper.execDetailsEnd(reqId);
-    }
 
 	private void processAcctDownloadEndMsg() throws IOException {
 		/*int version =*/ readInt();
@@ -925,16 +686,7 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.accountDownloadEnd( accountName);
 	}
 
-        byte[] byteArray = readByteArray();
 
-
-
-        m_EWrapper.accountDownloadEnd(accountName);
-    }
-
-        byte[] byteArray = readByteArray();
-        m_EWrapper.openOrderEnd();
-    }
 	
 	private void processOpenOrderEndMsg() throws IOException {
 		/*int version =*/ readInt();
@@ -947,9 +699,6 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.contractDetailsEnd(reqId);
 	}
 	
-        byte[] byteArray = readByteArray();
-        m_EWrapper.contractDetailsEnd(reqId);
-    }
 
 	private void processRealTimeBarsMsg() throws IOException {
 		/*int version =*/ readInt();
@@ -965,12 +714,6 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.realtimeBar(reqId, time, open, high, low, close, volume, wap, count);
 	}
 	
-        byte[] byteArray = readByteArray();
-
-
-        
-        m_EWrapper.realtimeBar(reqId, time, open, high, low, close, volume, wap, count);
-    }
 
 	private void processCurrentTimeMsg() throws IOException {
 		/*int version =*/ readInt();
@@ -978,12 +721,6 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.currentTime(time);
 	}
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.currentTime(currentTime);
-    }
 
 	private void processScannerParametersMsg() throws IOException {
 		/*int version =*/ readInt();
@@ -991,12 +728,6 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.scannerParameters(xml);
 	}
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.scannerParameters(xml);
-    }
 
 	private void processHistoricalDataMsg() throws IOException {
 	    int version = Integer.MAX_VALUE;
@@ -1039,15 +770,7 @@ class EDecoder implements ObjectInput {
             // send end of dataset marker
             m_EWrapper.historicalDataEnd(reqId, startDateStr, endDateStr);
         }
-	}
 	
-        byte[] byteArray = readByteArray();
-
-
-
-            }
-        }
-    }
 
     private void processHistoricalDataEndMsg() throws IOException {
         int reqId = readInt();
@@ -1056,12 +779,6 @@ class EDecoder implements ObjectInput {
         m_EWrapper.historicalDataEnd(reqId, startDateStr, endDateStr);
     }
 
-        byte[] byteArray = readByteArray();
-
-
-        
-        m_EWrapper.historicalDataEnd(reqId, startDateStr, endDateStr);
-    }
 
 	private void processReceiveFaMsg() throws IOException {
 	    /*int version =*/ readInt();
@@ -1071,12 +788,6 @@ class EDecoder implements ObjectInput {
 	    m_EWrapper.receiveFA(faDataType, xml);
 	}
 	
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.receiveFA(faDataType, xml);
-    }
 
 	private void processManagedAcctsMsg() throws IOException {
 		/*int version =*/ readInt();
@@ -1085,12 +796,6 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.managedAccounts( accountsList);
 	}
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.managedAccounts(accountsList);
-    }
 
 	private void processNewsBulletinsMsg() throws IOException {
 		/*int version =*/ readInt();
@@ -1102,12 +807,6 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.updateNewsBulletin( newsMsgId, newsMsgType, newsMessage, originatingExch);
 	}
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.updateNewsBulletin(msgId, msgType, message, originExch);
-    }
 
     private void processMarketDepthL2Msg() throws IOException {
 		/*int version =*/ readInt();
@@ -1129,15 +828,7 @@ class EDecoder implements ObjectInput {
 		                operation, side, price, size, isSmartDepth);
 	}
 
-        byte[] byteArray = readByteArray();
 
-
-
-            return;
-        }
-
-        m_EWrapper.updateMktDepthL2(reqId, position, marketMaker, operation, side, price, size, isSmartDepth);
-    }
 
 	private void processMarketDepthMsg() throws IOException {
 		/*int version =*/ readInt();
@@ -1153,30 +844,13 @@ class EDecoder implements ObjectInput {
 		                side, price, size);
 	}
 
-        byte[] byteArray = readByteArray();
 
-
-
-            return;
-        }
-
-        m_EWrapper.updateMktDepth(reqId, position, operation, side, price, size);
     }
 
-        byte[] byteArray = readByteArray();
-
-
-
-        // set contract fields
-            return;
-        }
 
         // set execution fields
-            return;
         }
 
-        m_EWrapper.execDetails( reqId, contract, execution);
-    }
 
 	private void processExecutionDataMsg() throws IOException {
 		int version = m_serverVersion;
@@ -1342,15 +1016,8 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.bondContractDetails( reqId, contract);
 	}
 	
-        byte[] byteArray = readByteArray();
-
-
-
-            return;
-        }
         // set contract details fields
         
-        m_EWrapper.bondContractDetails(reqId, contractDetails);
     }
 	
 
@@ -1481,15 +1148,8 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.contractDetails( reqId, contract);
 	}
 
-        byte[] byteArray = readByteArray();
-
-
-
-            return;
-        }
         // set contract details fields
         
-        m_EWrapper.contractDetails(reqId, contractDetails);
     }
 	
 	private void processScannerDataMsg() throws IOException {
@@ -1525,31 +1185,9 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.scannerDataEnd(tickerId);
 	}
 
-        byte[] byteArray = readByteArray();
 
 
 
-                int rank = element.hasRank() ? element.getRank() : 0;
-
-                // Set contract details
-                ContractDetails contractDetails = new ContractDetails();
-                if (element.hasContract()) {
-                    Contract contract = EDecoderUtils.decodeContract(element.getContract());
-                    contractDetails.contract(contract);
-                    contractDetails.marketName(element.hasMarketName() ? element.getMarketName() : "");
-                }
-
-                String distance = element.hasDistance() ? element.getDistance() : "";
-                String benchmark = element.hasBenchmark() ? element.getBenchmark() : "";
-                String projection = element.hasProjection() ? element.getProjection() : "";
-                String comboKey = element.hasComboKey() ? element.getComboKey() : "";
-
-                m_EWrapper.scannerData(reqId, rank, contractDetails, distance, benchmark, projection, comboKey);
-            }
-        }
-
-        m_EWrapper.scannerDataEnd(reqId);
-    }
 
 	private void processNextValidIdMsg() throws IOException {
 		/*int version =*/ readInt();
@@ -1557,29 +1195,13 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.nextValidId( orderId);
 	}
 
-        byte[] byteArray = readByteArray();
 
-
-
-        m_EWrapper.nextValidId(orderId);
-    }
-
-        byte[] byteArray = readByteArray();
-
-
-        // set contract fields
-            return;
-        }
 
         // set order fields
-            return;
         }
         
         // set order state fields
-            return;
         }
-        m_EWrapper.openOrder(orderId, contract, order, orderState);
-    }
 	
     private void processOpenOrderMsg() throws IOException {
 
@@ -1677,10 +1299,6 @@ class EDecoder implements ObjectInput {
         m_EWrapper.openOrder(order.orderId(), contract, order, orderState);
     }
 
-        byte[] byteArray = readByteArray();
-
-        m_EWrapper.error(id, errorTime, errorCode, errorMsg, advancedOrderRejectJson);
-    }
 
     private void processErrorMsg() throws IOException {
         if (m_serverVersion < EClient.MIN_SERVER_VER_ERROR_TIME) {
@@ -1706,12 +1324,6 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.updateAccountTime(timeStamp);
 	}
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.updateAccountTime(timeStamp);
-    }
 
 	private void processPortfolioValueMsg() throws IOException {
 		int version = readInt();
@@ -1761,16 +1373,8 @@ class EDecoder implements ObjectInput {
 		                averageCost, unrealizedPNL, realizedPNL, accountName);
 	}
 
-        byte[] byteArray = readByteArray();
 
 
-        // set contract fields
-            return;
-        }
-
-
-        m_EWrapper.updatePortfolio(contract, position, marketPrice, marketValue, averageCost, unrealizedPNL, realizedPNL, accountName);
-    }
 
 	private void processAcctValueMsg() throws IOException {
 		int version = readInt();
@@ -1784,17 +1388,7 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.updateAccountValue(key, val, cur, accountName);
 	}
 	
-        byte[] byteArray = readByteArray();
 
-
-
-        m_EWrapper.updateAccountValue(key, value, currency, accountName);
-    }
-
-        byte[] byteArray = readByteArray();
-
-        m_EWrapper.orderStatus(orderId, status, filled, remaining, avgFillPrice, permId, parentId, lastFillPrice, clientId, whyHeld, mktCapPrice);
-    }
 
 	private void processOrderStatusMsg() throws IOException {
 		int version = m_serverVersion >= EClient.MIN_SERVER_VER_MARKET_CAP_PRICE ? Integer.MAX_VALUE : readInt();
@@ -1863,12 +1457,6 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.tickString( tickerId, tickType, value);
 	}
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.tickString(reqId, tickType, value);
-    }
 
 	private void processTickGenericMsg() throws IOException {
 		/*int version =*/ readInt();
@@ -1879,12 +1467,6 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.tickGeneric( tickerId, tickType, value);
 	}
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.tickGeneric(reqId, tickType, value);
-    }
 
 	private void processTickOptionComputationMsg() throws IOException {
 		int version = m_serverVersion >= EClient.MIN_SERVER_VER_PRICE_BASED_VOLATILITY ? Integer.MAX_VALUE : readInt();
@@ -1942,36 +1524,7 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.tickOptionComputation( tickerId, tickType, tickAttrib, impliedVol, delta, optPrice, pvDividend, gamma, vega, theta, undPrice);
 	}
 
-        byte[] byteArray = readByteArray();
 
-
-        if (Double.compare(impliedVol, -1) == 0) { // -1 is the "not yet computed" indicator
-            impliedVol = Double.MAX_VALUE;
-        }
-        if (Double.compare(delta, -2) == 0) { // -2 is the "not yet computed" indicator
-            delta = Double.MAX_VALUE;
-        }
-        if (Double.compare(optPrice, -1) == 0) { // -1 is the "not yet computed" indicator
-            optPrice = Double.MAX_VALUE;
-        }
-        if (Double.compare(pvDividend, -1) == 0) { // -1 is the "not yet computed" indicator
-            pvDividend = Double.MAX_VALUE;
-        }
-        if (Double.compare(gamma, -2) == 0) { // -2 is the "not yet computed" indicator
-            gamma = Double.MAX_VALUE;
-        }
-        if (Double.compare(vega,  -2) == 0) { // -2 is the "not yet computed" indicator
-            vega = Double.MAX_VALUE;
-        }
-        if (Double.compare(theta, -2) == 0) { // -2 is the "not yet computed" indicator
-            theta = Double.MAX_VALUE;
-        }
-        if (Double.compare(undPrice, -1) == 0) { // -1 is the "not yet computed" indicator
-            undPrice = Double.MAX_VALUE;
-        }
-
-        m_EWrapper.tickOptionComputation(reqId, tickType, tickAttrib, impliedVol, delta, optPrice, pvDividend, gamma, vega, theta, undPrice);
-    }
 
 	private void processAccountSummaryEndMsg() throws IOException {
 		/*int version =*/ readInt();
@@ -1979,12 +1532,6 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.accountSummaryEnd(reqId);
 	}
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.accountSummaryEnd(reqId);
-    }
 
 	private void processAccountSummaryMsg() throws IOException {
 		/*int version =*/ readInt();
@@ -1996,23 +1543,12 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.accountSummary(reqId, account, tag, value, currency);
 	}
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.accountSummary(reqId, account, tag, value, currency);
-    }
 
 	private void processPositionEndMsg() throws IOException {
 		/*int version =*/ readInt();
 		m_EWrapper.positionEnd();
 	}
 
-        byte[] byteArray = readByteArray();
-
-
-        m_EWrapper.positionEnd();
-    }
 
 	private void processPositionMsg() throws IOException {
 		int version = readInt();
@@ -2042,17 +1578,8 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.position( account, contract, pos, avgCost);
 	}
 
-        byte[] byteArray = readByteArray();
 
 
-
-        // set contract fields
-            return;
-        }
-
-
-        m_EWrapper.position(account, contract, position, avgCost);
-    }
 
 	private void processTickSizeMsg() throws IOException {
 		/*int version =*/ readInt();
@@ -2063,12 +1590,6 @@ class EDecoder implements ObjectInput {
 		m_EWrapper.tickSize( tickerId, tickType, size);
 	}
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.tickSize(reqId, tickType, size);
-    }
 
 	private void processTickPriceMsg() throws IOException {
 		int version = readInt();
@@ -2128,47 +1649,7 @@ class EDecoder implements ObjectInput {
 		    if (sizeTickType != -1) {
 		        m_EWrapper.tickSize( tickerId, sizeTickType, size);
 		    }
-		}
-	}
 
-        byte[] byteArray = readByteArray();
-
-
-        TickAttrib attribs = new TickAttrib();
-        BitMask mask = new BitMask(attrMask);
-        attribs.canAutoExecute(mask.get(0));
-        attribs.pastLimit(mask.get(1));
-        attribs.preOpen(mask.get(2));
-
-        m_EWrapper.tickPrice(reqId, tickType, price, attribs);
-
-        final int sizeTickType;
-        switch (tickType) {
-            case 1: // BID
-                sizeTickType = 0 ; // BID_SIZE
-                break ;
-            case 2: // ASK
-                sizeTickType = 3 ; // ASK_SIZE
-                break ;
-            case 4: // LAST
-                sizeTickType = 5 ; // LAST_SIZE
-                break ;
-            case 66: // DELAYED_BID
-                sizeTickType = 69 ; // DELAYED_BID_SIZE
-                break ;
-            case 67: // DELAYED_ASK
-                sizeTickType = 70 ; // DELAYED_ASK_SIZE
-                break ;
-            case 68: // DELAYED_LAST
-                sizeTickType = 71 ; // DELAYED_LAST_SIZE
-                break ;
-            default:
-                sizeTickType = -1; // not a tick
-        }
-        if (sizeTickType != -1) {
-            m_EWrapper.tickSize(reqId, sizeTickType, size);
-        }
-    }
 
     private void processPositionMultiMsg() throws IOException {
         /*int version =*/ readInt();
@@ -2194,17 +1675,8 @@ class EDecoder implements ObjectInput {
         m_EWrapper.positionMulti( reqId, account, modelCode, contract, pos, avgCost);
     }
 
-        byte[] byteArray = readByteArray();
 
 
-
-        // set contract fields
-            return;
-        }
-
-
-        m_EWrapper.positionMulti(reqId, account, modelCode, contract, position, avgCost);
-    }
 
     private void processPositionMultiEndMsg() throws IOException {
         /*int version =*/ readInt();
@@ -2213,12 +1685,6 @@ class EDecoder implements ObjectInput {
         m_EWrapper.positionMultiEnd( reqId);
     }
 
-        byte[] byteArray = readByteArray();
-
-
-        
-        m_EWrapper.positionMultiEnd(reqId);
-    }
 
     private void processAccountUpdateMultiMsg() throws IOException {
         /*int version =*/ readInt();
@@ -2232,12 +1698,6 @@ class EDecoder implements ObjectInput {
         m_EWrapper.accountUpdateMulti( reqId, account, modelCode, key, value, currency);
     }
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.accountUpdateMulti(reqId, account, modelCode, key, value, currency);
-    }
 
     private void processAccountUpdateMultiEndMsg() throws IOException {
         /*int version =*/ readInt();
@@ -2246,12 +1706,6 @@ class EDecoder implements ObjectInput {
         m_EWrapper.accountUpdateMultiEnd( reqId);
     }  
 
-        byte[] byteArray = readByteArray();
-
-
-        
-        m_EWrapper.accountUpdateMultiEnd(reqId);
-    }
 
     private void processSmartComponentsMsg() throws IOException {
     	int reqId = readInt();
@@ -2269,12 +1723,6 @@ class EDecoder implements ObjectInput {
     	m_EWrapper.smartComponents(reqId, theMap);
     }
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.smartComponents(reqId, theMap);
-    }
 
     private void processTickReqParamsMsg() throws IOException {
     	int tickerId = readInt();
@@ -2285,12 +1733,6 @@ class EDecoder implements ObjectInput {
     	m_EWrapper.tickReqParams(tickerId, minTick, bboExchange, snapshotPermissions);
     }
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.tickReqParams(reqId, minTick, bboExchange, snapshotPermissions);
-    }
     
     private void processTickByTickMsg() throws IOException {
         int reqId = readInt();
@@ -2329,36 +1771,9 @@ class EDecoder implements ObjectInput {
                 m_EWrapper.tickByTickMidPoint(reqId, time, midPoint);
                 break;
         }
-    }
-
-        byte[] byteArray = readByteArray();
 
 
 
-        switch (tickType) {
-            case 0: // None
-                break;
-            case 1: // Last
-            case 2: // AllLast
-                    m_EWrapper.tickByTickAllLast(reqId, tickType, historicalTickLast.time(), historicalTickLast.price(), 
-                                                historicalTickLast.size(), historicalTickLast.tickAttribLast(), 
-                                                historicalTickLast.exchange(), historicalTickLast.specialConditions());
-                }
-                break;
-
-            case 3: // BidAsk
-                    m_EWrapper.tickByTickBidAsk(reqId, historicalTickBidAsk.time(), historicalTickBidAsk.priceBid(), 
-                                               historicalTickBidAsk.priceAsk(), historicalTickBidAsk.sizeBid(), 
-                                               historicalTickBidAsk.sizeAsk(), historicalTickBidAsk.tickAttribBidAsk());
-                }
-                break;
-
-            case 4: // MidPoint
-                    m_EWrapper.tickByTickMidPoint(reqId, historicalTick.time(), historicalTick.price());
-                }
-                break;
-        }
-    }
 
     private void processOrderBoundMsg() throws IOException {
         long permId = readLong();
@@ -2367,11 +1782,6 @@ class EDecoder implements ObjectInput {
         m_EWrapper.orderBound(permId, clientId, orderId);
     }
     
-        byte[] byteArray = readByteArray();
-
-
-        m_EWrapper.orderBound(permId, clientId, orderId);
-    }
 
     private void processCompletedOrderMsg() throws IOException {
         Contract contract = new Contract();
@@ -2452,30 +1862,17 @@ class EDecoder implements ObjectInput {
         m_EWrapper.completedOrder(contract, order, orderState);
     }
 
-        byte[] byteArray = readByteArray();
-        
-
-        // set contract fields
-            return;
-        }
 
         // set order fields
-            return;
         }
         
         // set order state fields
-            return;
         }
-        m_EWrapper.completedOrder(contract, order, orderState);
-    }
 
     private void processCompletedOrdersEndMsg() throws IOException {
         m_EWrapper.completedOrdersEnd();
     }
 
-        byte[] byteArray = readByteArray();
-        m_EWrapper.completedOrdersEnd();
-    }
 
     private void processReplaceFAEndMsg() throws IOException {
         int reqId = readInt();
@@ -2484,13 +1881,6 @@ class EDecoder implements ObjectInput {
         m_EWrapper.replaceFAEnd(reqId, text);
     }
     
-        byte[] byteArray = readByteArray();
-
-
-
-
-        m_EWrapper.replaceFAEnd(reqId, text);
-    }
 
     private void processWshMetaData() throws IOException {
     	int reqId = readInt();
@@ -2499,12 +1889,6 @@ class EDecoder implements ObjectInput {
     	m_EWrapper.wshMetaData(reqId, dataJson);
     }
     
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.wshMetaData(reqId, dataJson);
-    }
 
     private void processWshEventData() throws IOException {
     	int reqId = readInt();    	
@@ -2513,12 +1897,6 @@ class EDecoder implements ObjectInput {
     	m_EWrapper.wshEventData(reqId, dataJson);
     }
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.wshEventData(reqId, dataJson);
-    }
 
     private void processHistoricalSchedule() throws IOException {
         int reqId = readInt();
@@ -2538,17 +1916,7 @@ class EDecoder implements ObjectInput {
         m_EWrapper.historicalSchedule(reqId, startDateTime, endDateTime, timeZone, sessions);
     }
 
-        byte[] byteArray = readByteArray();
 
-
-
-        List<HistoricalSession> historicalSessions = new ArrayList<>();
-                historicalSessions.add(new HistoricalSession(sessionStartDateTime, sessionEndDateTime, sessionRefDate));
-            }
-        }
-
-        m_EWrapper.historicalSchedule(reqId, startDateTime, endDateTime, timeZone, historicalSessions);
-    }
 
     private void processUserInfo() throws IOException {
         int reqId = readInt();
@@ -2557,32 +1925,14 @@ class EDecoder implements ObjectInput {
         m_EWrapper.userInfo(reqId, whiteBrandingId);
     }
 
-        byte[] byteArray = readByteArray();
-
-
-
-        m_EWrapper.userInfo(reqId, whiteBrandingId);
-    }
 
     private void processCurrentTimeInMillisMsg() throws IOException {
         long timeInMillis = readLong();
         m_EWrapper.currentTimeInMillis(timeInMillis);
     }
 
-        byte[] byteArray = readByteArray();
 
 
-        
-        m_EWrapper.currentTimeInMillis(currentTimeInMillis);
-    }
-
-        byte[] byteArray = readByteArray();
-
-    }
-
-        byte[] byteArray = readByteArray();
-
-    }
 
     private void readLastTradeDate(ContractDetails contract, boolean isBond) throws IOException {
         String lastTradeDateOrContractMonth = readStr();
@@ -2703,88 +2053,51 @@ class EDecoder implements ObjectInput {
     	}
     }
     
-    static String decodeUnicodeEscapedString(String str) {    
         
-        if (str == null) {
-            return str;
         }
         
-        String v = new String(str);
         
-        try {
-            for (;;) {
-                int escapeIndex = v.indexOf("\\u");
 
-                if (escapeIndex == -1
-                 || v.length() - escapeIndex < 6) {
-                    break;
-                }
 
-                String escapeString = v.substring(escapeIndex ,  escapeIndex + 6);
-                int hexVal = Integer.parseInt(escapeString.replace("\\u", ""), 16);
 
-                v = v.replace(escapeString, "" + (char)hexVal);
-            }
-        } catch (NumberFormatException e) { }
                 
-        return v;
-    }
 
-	@Override
 	public int skipBytes(int arg0) throws IOException { throw new UnsupportedOperationException(); }
 	
-	@Override
 	public int readUnsignedShort() throws IOException { throw new UnsupportedOperationException(); }
 	
-	@Override
 	public int readUnsignedByte() throws IOException { throw new UnsupportedOperationException(); }
 	
-	@Override
 	public String readUTF() throws IOException { return readStr(); }
 	
-	@Override
 	public short readShort() throws IOException { throw new UnsupportedOperationException(); }
 		
-	@Override
 	public String readLine() throws IOException { return readStr(); }
 		
-	@Override
 	public void readFully(byte[] arg0, int arg1, int arg2) throws IOException { throw new UnsupportedOperationException(); }
 	
-	@Override
 	public void readFully(byte[] arg0) throws IOException { throw new UnsupportedOperationException(); }
 	
-	@Override
 	public float readFloat() throws IOException { throw new UnsupportedOperationException(); }
 	
-	@Override
 	public char readChar() throws IOException { return readStr().charAt(0); }
 	
-	@Override
 	public byte readByte() throws IOException { throw new UnsupportedOperationException(); }
 	
-	@Override
 	public boolean readBoolean() throws IOException { return readBoolFromInt(); }
 	
-	@Override
 	public long skip(long arg0) throws IOException { throw new UnsupportedOperationException(); }
 	
-	@Override
 	public Object readObject() throws ClassNotFoundException, IOException { throw new UnsupportedOperationException(); }
 	
-	@Override
 	public int read(byte[] arg0, int arg1, int arg2) throws IOException { throw new UnsupportedOperationException(); }
 	
-	@Override
 	public int read(byte[] arg0) throws IOException { throw new UnsupportedOperationException(); }
 	
-	@Override
 	public int read() throws IOException { throw new UnsupportedOperationException(); }
 	
-	@Override
 	public void close() throws IOException { m_messageReader.close(); }
 	
-	@Override
 	public int available() throws IOException { throw new UnsupportedOperationException(); }
 
 }

@@ -342,3 +342,34 @@ As a user, I want the strategy selector unified across Dashboard, WFA, Strategie
 
 ### Story 44.5: Realistic Cost & Sizing Auto-Preset Engine per Asset Class
 As a trader, I want the system to auto-populate broker-accurate Capital, Lot Size (contracts vs lots vs shares), Commission (\$0.62 / \$0.07 / \$0.35), and Slippage (0.01%) whenever an asset or strategy is selected.
+
+---
+
+## Epic 45: MES & CME Futures Backtesting Realism Engine
+
+Eliminate backtesting biases, unrealistic fill assumptions, uncosted contract rollovers, timezone phase shifts, and regulatory misclassifications for CME Micro E-mini S&P 500 (`MES`) and electronic futures.
+
+---
+
+## Epic 46: IBKR Live Autopilot & Headless CME Micro-Futures Gateway Daemon
+
+Deliver a 24/5 autonomous live trading daemon running on Interactive Brokers (IBKR) for CME Micro-Futures (`MES`, `MNQ`, `M2K`, `MGC`, `MCL`) swing trading on H1/D1 timeframes, battle-hardened against network reconnects, daily gateway restarts, flash gaps, and small-account margin exhaustion.
+
+### Story 46.1: Headless IB Gateway Supervisor, Heartbeat Watchdog & Reconnection Sync
+As a quant operator, I want an IBC-supervised headless Docker container that survives mandatory daily 23:45 UTC IBKR reboots, monitors socket liveness every 30s, and automatically reconciles open positions/orders against local SQLite on reconnect.
+
+### Story 46.2: CME Native OCA Bracket Order Router & Hybrid Stop-Loss Engine
+As a trader, I want entry orders to automatically submit exchange-native CME OCA brackets (hard Stop-Market + Take-Profit) directly through IBKR, with the Java daemon adjusting trailing stops at bar closes.
+
+### Story 46.3: Idempotent Order Tagging, Partial-Fill Handling & Rejection Guard
+As a quant developer, I want deterministic `orderTag` generation, duplicate submission blocking, atomic partial fill accumulation, and non-blocking handling of IBKR margin rejections (Error 201).
+
+### Story 46.4: Autonomous CME Quarterly Rollover & Calendar Spread Engine
+As a swing trader, I want the system to monitor volume crossover on expiring futures contracts and autonomously execute calendar spreads (`COMBO` orders) to roll positions into the active quarter.
+
+### Story 46.5: Small-Account Margin Shield & Global Concurrent Position Limiter
+As a risk manager, I want strict 1-micro contract sizing, a hard ceiling of 2 concurrent positions, and a 50% max equity margin utilization cap to protect smaller accounts from margin calls.
+
+### Story 46.6: Deterministic H1/D1 Bar-Close Scheduler & Multi-Regime Ensemble Runner
+As a strategy operator, I want a precision scheduler triggering at `:00:05` post bar-close to retrieve newly closed bars from IBKR and evaluate the 3-strategy ensemble (`MES`/`MNQ` Squeeze, `M2K` Pullback, `MGC` Macro Trend).
+
