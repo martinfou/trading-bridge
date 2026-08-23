@@ -80,13 +80,11 @@ function toggleSort(col: string) {
 }
 
 function formatTime(iso: string): string {
+  if (!iso) return '—'
   const d = new Date(iso)
-  return d.toLocaleDateString('fr-CA', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  if (isNaN(d.getTime())) return '—'
+  const pad = (n: number) => n.toString().padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 function canPrev() { return page.value > 1 }

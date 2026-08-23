@@ -193,22 +193,18 @@ function formatDuration(startIso?: string, endIso?: string): string {
 
 function formatDate(iso?: string): string {
   if (!iso) return '—'
-  return new Date(iso).toLocaleString('fr-CA', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return '—'
+  const pad = (n: number) => n.toString().padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 function formatDateOnly(iso?: string): string {
   if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('fr-CA', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return '—'
+  const pad = (n: number) => n.toString().padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
 onMounted(loadRun)

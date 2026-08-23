@@ -351,6 +351,14 @@ function formatDuration(seconds: number): string {
   return `${m}m ${s.toString().padStart(2, '0')}s`
 }
 
+function formatDate(iso: string): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return '—'
+  const pad = (n: number) => n.toString().padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 onMounted(() => {
   loadUniverse()
   fetchPreviousRuns()
@@ -780,7 +788,7 @@ onUnmounted(() => {
                 <span class="sym-badge">{{ run.symbol }}</span>
                 <span class="asset-badge">{{ run.assetClass }}</span>
               </div>
-              <span class="history-time">{{ new Date(run.createdAt).toLocaleString() }}</span>
+              <span class="history-time">{{ formatDate(run.createdAt) }}</span>
             </div>
             <div class="history-metrics">
               <span>OOS Sharpe: <strong class="text-emerald">{{ (run.overallOosSharpe ?? 0).toFixed(2) }}</strong></span>

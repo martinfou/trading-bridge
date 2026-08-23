@@ -25,8 +25,6 @@ public final class LongTermStrategyCatalog {
         register("LtPullbackEntry", sym -> new LtPullbackEntry("LtPullbackEntry", sym));
         register("LtDoubleMA", sym -> new LtDoubleMA("LtDoubleMA", sym));
         register("LtEfficiencyRatio", sym -> new LtEfficiencyRatio("LtEfficiencyRatio", sym));
-        register("FuturesOpeningRangeBreakout", sym -> new com.martinfou.trading.strategies.futures.FuturesOpeningRangeBreakout("FuturesOpeningRangeBreakout", sym));
-        register("FuturesTurnOfMonth", sym -> new com.martinfou.trading.strategies.futures.FuturesTurnOfMonth("FuturesTurnOfMonth", sym));
     }
 
     private LongTermStrategyCatalog() {}
@@ -50,7 +48,6 @@ public final class LongTermStrategyCatalog {
     /** Default symbol per strategy (all support multi-pair, EUR/USD as primary). */
     public static String defaultSymbol(String key) {
         return switch (key) {
-            case "FuturesOpeningRangeBreakout", "FuturesTurnOfMonth" -> "MES";
             case "LtVolRegime", "LtBollingerSqueeze" -> "EUR_USD";
             case "LtRSI3Momentum", "LtDoubleMA" -> "EUR_USD";
             default -> "EUR_USD";
