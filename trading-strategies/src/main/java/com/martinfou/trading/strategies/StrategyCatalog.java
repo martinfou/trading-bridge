@@ -32,7 +32,12 @@ public final class StrategyCatalog {
         String defaultSymbol,
         String type,
         List<String> indicators,
-        String description
+        String description,
+        List<String> assetClasses,
+        String tradingStyle,
+        List<String> timeframeSuitability,
+        List<String> recommendedSymbols,
+        String complexity
     ) {}
 
     private record Registration(
@@ -41,6 +46,11 @@ public final class StrategyCatalog {
         String type,
         List<String> indicators,
         String description,
+        List<String> assetClasses,
+        String tradingStyle,
+        List<String> timeframeSuitability,
+        List<String> recommendedSymbols,
+        String complexity,
         Function<String, Strategy> factory
     ) {}
 
@@ -51,6 +61,89 @@ public final class StrategyCatalog {
     }
 
     private StrategyCatalog() {}
+
+    private static List<String> resolveAssetClasses(String id, Family family, String defaultSymbol) {
+        if (id != null && id.startsWith("Futures")) {
+            return List.of("FUTURES");
+        }
+        if (defaultSymbol != null) {
+            String sym = defaultSymbol.toUpperCase();
+            if (sym.startsWith("MES") || sym.startsWith("MNQ") || sym.startsWith("M2K") || sym.startsWith("EMD") || sym.contains("FUT")) {
+                return List.of("FUTURES");
+            }
+            if (sym.equals("IJR") || sym.equals("VB") || sym.equals("SCHA") || sym.equals("PLTR") || sym.equals("TSLA") || sym.equals("SOXL") || sym.equals("AAPL")) {
+                return List.of("EQUITY");
+            }
+            if (sym.contains("XAU") || sym.contains("XAG") || sym.contains("BRENT") || sym.contains("WTICO")) {
+                return List.of("COMMODITIES", "FOREX");
+            }
+        }
+        if (family == Family.LONG_TERM) {
+            if (id != null) {
+                return switch (id) {
+                    case "FuturesOpeningRangeBreakout", "FuturesTurnOfMonth" -> List.of("FUTURES");
+                    case "LtRangeBreakout", "LtEfficiencyRatio", "LtCrossMomentum", "LtDoubleMA" -> List.of("FUTURES", "FOREX", "EQUITY");
+                    default -> List.of("FOREX", "EQUITY");
+                };
+            }
+            return List.of("FOREX", "EQUITY");
+        }
+        if (family == Family.PROP) {
+            return List.of("FOREX", "COMMODITIES");
+        }
+        return List.of("FOREX");
+    }
+
+    private static String resolveTradingStyle(String id, Family family) {
+        if (id == null) return "TREND_FOLLOWING";
+        if (id.startsWith("FuturesTurnOfMonth") || id.contains("TurnOfMonth") || id.equals("WeeklyOpenGapFade")) {
+            return "SEASONALITY";
+        }
+        if (id.contains("Breakout") || id.contains("RangeBreakout") || id.equals("LondonOpenRangeBreakout") || id.equals("OverlapMomentumBurst") || id.equals("FuturesOpeningRangeBreakout")) {
+            return "BREAKOUT";
+        }
+        if (id.contains("MeanRev") || id.contains("Reversion") || id.equals("AsianRangeMeanReversion") || id.equals("ConnorsRsi2") || id.equals("PdhlSweepReversal")) {
+            return "MEAN_REVERSION";
+        }
+        if (id.contains("Momentum") || id.contains("Squeeze") || id.equals("InsideBarBreakout")) {
+            return "MOMENTUM";
+        }
+        if (id.contains("Pullback") || id.contains("Continuation") || id.contains("Cross") || id.contains("DoubleMA") || id.contains("EfficiencyRatio") || id.contains("SmaCrossover")) {
+            return "TREND_FOLLOWING";
+        }
+        return "TREND_FOLLOWING";
+    }
+
+    private static List<String> resolveTimeframes(String id, Family family) {
+        if (id != null && (id.startsWith("FuturesOpeningRangeBreakout") || id.equals("LondonOpenRangeBreakout") || id.equals("AsianRangeMeanReversion"))) {
+            return List.of("M1", "M5", "M15", "H1");
+        }
+        return List.of("H1", "H4", "D1");
+    }
+
+    private static List<String> resolveRecommendedSymbols(String id, Family family, String defaultSymbol, List<String> assetClasses) {
+        if (assetClasses != null && assetClasses.contains("FUTURES")) {
+            return List.of("MES", "MNQ", "M2K", "EMD");
+        }
+        if (assetClasses != null && assetClasses.contains("EQUITY") && !assetClasses.contains("FOREX")) {
+            return List.of("IJR", "VB", "SCHA", "PLTR", "TSLA");
+        }
+        if (family == Family.PROP) {
+            return List.of("EUR_USD", "GBP_USD", "USD_JPY", "USD_CAD", "XAU_USD");
+        }
+        return List.of("EUR_USD", "GBP_USD", "USD_JPY", "AUD_USD", "USD_CAD");
+    }
+
+    private static String resolveComplexity(String id, Family family) {
+        if (id == null) return "INTERMEDIATE";
+        if (id.equals("SmaCrossover") || id.equals("LtDoubleMA") || id.equals("LtCrossMomentum")) {
+            return "BEGINNER";
+        }
+        if (id.contains("VolRegime") || id.contains("EfficiencyRatio") || id.contains("SupplyDemandZone") || id.contains("TurnOfMonth")) {
+            return "ADVANCED";
+        }
+        return "INTERMEDIATE";
+    }
 
     private static String resolveType(String id, Family family) {
         if (family == Family.PROP) {
@@ -68,6 +161,8 @@ public final class StrategyCatalog {
         }
         if (family == Family.LONG_TERM) {
             return switch (id) {
+                case "FuturesOpeningRangeBreakout" -> "Session Breakout";
+                case "FuturesTurnOfMonth" -> "Seasonality / Anomaly";
                 case "LtCrossMomentum", "LtDoubleMA", "LtPullbackEntry", "LtEfficiencyRatio" -> "Trend Following";
                 case "LtRSIMeanRev" -> "Mean Reversion";
                 case "LtRSI3Momentum", "LtSqueezeMomentum" -> "Momentum";
@@ -102,6 +197,8 @@ public final class StrategyCatalog {
         }
         if (family == Family.LONG_TERM) {
             return switch (id) {
+                case "FuturesOpeningRangeBreakout" -> List.of("ATR", "EMA");
+                case "FuturesTurnOfMonth" -> List.of("EMA", "ATR", "Calendar Window");
                 case "LtCrossMomentum" -> List.of("SMA", "ATR");
                 case "LtRSIMeanRev" -> List.of("RSI", "SMA", "ATR");
                 case "LtRSI3Momentum" -> List.of("RSI", "EMA", "ATR");
@@ -142,6 +239,8 @@ public final class StrategyCatalog {
         }
         if (family == Family.LONG_TERM) {
             return switch (id) {
+                case "FuturesOpeningRangeBreakout" -> "Toby Crabel Opening Range Breakout (ORB) for electronic index futures with ATR risk management.";
+                case "FuturesTurnOfMonth" -> "Turn-of-the-Month (TOTM) calendar anomaly capturing passive pension/401(k) monthly inflows on US futures.";
                 case "LtCrossMomentum" -> "Golden cross / death cross on SMA(20)/SMA(100) with ATR risk management.";
                 case "LtRSIMeanRev" -> "Mean reversion on RSI(14) extremes with SMA(100) trend filter.";
                 case "LtRSI3Momentum" -> "Momentum on RSI(3) with EMA(200) trend filter and ATR stops.";
@@ -242,7 +341,12 @@ public final class StrategyCatalog {
             reg.defaultSymbol(),
             reg.type(),
             reg.indicators(),
-            reg.description()
+            reg.description(),
+            reg.assetClasses(),
+            reg.tradingStyle(),
+            reg.timeframeSuitability(),
+            reg.recommendedSymbols(),
+            reg.complexity()
         )));
         return List.copyOf(list);
     }
@@ -308,6 +412,16 @@ public final class StrategyCatalog {
         String type = resolveType(id, family);
         List<String> indicators = resolveIndicators(id, family);
         String description = resolveDescription(id, family);
-        ENTRIES.put(id, new Registration(family, defaultSymbol, type, indicators, description, factory));
+        List<String> assetClasses = resolveAssetClasses(id, family, defaultSymbol);
+        String tradingStyle = resolveTradingStyle(id, family);
+        List<String> timeframes = resolveTimeframes(id, family);
+        List<String> recommendedSymbols = resolveRecommendedSymbols(id, family, defaultSymbol, assetClasses);
+        String complexity = resolveComplexity(id, family);
+
+        ENTRIES.put(id, new Registration(
+            family, defaultSymbol, type, indicators, description,
+            assetClasses, tradingStyle, timeframes, recommendedSymbols, complexity,
+            factory
+        ));
     }
 }

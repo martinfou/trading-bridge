@@ -5,6 +5,8 @@ import { useControlPlane } from '@/composables/useControlPlane'
 import type { InstrumentDefinition } from '@/types/control-plane'
 import WfaTimeline from '@/components/WfaTimeline.vue'
 import WfaParameterStability from '@/components/WfaParameterStability.vue'
+import StrategySelector from '@/components/StrategySelector.vue'
+import type { Strategy } from '@/types/control-plane'
 import {
   Play,
   RotateCw,
@@ -192,6 +194,17 @@ function resetStrategyParams() {
       { name: 'period2', min: 30, max: 70, step: 10 }
     ]
   }
+}
+
+function onWfaStrategySelected(strat: Strategy) {
+  selectedStrategy.value = strat.id
+  if (strat.recommendedSymbols && strat.recommendedSymbols.length > 0) {
+    selectedSymbol.value = strat.recommendedSymbols[0]
+  }
+  if (strat.timeframeSuitability && strat.timeframeSuitability.length > 0) {
+    selectedTimeframe.value = strat.timeframeSuitability[0]
+  }
+  resetStrategyParams()
 }
 
 // ── API & Polling ─────────────────────────────────────────────────────
@@ -439,15 +452,10 @@ onUnmounted(() => {
 
           <div class="form-group">
             <label>Strategy</label>
-            <select v-model="selectedStrategy" @change="resetStrategyParams" class="custom-select">
-              <option
-                v-for="strat in availableStrategies"
-                :key="strat.id"
-                :value="strat.id"
-              >
-                {{ strat.name }}
-              </option>
-            </select>
+            <StrategySelector
+              v-model="selectedStrategy"
+              @change="onWfaStrategySelected"
+            />
           </div>
 
           <div class="form-row-2">

@@ -5,8 +5,12 @@ import { useControlPlane } from '@/composables/useControlPlane'
 import { createChart, type IChartApi, type ISeriesApi, type LineData, ColorType, LineSeries } from 'lightweight-charts'
 import type { RunSummary, RunResult, Trade, WeeklyStat, ReconciliationAnomaly } from '@/types/control-plane'
 
+import { useStrategyCatalog } from '@/composables/useStrategyCatalog'
+import type { AssetClass } from '@/types/control-plane'
+
 const router = useRouter()
 const { listRuns, getRun, getTrades, getEquityCurve, getWeeklyStats, getAlignment } = useControlPlane()
+const { inferAssetClass } = useStrategyCatalog()
 
 const runs = ref<RunSummary[]>([])
 const selectedIds = ref<string[]>([])
@@ -22,6 +26,7 @@ const selectedAlignmentRunId = ref<string | null>(null)
 
 const searchQuery = ref('')
 const currentFilter = ref<'all' | 'backtest' | 'paper' | 'live'>('all')
+const selectedAssetClass = ref<AssetClass>('ALL')
 
 const filteredRuns = computed(() => {
   let list = runs.value
@@ -30,6 +35,9 @@ const filteredRuns = computed(() => {
       const cat = r.executionLabelMeta?.category?.toLowerCase() || r.mode?.toLowerCase() || ''
       return cat === currentFilter.value
     })
+  }
+  if (selectedAssetClass.value !== 'ALL') {
+    list = list.filter(r => inferAssetClass(r.symbol) === selectedAssetClass.value)
   }
   if (searchQuery.value) {
     const q = searchQuery.value.toLowerCase()
@@ -383,10 +391,18 @@ function viewRun(runId: string) {
         <input v-model="searchQuery" placeholder="Filter by strategy or symbol..." class="search-input" />
       </div>
       <div class="runs-selector-filters">
-        <button :class="['filter-btn', { active: currentFilter === 'all' }]" @click="currentFilter = 'all'">All</button>
-        <button :class="['filter-btn', { active: currentFilter === 'backtest' }]" @click="currentFilter = 'backtest'">Backtests</button>
-        <button :class="['filter-btn', { active: currentFilter === 'paper' }]" @click="currentFilter = 'paper'">Paper</button>
-        <button :class="['filter-btn', { active: currentFilter === 'live' }]" @click="currentFilter = 'live'">Live</button>
+        <div class="filter-group">
+          <button :class="['filter-btn', { active: currentFilter === 'all' }]" @click="currentFilter = 'all'">All Types</button>
+          <button :class="['filter-btn', { active: currentFilter === 'backtest' }]" @click="currentFilter = 'backtest'">Backtests</button>
+          <button :class="['filter-btn', { active: currentFilter === 'paper' }]" @click="currentFilter = 'paper'">Paper</button>
+          <button :class="['filter-btn', { active: currentFilter === 'live' }]" @click="currentFilter = 'live'">Live</button>
+        </div>
+        <div class="filter-group">
+          <button :class="['filter-btn', { active: selectedAssetClass === 'ALL' }]" @click="selectedAssetClass = 'ALL'">All Assets</button>
+          <button :class="['filter-btn', { active: selectedAssetClass === 'FUTURES' }]" @click="selectedAssetClass = 'FUTURES'">⚡ Futures</button>
+          <button :class="['filter-btn', { active: selectedAssetClass === 'FOREX' }]" @click="selectedAssetClass = 'FOREX'">💱 Forex</button>
+          <button :class="['filter-btn', { active: selectedAssetClass === 'EQUITY' }]" @click="selectedAssetClass = 'EQUITY'">📈 Equities</button>
+        </div>
       </div>
       <div class="run-list">
         <div
@@ -402,6 +418,7 @@ function viewRun(runId: string) {
             <span class="run-item-strat">{{ r.strategyId }}</span>
             <span class="run-item-meta">
               {{ r.symbol }}
+              <span class="asset-mini-tag">{{ inferAssetClass(r.symbol) === 'FUTURES' ? '⚡ Futures' : (inferAssetClass(r.symbol) === 'EQUITY' ? '📈 Equity' : '💱 Forex') }}</span>
               <span :class="['status-dot', r.status === 'COMPLETED' ? 'ok' : r.status === 'FAILED' ? 'fail' : 'run']"></span>
               {{ r.status }}
               <span v-if="r.executionLabelMeta" class="run-item-badge" :style="{ backgroundColor: r.executionLabelMeta.badgeBackgroundColor, color: r.executionLabelMeta.badgeTextColor }">
@@ -1532,4 +1549,26 @@ h3 { font-size: 0.9rem; margin-bottom: 0.75rem; color: var(--text-secondary); }
 .anomaly-type-badge.ghost_live { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
 .anomaly-type-badge.time_drift { background: rgba(217, 119, 6, 0.15); color: var(--warning); }
 .anomaly-type-badge.price_drift { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
+
+.runs-selector-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.filter-group {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.asset-mini-tag {
+  font-size: 0.65rem;
+  font-weight: 600;
+  background: rgba(41, 98, 255, 0.12);
+  color: #60a5fa;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-left: 4px;
+}
 </style>

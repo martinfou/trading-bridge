@@ -322,5 +322,23 @@ So that I can access the complete dashboard from the main navigation sidebar.
 **Then** Vue Router navigates to `/strategy-pnl` rendering `StrategyPnlDashboardView.vue`
 **And** real-time WebSocket updates automatically refresh trade logs and PnL metrics as new orders fill.
 
+---
 
+## Epic 44: Strategy Discovery & Multi-Faceted Filtering System
 
+Permettre aux traders de filtrer, rechercher et sélectionner facilement n'importe quelle stratégie parmi un catalogue multi-actifs de plus de 25 modèles grâce à des métadonnées enrichies, une recherche floue, des puces de filtrage interactives et des préréglages de coûts et de dimensionnement réalistes.
+
+### Story 44.1: Backend Strategy Catalog Metadata Enrichment & Taxonomy API
+As a quantitative developer, I want `StrategyCatalog.java` to expose structured taxonomy metadata (`assetClasses`, `tradingStyle`, `timeframeSuitability`, `recommendedSymbols`, `complexity`), so that clients can query and filter strategies by asset class and style.
+
+### Story 44.2: Strategy Discovery Composable (`useStrategyCatalog.ts`) & Filtering Engine
+As a frontend engineer, I want a reactive filtering composable providing facet filtering, fuzzy search indexing, and bi-directional instrument compatibility linking.
+
+### Story 44.3: Interactive `<StrategySelector.vue>` Component with Search & Filter Chips
+As a trader, I want an interactive, accessible modal/popover strategy selector replacing the native select dropdown with filter chips, instant search, and keyboard navigation.
+
+### Story 44.4: View Integration Across Dashboard, WFA, Strategies Catalog & Compare Views
+As a user, I want the strategy selector unified across Dashboard, WFA, Strategies, and Compare views with deep-linking preservation.
+
+### Story 44.5: Realistic Cost & Sizing Auto-Preset Engine per Asset Class
+As a trader, I want the system to auto-populate broker-accurate Capital, Lot Size (contracts vs lots vs shares), Commission (\$0.62 / \$0.07 / \$0.35), and Slippage (0.01%) whenever an asset or strategy is selected.

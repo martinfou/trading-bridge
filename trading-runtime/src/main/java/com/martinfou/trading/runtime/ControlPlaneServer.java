@@ -796,28 +796,47 @@ public final class ControlPlaneServer implements AutoCloseable {
                 respondDataJson(ctx, () -> dataAvailability.availability(symbol));
             })
             .get("/api/strategies", ctx -> {
-                List<Map<String, Object>> items = StrategyCatalog.entries().stream()
-                    .map(e -> {
-                        Map<String, Object> item = new LinkedHashMap<>();
-                        item.put("id", e.id());
-                        item.put("family", e.family().name());
-                        item.put("defaultSymbol", e.defaultSymbol());
-                        item.put("type", e.type());
-                        item.put("indicators", e.indicators());
-                        item.put("description", e.description());
-                        promoteService.deploymentStore().get(e.id())
-                            .ifPresent(d -> {
-                                item.put("deployedMode", d.mode().name());
-                                item.put("executionLabel", d.executionLabel().name());
-                                item.put("executionLabelMeta", ExecutionLabelCatalog.of(d.executionLabel()).toMap());
-                                if (d.brokerAccountId() != null && !d.brokerAccountId().isBlank()) {
-                                    item.put("brokerAccountId", d.brokerAccountId());
-                                }
-                            });
-                        return item;
-                    })
-                    .toList();
-                ctx.json(Map.of("strategies", items));
+                try {
+                    String assetClassFilter = ctx.queryParam("assetClass");
+                    List<Map<String, Object>> items = StrategyCatalog.entries().stream()
+                        .filter(e -> {
+                            if (assetClassFilter == null || assetClassFilter.isBlank() || "ALL".equalsIgnoreCase(assetClassFilter)) {
+                                return true;
+                            }
+                            return e.assetClasses() != null && e.assetClasses().stream().anyMatch(ac -> ac.equalsIgnoreCase(assetClassFilter));
+                        })
+                        .map(e -> {
+                            Map<String, Object> item = new LinkedHashMap<>();
+                            item.put("id", e.id());
+                            item.put("family", e.family() != null ? e.family().name() : "EXAMPLE");
+                            item.put("defaultSymbol", e.defaultSymbol() != null ? e.defaultSymbol() : "EUR_USD");
+                            item.put("type", e.type() != null ? e.type() : "Trend Following");
+                            item.put("indicators", e.indicators() != null ? e.indicators() : List.of());
+                            item.put("description", e.description() != null ? e.description() : "");
+                            item.put("assetClasses", e.assetClasses() != null ? e.assetClasses() : List.of("FOREX"));
+                            item.put("tradingStyle", e.tradingStyle() != null ? e.tradingStyle() : "TREND_FOLLOWING");
+                            item.put("timeframeSuitability", e.timeframeSuitability() != null ? e.timeframeSuitability() : List.of("H1"));
+                            item.put("recommendedSymbols", e.recommendedSymbols() != null ? e.recommendedSymbols() : List.of("EUR_USD"));
+                            item.put("complexity", e.complexity() != null ? e.complexity() : "INTERMEDIATE");
+                            if (promoteService != null && promoteService.deploymentStore() != null) {
+                                promoteService.deploymentStore().get(e.id())
+                                    .ifPresent(d -> {
+                                        item.put("deployedMode", d.mode().name());
+                                        item.put("executionLabel", d.executionLabel().name());
+                                        item.put("executionLabelMeta", ExecutionLabelCatalog.of(d.executionLabel()).toMap());
+                                        if (d.brokerAccountId() != null && !d.brokerAccountId().isBlank()) {
+                                            item.put("brokerAccountId", d.brokerAccountId());
+                                        }
+                                    });
+                            }
+                            return item;
+                        })
+                        .toList();
+                    ctx.json(Map.of("strategies", items));
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                    throw ex;
+                }
             })
             .get("/api/strategies/{id}/deployments", ctx -> {
                 String strategyId = ctx.pathParam("id");
