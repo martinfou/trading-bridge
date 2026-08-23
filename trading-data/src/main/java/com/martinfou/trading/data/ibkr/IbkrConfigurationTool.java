@@ -54,7 +54,7 @@ public class IbkrConfigurationTool {
     }
 
     private static void testConnection(String host, int port, int clientId) {
-        EWrapper wrapper = new DefaultEWrapper() {
+        EWrapper wrapper = new com.ib.client.DefaultEWrapper() {
             @Override
             public void error(Exception e) {
                 System.err.println("API Error: " + e.getMessage());
@@ -66,7 +66,7 @@ public class IbkrConfigurationTool {
             }
 
             @Override
-            public void error(int id, int errorCode, String errorMsg, String advancedOrderRejectJson) {
+            public void error(int id, long errorTime, int errorCode, String errorMsg, String advancedOrderRejectJson) {
                 if (errorCode == 502) {
                     System.err.println("Couldn't connect to TWS. Confirm that \"Enable ActiveX and Socket Clients\" is enabled and connection port is correct.");
                 } else if (id == -1) {

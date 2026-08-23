@@ -147,7 +147,7 @@ public class DailyRegimeMomentum implements Strategy {
 
     private void closePosition(double price) {
         Order.Side exitSide = tradeDirection == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
-        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, POSITION_SIZE, price).closeOnly());
+        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, POSITION_SIZE, price));
         inTrade = false;
     }
 

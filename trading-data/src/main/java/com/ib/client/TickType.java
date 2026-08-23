@@ -1,21 +1,5 @@
-/*
- * Java TWS API Client
- *
- * Copyright (C) 2013-2026  Interactive Brokers LLC
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <https://www.gnu.org/licenses/>.
- */
+/* Copyright (C) 2019 Interactive Brokers LLC. All rights reserved. This code is subject to the terms
+ * and conditions of the IB API Non-Commercial License or the IB API Commercial License, as applicable. */
 
 package com.ib.client;
 
@@ -68,6 +52,7 @@ public enum TickType {
     CLOSE_EFP_COMPUTATION( 44, "closeEFP" ),
     LAST_TIMESTAMP( 45, "lastTimestamp" ), // string
     SHORTABLE( 46, "shortable" ),
+    FUNDAMENTAL_RATIOS( 47, "fundamentals" ), // string
     RT_VOLUME( 48, "RTVolume" ), // string
     HALTED( 49, "halted" ),
     BID_YIELD( 50, "bidYield" ),
@@ -125,12 +110,6 @@ public enum TickType {
     FINAL_IPO_LAST(102, "finalIPOLast"),
     DELAYED_YIELD_BID(103, "delayedYieldBid"),
     DELAYED_YIELD_ASK(104, "delayedYieldAsk"),
-    ODD_LOT_BID( 105, "oddLotBid" ),
-    ODD_LOT_ASK( 106, "oddLotAsk" ),
-    ODD_LOT_BID_SIZE( 107, "oddLotBidSize" ),
-    ODD_LOT_ASK_SIZE( 108, "oddLotAskSize" ),
-    ODD_LOT_BID_EXCH( 109, "oddLotBidExch" ),
-    ODD_LOT_ASK_EXCH( 110, "oddLotAskExch" ),
 
     UNKNOWN( Integer.MAX_VALUE , "unknown" );
 

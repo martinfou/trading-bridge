@@ -1,21 +1,5 @@
-/*
- * Java TWS API Client
- *
- * Copyright (C) 2013-2026  Interactive Brokers LLC
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <https://www.gnu.org/licenses/>.
- */
+/* Copyright (C) 2025 Interactive Brokers LLC. All rights reserved. This code is subject to the terms
+ * and conditions of the IB API Non-Commercial License or the IB API Commercial License, as applicable. */
 
 package com.ib.client;
 
@@ -43,22 +27,6 @@ import static com.ib.client.Types.AlgoParam.useOddLots;
 import static com.ib.client.Types.AlgoParam.waitForFill;
 import static com.ib.client.Types.AlgoParam.activeTimeStart;
 import static com.ib.client.Types.AlgoParam.activeTimeEnd;
-import static com.ib.client.Types.AlgoParam.optoutClosingAuction;
-import static com.ib.client.Types.AlgoParam.speedUp;
-import static com.ib.client.Types.AlgoParam.optoutOpeningAuction;
-import static com.ib.client.Types.AlgoParam.minPctVol4Px;
-import static com.ib.client.Types.AlgoParam.maxPctVol4Px;
-import static com.ib.client.Types.AlgoParam.deltaPctVol;
-import static com.ib.client.Types.AlgoParam.startPctVol;
-import static com.ib.client.Types.AlgoParam.endPctVol;
-import static com.ib.client.Types.AlgoParam.adaptivePriority;
-import static com.ib.client.Types.AlgoParam.routeOrderType;
-import static com.ib.client.Types.AlgoParam.activeTimeTz;
-import static com.ib.client.Types.AlgoParam.routeOffset;
-import static com.ib.client.Types.AlgoParam.minPrice;
-import static com.ib.client.Types.AlgoParam.maxPrice;
-import static com.ib.client.Types.AlgoParam.takeBlockMinSize;
-import static com.ib.client.Types.AlgoParam.takeBlockLmtPrice;
 
 public class Types {
 	public enum TickByTickType {
@@ -71,28 +39,17 @@ public class Types {
 
 	public enum AlgoParam {
 		startTime, endTime, allowPastEndTime, maxPctVol, pctVol, strategyType, noTakeLiq, riskAversion, forceCompletion, displaySize, getDone, noTradeAhead, useOddLots,
-		componentSize, timeBetweenOrders, randomizeTime20, randomizeSize55, giveUp, catchUp, waitForFill, activeTimeStart, activeTimeEnd, optoutClosingAuction, speedUp,
-		optoutOpeningAuction, minPctVol4Px, maxPctVol4Px, deltaPctVol, startPctVol, endPctVol, adaptivePriority, routeOrderType, activeTimeTz, routeOffset, minPrice, maxPrice,
-		takeBlockMinSize, takeBlockLmtPrice
+		componentSize, timeBetweenOrders, randomizeTime20, randomizeSize55, giveUp, catchUp, waitForFill, activeTimeStart, activeTimeEnd, 	
 	}
 
 	public enum AlgoStrategy implements IApiEnum {
 		None(),
-		Vwap( startTime, endTime, maxPctVol, noTakeLiq, getDone, noTradeAhead, useOddLots, optoutClosingAuction, allowPastEndTime, getDone, speedUp, optoutOpeningAuction),
-		Twap( startTime, endTime, allowPastEndTime, strategyType, catchUp),
+		Vwap( startTime, endTime, maxPctVol, noTakeLiq, getDone, noTradeAhead, useOddLots),
+		Twap( startTime, endTime, allowPastEndTime, strategyType),
 		ArrivalPx( startTime, endTime, allowPastEndTime, maxPctVol, riskAversion, forceCompletion),
 		DarkIce( startTime, endTime, allowPastEndTime, displaySize),
 		PctVol( startTime, endTime, pctVol, noTakeLiq),
-		PctVolPx( minPctVol4Px, maxPctVol4Px, noTakeLiq, pctVol, deltaPctVol, startTime, endTime),
-		PctVolSz( noTakeLiq, startPctVol, endPctVol, startTime, endTime),
-		PctVolTm( noTakeLiq, startPctVol, endPctVol, startTime, endTime),
-		ClosePx( riskAversion, forceCompletion, startTime, maxPctVol),
-		Adaptive( adaptivePriority),
-		AccuDistr( timeBetweenOrders, randomizeSize55, routeOrderType, activeTimeStart, activeTimeEnd, activeTimeTz, componentSize, routeOffset, displaySize, waitForFill, 
-				catchUp, minPrice, maxPrice, randomizeTime20, takeBlockMinSize, takeBlockLmtPrice),
-		AD( activeTimeStart, activeTimeEnd, componentSize, timeBetweenOrders, randomizeTime20, randomizeSize55, giveUp, catchUp, waitForFill),
-		BalanceImpactRisk( riskAversion, forceCompletion, maxPctVol), 
-		MinImpact( maxPctVol);
+		AD( activeTimeStart, activeTimeEnd, componentSize, timeBetweenOrders, randomizeTime20, randomizeSize55, giveUp, catchUp, waitForFill);
 
 		private AlgoParam[] m_params;
 
@@ -249,6 +206,30 @@ public class Types {
 
 	public enum ExerciseType {
 		None, Exercise, Lapse,
+	}
+
+	public enum FundamentalType {
+		ReportSnapshot("Company overview"),
+		ReportsFinSummary("Financial summary"),
+		ReportRatios("Financial ratios"),
+		ReportsFinStatements("Financial statements"),
+		RESC("Analyst estimates"),
+		CalendarReport("Company calendar"), 
+		ReportsOwnership("Company ownership");
+
+		private final String description;
+
+		FundamentalType(final String description) {
+			this.description = description;
+		}
+
+		public String getApiString() {
+			return super.toString();
+		}
+
+		@Override public String toString() {
+			return description;
+		}
 	}
 
 	public enum WhatToShow {
