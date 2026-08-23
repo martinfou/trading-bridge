@@ -107,7 +107,7 @@ public class AugustRiskFadeStrategy implements Strategy {
     }
 
     private void forceExit(double price) {
-        pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, QUANTITY, price).closeOnly());
+        pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, QUANTITY, price));
         inTrade = false;
     }
 

@@ -4,6 +4,7 @@ import com.ib.client.Contract;
 import com.ib.client.EClientSocket;
 import com.ib.client.EJavaSignal;
 import com.ib.client.EReader;
+import com.ib.client.EWrapper;
 import com.ib.client.Types.WhatToShow;
 
 import java.io.IOException;
@@ -35,7 +36,7 @@ public class IbkrHistoricalDataDownloader {
         CountDownLatch latch = new CountDownLatch(1);
         List<com.ib.client.Bar> bars = new ArrayList<>();
         
-        DefaultEWrapper wrapper = new DefaultEWrapper() {
+        EWrapper wrapper = new com.ib.client.DefaultEWrapper() {
             @Override
             public void error(Exception e) {
                 System.err.println("Error: " + e.getMessage());
@@ -47,7 +48,7 @@ public class IbkrHistoricalDataDownloader {
             }
 
             @Override
-            public void error(int id, int errorCode, String errorMsg, String advancedOrderRejectJson) {
+            public void error(int id, long errorTime, int errorCode, String errorMsg, String advancedOrderRejectJson) {
                 if (id != -1) {
                     System.err.println("Error [" + errorCode + "]: " + errorMsg);
                     if (errorCode >= 162 && errorCode <= 165) {

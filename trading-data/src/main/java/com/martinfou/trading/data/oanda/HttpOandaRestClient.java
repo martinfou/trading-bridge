@@ -20,6 +20,18 @@ import java.util.Map;
 /** Live HTTP client for OANDA v20 REST API (practice or live). */
 public class HttpOandaRestClient implements OandaRestClient {
 
+    static {
+        // The JDK HttpClient transparently retries idempotent GET requests on connection reset/EOF
+        // before surfacing an IOException. Older JDKs (17) retried exactly once; newer JDKs retry up
+        // to jdk.httpclient.redirects.retrylimit (default 5) attempts, which preempts this class's own
+        // explicit retry/backoff loop in sendWithRetry(). Constrain the JDK's implicit retry to a
+        // single retry (2 attempts) so a connection reset surfaces as an IOException and our retry
+        // logic — with its backoff, telemetry and max-attempt policy — genuinely re-sends the request.
+        if (System.getProperty("jdk.httpclient.redirects.retrylimit") == null) {
+            System.setProperty("jdk.httpclient.redirects.retrylimit", "2");
+        }
+    }
+
     private static final Logger log = LoggerFactory.getLogger(HttpOandaRestClient.class);
     private static final java.util.regex.Pattern SECRET_PATTERN = java.util.regex.Pattern.compile("[a-fA-F0-9]{64}");
 
