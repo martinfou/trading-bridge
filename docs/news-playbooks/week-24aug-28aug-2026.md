@@ -84,11 +84,13 @@ de la Fed — publiée AVANT Jackson Hole, elle conditionne le ton du discours) 
 ### Fenêtres saisonnières
 | Paire | Fenêtre | Hit Rate | Statut |
 |-------|---------|:--------:|--------|
-| USD/JPY | Sep 27 - Nov 11 (BUY) | 88% | ⏳ Dans 37 jours |
-| USDCAD | Oct 12 - Nov 26 (BUY) | 94% | ⏳ Dans 52 jours |
+| ~~USD/JPY~~ | ~~Sep 27 - Nov 11 (BUY)~~ | ~~88%~~ | **❌ REJECT 24 août — artefact de régime** (avg IS -0.26%, edge absent en IS, OOS +1.75% = yen faible post-2016. Ne PAS trader) |
+| USDCAD | Oct 12 - Nov 26 (BUY) | 94% → 84% réel | 🔬 EXPLORE 24 août — PF 5.73, plateau 25/25, WF stable, mais 19 trades < gate 30. À re-tester fin septembre |
 | GBP/USD | Avr (BUY) + Mai/Août (SELL) — SeasonalCalendar 4+5+8 | 68-89% | ⏳ Fenêtre août SELL se termine le 31 août |
 | GBP/USD | Mai + Août (SELL — BearishMonthsFade MAY+AUG) | 68-71% | ⏳ Fenêtre août se termine le 31 août |
 | Aucune | — | — | **Aucune fenêtre à trader cette semaine** |
+
+**Mise à jour 24 août (lundi, idée nouvelle) :** la fenêtre USD/JPY Sep 27-Nov 11 listée comme « cible fin septembre » est **REJECT** — pré-validation anti-artefact (méthode du 5 août) : avg IS -0.26% (edge absent 2006-2015), le hit rate 88% annoncé venait du régime yen faible post-2016. Backtest confirme (PF 1.61 dont +$3.9K swap crédit = PnL prix réel ≈ +$1 230/20 ans). USD/CAD Oct 12-Nov 26 : **EXPLORE** (PF 5.73, plateau 25/25, WF IS 36.7 → OOS 2.76) mais 19 trades < gate 30 et 1 seule paire → pas de catalog, à re-tester fin septembre.
 
 **Mise à jour 21 août (deep dive) :** la piste « 2e long leg octobre » est REJECT — octobre meurt en OOS (GBP IS hit 77.8% → OOS 28.6%, EUR pareil) et empoisonne le calendrier 4+5+8+10 (GBP net -20%, OOS +$158 vs +$1 096). Le calendrier validé reste **4+5+8** (GBP PF 2.83).
 
