@@ -10,8 +10,13 @@ import java.net.Socket;
 import java.time.Duration;
 
 /**
- * Validates TCP reachability of TWS / IB Gateway, then delegates to an in-process session stub.
- * Full order transmission via official TwsApi.jar is a follow-on integration step.
+ * Validates TCP reachability of TWS / IB Gateway.
+ *
+ * <p>NOTE (audit P0): order placement and account/position retrieval are <b>not yet migrated</b>
+ * to the official {@code com.ib.client} TWS API (v1045.01, restored in trading-data on 2026-08-23).
+ * A prior implementation silently delegated these calls to an in-memory {@link StubIbkrGatewayClient},
+ * which fabricated fills, positions and a $100k account — a live-trading hazard. These methods now
+ * fail loudly instead of pretending to trade. Use the stub only for unit tests.</p>
  */
 public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
 
@@ -19,7 +24,6 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(3);
 
     private final IbkrConnectionConfig config;
-    private final StubIbkrGatewayClient session = new StubIbkrGatewayClient();
     private volatile boolean gatewayReachable;
     private volatile Socket socket;
 
@@ -36,7 +40,6 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
             this.socket = new Socket();
             this.socket.connect(new InetSocketAddress(config.host(), config.port()), (int) CONNECT_TIMEOUT.toMillis());
             gatewayReachable = true;
-            session.connect();
             log.info("IB Gateway reachable at {}:{} (clientId={}, account={})",
                 config.host(), config.port(), config.clientId(), maskAccount(config.accountId()));
         } catch (IOException e) {
@@ -57,27 +60,42 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
                 log.warn("Failed to close IB Gateway socket", e);
             }
         }
-        session.disconnect();
     }
 
     @Override
     public boolean isConnected() {
-        return gatewayReachable && session.isConnected();
+        return gatewayReachable;
     }
 
     @Override
     public IbkrMarketOrderResult placeMarketOrder(String symbol, double quantity, Order.Side side, String clientTag) {
-        return session.placeMarketOrder(symbol, quantity, side, clientTag);
+        throw new UnsupportedOperationException(
+            "IBKR live order placement is not implemented: TcpIbkrGatewayClient only validates TCP "
+            + "reachability. Migrate to com.ib.client EClientSocket (reqIds/placeOrder + EWrapper "
+            + "openOrder/orderStatus/execDetails) before trading futures on IBKR.");
     }
 
     @Override
     public IbkrAccountSnapshot fetchAccountSummary() {
-        return session.fetchAccountSummary();
+        throw new UnsupportedOperationException(
+            "IBKR account summary is not implemented: migrate to com.ib.client reqAccountUpdates. "
+            + "Refusing to fabricate account state.");
     }
 
     @Override
     public java.util.List<IbkrPositionSnapshot> fetchOpenPositions() {
-        return session.fetchOpenPositions();
+        throw new UnsupportedOperationException(
+            "IBKR position retrieval is not implemented: migrate to com.ib.client reqPositions. "
+            + "Refusing to fabricate positions.");
+    }
+
+    @Override
+    public void addExecutionListener(java.util.function.Consumer<com.martinfou.trading.data.ibkr.IbkrExecution> listener) {
+        // No executions can arrive: order placement is not implemented (see placeMarketOrder).
+        // A no-op listener registry is safe; the broker will receive no fabricated fills.
+        if (listener == null) {
+            throw new IllegalArgumentException("listener is required");
+        }
     }
 
     private static String maskAccount(String accountId) {

@@ -74,9 +74,19 @@ public final class AtrFuturesPositionSizer {
             contracts = 1;
         }
 
+        // Cap by available initial margin so integer sizing can never violate CME margin
+        // (e.g. a wide risk budget with a tight stop would otherwise size contracts whose
+        //  required initial margin exceeds account equity).
+        int marginCapped = (int) Math.floor(accountEquity / contract.initialMargin());
+        if (marginCapped < 1) {
+            contracts = 0; // cannot afford even 1 contract of initial margin
+        } else {
+            contracts = Math.min(contracts, marginCapped);
+        }
+
         double totalRiskUsd = contracts * dollarRiskPerContract;
         double requiredMargin = contracts * contract.initialMargin();
-        boolean marginFeasible = accountEquity >= requiredMargin;
+        boolean marginFeasible = contracts > 0 && accountEquity >= requiredMargin;
 
         return new SizingResult(
             contracts,

@@ -8,6 +8,7 @@ import com.martinfou.trading.broker.Broker;
 import com.martinfou.trading.broker.BrokerEvent;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Order;
+import com.martinfou.trading.core.Position;
 import com.martinfou.trading.core.Strategy;
 
 import java.util.LinkedHashMap;
@@ -19,6 +20,8 @@ import java.util.Map;
  * Orders route through {@link Broker} on the worker; the control plane only persists events.
  */
 final class BrokerRunExecutor {
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(BrokerRunExecutor.class);
 
     private BrokerRunExecutor() {}
 
@@ -94,6 +97,7 @@ final class BrokerRunExecutor {
         boolean dailyDdPaused = false;
 
         strategy.reset();
+        restoreOpenPosition(runId, config, strategy, broker);
         ReconciliationService reconciliation = new ReconciliationService();
         int barIndex = 0;
         for (Bar bar : bars) {
@@ -180,6 +184,34 @@ final class BrokerRunExecutor {
             .totalTrades(totalTradesCount)
             .totalReturnPct(returnPct)
             .build();
+    }
+
+    /**
+     * Adopts an already-open broker position into the freshly-created strategy instance on restart.
+     * Without this, a restarted run replays bars with a flat strategy state and re-enters, doubling
+     * the position at the broker. Mirrors {@code OandaStreamingExecutor.bootstrapHistory()}.
+     */
+    private static void restoreOpenPosition(
+        String runId,
+        RunConfigSnapshot config,
+        Strategy strategy,
+        Broker broker
+    ) {
+        try {
+            for (Position pos : broker.getPositions()) {
+                boolean matches = pos.symbol().equalsIgnoreCase(config.symbol())
+                    || pos.symbol().replace("/", "_").replace("-", "_")
+                        .equalsIgnoreCase(config.symbol().replace("/", "_").replace("-", "_"));
+                if (matches && pos.quantity() > 0.0) {
+                    strategy.syncPosition(pos.side(), pos.quantity(), pos.stopLoss(), pos.takeProfit());
+                    log.info("Restored open position {} {} @ {} for run {} (restart adoption)",
+                        pos.side(), pos.quantity(), pos.entryPrice(), runId);
+                    return;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to restore open broker positions for run {}: {}", runId, e.getMessage());
+        }
     }
 
     private static void emitStarted(

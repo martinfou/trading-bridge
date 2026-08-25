@@ -144,6 +144,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
     private final Map<String, java.util.concurrent.locks.ReentrantLock> startupLocks = new ConcurrentHashMap<>();
     private final Map<String, RunConfigSnapshot> snapshots = new ConcurrentHashMap<>();
     private final Map<String, AutoCloseable> activeExecutors = new ConcurrentHashMap<>();
+    private final Map<String, Broker> activeBrokers = new ConcurrentHashMap<>();
     private final CopyOnWriteArrayList<RunTransitionListener> listeners = new CopyOnWriteArrayList<>();
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     private final com.martinfou.trading.backtest.persistence.SqliteTradeAlignmentStore alignmentStore;
@@ -342,6 +343,10 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         return Map.copyOf(activeExecutors);
     }
 
+    public Optional<Broker> getActiveBroker(String runId) {
+        return Optional.ofNullable(activeBrokers.get(runId));
+    }
+
     public Map<String, Object> getAlignmentDetails(String runId) {
         List<com.martinfou.trading.backtest.reconciliation.ReconciliationAnomaly> anomalies = alignmentStore.getAnomalies(runId);
         
@@ -504,17 +509,28 @@ public class RunManager implements RunLifecycle, AutoCloseable {
             }
             case RUNNING -> {
                 record.markCompleted(Map.of("message", "stopped by operator"));
+                if (liquidate) {
+                    cancelAllAtBroker(runId);
+                }
                 AutoCloseable exec = activeExecutors.get(runId);
                 if (exec != null) {
                     try {
                         if (liquidate && exec instanceof OandaStreamingExecutor poe) {
+                            // OANDA streaming: liquidateAndStop() performs per-run position
+                            // disambiguation, flattens, and stops the executor.
                             poe.liquidateAndStop();
                         } else {
+                            if (liquidate) {
+                                flattenAtBroker(runId);
+                            }
                             exec.close();
                         }
                     } catch (Exception e) {
                         log.error("Failed to stop executor for run {}", runId, e);
                     }
+                } else if (liquidate) {
+                    // Synchronous broker executor (BrokerRunExecutor) — no streaming handle.
+                    flattenAtBroker(runId);
                 }
                 notifyTransition(before, record, RunTransition.STOP);
                 yield record;
@@ -537,6 +553,41 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         AutoCloseable exec = activeExecutors.get(runId);
         if (exec instanceof OandaStreamingExecutor poe) {
             poe.reconnectBroker();
+        }
+    }
+
+    /** Cancels working (unfilled) orders at the broker for a run, as part of the kill switch. */
+    private void cancelAllAtBroker(String runId) {
+        Broker broker = activeBrokers.get(runId);
+        if (broker == null) {
+            log.warn("Kill switch: no active broker for run {}; cannot cancel working orders at broker.", runId);
+            return;
+        }
+        try {
+            int cancelled = broker.cancelAllOrders();
+            log.info("Kill switch: cancelled {} working orders for run {}", cancelled, runId);
+        } catch (Exception e) {
+            log.error("Kill switch: failed to cancel working orders for run {}", runId, e);
+        }
+    }
+
+    /** Flattens open positions at the broker for a run and verifies the account is flat. */
+    private void flattenAtBroker(String runId) {
+        Broker broker = activeBrokers.get(runId);
+        if (broker == null) {
+            log.warn("Kill switch: no active broker for run {}; cannot flatten positions at broker.", runId);
+            return;
+        }
+        try {
+            int flattened = broker.flattenAllPositions();
+            log.info("Kill switch: flattened {} positions for run {}", flattened, runId);
+            List<com.martinfou.trading.core.Position> remaining = broker.getPositions();
+            if (!remaining.isEmpty()) {
+                log.error("CRITICAL: {} position(s) remain at broker after flatten for run {}. Manual intervention required.",
+                    remaining.size(), runId);
+            }
+        } catch (Exception e) {
+            log.error("Kill switch: failed to flatten positions for run {}", runId, e);
         }
     }
 
@@ -617,6 +668,10 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         var lock = startupLocks.computeIfAbsent(request.strategyId(), k -> new java.util.concurrent.locks.ReentrantLock());
         lock.lock();
         try {
+            if (killSwitchRegistry.isKilled(request.strategyId())) {
+                throw new IllegalArgumentException(
+                    "Strategy " + request.strategyId() + " is killed (kill switch active); cannot start new runs");
+            }
             String symbol = request.symbol() != null && !request.symbol().isBlank()
                 ? request.symbol()
                 : StrategyCatalog.defaultSymbol(request.strategyId());
@@ -729,6 +784,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         }
         oandaStreamingClients.clear();
         oandaStreamingClientRefCounts.clear();
+        activeBrokers.clear();
     }
 
     public com.martinfou.trading.backtest.persistence.SqliteTradeStore tradeStore() {
@@ -797,6 +853,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
             String oandaStreamError = null;
             if (configSnapshot.resolvedExecutionLabel().isOandaBroker() && System.getProperty("trading.bridge.test") == null) {
                 try (Broker broker = brokerFactory.create(configSnapshot)) {
+                    activeBrokers.put(runId, broker);
                     Strategy strategy = StrategyCatalog.create(
                         configSnapshot.strategyId(), configSnapshot.symbol(), configSnapshot.quantity());
                     RunRiskContext riskContext = new RunRiskContext(
@@ -869,6 +926,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
                 }
             } else if (isBrokerBackedRun(configSnapshot)) {
                 try (Broker broker = brokerFactory.create(configSnapshot)) {
+                    activeBrokers.put(runId, broker);
                     Strategy strategy = StrategyCatalog.create(
                         configSnapshot.strategyId(), configSnapshot.symbol(), configSnapshot.quantity());
                     RunRiskContext riskContext = new RunRiskContext(
@@ -928,6 +986,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
             }
             }
         } finally {
+            activeBrokers.remove(runId);
             org.slf4j.MDC.remove("runId");
             org.slf4j.MDC.remove("strategyId");
             org.slf4j.MDC.remove("stale");
@@ -1210,21 +1269,38 @@ public class RunManager implements RunLifecycle, AutoCloseable {
             String symbol = configSnapshot.symbol();
             String accountId = configSnapshot.resolvedBrokerAccountId();
 
-            boolean duplicate = runs.values().stream()
-                .filter(r -> r.status() == RunRecord.Status.RUNNING || r.status() == RunRecord.Status.PAUSED)
-                .filter(r -> r.mode() == mode)
-                .filter(r -> r.strategyId().equalsIgnoreCase(strategyId))
-                .filter(r -> r.symbol().equalsIgnoreCase(symbol))
-                .anyMatch(r -> {
-                    String existingAccount = r.configSnapshot() != null
-                        ? BrokerAccountRegistry.resolveId((String) r.configSnapshot().get("brokerAccountId"))
-                        : BrokerAccountRegistry.DEFAULT_ID;
-                    return existingAccount.equalsIgnoreCase(accountId);
-                });
-
+            boolean duplicate = findActiveDuplicate(strategyId, symbol, mode, accountId);
             if (duplicate) {
                 throw new IllegalArgumentException("Strategy " + strategyId + " is already running on account " + accountId + " for symbol " + symbol);
             }
+        }
+    }
+
+    /**
+     * Detects an already-active run for the same strategy+symbol+mode+account, consulting both the
+     * in-memory map and the persistent {@link RunRecordStore}. The persistent check closes the
+     * restart race window where the control plane accepts {@code POST /api/runs} before the
+     * startup reconciliation has repopulated the in-memory map.
+     */
+    private boolean findActiveDuplicate(String strategyId, String symbol, RunMode mode, String accountId) {
+        java.util.function.Predicate<RunRecord> matches = r ->
+            (r.status() == RunRecord.Status.RUNNING || r.status() == RunRecord.Status.PAUSED)
+                && r.mode() == mode
+                && r.strategyId().equalsIgnoreCase(strategyId)
+                && r.symbol().equalsIgnoreCase(symbol)
+                && BrokerAccountRegistry.resolveId(
+                        r.configSnapshot() != null ? (String) r.configSnapshot().get("brokerAccountId") : null)
+                    .equalsIgnoreCase(accountId);
+
+        if (runs.values().stream().anyMatch(matches)) {
+            return true;
+        }
+        try {
+            return runRecordStore.listAll().stream().anyMatch(matches);
+        } catch (Exception e) {
+            log.warn("Failed to query persistent run records for duplicate check; falling back to in-memory only: {}",
+                e.getMessage());
+            return false;
         }
     }
 

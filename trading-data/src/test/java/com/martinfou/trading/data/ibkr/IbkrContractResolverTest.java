@@ -17,10 +17,11 @@ class IbkrContractResolverTest {
 
         assertEquals("MES", mesDetails.symbol());
         assertEquals(IbkrContractResolver.SecType.FUT, mesDetails.secType());
-        assertEquals("CME", mesDetails.exchange());
+        assertEquals("GLOBEX", mesDetails.exchange());
+        assertNull(mesDetails.primaryExchange());
         assertEquals("USD", mesDetails.currency());
         assertEquals(5.0, mesDetails.multiplier(), 1e-6);
-        assertEquals("202403", mesDetails.lastTradeDateOrContractMonth()); // March 2024 front month
+        assertEquals("20240315", mesDetails.lastTradeDateOrContractMonth()); // March 2024 front month (3rd Friday)
 
         var m2kDetails = IbkrContractResolver.resolve("M2K", date);
         assertEquals("M2K", m2kDetails.symbol());
