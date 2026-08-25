@@ -66,24 +66,22 @@ class IbkrContractResolverTest {
             IbkrConnectionConfig config = new IbkrConnectionConfig("127.0.0.1", server.port(), 1, "DU12345");
             TcpIbkrGatewayClient client = new TcpIbkrGatewayClient(config);
 
-            client.connect();
-            assertTrue(client.isConnected());
-
-            // The mock server increments its connection counter on a separate acceptLoop thread,
-            // so poll briefly instead of asserting synchronously (race condition).
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
-            while (server.connectionCount() == 0 && System.nanoTime() < deadline) {
-                try {
-                    Thread.sleep(10);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    throw new IOException("interrupted while waiting for mock server", ie);
-                }
-            }
-            assertEquals(1, server.connectionCount());
-
-            client.disconnect();
+            // The mock server accepts TCP but does NOT speak the IBKR v1045 protocol: no
+            // connectAck will arrive. The client must fail-loud (never a half-connected state).
+            assertThrows(IllegalStateException.class, client::connect);
             assertFalse(client.isConnected());
         }
+    }
+
+    @Test
+    void testTcpGatewayNotConnected_failClosed() {
+        // No Gateway running: account/positions must be fail-closed (zeroed), never fabricated.
+        TcpIbkrGatewayClient client = new TcpIbkrGatewayClient(
+            new IbkrConnectionConfig("127.0.0.1", 7497, 1, "DU12345"));
+        assertFalse(client.isConnected());
+        var account = client.fetchAccountSummary();
+        assertEquals(0.0, account.balance(), 1e-9);
+        assertEquals(0.0, account.equity(), 1e-9);
+        assertTrue(client.fetchOpenPositions().isEmpty());
     }
 }
