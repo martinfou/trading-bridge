@@ -43,6 +43,15 @@ public final class IbkrBroker implements Broker {
         if (order == null && execution.orderId() != null) {
             order = pendingOrdersByBrokerId.get(execution.orderId());
         }
+        // Purge the order from both registries once a terminal execution (fill/reject) arrives.
+        // Without this, the maps leak on every order AND a duplicate fill/reject callback
+        // (IBKR can redeliver execDetails) would re-emit a fill/reject for an already-settled order.
+        if (order != null) {
+            pendingOrdersByClientTag.remove(order.id());
+            if (execution.orderId() != null) {
+                pendingOrdersByBrokerId.remove(execution.orderId());
+            }
+        }
         if (execution.isFill()) {
             if (order != null) {
                 log.info("IBKR fill {} {} qty={} @ {} (execId={})",
@@ -137,6 +146,38 @@ public final class IbkrBroker implements Broker {
         String reason = "IBKR order cancellation not implemented in current gateway client";
         log.warn("IBKR cancelOrder requested for {} but unsupported: {}", brokerOrderId, reason);
         return OrderSubmitResult.rejected(reason);
+    }
+
+    @Override
+    public int cancelAllOrders() {
+        // No working-order surface exists in the current gateway client (the stub fills
+        // market orders synchronously; the TCP client places nothing). Honest no-op rather
+        // than a fabricated "all cancelled".
+        log.warn("IBKR cancelAllOrders: no working-order cancellation in current gateway client (no-op).");
+        return 0;
+    }
+
+    @Override
+    public int flattenAllPositions() {
+        // Last-resort de-risk: close every open position with an opposite MARKET order.
+        // The kill switch MUST be able to flatten paper positions; a silent 0 here would let
+        // the kill switch "succeed" while leaving the account exposed.
+        int flattened = 0;
+        for (Position pos : getPositions()) {
+            if (pos.quantity() <= 0.0) {
+                continue;
+            }
+            Order.Side closeSide = pos.side() == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
+            Order close = new Order(pos.symbol(), closeSide, Order.Type.MARKET, pos.quantity(), 0.0);
+            OrderSubmitResult result = submitOrder(close);
+            if (result.accepted()) {
+                flattened++;
+            } else {
+                log.warn("IBKR flatten failed for {} {}: {}", pos.symbol(), closeSide, result.rejectReason());
+            }
+        }
+        log.info("IBKR flatten submitted {} closing order(s)", flattened);
+        return flattened;
     }
 
     @Override

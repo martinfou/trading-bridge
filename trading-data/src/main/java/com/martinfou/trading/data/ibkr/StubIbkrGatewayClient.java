@@ -14,7 +14,7 @@ public final class StubIbkrGatewayClient implements IbkrGatewayClient {
     private final List<IbkrPositionSnapshot> positions = new CopyOnWriteArrayList<>();
     private final List<Consumer<IbkrExecution>> executionListeners = new CopyOnWriteArrayList<>();
     private IbkrAccountSnapshot account = new IbkrAccountSnapshot(100_000, 100_000, "USD");
-    private long nextOrderId = 1;
+    private final java.util.concurrent.atomic.AtomicLong nextOrderId = new java.util.concurrent.atomic.AtomicLong(1);
     private volatile boolean connected;
     private volatile boolean asyncFills = true;
 
@@ -58,9 +58,9 @@ public final class StubIbkrGatewayClient implements IbkrGatewayClient {
             return scriptedResults.removeFirst();
         }
         double price = symbol != null && symbol.contains("JPY") ? 150.0 : 1.10;
-        String orderId = String.valueOf(nextOrderId++);
+        String orderId = String.valueOf(nextOrderId.getAndIncrement());
         String execId = "E-" + orderId;
-        positions.add(new IbkrPositionSnapshot(symbol, side, quantity, price));
+        netPosition(symbol, side, quantity, price);
         IbkrMarketOrderResult result = IbkrMarketOrderResult.success(orderId, execId, price);
         if (asyncFills) {
             // Simulate IBKR's asynchronous execution callback. The clientTag is the
@@ -76,6 +76,40 @@ public final class StubIbkrGatewayClient implements IbkrGatewayClient {
     @Override
     public void addExecutionListener(Consumer<IbkrExecution> listener) {
         executionListeners.add(listener);
+    }
+
+    /**
+     * Nets a fill into the open-position book instead of blindly appending. A buy then a sell
+     * of the same quantity must leave the account flat, not hold [BUY n, SELL n]. Synchronized
+     * because the kill-switch flatten path can submit concurrently with the worker thread.
+     */
+    private synchronized void netPosition(String symbol, Order.Side side, double quantity, double price) {
+        int existingIdx = -1;
+        IbkrPositionSnapshot existing = null;
+        for (int i = 0; i < positions.size(); i++) {
+            if (positions.get(i).symbol().equals(symbol)) {
+                existingIdx = i;
+                existing = positions.get(i);
+                break;
+            }
+        }
+        double signedQty = side == Order.Side.BUY ? quantity : -quantity;
+        if (existing == null) {
+            if (Math.abs(signedQty) > 1e-9) {
+                positions.add(new IbkrPositionSnapshot(
+                    symbol, signedQty > 0 ? Order.Side.BUY : Order.Side.SELL, Math.abs(signedQty), price));
+            }
+            return;
+        }
+        double existingSigned = existing.side() == Order.Side.BUY ? existing.quantity() : -existing.quantity();
+        double net = existingSigned + signedQty;
+        if (Math.abs(net) < 1e-9) {
+            positions.remove(existingIdx);
+        } else if (net > 0) {
+            positions.set(existingIdx, new IbkrPositionSnapshot(symbol, Order.Side.BUY, net, existing.averagePrice()));
+        } else {
+            positions.set(existingIdx, new IbkrPositionSnapshot(symbol, Order.Side.SELL, -net, existing.averagePrice()));
+        }
     }
 
     @Override
