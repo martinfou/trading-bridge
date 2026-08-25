@@ -24,9 +24,11 @@ class IbkrBracketOrderRouterTest {
         assertNotNull(bundle.ocaGroup());
         assertTrue(bundle.ocaGroup().startsWith("TB-OCA-"));
 
-        // Parent
+        // Parent entry order must NOT share the SL/TP OCA group (else its fill cancels the
+        // protective orders and leaves a naked position).
         assertEquals(Order.Side.BUY, bundle.parentEntryOrder().side());
-        assertEquals(bundle.ocaGroup(), bundle.parentEntryOrder().ocaGroup());
+        assertNull(bundle.parentEntryOrder().ocaGroup());
+        assertEquals(0, bundle.parentEntryOrder().ocaType());
 
         // Stop Loss Child
         assertNotNull(bundle.stopLossOrder());

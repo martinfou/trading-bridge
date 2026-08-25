@@ -33,6 +33,8 @@ public final class OandaBroker implements Broker {
     private final java.util.concurrent.atomic.AtomicInteger connectionFailures = new java.util.concurrent.atomic.AtomicInteger(0);
     private final java.util.concurrent.atomic.AtomicInteger totalOrdersSubmitted = new java.util.concurrent.atomic.AtomicInteger(0);
     private final java.util.concurrent.atomic.AtomicInteger totalOrdersRejected = new java.util.concurrent.atomic.AtomicInteger(0);
+    /** Working (unfilled) order ids tracked for {@link #cancelAllOrders()} / kill-switch de-risking. */
+    private final java.util.Set<String> pendingOrderIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Object cacheLock = new Object();
     private List<Position> cachedPositions;
     private long cachedPositionsTimeMs;
@@ -295,6 +297,9 @@ public final class OandaBroker implements Broker {
             order.fill();
             double fillPrice = result.fillPrice() != null ? result.fillPrice() : order.price();
             emit(BrokerEvent.fill(order, fillPrice));
+        } else if (result.orderId() != null && !result.orderId().isBlank()) {
+            // Track the working order so kill-switch / cancelAllOrders can de-risk it.
+            pendingOrderIds.add(result.orderId());
         }
         return OrderSubmitResult.filled(result.orderId());
     }
@@ -304,6 +309,56 @@ public final class OandaBroker implements Broker {
         clearCache();
         try {
             return cancelOrderInternal(brokerOrderId);
+        } finally {
+            clearCache();
+        }
+    }
+
+    @Override
+    public int cancelAllOrders() {
+        clearCache();
+        try {
+            int cancelled = 0;
+            for (String orderId : List.copyOf(pendingOrderIds)) {
+                try {
+                    if (client.cancelOrder(orderId)) {
+                        cancelled++;
+                        pendingOrderIds.remove(orderId);
+                    } else {
+                        log.warn("OANDA failed to cancel working order {}", orderId);
+                    }
+                } catch (Exception e) {
+                    log.warn("OANDA exception cancelling working order {}: {}", orderId, e.getMessage());
+                }
+            }
+            log.info("OANDA cancelAllOrders cancelled {} working orders", cancelled);
+            return cancelled;
+        } finally {
+            clearCache();
+        }
+    }
+
+    @Override
+    public int flattenAllPositions() {
+        clearCache();
+        try {
+            int flattened = 0;
+            for (Position p : getPositions()) {
+                Order.Side closeSide = p.side() == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
+                Order close = new Order(p.symbol(), closeSide, Order.Type.MARKET, p.quantity(), 0.0).asCloseOnly();
+                try {
+                    OrderSubmitResult result = submitOrder(close);
+                    if (result.accepted()) {
+                        flattened++;
+                    } else {
+                        log.warn("OANDA failed to flatten position {}: {}", p, result.rejectReason());
+                    }
+                } catch (Exception e) {
+                    log.warn("OANDA exception flattening position {}: {}", p, e.getMessage());
+                }
+            }
+            log.info("OANDA flattenAllPositions flattened {} positions", flattened);
+            return flattened;
         } finally {
             clearCache();
         }

@@ -68,14 +68,17 @@ public final class IbkrAccountCache {
     }
 
     public AccountSummary snapshot() {
-        double netLiq = values.getOrDefault("NetLiquidation", values.getOrDefault("TotalCashBalance", 100_000.0));
+        // Fail-closed defaults: a missing/never-received account metric MUST NOT fabricate a
+        // healthy $100k account (the previous behaviour). Sizing/margin guards downstream must
+        // see zeros and refuse to trade rather than assume phantom capital.
+        double netLiq = values.getOrDefault("NetLiquidation", 0.0);
         double cash = values.getOrDefault("TotalCashBalance", netLiq);
         double initMargin = values.getOrDefault("FullInitMarginReq", values.getOrDefault("InitMarginReq", 0.0));
         double maintMargin = values.getOrDefault("FullMaintMarginReq", values.getOrDefault("MaintMarginReq", 0.0));
-        double available = values.getOrDefault("AvailableFunds", Math.max(0.0, netLiq - initMargin));
-        double buyingPower = values.getOrDefault("BuyingPower", available * 4.0);
+        double available = values.getOrDefault("AvailableFunds", 0.0);
+        double buyingPower = values.getOrDefault("BuyingPower", 0.0);
         double grossPos = values.getOrDefault("GrossPositionValue", 0.0);
-        int dayTrades = values.getOrDefault("DayTradesRemaining", 3.0).intValue();
+        int dayTrades = values.getOrDefault("DayTradesRemaining", 0.0).intValue();
 
         boolean pdtRestricted = (netLiq < 25_000.0 && dayTrades <= 0);
         double utilization = netLiq > 0 ? (maintMargin / netLiq) * 100.0 : 0.0;

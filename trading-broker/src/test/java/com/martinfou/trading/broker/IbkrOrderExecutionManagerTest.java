@@ -74,4 +74,34 @@ class IbkrOrderExecutionManagerTest {
         assertFalse(manager.isStrategyMarginPaused(strat));
         assertTrue(manager.canSubmitOrder(oNext, "TAG-MARG-2"));
     }
+
+    @Test
+    @DisplayName("Should NOT pause strategy on a non-margin 201 rejection")
+    void testNonMarginRejectionDoesNotPause() {
+        IbkrOrderExecutionManager manager = new IbkrOrderExecutionManager();
+        String strat = "STRAT-MOMENTUM";
+        Order o = new Order("MES", Order.Side.BUY, Order.Type.MARKET, 1.0, 5000.0).withStrategyId(strat);
+        manager.canSubmitOrder(o, "TAG-NONMARG-1");
+
+        // Error 201 "Order rejected - reason" with a NON-margin cause must not pause the strategy.
+        manager.recordError(o.id(), 201, "Order rejected - reason:invalid price", strat);
+
+        assertFalse(manager.isStrategyMarginPaused(strat));
+        assertTrue(manager.canSubmitOrder(
+            new Order("MES", Order.Side.BUY, Order.Type.MARKET, 1.0, 5000.0).withStrategyId(strat),
+            "TAG-NONMARG-2"));
+    }
+
+    @Test
+    @DisplayName("Should pause strategy on Error 202 margin rejection")
+    void testMarginRejection202Pauses() {
+        IbkrOrderExecutionManager manager = new IbkrOrderExecutionManager();
+        String strat = "STRAT-MOMENTUM";
+        Order o = new Order("MES", Order.Side.BUY, Order.Type.MARKET, 1.0, 5000.0).withStrategyId(strat);
+        manager.canSubmitOrder(o, "TAG-MARG202-1");
+
+        manager.recordError(o.id(), 202, "Order Canceled - reason:insufficient buying power", strat);
+
+        assertTrue(manager.isStrategyMarginPaused(strat));
+    }
 }

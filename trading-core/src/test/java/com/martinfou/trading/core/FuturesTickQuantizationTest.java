@@ -70,5 +70,40 @@ class FuturesTickQuantizationTest {
         double pnlOffTick = model.calculatePnL(Order.Side.BUY, 5000.00, 5002.30, 1.0, 150.0);
         assertEquals(11.25, pnlOffTick, 1e-6);
     }
+
+    @Test
+    void testFuturesValuationModelQuantizesEntryAndExitSymmetrically() {
+        AssetValuationModel model = AssetValuationRegistry.resolve("MES");
+
+        // Off-tick entry 5000.10 snaps to 5000.00; on-tick exit 5002.25.
+        // Symmetric quantization: (5002.25 - 5000.00) * $5 = $11.25 (NOT (5002.25 - 5000.10) * $5 = $10.75)
+        double pnl = model.calculatePnL(Order.Side.BUY, 5000.10, 5002.25, 1.0, 150.0);
+        assertEquals(11.25, pnl, 1e-6);
+
+        // Off-tick entry on a SELL side must also quantize entry symmetrically.
+        double shortPnl = model.calculatePnL(Order.Side.SELL, 5000.10, 4997.90, 1.0, 150.0);
+        // entry 5000.10 -> 5000.00, exit 4997.90 -> 4998.00 ; (5000.00 - 4998.00) * 5 = $10.00
+        assertEquals(10.00, shortPnl, 1e-6);
+    }
+
+    @Test
+    void testMicroMultiplierIsNotOffByFactorTen() {
+        // Regression lock-in: micro futures must use MICRO multipliers, never the full-size contract's.
+        // ES=F (full E-mini) and MES=F (micro) quote the SAME index price; the $50 vs $5 difference
+        // lives entirely in the multiplier. A 1-point move on MES must be worth $5, not $50.
+        FuturesContract mes = FuturesRegistry.find("MES").orElseThrow();
+        FuturesContract mnq = FuturesRegistry.find("MNQ").orElseThrow();
+        FuturesContract m2k = FuturesRegistry.find("M2K").orElseThrow();
+
+        assertEquals(5.0, mes.multiplier(), 1e-9);
+        assertEquals(2.0, mnq.multiplier(), 1e-9);
+        assertEquals(5.0, m2k.multiplier(), 1e-9);
+
+        AssetValuationModel mesModel = AssetValuationRegistry.resolve("MES");
+        assertEquals(5.0, mesModel.calculatePnL(Order.Side.BUY, 5000.0, 5001.0, 1.0, 150.0), 1e-6);
+
+        // Notional of 1 MES contract at 5000 = $25,000 (micro), not $250,000 (full E-mini).
+        assertEquals(25_000.0, mesModel.notionalValue(5000.0, 1.0), 1e-6);
+    }
 }
 
