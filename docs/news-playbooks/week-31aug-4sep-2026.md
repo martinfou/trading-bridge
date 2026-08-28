@@ -1,10 +1,23 @@
 # News Playbook — Semaine du 31 août au 4 septembre 2026
 
 > Généré: mercredi 26 août 2026 (scan macro — tâche secondaire du mercredi)
+> **Confirmé: vendredi 28 août 2026 (deep dive)** — RBA (1er mardi = 1 sept), ECB
+> (1er jeudi = 3 sept), NFP (1er vendredi = 4 sept) = événements calendaire-fixes ✅
 > Projet: trading-bridge
 > Auteur: Simons Research
 > ⚠️ Calendrier basé sur les événements RÉCURRENTS + contexte repo (RBA 1er sept confirmé
 > par le playbook 24-28 août). À confirmer précisément vendredi (deep dive) via ForexFactory.
+
+## ✅ Confirmation vendredi 28 août (deep dive)
+
+- **Événements ⭐⭐⭐ confirmés par construction** : RBA mar 1 sept (~00:30 ET), ISM mar,
+  ECB jeu 3 sept, NFP ven 4 sept. Semaine ⭐⭐⭐ inchangée.
+- **Mise à jour XAU (setup #5)** : le deep dive du 28 août (GoldTurtleDxyFilter, 23e résultat)
+  montre que les trades long or de la famille Turtle performent MIEUX quand le DXY est
+  AU-DESSUS de sa moyenne ~21 jours (régime USD ferme), pas en « bear dollar ». Pour le
+  hedging macro de la semaine : un long or se tient mieux si le DXY reste ferme ; éviter
+  d'ajouter du long or en fenêtre de dollar faible. Voir note Joplin 28 août.
+- Aucune fenêtre saisonnière active (USDCAD Oct 12 reste le prochain candidat H2).
 
 ## ⚠️ Constat préliminaire
 
