@@ -41,6 +41,7 @@ public class DateWindowSeasonalStrategy implements Strategy {
     private final String symbol;
     private final int startMonth, startDay, endMonth, endDay;
     private final Order.Side direction;
+    private final double quantity;
     private final List<Bar> history = new ArrayList<>();
     private final List<Order> pending = new ArrayList<>();
 
@@ -65,6 +66,12 @@ public class DateWindowSeasonalStrategy implements Strategy {
     public DateWindowSeasonalStrategy(String name, String symbol,
                                       int startMonth, int startDay, int endMonth, int endDay,
                                       Order.Side direction) {
+        this(name, symbol, startMonth, startDay, endMonth, endDay, direction, QUANTITY);
+    }
+    /** Variante avec quantité personnalisée (ex: 10 oz pour XAU_USD). */
+    public DateWindowSeasonalStrategy(String name, String symbol,
+                                      int startMonth, int startDay, int endMonth, int endDay,
+                                      Order.Side direction, double quantity) {
         this.name = name;
         this.symbol = symbol;
         this.startMonth = startMonth;
@@ -72,6 +79,7 @@ public class DateWindowSeasonalStrategy implements Strategy {
         this.endMonth = endMonth;
         this.endDay = endDay;
         this.direction = direction;
+        this.quantity = quantity;
     }
 
     @Override
@@ -124,14 +132,14 @@ public class DateWindowSeasonalStrategy implements Strategy {
     }
 
     private void enterTrade(Bar bar) {
-        pending.add(new Order(symbol, direction, Order.Type.MARKET, QUANTITY, bar.close()));
+        pending.add(new Order(symbol, direction, Order.Type.MARKET, quantity, bar.close()));
         inTrade = true;
         tradeDirection = direction;
     }
 
     private void forceExit(double price) {
         Order.Side exitSide = (tradeDirection == Order.Side.BUY) ? Order.Side.SELL : Order.Side.BUY;
-        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, QUANTITY, price).closeOnly());
+        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, quantity, price).closeOnly());
         inTrade = false;
     }
 
