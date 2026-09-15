@@ -51,6 +51,30 @@ import java.util.*;
  * calculés sur les barres/valeurs STRICTEMENT antérieures ; les deux pointeurs de série
  * n'avancent que sur ts < ts(barre courante)). Quantity fixe 10 oz — jamais de
  * calcRiskPosition ATR (pitfall AugustRiskFade).
+ *
+ * 🔁 GÉNÉRALISATION « GATE → OVERLAY DE TAILLE » (mardi 15 septembre 2026, 36e résultat) :
+ *    Le gate AND/twin a échoué comme SÉLECTEUR d'entrées (PF 1.01, WF OOS 0.84) alors que la
+ *    DÉRIVE forward du quadrant twin est validée (10 sept, EXPLORE). C'est LA piste restante
+ *    de la revue du 12 sept : le twin comme MODULATEUR DE TAILLE, pas comme gate d'entrée.
+ *
+ *    Deux paramètres généralisent la classe (`unitsAllowed` / `unitsBlocked`) :
+ *      - (unitsAllowed=1, unitsBlocked=0) = GATE PUR  → comportement strictement identique
+ *        aux résultats publiés du 14 sept (aucun trade pris quand la condition est fausse) ;
+ *      - (unitsAllowed=1, unitsBlocked=2) = OVERLAY   → TOUS les breakouts Donchian sont
+ *        tradés (la sélection disparaît), mais la taille d'entrée est DOUBLÉE quand la
+ *        condition « refuge » est vraie pour ce sens (BUY = cond, SELL = !cond) ;
+ *      - (2, 2) = GATE PUR à 2 unités = contrôle de mise à l'échelle plate (Pattern C :
+ *        un amplificateur uniforme ne change ni le PF ni la qualité, il multiplie le net
+ *        et le DD).
+ *
+ *    Question testée : l'information de régime (dérive) est-elle mieux exploitée comme
+ *    AMPLITUDE que comme SÉLECTION ? Autrement dit, la moitié des breakouts que le gate
+ *    refuse (trades « hors refuge ») — qui contiennent pourtant une traîne de PnL — doit-elle
+ *    être gardée à taille réduite plutôt que jetée ?
+ *
+ *    + `sidePolicy` (BOTH / LONG_ONLY / SHORT_ONLY) teste la piste « long-only Turtle or »
+ *      ouverte par la signature LONG/SHORT du 11 sept (or LONG +$21 480 / SHORT −$3 547 :
+ *      le long porte l'edge, le short n'est qu'une traîne).
  */
 public class GoldTurtleDualGateStrategy implements Strategy {
 
@@ -65,7 +89,12 @@ public class GoldTurtleDualGateStrategy implements Strategy {
     public static final int POL_ALIGNED  = 0;   // sens naïf de la jambe
     public static final int POL_OPPOSITE = 1;   // sens inverse (contrôle directionnel)
 
-    private static final double QUANTITY = 10;   // oz fixes — pas de levier ATR
+    // --- politique de côté (signature LONG/SHORT du 11 sept) ---
+    public static final int SIDE_BOTH       = 0;
+    public static final int SIDE_LONG_ONLY  = 1;
+    public static final int SIDE_SHORT_ONLY = 2;
+
+    private static final double QUANTITY_PER_UNIT = 10;   // oz par unité — pas de levier ATR
     private static final int DEFAULT_ENTRY_CHANNEL = 55;
     private static final int DEFAULT_EXIT_CHANNEL = 20;
 
@@ -78,6 +107,9 @@ public class GoldTurtleDualGateStrategy implements Strategy {
     private final int polarityB;
     private final int smaA;   // période jambe A (barres H1 de la grille)
     private final int smaB;   // période jambe B
+    private final int unitsAllowed;   // unités quand la condition du gate est VRAIE pour le sens
+    private final int unitsBlocked;   // unités quand elle est FAUSSE (0 = gate pur, >0 = overlay)
+    private final int sidePolicy;     // SIDE_BOTH / SIDE_LONG_ONLY / SIDE_SHORT_ONLY
 
     private final List<Long> tsA = new ArrayList<>();
     private final List<Double> valA = new ArrayList<>();
@@ -91,6 +123,11 @@ public class GoldTurtleDualGateStrategy implements Strategy {
 
     private boolean inTrade = false;
     private Order.Side tradeDirection = Order.Side.BUY;
+    private int openUnits = 0;
+
+    /** Compteurs d'exposition (diagnostic : part des trades pris à taille pleine vs réduite). */
+    private int entriesAllowed = 0;
+    private int entriesBlocked = 0;
 
     public GoldTurtleDualGateStrategy(String name, String symbol, Map<Long, Double> seriesA,
                                       Map<Long, Double> seriesB) {
@@ -102,6 +139,23 @@ public class GoldTurtleDualGateStrategy implements Strategy {
                                       int mode, int polarityA, int polarityB,
                                       int smaA, int smaB,
                                       Map<Long, Double> seriesA, Map<Long, Double> seriesB) {
+        this(name, symbol, entryChannel, exitChannel, mode, polarityA, polarityB, smaA, smaB,
+             1, 0, SIDE_BOTH, seriesA, seriesB);
+    }
+
+    /**
+     * Constructeur généralisé « gate → overlay de taille ».
+     *
+     * @param unitsAllowed unités (× 10 oz) quand la condition du gate est vraie pour le sens du breakout
+     * @param unitsBlocked unités quand elle est fausse : 0 = GATE PUR (comportement publié du 14 sept),
+     *                     &gt; 0 = OVERLAY (le trade est pris à taille réduite/pleine au lieu d'être jeté)
+     * @param sidePolicy   SIDE_BOTH / SIDE_LONG_ONLY / SIDE_SHORT_ONLY
+     */
+    public GoldTurtleDualGateStrategy(String name, String symbol, int entryChannel, int exitChannel,
+                                      int mode, int polarityA, int polarityB,
+                                      int smaA, int smaB,
+                                      int unitsAllowed, int unitsBlocked, int sidePolicy,
+                                      Map<Long, Double> seriesA, Map<Long, Double> seriesB) {
         this.name = name;
         this.symbol = symbol;
         this.entryChannel = entryChannel;
@@ -111,6 +165,9 @@ public class GoldTurtleDualGateStrategy implements Strategy {
         this.polarityB = polarityB;
         this.smaA = Math.max(1, smaA);
         this.smaB = Math.max(1, smaB);
+        this.unitsAllowed = Math.max(0, unitsAllowed);
+        this.unitsBlocked = Math.max(0, unitsBlocked);
+        this.sidePolicy = sidePolicy;
         fill(seriesA, tsA, valA);
         fill(seriesB, tsB, valB);
     }
@@ -145,14 +202,25 @@ public class GoldTurtleDualGateStrategy implements Strategy {
         Order.Side seasonalBias = getSeasonalBias(symbol, bar.timestamp()); // XAU → null
 
         if (bar.close() > prevHigh55) {
-            if ((seasonalBias == null || seasonalBias == Order.Side.BUY) && gateAllows(true)) {
-                enter(bar, Order.Side.BUY);
+            if (!sideAllowed(Order.Side.BUY)) return;
+            if (seasonalBias == null || seasonalBias == Order.Side.BUY) {
+                int units = gateUnits(true);
+                if (units > 0) enter(bar, Order.Side.BUY, units);
             }
         } else if (bar.close() < prevLow55) {
-            if ((seasonalBias == null || seasonalBias == Order.Side.SELL) && gateAllows(false)) {
-                enter(bar, Order.Side.SELL);
+            if (!sideAllowed(Order.Side.SELL)) return;
+            if (seasonalBias == null || seasonalBias == Order.Side.SELL) {
+                int units = gateUnits(false);
+                if (units > 0) enter(bar, Order.Side.SELL, units);
             }
         }
+    }
+
+    /** Politique de côté (piste long-only, signature LONG/SHORT du 11 sept). */
+    private boolean sideAllowed(Order.Side side) {
+        if (sidePolicy == SIDE_LONG_ONLY) return side == Order.Side.BUY;
+        if (sidePolicy == SIDE_SHORT_ONLY) return side == Order.Side.SELL;
+        return true;
     }
 
     /** Avance les deux pointeurs : toutes les entrées avec ts < barre courante. */
@@ -162,12 +230,14 @@ public class GoldTurtleDualGateStrategy implements Strategy {
     }
 
     /**
-     * Le gate à deux jambes. `wantBuy` = le breakout est haussier (BUY) ou baissier (SELL).
-     * Une jambe sans donnée (ptr < 0) est NEUTRE : elle n'autorise ni ne bloque
-     * (comportement identique à GoldTurtleDxyFilterStrategy, qui retourne true dans ce cas).
+     * Le gate à deux jambes, version AMPLITUDE. `wantBuy` = le breakout est haussier (BUY) ou
+     * baissier (SELL). Retourne le nombre d'unités à engager pour ce breakout :
+     *   - 0 → le trade n'est PAS pris (gate pur, comportement du 14 sept) ;
+     *   - &gt;0 → le trade est pris avec cette taille (overlay de taille).
+     * Une jambe sans donnée (ptr < 0) est NEUTRE : elle n'autorise ni ne bloque.
      */
-    private boolean gateAllows(boolean wantBuy) {
-        if (mode == MODE_OFF) return true;
+    private int gateUnits(boolean wantBuy) {
+        if (mode == MODE_OFF) { entriesAllowed++; return unitsAllowed; }
         Boolean a = bullA();
         Boolean b = bullB();
         boolean cond;
@@ -178,8 +248,18 @@ public class GoldTurtleDualGateStrategy implements Strategy {
             case MODE_OR  -> cond = (a != null && a) || (b != null && b);
             default -> cond = true;
         }
-        return wantBuy ? cond : !cond;
+        boolean allowed = wantBuy ? cond : !cond;
+        if (allowed) { entriesAllowed++; return unitsAllowed; }
+        entriesBlocked++;
+        return unitsBlocked;
     }
+
+    // --- diagnostics d'exposition (pour le rapport) ---
+
+    /** Nombre d'entrées prises à la taille « condition vraie ». */
+    public int entriesAllowed() { return entriesAllowed; }
+    /** Nombre d'entrées prises à la taille « condition fausse » (0 en mode gate pur). */
+    public int entriesBlocked() { return entriesBlocked; }
 
     /** true = la jambe A penche « or haussier » ; null = pas encore de donnée. */
     private Boolean bullA() { return bull(valA, ptrA, smaA, polarityA); }
@@ -195,16 +275,20 @@ public class GoldTurtleDualGateStrategy implements Strategy {
         return polarity == POL_OPPOSITE ? !legBull : legBull;
     }
 
-    private void enter(Bar bar, Order.Side side) {
-        pending.add(new Order(symbol, side, Order.Type.MARKET, QUANTITY, bar.close()));
+    private void enter(Bar bar, Order.Side side, int units) {
+        double qty = units * QUANTITY_PER_UNIT;
+        pending.add(new Order(symbol, side, Order.Type.MARKET, qty, bar.close()));
         inTrade = true;
         tradeDirection = side;
+        openUnits = units;
     }
 
     private void closePosition(Bar bar) {
         Order.Side closeSide = tradeDirection == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
-        pending.add(new Order(symbol, closeSide, Order.Type.MARKET, QUANTITY, bar.close()).closeOnly());
+        double qty = Math.max(1, openUnits) * QUANTITY_PER_UNIT;
+        pending.add(new Order(symbol, closeSide, Order.Type.MARKET, qty, bar.close()).closeOnly());
         inTrade = false;
+        openUnits = 0;
     }
 
     private double maxHigh(int end, int period) {
@@ -234,6 +318,9 @@ public class GoldTurtleDualGateStrategy implements Strategy {
         pending.clear();
         inTrade = false;
         tradeDirection = Order.Side.BUY;
+        openUnits = 0;
+        entriesAllowed = 0;
+        entriesBlocked = 0;
         ptrA = -1;
         ptrB = -1;
     }
