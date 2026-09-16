@@ -45,24 +45,52 @@ public class GoldWeekdayEffectStrategy implements Strategy {
     private final String name;
     private final String symbol;
     private final boolean[] days;  // [Mon..Fri]
+    /**
+     * Direction de la jambe de session (patch rétro-compatible du 16 sept 2026).
+     * Défaut = BUY (comportement historique, famille or). BUY permet de tester
+     * l'effet jour-de-semaine FX, où la structure est RISK-OFF le vendredi
+     * (SELL des paires risk, cf. FxCalendarDimCheck 37e résultat).
+     */
+    private final Order.Side direction;
+    /**
+     * Quantité par trade (patch rétro-compatible du 16 sept 2026).
+     * Défaut = 10 (oz, famille or). Pour le FX il faut 10 000 unités
+     * (convention DateWindowSeasonal / BearishMonthsFade) → utiliser
+     * {@link #withQuantity(double)}.
+     */
+    private double quantity = QUANTITY;
 
     private final List<Bar> history = new ArrayList<>();
     private final List<Order> pending = new ArrayList<>();
     private boolean inTrade = false;
+    private Order.Side tradeDirection;
 
     public GoldWeekdayEffectStrategy() { this("GoldWeekdayEffect", "XAU_USD", true, true); }
     public GoldWeekdayEffectStrategy(String name, String symbol) { this(name, symbol, true, true); }
     public GoldWeekdayEffectStrategy(String name, String symbol, boolean tradeWednesday, boolean tradeFriday) {
-        this.name = name;
-        this.symbol = symbol;
-        this.days = new boolean[]{false, false, tradeWednesday, false, tradeFriday};
+        this(name, symbol, tradeWednesday, tradeFriday, Order.Side.BUY);
     }
     /** Variante : masque de jours complet (index 0=MON .. 4=FRI). */
     public GoldWeekdayEffectStrategy(String name, String symbol, boolean[] days) {
+        this(name, symbol, days, Order.Side.BUY);
+    }
+    public GoldWeekdayEffectStrategy(String name, String symbol, boolean tradeWednesday, boolean tradeFriday,
+                                     Order.Side direction) {
+        this.name = name;
+        this.symbol = symbol;
+        this.days = new boolean[]{false, false, tradeWednesday, false, tradeFriday};
+        this.direction = direction;
+    }
+    /** Variante : masque de jours complet + direction de la jambe de session. */
+    public GoldWeekdayEffectStrategy(String name, String symbol, boolean[] days, Order.Side direction) {
         this.name = name;
         this.symbol = symbol;
         this.days = days.clone();
+        this.direction = direction;
     }
+
+    /** Fluent : quantité par trade (10 oz or vs 10 000 unités FX). Rétro-compatible. */
+    public GoldWeekdayEffectStrategy withQuantity(double q) { this.quantity = q; return this; }
 
     @Override
     public String name() { return name; }
@@ -85,15 +113,16 @@ public class GoldWeekdayEffectStrategy implements Strategy {
         // (pas de return : si le jour courant est aussi cible, on ré-entre
         //  immédiatement — nécessaire pour les masques continus type ALLDAYS)
         if (inTrade && isTargetDay(prevDow)) {
-            Order.Side closeSide = Order.Side.SELL;
-            pending.add(new Order(symbol, closeSide, Order.Type.MARKET, QUANTITY, bar.close()).closeOnly());
+            Order.Side closeSide = (tradeDirection == Order.Side.BUY) ? Order.Side.SELL : Order.Side.BUY;
+            pending.add(new Order(symbol, closeSide, Order.Type.MARKET, quantity, bar.close()).closeOnly());
             inTrade = false;
         }
 
         // --- ENTRÉE : aujourd'hui est le jour cible (prev = veille) ---
         if (!inTrade && isTargetDay(curDow)) {
-            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, QUANTITY, bar.close()));
+            pending.add(new Order(symbol, direction, Order.Type.MARKET, quantity, bar.close()));
             inTrade = true;
+            tradeDirection = direction;
         }
     }
 
