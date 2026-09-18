@@ -215,7 +215,13 @@ public final class BrokerAccountRegistry {
     }
 
     public boolean credentialsConfigured(String accountId) {
-        AccountEntry entry = accountsById.get(resolveId(accountId));
+        String id = resolveId(accountId);
+        if (mockBrokers.containsKey(id)) {
+            // A registered mock broker supplies its own connectivity — there is
+            // nothing to configure from the environment for it.
+            return true;
+        }
+        AccountEntry entry = accountsById.get(id);
         if (entry == null) {
             return false;
         }
