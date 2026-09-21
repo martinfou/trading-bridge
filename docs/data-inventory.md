@@ -35,14 +35,20 @@ Pour les lire en Java, passer par le lecteur de barres du module `trading-data`.
 | `USD_CAD` | 2006 → 2026 | 2006 → 2026 | + M1 |
 | `USD_CHF` | 2006 → 2026 | 2006 → 2026 | + M1 |
 | `USD_JPY` | 2006 → 2026 | 2006 → 2026 | + M1 |
-| `XAU_USD` | 2006 → **2025** | 2006 → **16 mai 2025** | ⚠️ **pas de fichier 2026** — toute recherche or post-mai-2025 est impossible |
+| `XAU_USD` | 2006 → 2025 | 2006 → **30 déc 2025** | ⚠️ **pas de fichier 2026** — l'or s'arrête fin 2025, le FX va au 19 mai 2026 (**corrigé le 21 sept 2026** : la borne « 16 mai 2025 » était fausse, cf. §5) |
 | `XAG_USD` (argent) | — | **ABSENT** | ❌ **aucun fichier** — la piste « XAG si données » est **définitivement fermée** |
 
 Variantes sans underscore également présentes : `EURUSD`, `GBPJPY` (héritage — préférer la forme `XXX_YYY`).
 
 ⚠️ **Les `.bars` sont CONTINUS 24/7 avec barres PLATES de carry le week-end** (samedi 100 % plat, dimanche
-reprise 21-23h UTC). Toute étude intraday / horaire / de gap **DOIT filtrer les barres réelles**
-(`close != close précédent`), sinon elle travaille sur des zéros artificiels. Découvert le 7 sept 2026.
+reprise 21-23h UTC). Toute étude intraday / horaire / de gap **DOIT filtrer les barres réelles** :
+**`real = high > low`** (une heure de trading FX à range nul n'existe pas ; une barre de carry est plate par
+construction). ⚠️ **Corrigé le 21 sept 2026** : l'ancienne définition ``close != close précédent`` est
+**FUYANTE** — elle laisse passer ~15-40 barres de carry par paire et par 20 ans (celles dont le prix de carry
+diffère du dernier close réel par un artefact de spread, surtout fin de vendredi et sam/dim 00:00 UTC).
+Découvert le 7 sept 2026, définition corrigée le 21 sept 2026. Les timestamps des `.bars` = **DÉBUT** de barre
+(ouverture marché dimanche 22:00 UTC en hiver), donc le bucket `H` couvre `[H, H+1)` et la mesure intraday
+gap-free est `close/open − 1`.
 
 ⚠️ **Le moteur de backtest saute samedi/dimanche.** Conséquence : une position ouverte « vendredi »
 est en réalité fermée **lundi 01:00** (ex. `GoldWeekdayEffect` — 43 % du net documenté était une jambe
@@ -93,9 +99,9 @@ pour un turtle » doit être reformulée en conséquence.
 
 | Piège | Détail | Découvert |
 |-------|--------|-----------|
-| `XAU_USD` annoncé « 2006-2025 » | signifie en réalité **2006 → 16 mai 2025** | 10 sept 2026 |
+| `XAU_USD` annoncé « 2006-2025 » | couvre en réalité **2006 → 30 déc 2025** — l'annonce « 16 mai 2025 » (10 sept) était **fausse** pour le H1 : cette borne ne décrit que la série **M1** (dernier fichier 2025-05-01→2025-05-23) et les fichiers hérités `*_H1_DUKASCOPY_H1.bars` (18 mai 2025). Vérifié le 21 sept 2026 par décodage des `.bars` (174 725 barres, dernières O/C 4340.10/4338.65) **et** par la queue des CSV Dukascopy H1 | 10 sept 2026, **corrigé 21 sept 2026** |
+| `.bars` 24/7 + carry plat | filtrage des barres réelles obligatoire en intraday — **définition correcte `high > low`** (l'ancien `close != close précédent` est fuyant, ~15-40 barres/paire/20 ans) | 7 sept 2026, corrigé 21 sept 2026 |
 | `EMD_D1.csv` « cassé (1 ligne) » | 1 seule ligne de données (2 lignes au total) | 10 sept 2026 |
-| `.bars` 24/7 + carry plat | filtrage des barres réelles obligatoire en intraday | 7 sept 2026 |
 | Moteur saute sam/dim | les positions « vendredi » sortent lundi 01:00 | 8 sept 2026 |
 | Clé `SWAP_RATES` = `USDCAD` sans underscore | ≠ symbole moteur `USD_CAD` → swap = 0 involontaire | 24 août 2026 |
 | Clé `SeasonalityFilter` = `USDCAD` | même bug de normalisation → filtre silencieusement inactif | 31 juil 2026 |
