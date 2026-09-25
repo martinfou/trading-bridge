@@ -59,6 +59,20 @@ public class GoldWeekdayEffectStrategy implements Strategy {
      * {@link #withQuantity(double)}.
      */
     private double quantity = QUANTITY;
+    /** Quantité réellement engagée sur le trade courant (≠ quantity si overlay de taille). */
+    private double currentQty = QUANTITY;
+
+    /**
+     * Régime optionnel : rang percentile CAUSAL (0-100) par date UTC, fourni par le runner.
+     * ⚠️ Le runner DOIT le construire sans look-ahead (rang mesuré jusqu'à la veille).
+     * null = aucun conditionnement (comportement historique).
+     */
+    private Map<LocalDate, Double> regime;
+    /** Gate optionnel : n'entrer que si le rang du jour est dans [gateLo, gateHi]. null = pas de gate. */
+    private Double gateLo, gateHi;
+    /** Overlay optionnel : taille = quantity × (rang ≥ overlayThreshold ? highMult : lowMult). */
+    private boolean overlayOn = false;
+    private double overlayThreshold = 60, lowMult = 1, highMult = 2;
 
     private final List<Bar> history = new ArrayList<>();
     private final List<Order> pending = new ArrayList<>();
@@ -90,7 +104,27 @@ public class GoldWeekdayEffectStrategy implements Strategy {
     }
 
     /** Fluent : quantité par trade (10 oz or vs 10 000 unités FX). Rétro-compatible. */
-    public GoldWeekdayEffectStrategy withQuantity(double q) { this.quantity = q; return this; }
+    public GoldWeekdayEffectStrategy withQuantity(double q) { this.quantity = q; this.currentQty = q; return this; }
+
+    /**
+     * Fluent (patch rétro-compatible du 25 sept 2026) : injecte un régime causal par date UTC
+     * (rang percentile 0-100) et/ou un gate de sélection et/ou un overlay de taille.
+     * Sert au test GATE vs OVERLAY — cf. RunFxVolRegimeSize.
+     */
+    public GoldWeekdayEffectStrategy withRegime(Map<LocalDate, Double> regime) {
+        this.regime = regime; return this;
+    }
+
+    /** Gate : n'entrer que si le rang du jour ∈ [lo, hi]. Une date sans rang est REFUSÉE. */
+    public GoldWeekdayEffectStrategy withGate(double lo, double hi) {
+        this.gateLo = lo; this.gateHi = hi; return this;
+    }
+
+    /** Overlay : taille = quantity × (rang ≥ threshold ? highMult : lowMult). */
+    public GoldWeekdayEffectStrategy withOverlay(double lowMult, double highMult, double threshold) {
+        this.overlayOn = true; this.lowMult = lowMult; this.highMult = highMult;
+        this.overlayThreshold = threshold; return this;
+    }
 
     @Override
     public String name() { return name; }
@@ -114,16 +148,28 @@ public class GoldWeekdayEffectStrategy implements Strategy {
         //  immédiatement — nécessaire pour les masques continus type ALLDAYS)
         if (inTrade && isTargetDay(prevDow)) {
             Order.Side closeSide = (tradeDirection == Order.Side.BUY) ? Order.Side.SELL : Order.Side.BUY;
-            pending.add(new Order(symbol, closeSide, Order.Type.MARKET, quantity, bar.close()).closeOnly());
+            pending.add(new Order(symbol, closeSide, Order.Type.MARKET, currentQty, bar.close()).closeOnly());
             inTrade = false;
         }
 
         // --- ENTRÉE : aujourd'hui est le jour cible (prev = veille) ---
         if (!inTrade && isTargetDay(curDow)) {
-            pending.add(new Order(symbol, direction, Order.Type.MARKET, quantity, bar.close()));
+            Double rank = rankOf(bar);
+            if (gateLo != null && (rank == null || rank < gateLo || rank > gateHi)) return;  // gate : sélection
+            double q = quantity;
+            if (overlayOn) q = quantity * (rank != null && rank >= overlayThreshold ? highMult : lowMult);
+            if (q <= 0) return;
+            pending.add(new Order(symbol, direction, Order.Type.MARKET, q, bar.close()));
             inTrade = true;
+            currentQty = q;
             tradeDirection = direction;
         }
+    }
+
+    /** Rang de régime de la barre (date UTC). null si aucun régime injecté ou date absente. */
+    private Double rankOf(Bar bar) {
+        if (regime == null) return null;
+        return regime.get(bar.timestamp().atZone(UTC).toLocalDate());
     }
 
     private boolean isTargetDay(DayOfWeek dow) {
