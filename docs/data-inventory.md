@@ -94,6 +94,14 @@ pour un turtle » doit être reformulée en conséquence.
   sur toute la période 2006-2026. C'est un artefact sur longue période (il crédite +3.8 pips/jour de carry
   AUD/USD en 2020-2022 alors que le carry réel y était nul). **Brique manquante structurelle** — tout edge
   dont le net dépend du swap sur les paires AUD/NZD est inévaluable en l'état.
+  **Partiellement comblée le 28 sept 2026** : `SwapCalculator.setYearlyRateOverride(pair, byYear)` accepte
+  désormais **un taux par ANNÉE** (accumulation jour de rollover par jour de rollover, poids 3 le mercredi,
+  clé `-1` = repli). La table de **différentiels de taux directeur US − CAD 2006-2026** est modélisée dans
+  `RunUsdcadSwapRetest.DIFF` (sources FRED `FEDFUNDS` + BoC Valet `V39079` / FRED-OCDE `IRSTCB01CAM156N`,
+  conversion 1 % de différentiel = 0.274 pip/lot/jour) — cf. `reports/2026-09-28-usdcad-swap-retest.txt`.
+  ⚠️ **Corollaire de la même date** : `SWAP_RATES` portait la clé `USDCAD` **sans underscore** ⇒ le swap
+  n'a jamais été appliqué à `USD_CAD` (net = PnL prix pur). Corrigé (`ratesFor` normalise) ⇒ **tout résultat
+  USD_CAD antérieur doit être re-baseliné**.
 
 ## 5. Pièges de couverture connus
 
