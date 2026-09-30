@@ -3,6 +3,8 @@ package com.martinfou.trading.strategies;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.core.Strategy;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -37,6 +39,12 @@ class LiveStrategyRunnerPnlAccountingTest {
     private static final String ROUNDTRIP_STRAT = "PnlAccountingRoundtrip";
     private static final String V2_STRAT = "PnlAccountingV2";
     private static final String FALLBACK_STRAT = "PnlAccountingFallback";
+    private static final String BOUNDED_STRAT = "PnlAccountingBounded";
+    private static final String M2_STRAT = "PnlAccountingNoRealizedPl";
+    private static final String M4_STRAT = "PnlAccountingExitOnce";
+    private static final String UNREC_STRAT = "PnlAccountingUnreconciled";
+    private static final String OPEN_STRAT = "PnlAccountingOpenRevert";
+    private static final String STOPS_STRAT = "PnlAccountingStops";
 
     private static class NoopStrategy implements Strategy {
         @Override public String name() { return "Noop"; }
@@ -57,7 +65,8 @@ class LiveStrategyRunnerPnlAccountingTest {
     @AfterEach
     void cleanup() throws Exception {
         for (String s : List.of(LEGACY_STRAT, CURRENT_STRAT, EDGE_STRAT,
-                DUP_STRAT, ROUNDTRIP_STRAT, V2_STRAT, FALLBACK_STRAT)) {
+                DUP_STRAT, ROUNDTRIP_STRAT, V2_STRAT, FALLBACK_STRAT,
+                BOUNDED_STRAT, M2_STRAT, M4_STRAT, UNREC_STRAT, OPEN_STRAT, STOPS_STRAT)) {
             Files.deleteIfExists(statePath(s));
             Files.deleteIfExists(Paths.get("/tmp/paper-status-" + s + ".json"));
         }
@@ -231,5 +240,231 @@ class LiveStrategyRunnerPnlAccountingTest {
         assertEquals(1, r.getPnlIgnoredLocalEstimates(), "the ignored local estimate is counted");
         assertEquals(1, r.getTotalExits(), "the exit is still counted");
         assertTrue(r.getActiveTrades().isEmpty(), "the trade is removed so entries are not blocked");
+    }
+
+    // ========================================================================
+    // Bounded ledger (M5) + new findings (N5, N7, N8)
+    // ========================================================================
+
+    /** Recording more than RECENT_WINDOW values keeps the exact total and caps the window. */
+    @Test
+    void ledgerRollsUpToBoundedWindowKeepingExactTotal() {
+        RealizedPnlLedger ledger = new RealizedPnlLedger();
+        int n = RealizedPnlLedger.RECENT_WINDOW + 25;
+        double expected = 0.0;
+        for (int i = 1; i <= n; i++) {
+            assertTrue(ledger.recordBrokerPnl("t" + i, (double) i));
+            expected += i;
+        }
+        assertEquals(expected, ledger.total(), 1e-9,
+            "total must be the exact sum of ALL recorded values after rollup");
+        assertEquals(RealizedPnlLedger.RECENT_WINDOW, ledger.recentSize(),
+            "recent window is capped at RECENT_WINDOW");
+        assertEquals(n, ledger.trades(), "dedupe set tracks every distinct id");
+        assertFalse(ledger.snapshot().containsKey("t1"), "oldest id rolled out of the window");
+        double rolled = n - RealizedPnlLedger.RECENT_WINDOW;
+        assertEquals(rolled * (rolled + 1) / 2.0, ledger.confirmedTotal(), 1e-9,
+            "confirmedTotal holds the exact sum of entries that left the window");
+    }
+
+    /** Dedupe survives rollup: re-recording a rolled-up id (within the id cap) is still rejected. */
+    @Test
+    void dedupeSurvivesRollup() {
+        RealizedPnlLedger ledger = new RealizedPnlLedger();
+        int n = RealizedPnlLedger.RECENT_WINDOW + 10;
+        for (int i = 1; i <= n; i++) {
+            assertTrue(ledger.recordBrokerPnl("t" + i, 1.0));
+        }
+        double before = ledger.total();
+        assertFalse(ledger.recordBrokerPnl("t" + n, 999.0),
+            "an id still inside the recent window must be rejected");
+        assertFalse(ledger.recordBrokerPnl("t1", 999.0),
+            "an id evicted to the rolled-up region (still within the id cap) must be rejected");
+        assertEquals(before, ledger.total(), 1e-9, "re-recording must not change the total");
+        assertEquals(n, ledger.trades(), "dedupe set size unchanged");
+    }
+
+    /** Save → resume restores the exact total, the recent window, and the recorded-id dedupe. */
+    @Test
+    void boundedLedgerSurvivesStateRoundTrip() {
+        LiveStrategyRunner r1 = runner(BOUNDED_STRAT);
+        int n = RealizedPnlLedger.RECENT_WINDOW + 20;
+        double expected = 0.0;
+        for (int i = 1; i <= n; i++) {
+            r1.getPnlLedger().recordBrokerPnl("t" + i, (double) i);
+            expected += i;
+        }
+        r1.saveStateNow();
+
+        LiveStrategyRunner r2 = runner(BOUNDED_STRAT);
+        r2.resumeState();
+
+        assertEquals(expected, r2.getTotalPnl(), 1e-9,
+            "exact total (confirmed + recent) survives round-trip");
+        assertEquals(RealizedPnlLedger.RECENT_WINDOW, r2.getPnlLedgerRecentSize(),
+            "recent window size survives round-trip");
+        assertEquals(n, r2.getPnlLedgerTrades(), "recorded-id dedupe count survives round-trip");
+        assertFalse(r2.getPnlLedger().recordBrokerPnl("t1", 999.0),
+            "an id evicted to the rolled-up region is still deduped after resume");
+        assertEquals(expected, r2.getTotalPnl(), 1e-9);
+    }
+
+    /** A signal exit is counted once at reconciliation, not at registration (M4). */
+    @Test
+    void signalExitIsCountedOnceAtReconciliationNotAtRegistration() {
+        LiveStrategyRunner r = runner(M4_STRAT);
+        r.getActiveTrades().add(new LiveStrategyRunner.ActiveTrade(
+            "a1", "GBP_JPY", "SELL", 208.000, 1000, 0, 0, Instant.now()));
+        r.getActiveTrades().add(new LiveStrategyRunner.ActiveTrade(
+            "a2", "GBP_JPY", "SELL", 208.000, 1000, 0, 0, Instant.now()));
+
+        List<String> registered = r.markClosableTradesForReconciliation("GBP_JPY");
+
+        assertEquals(2, registered.size(), "both trades are registered for reconciliation");
+        assertEquals(0, r.getTotalExits(), "registration must NOT count the exit");
+
+        r.completeReconciliation("a1", 1.50);
+        r.completeReconciliation("a2", -0.50);
+
+        assertEquals(2, r.getTotalExits(), "each trade's exit is counted exactly once, at reconciliation");
+        assertEquals(1.00, r.getTotalPnl(), 1e-9, "broker P&L summed exactly once per trade");
+    }
+
+    /** A CLOSED trade with no realizedPL is postponed, never recorded as 0 (M2). */
+    @Test
+    void closedTradeWithoutRealizedPlIsNotRecordedAsZero() {
+        LiveStrategyRunner r = runner(M2_STRAT);
+        r.getActiveTrades().add(new LiveStrategyRunner.ActiveTrade(
+            "t7", "GBP_JPY", "BUY", 208.000, 1000, 0, 0, Instant.now()));
+
+        ObjectNode tNode = new ObjectMapper().createObjectNode();
+        tNode.put("state", "CLOSED");
+        // deliberately no "realizedPL" field
+
+        r.reconcileClosedTrade("t7", tNode);
+
+        assertEquals(0.0, r.getTotalPnl(), 1e-9,
+            "a CLOSED trade without realizedPL must not be recorded as 0");
+        assertEquals(0, r.getPnlLedgerTrades());
+        // CORRECTED after the independent review of 2026-09-30: the first version of this test
+        // asserted the trade "stays pending" in activeTrades. That is the bug, not the rule — a
+        // trade the broker reports CLOSED must be evicted (otherwise the 60s sweep finds it missing
+        // from the broker's open trades and re-flags it UNCONFIRMED forever, and later opposite
+        // signals are misread as closes). The EXIT happened; only its P&L is unknown.
+        assertTrue(r.getActiveTrades().isEmpty(),
+            "a broker-CLOSED trade must be evicted from tracking, not left pending");
+        assertEquals(1, r.getTotalExits(), "the exit happened even if the P&L is unknown");
+        assertTrue(r.getUnreconciledTrades().stream().anyMatch(u -> "t7".equals(u.tradeId)),
+            "the trade must be parked so the watchdog re-attempts the broker value");
+    }
+
+    /** The fallback records the unreconciled trade so it is observable and re-attemptable (M3). */
+    @Test
+    void fallbackPersistsUnreconciledTradeAndCount() {
+        LiveStrategyRunner r = runner(UNREC_STRAT);
+        var trade = new LiveStrategyRunner.ActiveTrade(
+            "t8", "GBP_JPY", "SELL", 208.000, 1000, 0, 0, Instant.now());
+        trade.unrealizedPnl = 350.50;
+        r.getActiveTrades().add(trade);
+
+        r.reconcileTradeFallback("t8");
+
+        assertEquals(1, r.getUnreconciledTrades().size(), "the fallback trade is recorded as unreconciled");
+        assertEquals("t8", r.getUnreconciledTrades().get(0).tradeId);
+        assertEquals("GBP_JPY", r.getUnreconciledTrades().get(0).symbol);
+
+        LiveStrategyRunner r2 = runner(UNREC_STRAT);
+        r2.resumeState();
+        assertEquals(1, r2.getUnreconciledTrades().size(), "unreconciled trades survive save/resume");
+        assertEquals("t8", r2.getUnreconciledTrades().get(0).tradeId);
+    }
+
+    /** A still-open trade reverts to CONFIRMED so it is tracked, never a zombie UNCONFIRMED (N5). */
+    @Test
+    void openTradeReconciliationRevertsToConfirmedNotZombie() {
+        LiveStrategyRunner r = runner(OPEN_STRAT);
+        var trade = new LiveStrategyRunner.ActiveTrade(
+            "t6", "GBP_JPY", "BUY", 208.000, 1000, 0, 0, Instant.now());
+        trade.reconciliationStatus = "UNCONFIRMED_RECONCILIATION";
+        r.getActiveTrades().add(trade);
+
+        r.reconcileOpenTrade("t6");
+
+        assertEquals("CONFIRMED", trade.reconciliationStatus,
+            "a still-open trade must revert to CONFIRMED so the position keeps being tracked");
+        assertFalse(r.hasUnconfirmedReconciliation(),
+            "no trade may stay UNCONFIRMED_RECONCILIATION forever while still open at the broker");
+    }
+
+    /** NaN / Infinity broker values must never enter the total (N7). */
+    @Test
+    void nonFiniteBrokerValueIsRejected() {
+        RealizedPnlLedger ledger = new RealizedPnlLedger();
+        assertFalse(ledger.recordBrokerPnl("bad1", Double.NaN), "NaN must not enter the total");
+        assertFalse(ledger.recordBrokerPnl("bad2", Double.POSITIVE_INFINITY), "Infinity must not enter the total");
+        assertFalse(ledger.recordBrokerPnl("bad3", Double.NEGATIVE_INFINITY), "-Infinity must not enter the total");
+        assertEquals(0.0, ledger.total(), 1e-9, "total stays clean");
+        assertEquals(0, ledger.trades());
+    }
+
+    /** Pending stops serialize correctly through the synchronized snapshot path (N8). */
+    @Test
+    void pendingStopsSurviveStateRoundTrip() {
+        LiveStrategyRunner r1 = runner(STOPS_STRAT);
+        r1.getPendingStops().add(new LiveStrategyRunner.PendingStop(
+            "o1", "GBP_JPY", "SELL", 207.5, 1000, 208.5, 206.0));
+        r1.saveStateNow();
+
+        LiveStrategyRunner r2 = runner(STOPS_STRAT);
+        r2.resumeState();
+
+        assertEquals(1, r2.getPendingStops().size(), "pending stop survives save/resume");
+        assertEquals("o1", r2.getPendingStops().get(0).orderId);
+    }
+
+    /**
+     * A trade the broker reports CLOSED with no usable realizedPL carries an UNKNOWN P&L. It must
+     * not be recorded as 0, it must be EVICTED from tracking (keeping it would let the 60s sweep
+     * re-flag it UNCONFIRMED forever and make later opposite signals look like closes), and it must
+     * be parked for a broker re-attempt. Asserting the eviction is the point: an earlier version of
+     * this test only asserted a status change and passed while the re-block loop was live.
+     */
+    @Test
+    void closedTradeWithoutUsableRealizedPlIsEvictedAndParked() {
+        LiveStrategyRunner r = runner(CURRENT_STRAT);
+        var trade = new LiveStrategyRunner.ActiveTrade(
+            "t9", "GBP_JPY", "SELL", 208.000, 1000, 0, 0, Instant.now());
+        trade.reconciliationStatus = "UNCONFIRMED_RECONCILIATION";
+        r.getActiveTrades().add(trade);
+        assertTrue(r.hasUnconfirmedReconciliation(), "precondition: entries are blocked");
+
+        var closedWithoutPnl = new com.fasterxml.jackson.databind.ObjectMapper()
+            .createObjectNode().put("state", "CLOSED");
+        r.reconcileClosedTrade("t9", closedWithoutPnl);
+
+        assertEquals(0.0, r.getTotalPnl(), 1e-9, "an unknown P&L is not a zero P&L");
+        assertFalse(r.hasUnconfirmedReconciliation(), "the strategy must not stay blocked");
+        assertTrue(r.getActiveTrades().isEmpty(),
+            "a broker-CLOSED trade must be evicted from tracking");
+        assertTrue(r.getUnreconciledTrades().stream().anyMatch(u -> "t9".equals(u.tradeId)),
+            "the trade must be parked for a broker re-attempt");
+    }
+
+    /** An explicit JSON null must read as "no usable P&L", not as 0.0 (has() is true for null). */
+    @Test
+    void jsonNullRealizedPlIsNotRecordedAsZero() {
+        LiveStrategyRunner r = runner(CURRENT_STRAT);
+        r.getActiveTrades().add(new LiveStrategyRunner.ActiveTrade(
+            "t10", "GBP_JPY", "SELL", 208.000, 1000, 0, 0, Instant.now()));
+
+        var node = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+        node.put("state", "CLOSED");
+        node.putNull("realizedPL");
+        r.reconcileClosedTrade("t10", node);
+
+        assertEquals(0.0, r.getTotalPnl(), 1e-9, "a JSON null P&L is unknown, not zero");
+        assertTrue(r.getActiveTrades().isEmpty(), "the closed trade must not stay tracked");
+        assertTrue(r.getUnreconciledTrades().stream().anyMatch(u -> "t10".equals(u.tradeId)),
+            "the trade must be parked rather than written off at zero");
     }
 }

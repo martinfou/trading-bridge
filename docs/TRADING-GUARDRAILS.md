@@ -23,11 +23,19 @@ transaction. La valeur contaminée était persistée puis rechargée à chaque r
 
 | # | Couche | Ce qu'elle empêche | État |
 |---|---|---|---|
-| 1 | **Invariants du code** | La classe de bug elle-même, par construction | en place |
-| 2 | **Vérification à l'exécution** | Une dérive silencieuse entre le système et le courtier | en place |
-| 3 | **Limites de risque** | Une perte qui dépasse ce qui a été décidé | en place |
-| 4 | **Porte de déploiement** | Du code rouge qui part en production | en place |
+| 1 | **Invariants du code** | La classe de bug elle-même, par construction | en place (revu, testé) |
+| 2 | **Vérification à l'exécution** | Une dérive silencieuse entre le système et le courtier | en place (revu, testé) |
+| 3 | **Limites de risque** | Une perte qui dépasse ce qui a été décidé | **politique cible — PAS ENCORE PROUVÉE dans le code** |
+| 4 | **Porte de déploiement** | Du code rouge qui part en production | en place (testée) |
 | 5 | **Rapports courtier** | Un chiffre inventé présenté comme la vérité | en place |
+
+> ⚠️ **Correction du 2026-09-30.** La première version de ce document présentait les cinq couches
+> comme « en place ». C'était faux pour la couche 3 : la **limite de perte journalière (−2 % de la
+> NAV)** et le **plafond d'une position par stratégie et par instrument** sont décrits ici comme
+> politique cible, mais **rien ne prouve encore qu'ils existent dans le code**. Un document de
+> garde-fous qui affirme plus que le code ne fait est lui-même un risque : toute ligne de ce fichier
+> est une **promesse à vérifier**, pas un état constaté. La vérification « documenté vs implémenté »
+> fait partie du mode architecture de la revue indépendante (§ Journal des revues).
 
 ### Couche 1 — Invariants du code (par construction)
 
