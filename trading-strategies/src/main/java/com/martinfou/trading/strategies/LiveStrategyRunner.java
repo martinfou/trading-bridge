@@ -1557,12 +1557,21 @@ public class LiveStrategyRunner implements Runnable {
                     AsyncReconciliationQueue.GLOBAL.submit(this, trade.tradeId);
                     saveStateNow();
                 } else {
-                log.info("   {} {} | Entry: {} | Current: {} | PnL: {}{} | SL: {} TP: {}",
+                // The per-trade PnL below is denominated in the QUOTE currency (JPY for GBP_JPY), not in
+                // the account currency. Printed unlabelled it reads as a contradiction: "-25742.80" on
+                // this line against "Unrealized P&L: -188.85 CAD" on the account summary, which are the
+                // same loss. That is the number a human reads to decide whether to cut a position, so an
+                // unlabelled or wrong unit is worse than no number. Label it.
+                String quoteCurrency = trade.symbol != null && trade.symbol.contains("_")
+                    ? trade.symbol.substring(trade.symbol.indexOf('_') + 1)
+                    : "";
+                log.info("   {} {} | Entry: {} | Current: {} | PnL: {}{} {} | SL: {} TP: {}",
                     trade.symbol, trade.side,
                     formatPrice(trade.entryPrice, trade.symbol),
                     formatPrice(mid, trade.symbol),
                     pnl >= 0 ? "+" : "",
                     String.format("%.2f", pnl),
+                    quoteCurrency,
                     trade.stopLoss > 0 ? formatPrice(trade.stopLoss, trade.symbol) : "—",
                     trade.takeProfit > 0 ? formatPrice(trade.takeProfit, trade.symbol) : "—");
                 }
