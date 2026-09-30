@@ -4,6 +4,16 @@
   "_halfKelly": "f* = (winRate × avgWinLoss - lossRate) / avgWinLoss / 2",
 
   "defaultRiskPct": 1.5,
+
+  "riskSizing": {
+    "_rule": "Two-sided risk budget (2026-09-29): units = (NAV x riskPct/100) / (stopDistance x quoteHomeConversionFactor). Each strategy's own units are intent only.",
+    "_why": "The old cap omitted the quote->home conversion, so it was 1.38x loose on USD-quoted pairs and ~100x tight on JPY-quoted pairs on this CAD account.",
+    "enabled": true,
+    "roundToUnits": 100,
+    "maxUnitsPerOrder": 1000000,
+    "_notionalRule": "No single order may carry more than 5x NAV of notional in account currency: units x price x quoteToHomeFactor <= 5 x NAV. Policy set 2026-09-30 after one order requested 1,857,300 units on a 96k CAD account. The absolute unit cap is only a typo guard; units alone say nothing about exposure.",
+    "maxNotionalNavMultiple": 5
+  },
   "refreshIntervalSec": 60,
   "stateDir": "/tmp",
 
