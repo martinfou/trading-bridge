@@ -106,10 +106,10 @@ public final class IbkrOrderExecutionManager {
         log.error("IBKR execution error (code: {}): {} [orderId: {}, strategy: {}]",
             errorCode, errorMsg, orderId, strategyId);
 
-        if (errorCode == 201) { // Insufficient margin
+        if (isMarginRejection(errorCode, errorMsg)) {
             if (strategyId != null) {
                 strategyMarginPaused.put(strategyId, true);
-                log.warn("Strategy '{}' is now paused due to insufficient margin rejection (Error 201).", strategyId);
+                log.warn("Strategy '{}' is now paused due to insufficient-margin rejection (Error {}).", strategyId, errorCode);
             }
         }
 
@@ -120,6 +120,24 @@ public final class IbkrOrderExecutionManager {
                 t.volumeWeightedPrice(), Order.Status.REJECTED, errorMsg
             ));
         }
+    }
+
+    /**
+     * IBKR has no dedicated "insufficient margin" error code. Margin/cash rejections surface as
+     * code 201 ("Order rejected - reason:...") or 202 ("Order Canceled - reason:...") with a
+     * descriptive message. We must not treat every 201/202 as a margin event — 201 also covers
+     * invalid prices, unknown contracts, etc. — so we match on the message text too.
+     */
+    private static boolean isMarginRejection(int errorCode, String errorMsg) {
+        if (errorCode != 201 && errorCode != 202) {
+            return false;
+        }
+        if (errorMsg == null || errorMsg.isBlank()) {
+            return false;
+        }
+        String m = errorMsg.toLowerCase();
+        return m.contains("margin") || m.contains("insufficient") || m.contains("cash")
+            || m.contains("funds") || m.contains("buying power") || m.contains("available");
     }
 
     /**

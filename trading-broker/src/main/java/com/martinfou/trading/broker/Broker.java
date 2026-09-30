@@ -24,6 +24,29 @@ public interface Broker extends AutoCloseable {
     OrderSubmitResult submitOrder(Order order);
     OrderSubmitResult cancelOrder(String brokerOrderId);
 
+    /**
+     * Cancel all working (unfilled) orders at the broker.
+     * Used by the kill switch / emergency liquidation path so that pending stop-loss,
+     * take-profit, and limit orders do not fire after the strategy is decommissioned.
+     *
+     * @return number of working orders cancelled. Default is {@code 0} (not supported);
+     *         broker implementations MUST override this for live/paper safety.
+     */
+    default int cancelAllOrders() {
+        return 0;
+    }
+
+    /**
+     * Flatten (close) all open positions at the broker, submitting market orders in the
+     * opposite direction. Used by the kill switch as the last-resort de-risking step.
+     *
+     * @return number of positions flattened. Default is {@code 0} (not supported);
+     *         broker implementations MUST override this for live/paper safety.
+     */
+    default int flattenAllPositions() {
+        return 0;
+    }
+
     List<Position> getPositions();
 
     AccountState getAccountState();

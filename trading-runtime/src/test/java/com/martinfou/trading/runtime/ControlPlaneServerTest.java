@@ -23,6 +23,7 @@ import com.martinfou.trading.backtest.events.RunEventType;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ControlPlaneServerTest {
@@ -526,23 +527,19 @@ class ControlPlaneServerTest {
 
             registry.kill("ConnorsRsi2");
 
-            String runId = brokerManager.startRun(new RunManager.StartRunRequest(
-                "ConnorsRsi2",
-                "EUR_USD",
-                "LIVE",
-                new BarSourceResolver.BarsSource("sample", 1000, null),
-                100_000.0,
-                null,
-                null,
-                null,
-                ExecutionLabel.LIVE_OANDA.name()));
-
-            waitForManagerCompletion(brokerManager, runId, Duration.ofSeconds(10));
-
-            var events = brokerManager.eventStore().replayAll(runId);
-            System.out.println("DEBUG EVENTS IN TEST: " + events);
-            assertTrue(events.stream().noneMatch(e -> e.type() == com.martinfou.trading.backtest.events.RunEventType.FILL));
-            assertTrue(events.stream().anyMatch(e -> e.type() == com.martinfou.trading.backtest.events.RunEventType.REJECT));
+            // P0 fix: a killed strategy must not start at all. Previously the run started and
+            // orders were rejected one-by-one; now startRun refuses before any order exists.
+            assertThrows(IllegalArgumentException.class, () ->
+                brokerManager.startRun(new RunManager.StartRunRequest(
+                    "ConnorsRsi2",
+                    "EUR_USD",
+                    "LIVE",
+                    new BarSourceResolver.BarsSource("sample", 1000, null),
+                    100_000.0,
+                    null,
+                    null,
+                    null,
+                    ExecutionLabel.LIVE_OANDA.name())));
         } finally {
             brokerServer.close();
             brokerManager.close();
