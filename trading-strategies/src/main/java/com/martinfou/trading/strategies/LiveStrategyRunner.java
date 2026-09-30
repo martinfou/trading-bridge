@@ -725,6 +725,36 @@ public class LiveStrategyRunner implements Runnable {
         }
     }
 
+    /**
+     * Feeds historical bars to the strategy to prime its indicators, then DISCARDS every order it
+     * queued while doing so. Warm-up bars are history: they must never reach the broker.
+     *
+     * <p>Defect (2026-09-30). Strategies queue their orders in {@code getPendingOrders()}, which the
+     * runner drains once per tick in {@link #checkPendingOrders(String)}. Nothing drained that queue
+     * during warm-up, so a whole history's worth of entry and exit orders sat pending until the first
+     * tick that saw a new bar, which then flushed the entire backlog to the broker in one pass. The
+     * runner opened and closed the same position repeatedly (7 round trips in 7 seconds, each paying
+     * the spread), and because each replayed order carried the stop of the bar that created it, the
+     * risk-sized units ranged from 38,200 to 1,000,000. At the old 1,000-unit micro-lot this cost
+     * cents and went unnoticed; at risk-budget sizes it realized ~495 CAD.
+     */
+    void warmUp(List<Bar> initialBars) {
+        for (Bar bar : initialBars) {
+            barHistory.add(bar);
+            strategy.onBar(bar);
+        }
+        if (!initialBars.isEmpty()) {
+            lastBarTime = initialBars.get(initialBars.size() - 1).timestamp();
+        }
+        // Historical bars must not trade: drop whatever the strategies queued while warming up.
+        List<Order> queuedWhileWarming = strategy.getPendingOrders();
+        if (queuedWhileWarming != null && !queuedWhileWarming.isEmpty()) {
+            log.info("🧹 Discarded {} order(s) queued by the {} warm-up bar(s) — historical bars never trade.",
+                queuedWhileWarming.size(), initialBars.size());
+        }
+        log.info("Warmed up with {} bars. Last bar: {}", initialBars.size(), lastBarTime);
+    }
+
     private void runLoop() throws Exception {
         log.info("━━━ Starting strategy: {} (instrument: {}) ━━━", strategy.name(), toOandaSymbol());
 
@@ -741,14 +771,7 @@ public class LiveStrategyRunner implements Runnable {
         }
 
         // Warm up: feed historical bars but don't trade them
-        for (Bar bar : initialBars) {
-            barHistory.add(bar);
-            strategy.onBar(bar);
-        }
-        if (!initialBars.isEmpty()) {
-            lastBarTime = initialBars.get(initialBars.size() - 1).timestamp();
-        }
-        log.info("Warmed up with {} bars. Last bar: {}", initialBars.size(), lastBarTime);
+        warmUp(initialBars);
 
         // Verify account
         try {
