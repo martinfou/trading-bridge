@@ -111,4 +111,66 @@ class LiveStrategyRunnerWarmupTest {
         assertEquals(0, strategy.barsSeen);
         assertTrue(strategy.getPendingOrders().isEmpty());
     }
+
+    /**
+     * A strategy whose {@code getPendingOrders()} COMPUTES orders from its position state
+     * (GoBigStrategy, CasinoStrategy) never empties. Warm-up must not pretend it drained such a
+     * strategy: this is the limitation the independent review flagged, and it is logged as an error
+     * so the operator syncs the strategy to the broker position before running it live.
+     */
+    @Test
+    @DisplayName("warm-up cannot clear a strategy whose orders are a computed view")
+    void warmUpCannotClearAComputedViewStrategy() {
+        Strategy computedView = new Strategy() {
+            boolean inPosition = true;
+            @Override public String name() { return "ComputedView"; }
+            @Override public void onBar(Bar bar) { }
+            @Override public void onTick(double bid, double ask, long volume) { }
+            @Override public List<Order> getPendingOrders() {
+                List<Order> orders = new ArrayList<>();
+                if (inPosition) {
+                    orders.add(new Order("GBP_JPY", Order.Side.BUY, Order.Type.MARKET, 10000, 208.0));
+                }
+                return orders;
+            }
+            @Override public void reset() { inPosition = false; }
+        };
+
+        LiveStrategyRunner r = runner(computedView);
+        r.warmUp(bars(3));
+
+        assertTrue(!computedView.getPendingOrders().isEmpty(),
+            "a computed-view strategy keeps returning orders, so warm-up must not report a clean "
+                + "drain; the runner logs an error and the strategy must be synced before going live");
+    }
+
+    // ========================================================================
+    // Sizing fail-safes — these must always fail SMALL, never unbudgeted.
+    // ========================================================================
+
+    /** A zero risk distance has no denominator: never hand back the requested size unbudgeted. */
+    @Test
+    @DisplayName("zero stop distance fails small, not unbudgeted")
+    void zeroStopDistanceFailsSmall() {
+        LiveStrategyRunner r = runner(new OrderQueuingStrategy());
+
+        assertEquals(LiveStrategyRunner.NO_RISK_UNITS_CAP,
+            r.riskSizedUnits(96_000, 0.75, 208.0, 208.0, 50_000, "GBP_JPY"), 1e-9,
+            "entry and stop at the same price must cap the size, never return the requested 50,000");
+    }
+
+    /** No stop at all, and a request below the cap, still resolves to the smaller of the two. */
+    @Test
+    @DisplayName("missing stop caps at the requested size when that is already small")
+    void missingStopKeepsTheSmallerOfRequestAndCap() {
+        LiveStrategyRunner r = runner(new OrderQueuingStrategy());
+
+        assertEquals(LiveStrategyRunner.NO_RISK_UNITS_CAP,
+            r.riskSizedUnits(96_000, 0.75, 208.0, 0, 50_000, "GBP_JPY"), 1e-9,
+            "a 50,000-unit request with no stop caps at the fail-safe");
+
+        assertEquals(1000,
+            r.riskSizedUnits(96_000, 0.75, 208.0, 0, 1000, "GBP_JPY"), 1e-9,
+            "a 1,000-unit request with no stop stays at 1,000");
+    }
 }
