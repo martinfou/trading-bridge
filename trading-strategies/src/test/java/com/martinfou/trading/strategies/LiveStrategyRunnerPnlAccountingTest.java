@@ -25,14 +25,18 @@ import static org.junit.jupiter.api.Assertions.*;
  * from tracking before any reconciliation could correct it, and the value was double-counted
  * whenever the async reconciliation completed the same trade.
  *
- * <p><b>Rule asserted here.</b> {@code totalPnl} is account currency, broker-sourced, added
- * exactly once per trade — and a pre-fix accumulator is discarded, never carried over.
+ * <p><b>Rule asserted here.</b> The realized-P&L ledger is account currency, broker-sourced, added
+ * exactly once per trade id — and a pre-v3 accumulator is discarded, never carried over.
  */
 class LiveStrategyRunnerPnlAccountingTest {
 
     private static final String LEGACY_STRAT = "PnlAccountingLegacy";
     private static final String CURRENT_STRAT = "PnlAccountingCurrent";
     private static final String EDGE_STRAT = "PnlAccountingEdge";
+    private static final String DUP_STRAT = "PnlAccountingDuplicate";
+    private static final String ROUNDTRIP_STRAT = "PnlAccountingRoundtrip";
+    private static final String V2_STRAT = "PnlAccountingV2";
+    private static final String FALLBACK_STRAT = "PnlAccountingFallback";
 
     private static class NoopStrategy implements Strategy {
         @Override public String name() { return "Noop"; }
@@ -52,7 +56,8 @@ class LiveStrategyRunnerPnlAccountingTest {
 
     @AfterEach
     void cleanup() throws Exception {
-        for (String s : List.of(LEGACY_STRAT, CURRENT_STRAT, EDGE_STRAT)) {
+        for (String s : List.of(LEGACY_STRAT, CURRENT_STRAT, EDGE_STRAT,
+                DUP_STRAT, ROUNDTRIP_STRAT, V2_STRAT, FALLBACK_STRAT)) {
             Files.deleteIfExists(statePath(s));
             Files.deleteIfExists(Paths.get("/tmp/paper-status-" + s + ".json"));
         }
@@ -82,9 +87,9 @@ class LiveStrategyRunnerPnlAccountingTest {
             "a legacy totalPnl (quote-currency contaminated) must be discarded, not carried over");
     }
 
-    /** A counter written by the corrected accounting survives a restart. */
+    /** A ledger written by the corrected (v3) accounting survives a restart. */
     @Test
-    void currentVersionPnlIsKeptOnResume() throws Exception {
+    void currentVersionLedgerIsKeptOnResume() throws Exception {
         Files.writeString(statePath(CURRENT_STRAT), """
             {
               "strategy" : "%s",
@@ -95,7 +100,9 @@ class LiveStrategyRunnerPnlAccountingTest {
               "totalEntries" : 6,
               "totalExits" : 6,
               "pnlAccountingVersion" : %d,
-              "totalPnl" : 12.34,
+              "pnlLedger" : { "t9" : 12.34 },
+              "pnlLedgerTrades" : 1,
+              "ignoredLocalEstimates" : 0,
               "savedAt" : "2026-09-29T20:00:00Z"
             }
             """.formatted(CURRENT_STRAT, LiveStrategyRunner.PNL_ACCOUNTING_VERSION));
@@ -104,6 +111,7 @@ class LiveStrategyRunnerPnlAccountingTest {
         r.resumeState();
 
         assertEquals(12.34, r.getTotalPnl(), 1e-9);
+        assertEquals(1, r.getPnlLedgerTrades(), "the trade-id-keyed ledger is restored, not a scalar");
     }
 
     /**
@@ -146,5 +154,82 @@ class LiveStrategyRunnerPnlAccountingTest {
         assertTrue(r.markClosableTradesForReconciliation("GBP_JPY").isEmpty(),
             "a trade pending reconciliation must not be flagged again");
         assertEquals(1, r.getActiveTrades().size());
+    }
+
+    /** A duplicate reconciliation for the same trade id leaves the total at the FIRST value only. */
+    @Test
+    void duplicateBrokerPnlIsCountedOnce() {
+        LiveStrategyRunner r = runner(DUP_STRAT);
+        r.getActiveTrades().add(new LiveStrategyRunner.ActiveTrade(
+            "t1", "GBP_JPY", "BUY", 208.000, 1000, 0, 0, Instant.now()));
+
+        r.completeReconciliation("t1", 1.0934);
+        r.completeReconciliation("t1", 99.99); // overlapping async reconciliation, different value
+
+        assertEquals(1.0934, r.getTotalPnl(), 1e-9,
+            "the first broker value wins; the duplicate must neither double-count nor overwrite");
+        assertEquals(1, r.getPnlLedgerTrades(), "one entry per trade id");
+        assertEquals(1, r.getTotalExits(), "the exit is counted only once");
+    }
+
+    /** Save → resume restores the same ledger total and trade count. */
+    @Test
+    void stateRoundTripRestoresLedger() throws Exception {
+        LiveStrategyRunner r1 = runner(ROUNDTRIP_STRAT);
+        r1.getActiveTrades().add(new LiveStrategyRunner.ActiveTrade(
+            "t9", "GBP_JPY", "BUY", 208.000, 1000, 0, 0, Instant.now()));
+        r1.completeReconciliation("t9", 1.0934); // records + persists via saveStateNow()
+
+        LiveStrategyRunner r2 = runner(ROUNDTRIP_STRAT);
+        r2.resumeState();
+
+        assertEquals(1.0934, r2.getTotalPnl(), 1e-9,
+            "ledger total survives a save/resume round-trip");
+        assertEquals(1, r2.getPnlLedgerTrades(),
+            "ledger trade count survives a save/resume round-trip");
+    }
+
+    /** A v2 state file (scalar totalPnl, pnlAccountingVersion: 2) is discarded, not carried over. */
+    @Test
+    void v2ScalarPnlIsDiscardedOnResume() throws Exception {
+        Files.writeString(statePath(V2_STRAT), """
+            {
+              "strategy" : "%s",
+              "displayName" : "Noop",
+              "instrument" : "GBP_JPY",
+              "granularity" : "H1",
+              "intervalSec" : 60,
+              "totalEntries" : 6,
+              "totalExits" : 6,
+              "pnlAccountingVersion" : 2,
+              "totalPnl" : 350.50,
+              "savedAt" : "2026-09-29T20:00:00Z"
+            }
+            """.formatted(V2_STRAT));
+
+        LiveStrategyRunner r = runner(V2_STRAT);
+        r.resumeState();
+
+        assertEquals(0.0, r.getTotalPnl(), 1e-9,
+            "a v2 scalar totalPnl must be discarded, not carried into the v3 ledger");
+        assertEquals(0, r.getPnlLedgerTrades());
+    }
+
+    /** The fallback never moves the total: the local value is quote currency and stays UNKNOWN. */
+    @Test
+    void fallbackReconciliationLeavesTotalAtZero() {
+        LiveStrategyRunner r = runner(FALLBACK_STRAT);
+        var trade = new LiveStrategyRunner.ActiveTrade(
+            "t5", "GBP_JPY", "SELL", 208.000, 1000, 0, 0, Instant.now());
+        trade.unrealizedPnl = 350.50; // local quote-currency estimate (JPY)
+        r.getActiveTrades().add(trade);
+
+        r.reconcileTradeFallback("t5");
+
+        assertEquals(0.0, r.getTotalPnl(), 1e-9,
+            "the local quote-currency value must never enter the realized-P&L total");
+        assertEquals(1, r.getPnlIgnoredLocalEstimates(), "the ignored local estimate is counted");
+        assertEquals(1, r.getTotalExits(), "the exit is still counted");
+        assertTrue(r.getActiveTrades().isEmpty(), "the trade is removed so entries are not blocked");
     }
 }
