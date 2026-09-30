@@ -942,17 +942,8 @@ public class LiveStrategyRunner implements Runnable {
             double requestedUnits = Math.abs(order.quantity());
             double riskPct = riskForStrategy(strategyShortName);
             double balance = getCurrentBalance();
-            double sizedUnits = riskSizedUnits(balance, riskPct, execPrice,
-                order.stopLoss(), requestedUnits, oandaSymbol);
 
-            double units = order.side() == Order.Side.BUY
-                ? sizedUnits
-                : -sizedUnits;
-            String unitsStr = String.valueOf((int) units);
-
-            var tag = strategyShortName + "_" + oandaSymbol.replace("_", "");
-
-            // Detect if this order closes an existing active trade BEFORE margin check
+            // Detect if this order closes an existing active trade BEFORE sizing and the margin check
             boolean isClose = order.isCloseOnly();
             if (!isClose) {
                 synchronized (activeTrades) {
@@ -968,6 +959,38 @@ public class LiveStrategyRunner implements Runnable {
                     }
                 }
             }
+
+            // A close order carries the size of the position it reduces — NEVER a risk-budget size.
+            // Strategies keep their exit quantity at the old 1,000-unit micro-lot, so risk-sizing an exit
+            // would send REDUCE_ONLY for 1,000 units against a position of ~192,000 and leave the rest
+            // open, unmanaged and without a stop. Entries alone are sized to the risk budget.
+            double sizedUnits;
+            if (isClose) {
+                double tracked = trackedOpenUnits(oandaSymbol, order.side());
+                if (tracked > 0) {
+                    sizedUnits = tracked;
+                    if (Math.abs(tracked - requestedUnits) > 1) {
+                        log.info("📐 Close sizing: {} units requested → {} units (the tracked open position)",
+                            (int) requestedUnits, (int) tracked);
+                    }
+                } else {
+                    sizedUnits = requestedUnits;
+                    log.warn("⚠ Close order for {} with no tracked position ({} units requested) — sending the "
+                        + "requested quantity; verify the broker position afterwards.",
+                        oandaSymbol, (int) requestedUnits);
+                }
+            } else {
+                // Entry: two-sided risk budget — the strategy's units are intent, the risk % is the budget
+                sizedUnits = riskSizedUnits(balance, riskPct, execPrice,
+                    order.stopLoss(), requestedUnits, oandaSymbol);
+            }
+
+            double units = order.side() == Order.Side.BUY
+                ? sizedUnits
+                : -sizedUnits;
+            String unitsStr = String.valueOf((int) units);
+
+            var tag = strategyShortName + "_" + oandaSymbol.replace("_", "");
 
             if (isClose) {
                 // ─── Exit triggered by the strategy's own signal ───
@@ -1066,6 +1089,29 @@ public class LiveStrategyRunner implements Runnable {
     // ========================================================================
     // Exit accounting (account-currency only — see the ACCOUNTING RULE above)
     // ========================================================================
+
+    /**
+     * Units currently tracked as open for a symbol, on the side an order would reduce — the quantity a
+     * close order must carry so its REDUCE_ONLY fill actually flattens the position. Trades awaiting
+     * broker reconciliation are excluded: they are already being closed.
+     *
+     * @param oandaSymbol  instrument being closed
+     * @param closingSide  the side of the closing order (reduces the OPPOSITE side)
+     * @return sum of |tracked quantity| on the opposite side, or 0 when nothing is tracked
+     */
+    private double trackedOpenUnits(String oandaSymbol, Order.Side closingSide) {
+        double total = 0;
+        synchronized (activeTrades) {
+            for (ActiveTrade at : activeTrades) {
+                if (!at.symbol.equals(oandaSymbol)) continue;
+                if ("UNCONFIRMED_RECONCILIATION".equals(at.reconciliationStatus)) continue;
+                boolean opposite = (closingSide == Order.Side.BUY && "SELL".equals(at.side))
+                    || (closingSide == Order.Side.SELL && "BUY".equals(at.side));
+                if (opposite) total += Math.abs(at.quantity);
+            }
+        }
+        return total;
+    }
 
     /** True while at least one tracked trade for the symbol can still be closed by a signal. */
     private boolean hasClosableTrades(String oandaSymbol) {
