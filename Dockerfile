@@ -21,6 +21,11 @@ RUN mvn install -Dmaven.test.skip=true -q -pl trading-core,trading-data,trading-
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 
+# sqlite3 CLI for the daily prune (scripts/prune-db.sh). The JRE image ships neither sqlite3 nor cron,
+# and this prune deliberately does not depend on Hermes being up, so it runs here on a timer.
+RUN apt-get update && apt-get install -y --no-install-recommends sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy all module classes (classpath)
 COPY --from=build /app/trading-core/target/classes /app/classes/trading-core
 COPY --from=build /app/trading-data/target/classes /app/classes/trading-data
@@ -36,7 +41,8 @@ COPY --from=build /app/trading-runtime/target/classes /app/classes/trading-runti
 COPY --from=build /app/libs/ /app/libs/
 
 COPY scripts/docker-entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
+COPY scripts/prune-db.sh /app/prune-db.sh
+RUN chmod +x /app/entrypoint.sh /app/prune-db.sh
 
 # Strategy config (backtest-derived risk params)
 COPY config/ /app/config/

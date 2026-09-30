@@ -132,9 +132,29 @@ class SqBridgeServiceTest {
     @Test
     void processInboxAsync_rejectsWhenAlreadyRunning(@TempDir Path repo) throws Exception {
         Files.createDirectories(SqInboxPaths.pending(repo));
-        service = new SqBridgeService(new InMemoryEventStore(), repo);
-        assertTrue(service.processInboxAsync().accepted());
-        assertFalse(service.processInboxAsync().accepted());
+        // Hold the worker thread so the first inbox run CANNOT complete before the second call.
+        // Previously this test left the inbox empty: processing finished faster than the assertion,
+        // "inboxProcessing" returned to false, and the second call was then legitimately accepted, so
+        // the test flaked under the full reactor (2026-09-30: "expected: <false> but was: <true>").
+        // The guard is what is under test, so its precondition has to be held still rather than raced.
+        java.util.concurrent.ExecutorService held = java.util.concurrent.Executors.newSingleThreadExecutor();
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        held.submit(() -> {
+            try {
+                release.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        try {
+            service = new SqBridgeService(new InMemoryEventStore(), repo, Clock.systemUTC(), held,
+                new com.martinfou.trading.parser.bridge.SqInboxProcessor(),
+                new com.martinfou.trading.parser.bridge.SqCliRunner());
+            assertTrue(service.processInboxAsync().accepted());
+            assertFalse(service.processInboxAsync().accepted());
+        } finally {
+            release.countDown();
+        }
         awaitInboxComplete(service);
     }
 

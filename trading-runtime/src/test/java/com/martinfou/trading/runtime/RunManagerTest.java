@@ -484,7 +484,13 @@ class RunManagerTest {
                 "LondonOpenRangeBreakout",
                 "EUR_USD",
                 "PAPER",
-                new BarSourceResolver.BarsSource("sample", 10, null),
+                // 100_000 synthetic bars, not 10. The duplicate guard only blocks a run that is still
+            // RUNNING, and a 10-bar PAPER_STUB run can reach a terminal state before the assertion two
+            // lines below: that is exactly how this test flaked under the full reactor on 2026-09-30
+            // (3.9s for the class inside the suite versus 16.6s in isolation, gate failure
+            // "Expected IllegalArgumentException to be thrown, but nothing was thrown"). The duration of
+            // the run is what the test depends on, so it is made long enough to be reliable.
+            new BarSourceResolver.BarsSource("sample", 100_000, null),
                 1000.0,
                 null,
                 null,
@@ -511,7 +517,13 @@ class RunManagerTest {
                 "LondonOpenRangeBreakout",
                 "EUR_USD",
                 "PAPER",
-                new BarSourceResolver.BarsSource("sample", 10, null),
+                // 100_000 synthetic bars, not 10. The duplicate guard only blocks a run that is still
+            // RUNNING, and a 10-bar PAPER_STUB run can reach a terminal state before the assertion two
+            // lines below: that is exactly how this test flaked under the full reactor on 2026-09-30
+            // (3.9s for the class inside the suite versus 16.6s in isolation, gate failure
+            // "Expected IllegalArgumentException to be thrown, but nothing was thrown"). The duration of
+            // the run is what the test depends on, so it is made long enough to be reliable.
+            new BarSourceResolver.BarsSource("sample", 100_000, null),
                 1000.0,
                 null,
                 null,
@@ -539,7 +551,13 @@ class RunManagerTest {
                 "LondonOpenRangeBreakout",
                 "EUR_USD",
                 "PAPER",
-                new BarSourceResolver.BarsSource("sample", 10, null),
+                // 100_000 synthetic bars, not 10. The duplicate guard only blocks a run that is still
+            // RUNNING, and a 10-bar PAPER_STUB run can reach a terminal state before the assertion two
+            // lines below: that is exactly how this test flaked under the full reactor on 2026-09-30
+            // (3.9s for the class inside the suite versus 16.6s in isolation, gate failure
+            // "Expected IllegalArgumentException to be thrown, but nothing was thrown"). The duration of
+            // the run is what the test depends on, so it is made long enough to be reliable.
+            new BarSourceResolver.BarsSource("sample", 100_000, null),
                 1000.0,
                 null,
                 null,
