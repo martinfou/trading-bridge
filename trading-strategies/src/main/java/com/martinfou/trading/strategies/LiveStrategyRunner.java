@@ -61,6 +61,14 @@ public class LiveStrategyRunner implements Runnable {
     private static double DEFAULT_RISK_PCT = 1.5;
     /** Conservative fallback for strategies not in config — no backtest data available. */
     private static final double UNKNOWN_STRATEGY_RISK_PCT = 0.5;
+
+    /**
+     * Version of the realized-P&L accumulator.
+     * v1 (implicit) mixed a local estimate in the instrument's QUOTE currency with the broker's
+     * account-currency value; v2 takes the broker value only, once per trade.
+     * A saved accumulator older than this version is discarded on load rather than carried over.
+     */
+    static final int PNL_ACCOUNTING_VERSION = 2;
     private static final Map<String, Double> STRATEGY_RISK_PCT = new ConcurrentHashMap<>();
 
     // ---- Per-instance paths ----
@@ -818,32 +826,44 @@ public class LiveStrategyRunner implements Runnable {
             }
 
             if (isClose) {
-                // This is a close / exit order — calculate P&L before executing
+                // ─── Exit triggered by the strategy's own signal ───
+                //
+                // ACCOUNTING RULE (bugfix 2026-09-29). Realized P&L is ALWAYS taken from the broker,
+                // in the account's home currency, and exactly once. The local estimate below lives in
+                // the instrument's QUOTE currency (JPY for GBP_JPY, USD for EUR_USD) and must NEVER
+                // enter `totalPnl`: for GBP_JPY it overstated the counter by ~108x, it was never
+                // corrected afterwards (the trade was dropped from activeTrades before reconciliation),
+                // and it was double-counted whenever the async reconciliation completed the trade too.
                 var price = priceClient.getPrice(oandaSymbol);
-                double currentBid = price.bid();
-                double currentAsk = price.ask();
-                double estimatePnl = 0;
-                for (ActiveTrade at : activeTrades) {
-                    if (at.symbol.equals(oandaSymbol)) {
-                        if (at.side.equals("BUY")) {
-                            estimatePnl += (currentBid - at.entryPrice) * at.quantity;
-                        } else {
-                            estimatePnl += (at.entryPrice - currentAsk) * at.quantity;
-                        }
-                    }
+                double estimateQuoteCcy = estimateExitPnl(oandaSymbol, price.bid(), price.ask());
+
+                // Guard: every tracked trade for this symbol already awaits broker reconciliation →
+                // the position is already being closed. Do not send a second reduce-only order and do
+                // not touch the counters.
+                if (!hasClosableTrades(oandaSymbol)) {
+                    log.info("EXIT signal for {} ignored — position already closing (awaiting broker reconciliation).", oandaSymbol);
+                    return;
                 }
+
                 // Use REDUCE_ONLY so this closes the existing position on hedging-enabled accounts
                 var result = executor.placeMarketOrder(oandaSymbol, unitsStr, tag, true);
-                // Remove the closed trade(s) from active list
-                activeTrades.removeIf(at -> at.symbol.equals(oandaSymbol));
-                totalExits++;
-                totalPnl += estimatePnl;
-                log.info("═══════ EXIT {} {} {} @ {} PnL: {}{} ═══════",
+                // Keep the trade(s) tracked and queue them: the broker's realizedPL (account
+                // currency) lands in totalPnl via completeReconciliation().
+                int registered = registerSignalExitForReconciliation(oandaSymbol);
+                if (registered == 0) {
+                    // Closing something we never tracked (e.g. position opened outside this runner):
+                    // no broker reconciliation will follow, so count the exit here.
+                    totalExits++;
+                } else {
+                    totalExits += registered; // one exit per registered trade, counted at reconciliation
+                }
+                log.info("═══════ EXIT {} {} {} @ {} | {} trade(s) pending broker reconciliation (local estimate {} {} NOT counted) ═══════",
                     oandaSymbol, order.side(),
                     String.format("%.2f", units / 100000.0) + " lots",
                     result.fillPrice(),
-                    estimatePnl >= 0 ? "+" : "",
-                    String.format("%.2f", estimatePnl));
+                    registered,
+                    estimateQuoteCcy >= 0 ? "+" : "",
+                    String.format("%.2f", estimateQuoteCcy));
                 return;
             }
 
@@ -894,6 +914,101 @@ public class LiveStrategyRunner implements Runnable {
             log.error("❌ TRADE EXECUTION FAILED: {} {} @ {} — {}",
                 oandaSymbol, order.side(), formatPrice(execPrice, oandaSymbol), e.getMessage());
         }
+    }
+
+    // ========================================================================
+    // Exit accounting (account-currency only — see the ACCOUNTING RULE above)
+    // ========================================================================
+
+    /** True while at least one tracked trade for the symbol can still be closed by a signal. */
+    private boolean hasClosableTrades(String oandaSymbol) {
+        synchronized (activeTrades) {
+            for (ActiveTrade at : activeTrades) {
+                if (at.symbol.equals(oandaSymbol)
+                    && !"UNCONFIRMED_RECONCILIATION".equals(at.reconciliationStatus)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * DISPLAY-ONLY estimate of the pending exit P&L, in the instrument's QUOTE currency
+     * (JPY for GBP_JPY, USD for EUR_USD). Never add this to {@code totalPnl}: the account
+     * currency value comes from the broker at reconciliation.
+     */
+    private double estimateExitPnl(String oandaSymbol, double currentBid, double currentAsk) {
+        double estimate = 0;
+        synchronized (activeTrades) {
+            for (ActiveTrade at : activeTrades) {
+                if (at.symbol.equals(oandaSymbol)
+                    && !"UNCONFIRMED_RECONCILIATION".equals(at.reconciliationStatus)) {
+                    if (at.side.equals("BUY")) {
+                        estimate += (currentBid - at.entryPrice) * at.quantity;
+                    } else {
+                        estimate += (at.entryPrice - currentAsk) * at.quantity;
+                    }
+                }
+            }
+        }
+        return estimate;
+    }
+
+    /**
+     * Marks every closable trade for the symbol as awaiting broker reconciliation and queues it,
+     * instead of dropping it locally. The trade stays in {@code activeTrades} until the broker
+     * answers; its realizedPL (account currency) is then added exactly once by
+     * {@link #completeReconciliation(String, double)}.
+     *
+     * @return number of trades registered for reconciliation
+     */
+    int registerSignalExitForReconciliation(String oandaSymbol) {
+        List<String> tradeIds = markClosableTradesForReconciliation(oandaSymbol);
+        for (String tradeId : tradeIds) {
+            AsyncReconciliationQueue.GLOBAL.submit(this, tradeId);
+        }
+        return tradeIds.size();
+    }
+
+    /**
+     * Pure state move, no broker call and no queue: flag every closable trade of the symbol as
+     * awaiting broker reconciliation (and drop the ones with no broker trade id).
+     *
+     * @return the broker trade ids to reconcile
+     */
+    List<String> markClosableTradesForReconciliation(String oandaSymbol) {
+        List<String> tradeIds = new ArrayList<>();
+        synchronized (activeTrades) {
+            Iterator<ActiveTrade> it = activeTrades.iterator();
+            while (it.hasNext()) {
+                ActiveTrade at = it.next();
+                if (!at.symbol.equals(oandaSymbol)
+                    || "UNCONFIRMED_RECONCILIATION".equals(at.reconciliationStatus)) {
+                    continue;
+                }
+                if (at.tradeId == null) {
+                    // Nothing to reconcile with the broker — drop it rather than park it forever.
+                    it.remove();
+                    continue;
+                }
+                at.reconciliationStatus = "UNCONFIRMED_RECONCILIATION";
+                tradeIds.add(at.tradeId);
+            }
+        }
+        if (!tradeIds.isEmpty()) {
+            saveStateNow();
+        }
+        return tradeIds;
+    }
+
+    /** Realized P&L accumulated in the ACCOUNT currency (broker-sourced). */
+    public double getTotalPnl() {
+        return totalPnl;
+    }
+
+    public int getTotalExits() {
+        return totalExits;
     }
 
     // ========================================================================
@@ -1059,6 +1174,7 @@ public class LiveStrategyRunner implements Runnable {
             root.put("intervalSec", intervalSec);
             root.put("totalEntries", totalEntries);
             root.put("totalExits", totalExits);
+            root.put("pnlAccountingVersion", PNL_ACCOUNTING_VERSION);
             root.put("totalPnl", totalPnl);
             root.put("savedAt", TimeConventions.now().toString());
             if (lastBarTime != null) root.put("lastBarTime", lastBarTime.toString());
@@ -1208,7 +1324,7 @@ public class LiveStrategyRunner implements Runnable {
         }
     }
 
-    private void resumeState() {
+    void resumeState() {
         if (!Files.exists(stateFile)) {
             log.info("No saved state file found — starting fresh.");
             return;
@@ -1227,7 +1343,23 @@ public class LiveStrategyRunner implements Runnable {
 
             if (root.has("totalEntries")) totalEntries = root.get("totalEntries").asInt();
             if (root.has("totalExits")) totalExits = root.get("totalExits").asInt();
-            if (root.has("totalPnl")) totalPnl = root.get("totalPnl").asDouble();
+
+            // Realized-P&L accumulator: only trust it when it was written by the corrected
+            // accounting. Older files mix quote-currency estimates with account-currency values,
+            // so they are discarded rather than carried into the corrected counter.
+            if (root.has("totalPnl")) {
+                int statePnlVersion = root.has("pnlAccountingVersion")
+                    ? root.get("pnlAccountingVersion").asInt(0) : 0;
+                if (statePnlVersion >= PNL_ACCOUNTING_VERSION) {
+                    totalPnl = root.get("totalPnl").asDouble();
+                } else {
+                    log.warn("⚠️ Discarding legacy totalPnl={} (state v{}, current v{}): it was accumulated with "
+                        + "the quote-currency estimate and is not in the account currency. Realized P&L restarts at 0 "
+                        + "and now comes from the broker only.",
+                        root.get("totalPnl").asDouble(), statePnlVersion, PNL_ACCOUNTING_VERSION);
+                    totalPnl = 0.0;
+                }
+            }
             if (root.has("lastBarTime")) lastBarTime = Instant.parse(root.get("lastBarTime").asText());
 
             if (root.has("activeTrades")) {
