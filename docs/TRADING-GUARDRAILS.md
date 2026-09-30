@@ -26,7 +26,7 @@ transaction. La valeur contaminée était persistée puis rechargée à chaque r
 | 1 | **Invariants du code** | La classe de bug elle-même, par construction | en place (revu, testé) |
 | 2 | **Vérification à l'exécution** | Une dérive silencieuse entre le système et le courtier | en place (revu, testé) |
 | 3 | **Limites de risque** | Une perte qui dépasse ce qui a été décidé | **politique cible — PAS ENCORE PROUVÉE dans le code** |
-| 4 | **Porte de déploiement** | Du code rouge qui part en production | en place (testée) |
+| 4 | **Porte de déploiement** | Du code rouge qui part en production | porte testée ; `deploy-paper.sh` ajouté le 2026-09-30, en attente de revue indépendante |
 | 5 | **Rapports courtier** | Un chiffre inventé présenté comme la vérité | en place |
 
 > ⚠️ **Correction du 2026-09-30.** La première version de ce document présentait les cinq couches
@@ -77,6 +77,19 @@ transaction. La valeur contaminée était persistée puis rechargée à chaque r
 et **smoke test OANDA en lecture seule**. Le déploiement (`scripts/deploy-paper.sh`) refuse de
 partir si la porte échoue. Une **revue indépendante par un second agent** est exigée avant le
 merge dans la branche par défaut — jamais Martin.
+
+> ⚠️ **Correction du 2026-09-30.** La moitié « porte » de cette couche existait et était testée ;
+> la moitié « déploiement » n'existait pas : `scripts/deploy-paper.sh` était cité ici **et** par la
+> dernière ligne de la porte, mais **aucun commit ne l'a jamais contenu**. Concrètement, rien ne
+> pouvait « refuser de partir » puisqu'il n'y avait rien pour partir, et le seul chemin documenté
+> vers les conteneurs paper était mort. C'est le même défaut que la couche 3 : un document qui
+> affirme plus que le code ne fait.
+>
+> Le script est maintenant écrit (branche `close-loop/deploy-paper-20260930`) : porte obligatoire
+> (sauf `--skip-gate`, journalisé comme non gardé), build, `up -d --no-deps` des 4 services paper,
+> vérification de santé (le HEALTHCHECK exige `LiveStrategyRunner`), journal dans
+> `deploy/deploy-paper.log`. Il ne merge rien, ne pousse rien et n'envoie aucun ordre.
+> **Il attend la revue indépendante avant d'entrer dans la branche par défaut.**
 
 ### Couche 5 — Rapports courtier
 
