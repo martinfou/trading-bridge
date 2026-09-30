@@ -137,11 +137,11 @@ public class LiveStrategyRunner implements Runnable {
     private final List<ActiveTrade> activeTrades = new ArrayList<>();
     private final List<PendingStop> pendingStops = new ArrayList<>();
     private final Set<String> executedBars = new HashSet<>();
-    private long signalCount = 0;
-    private long barCount = 0;
+    private volatile long signalCount = 0;
+    private volatile long barCount = 0;
     private volatile Instant lastHeartbeatTime = Instant.now();
-    private int totalEntries = 0;
-    private int totalExits = 0;
+    private volatile int totalEntries = 0;
+    private volatile int totalExits = 0;
     /** Realized-P&L ledger — the ONLY writer of realized P&L (account currency, broker-sourced, once per trade). */
     private final RealizedPnlLedger ledger = new RealizedPnlLedger();
     private Instant lastStateSave = Instant.MIN;
@@ -682,8 +682,12 @@ public class LiveStrategyRunner implements Runnable {
                 sn.put("totalEntries", r.totalEntries);
                 sn.put("totalExits", r.totalExits);
                 sn.put("totalPnl", r.getTotalPnl());
-                sn.put("activeTrades", r.activeTrades.size());
-                sn.put("pendingStops", r.pendingStops.size());
+                synchronized (r.activeTrades) {
+                    sn.put("activeTrades", r.activeTrades.size());
+                }
+                synchronized (r.pendingStops) {
+                    sn.put("pendingStops", r.pendingStops.size());
+                }
                 sn.put("signalCount", r.signalCount);
                 sn.put("barCount", r.barCount);
                 sn.put("liveness", r.getLivenessStatus());
@@ -1438,7 +1442,9 @@ public class LiveStrategyRunner implements Runnable {
     // ========================================================================
 
     private void updatePositions(String oandaSymbol) throws Exception {
-        if (activeTrades.isEmpty()) return;
+        synchronized (activeTrades) {
+            if (activeTrades.isEmpty()) return;
+        }
 
         Instant now = TimeConventions.now();
         if (Duration.between(lastReconciliationTime, now).toSeconds() >= 60) {
@@ -1465,11 +1471,18 @@ public class LiveStrategyRunner implements Runnable {
             lastReconciliationTime = now;
         }
 
-        if (activeTrades.isEmpty()) return;
+        synchronized (activeTrades) {
+            if (activeTrades.isEmpty()) return;
+        }
 
         var price = priceClient.getPrice(oandaSymbol);
         double currentBid = price.bid();
         double currentAsk = price.ask();
+
+        // Trades whose local SL/TP just fired. Their broker calls happen AFTER the lock is released:
+        // a synchronous request inside synchronized(activeTrades) would block every other thread that
+        // touches the trade list.
+        List<ActiveTrade> locallyExited = new ArrayList<>();
 
         synchronized (activeTrades) {
             Iterator<ActiveTrade> it = activeTrades.iterator();
@@ -1515,6 +1528,7 @@ public class LiveStrategyRunner implements Runnable {
                         trade.symbol, trade.side,
                         formatPrice(exitPrice, trade.symbol));
                     trade.reconciliationStatus = "UNCONFIRMED_RECONCILIATION";
+                    locallyExited.add(trade);
                     AsyncReconciliationQueue.GLOBAL.submit(this, trade.tradeId);
                     saveStateNow();
                 } else {
@@ -1527,6 +1541,27 @@ public class LiveStrategyRunner implements Runnable {
                     trade.stopLoss > 0 ? formatPrice(trade.stopLoss, trade.symbol) : "—",
                     trade.takeProfit > 0 ? formatPrice(trade.takeProfit, trade.symbol) : "—");
                 }
+            }
+        }
+
+        // Close whatever the local stop or target just triggered. This path used to rely entirely on the
+        // broker's own SL/TP: when addStopLoss failed at entry (warn-and-continue) nothing closed the
+        // position, reconciliation found the trade still OPEN, reverted it to CONFIRMED, and the next
+        // pass fired again, leaving the position open forever in a mark/revert loop (2026-09-30 agy
+        // review, BLOCKER). REDUCE_ONLY makes this a no-op when the broker already closed it and never a
+        // new opposite position, so it cannot double-close a position.
+        String closeTag = strategyShortName + "_" + oandaSymbol.replace("_", "");
+        for (ActiveTrade trade : locallyExited) {
+            double closeUnits = trade.side.equals("BUY") ? -trade.quantity : trade.quantity;
+            try {
+                executor.placeMarketOrder(oandaSymbol, String.valueOf((int) closeUnits), closeTag, true);
+                log.info("📤 Sent REDUCE_ONLY close for {} {} ({} units) after the local SL/TP fired.",
+                    trade.symbol, trade.side, (int) closeUnits);
+            } catch (Exception e) {
+                log.warn("⚠ Could not send the REDUCE_ONLY close for {} {} ({} units): {}. Expected when the "
+                    + "broker's own SL/TP already closed the position; if not, the position is still open "
+                    + "and the next reconciliation pass will see it.", trade.symbol, trade.side,
+                    (int) closeUnits, e.getMessage());
             }
         }
     }
@@ -2216,6 +2251,11 @@ public class LiveStrategyRunner implements Runnable {
     public String getStrategyShortName() { return strategyShortName; }
 
     public String getLivenessStatus() {
+        // A runner that stopped on its own failure must not report ALIVE merely because the PROCESS is
+        // still running: the per-runner flag is the truth for this runner (2026-09-30 agy review).
+        if (!alive.get()) {
+            return "FAILED";
+        }
         if (!RUNNING.get()) {
             return "STOPPED";
         }
