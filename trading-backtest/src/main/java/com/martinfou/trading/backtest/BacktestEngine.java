@@ -558,6 +558,13 @@ public class BacktestEngine {
         if (trade.pnl() > 0) winningTrades++;
         else if (trade.pnl() < 0) losingTrades++;
 
+        // Calculate swap for this trade (story 39.2: SL/TP/force-close exits must
+        // accrue overnight swap like closeOnly reductions do in reduceOppositeSide)
+        double swapCost = SwapCalculator.calculateSwap(
+            pos.symbol(), pos.side(), pos.quantity(),
+            pos.entryTime(), timestamp);
+        totalSwap += swapCost;
+
         // Remove from the symbol's position list
         List<Position> posList = openPositionsBySymbol.get(pos.symbol());
         if (posList != null) {

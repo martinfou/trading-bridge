@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Guards the JPY swap-rate fix: pip values for JPY-quoted pairs must be
@@ -51,5 +52,33 @@ class SwapCalculatorTest {
     void unknownPairNoSwap() {
         double swap = SwapCalculator.calculateSwap("XXX_YYY", Order.Side.BUY, 1000.0, OPEN, CLOSE, 150.0);
         assertEquals(0.0, swap, 0.0001);
+    }
+
+    @Test
+    void swapTableLookupIgnoresUnderscores() {
+        // SWAP_RATES stocke la clé "USDCAD" (sans underscore) alors que le moteur
+        // passe "USD_CAD" : sans normalisation le swap vaut 0 (net = PnL prix pur).
+        assertTrue(SwapCalculator.hasRates("USD_CAD"));
+        // USD_CAD long swap = -2.5 pips/day. 1000 units × 0.0001 = $0.10 per pip
+        double swap = SwapCalculator.calculateSwap("USD_CAD", Order.Side.BUY, 1000.0, OPEN, CLOSE, 150.0);
+        assertEquals(-2.5 * 1000 * 0.0001, swap, 0.001);
+    }
+
+    @Test
+    void yearlyOverrideAppliesTheRateOfTheRolloverYear() {
+        java.util.Map<Integer, double[]> byYear = new java.util.HashMap<>();
+        byYear.put(2024, new double[]{1.0, -1.0});
+        try {
+            SwapCalculator.setYearlyRateOverride("USD_CAD", byYear);
+            // 1 rollover day in 2024 × +1.0 pip × $0.10/pip = +$0.10
+            double swap = SwapCalculator.calculateSwap("USD_CAD", Order.Side.BUY, 1000.0, OPEN, CLOSE, 150.0);
+            assertEquals(0.10, swap, 0.001);
+            // Année absente de la table et sans repli (-1) → aucun swap appliqué
+            double outside = SwapCalculator.calculateSwap("USD_CAD", Order.Side.BUY, 1000.0,
+                Instant.parse("2030-01-01T12:00:00Z"), Instant.parse("2030-01-02T12:00:00Z"), 150.0);
+            assertEquals(0.0, outside, 0.0001);
+        } finally {
+            SwapCalculator.clearRateOverride();
+        }
     }
 }

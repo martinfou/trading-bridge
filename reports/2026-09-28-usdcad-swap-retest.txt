@@ -1,0 +1,173 @@
+================================================================================
+2026-09-28 — Re-test USD/CAD Oct12→Nov26 avec le SWAP RÉELLEMENT APPLIQUÉ
+Action DUE de la revue hebdomadaire du 26 sept 2026 (fenêtre qui s'ouvre le 12 oct)
+Rotation du jour : lundi = idée nouvelle ; priorité 1 de la revue = cette action.
+================================================================================
+
+COMMANDE
+  cd /home/martinfou/projects/trading-bridge
+  bash run-usdcad-swap.sh --all     (puis --sweep, --wf)
+  Java 26 + coûts BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001)
+  Capital $50,000 — USD_CAD H1 2006-2026 (172 752 barres)
+  Le run est reproductible au caractère (2 exécutions identiques).
+
+CAUSE DU RE-TEST
+  Le backtest du 24 août 2026 (« EXPLORE, PF 5.73, +$2 581 ») affichait swap = 0 :
+  la table SwapCalculator.SWAP_RATES porte la clé « USDCAD » SANS underscore alors
+  que le moteur passe « USD_CAD » ⇒ lookup null ⇒ swap jamais appliqué (net = PnL
+  prix pur involontaire). Corrigé : SwapCalculator.ratesFor() normalise désormais
+  les underscores (+ override de recherche par paire et par année).
+
+HYPOTHÈSES DE SWAP TESTÉES
+  ZERO            swap = 0 (reproduit la baseline historique = calibration)
+  AS CODED        -2.5 / +1.0 pips/lot/jour (table du repo, constantes 2024-2026)
+  INVERSÉ         +2.5 / -1.0 (signe du mid inversé)
+  RÉEL diff       différentiel de taux directeur US − CAD PAR ANNÉE, sans spread
+  RÉEL diff+0.25  idem + 0.25 pip/lot/jour de demi-spread broker
+
+SOURCE DE LA TABLE RÉELLE (moyennes annuelles, en %)
+  US  : FRED FEDFUNDS (moyenne mensuelle des taux effectifs quotidiens)
+        curl -sS "https://fred.stlouisfed.org/graph/fredgraph.csv?id=FEDFUNDS"
+  CAD : Banque du Canada Valet V39079 (cible du taux à un jour, 2009+)
+        curl -sS "https://www.bankofcanada.ca/valet/observations/V39079/csv?start_date=2006-01-01&end_date=2026-09-01"
+        FRED/OCDE IRSTCB01CAM156N pour 2006-2008 (Valet commence le 21 avril 2009)
+  Conversion : 1 % de différentiel annuel = 1 000 $/an sur 100k unités = 2.74 $/jour
+               = 0.274 pip/lot/jour (pip standard = 10 $).
+  Différentiels calculés : 2006 +0.652 | 2007 +0.415 | 2008 -1.281 | 2009 -0.090
+    2010 -0.429 | 2011 -0.898 | 2012 -0.860 | 2013 -0.892 | 2014 -0.911 | 2015 -0.492
+    2016 -0.105 | 2017 +0.293 | 2018 +0.394 | 2019 +0.408 | 2020 -0.124 | 2021 -0.170
+    2022 -0.358 | 2023 +0.253 | 2024 +0.664 | 2025 +1.567 | 2026 +1.385
+
+================================================================================
+
+--- RUN --all ---
+=== MODE: --all | 2026-09-28T11:06:53Z ===
+==============================================================
+USDCAD Oct12-Nov26 BUY — RE-TEST AVEC SWAP RÉELLEMENT APPLIQUÉ
+Coûts: commission $0.07 + slippage 0.01% | Capital: $50000.0
+SwapCalculator.hasRates(USD_CAD) = true | rates as coded: -2.5 / 1.0 pips/lot/jour
+==============================================================
+
+=== 1) FENÊTRE OFFICIELLE — 5 HYPOTHÈSES DE SWAP ===
+SWAP MODEL                 PF     WR%    DD%    TRADES  NET$        SWAP$      PRIX$      
+ZERO (baseline 24 août)    5.73   84.2   2.95   19          2581.13       0.00     2581.13
+AS CODED (-2.5/+1.0)       5.73   84.2   2.97   19          -221.37   -2802.50     2581.13
+INVERSÉ (+2.5/-1.0)        5.73   84.2   2.93   19          5383.63    2802.50     2581.13
+RÉEL diff (0 spread)       5.73   84.2   2.95   19          2522.15     -58.98     2581.13
+RÉEL diff + 0.25           5.73   84.2   2.95   19          2241.90    -339.23     2581.13
+
+=== 2) CONTRÔLE D'INSTRUMENT (GBP_USD, même fenêtre, table GBP_USD du repo) ===
+SWAP MODEL                 PF     WR%    DD%    TRADES  NET$        SWAP$      PRIX$      
+GBP_USD ZERO               1.11   52.6   5.78   19           427.40       0.00      427.40
+GBP_USD TABLE repo (GBP long -1.8) 1.11   52.6   7.28   19         -1590.40   -2017.80      427.40
+
+=== 3) VARIANTE Nov1-Nov30 (contrôle interne de la fenêtre) ===
+SWAP MODEL                 PF     WR%    DD%    TRADES  NET$        SWAP$      PRIX$      
+Nov1-Nov30 ZERO (baseline 24 août) 2.09   63.2   1.96   19          1372.03       0.00     1372.03
+Nov1-Nov30 AS CODED (-2.5/+1.0) 2.09   63.2   3.89   19          -467.97   -1840.00     1372.03
+Nov1-Nov30 RÉEL diff (0 spread) 2.09   63.2   1.98   19          1336.59     -35.44     1372.03
+
+4) SEUIL DE RUPTURE DU SWAP (net = 0)
+Prix (hors swap) = +$2581.13 | rollover-jours = 1121 (59.0/trade)
+Seuil de rupture = 2.30 pip/lot/jour de DÉBIT (au-delà : net négatif)
+Réel 2006-2025 : débit moyen = 0.15 pip/jour ⇒ marge 14.9×
+
+DONE
+
+--- RUN --sweep ---
+=== MODE: --sweep | 2026-09-28T11:07:05Z ===
+==============================================================
+USDCAD Oct12-Nov26 BUY — RE-TEST AVEC SWAP RÉELLEMENT APPLIQUÉ
+Coûts: commission $0.07 + slippage 0.01% | Capital: $50000.0
+SwapCalculator.hasRates(USD_CAD) = true | rates as coded: -2.5 / 1.0 pips/lot/jour
+==============================================================
+
+=== SWEEP BORDURES ±5j — swap RÉEL diff (0 spread) ===
+SWAP MODEL                 PF     WR%    DD%    TRADES  NET$        SWAP$      PRIX$      
+WINDOW         PF     WR%    DD%    TRADES  NET$        SWAP$      
+Oct07→Nov21     6.49   78.9   2.90   19          3357.45      -59.67
+Oct07→Nov23     5.86   78.9   2.90   19          3341.54      -60.28
+Oct07→Nov26     5.20   78.9   2.91   19          2877.15      -65.82
+Oct07→Nov29     6.25   68.4   2.90   19          3553.30      -67.79
+Oct07→Nov30     4.10   68.4   2.89   19          3267.74      -68.98
+Oct09→Nov21     8.39   78.9   2.92   19          3432.22      -54.80
+Oct09→Nov23     7.27   78.9   2.92   19          3416.31      -55.41
+Oct09→Nov26     6.49   78.9   2.92   19          2951.92      -60.95
+Oct09→Nov29     8.74   73.7   2.91   19          3628.08      -62.93
+Oct09→Nov30     5.12   73.7   2.91   19          3342.51      -64.12
+Oct12→Nov21     8.33   89.5   2.94   19          3002.45      -52.83
+Oct12→Nov23     6.92   89.5   2.95   19          2986.55      -53.43
+Oct12→Nov26     5.73   84.2   2.95   19          2522.15      -58.98
+Oct12→Nov29     9.94   84.2   2.94   19          3198.31      -60.95
+Oct12→Nov30     5.17   78.9   2.94   19          2912.75      -62.14
+Oct15→Nov21     6.87   84.2   2.94   19          3489.48      -48.55
+Oct15→Nov23     6.04   84.2   2.94   19          3473.58      -49.16
+Oct15→Nov26     5.31   73.7   2.94   19          3009.18      -54.70
+Oct15→Nov29     8.31   84.2   2.93   19          3685.34      -56.67
+Oct15→Nov30     5.70   84.2   2.93   19          3399.77      -57.86
+Oct17→Nov21     6.87   78.9   2.95   19          3150.72      -45.38
+Oct17→Nov23     5.97   84.2   2.95   19          3134.81      -45.98
+Oct17→Nov26     5.30   84.2   2.96   19          2670.42      -51.53
+Oct17→Nov29     7.90   84.2   2.95   19          3346.57      -53.50
+Oct17→Nov30     5.35   84.2   2.94   19          3061.01      -54.69
+→ 25/25 cellules à net positif | min trades 19 | pire net $2522.15
+
+=== SWEEP BORDURES ±5j — swap AS CODED (-2.5/+1.0) ===
+SWAP MODEL                 PF     WR%    DD%    TRADES  NET$        SWAP$      PRIX$      
+WINDOW         PF     WR%    DD%    TRADES  NET$        SWAP$      
+Oct07→Nov21     6.49   78.9   3.02   19           612.12    -2805.00
+Oct07→Nov23     5.86   78.9   3.10   19           466.82    -2935.00
+Oct07→Nov26     5.20   78.9   4.39   19          -164.54    -3107.50
+Oct07→Nov29     6.25   68.4   3.60   19           323.60    -3297.50
+Oct07→Nov30     4.10   68.4   4.34   19           -25.77    -3362.50
+Oct09→Nov21     8.39   78.9   2.93   19           797.02    -2690.00
+Oct09→Nov23     7.27   78.9   2.94   19           651.73    -2820.00
+Oct09→Nov26     6.49   78.9   3.33   19            20.37    -2992.50
+Oct09→Nov29     8.74   73.7   2.93   19           508.50    -3182.50
+Oct09→Nov30     5.12   73.7   3.29   19           159.13    -3247.50
+Oct12→Nov21     8.33   89.5   2.96   19           555.28    -2500.00
+Oct12→Nov23     6.92   89.5   2.96   19           409.98    -2630.00
+Oct12→Nov26     5.73   84.2   2.97   19          -221.37    -2802.50
+Oct12→Nov29     9.94   84.2   2.96   19           266.76    -2992.50
+Oct12→Nov30     5.17   78.9   2.96   19           -82.61    -3057.50
+Oct15→Nov21     6.87   84.2   2.95   19          1223.03    -2315.00
+Oct15→Nov23     6.04   84.2   2.96   19          1077.73    -2445.00
+Oct15→Nov26     5.31   73.7   2.96   19           446.38    -2617.50
+Oct15→Nov29     8.31   84.2   2.95   19           934.51    -2807.50
+Oct15→Nov30     5.70   84.2   2.95   19           585.14    -2872.50
+Oct17→Nov21     6.87   78.9   2.96   19           998.60    -2197.50
+Oct17→Nov23     5.97   84.2   2.97   19           853.30    -2327.50
+Oct17→Nov26     5.30   84.2   2.97   19           221.94    -2500.00
+Oct17→Nov29     7.90   84.2   2.96   19           710.07    -2690.00
+Oct17→Nov30     5.35   84.2   2.96   19           360.70    -2755.00
+→ 21/25 cellules à net positif | min trades 19 | pire net $-221.37
+
+DONE
+
+--- RUN --wf ---
+=== MODE: --wf | 2026-09-28T11:07:27Z ===
+==============================================================
+USDCAD Oct12-Nov26 BUY — RE-TEST AVEC SWAP RÉELLEMENT APPLIQUÉ
+Coûts: commission $0.07 + slippage 0.01% | Capital: $50000.0
+SwapCalculator.hasRates(USD_CAD) = true | rates as coded: -2.5 / 1.0 pips/lot/jour
+==============================================================
+
+=== WF (IS 2006-2015 / OOS 2016-2026) — swap ZERO (baseline 24 août) ===
+SWAP MODEL                 PF     WR%    DD%    TRADES  NET$        SWAP$      PRIX$      
+PHASE  PF     WR%    DD%    TRADES  NET$        SWAP$      PRIX$      
+IS     36.70  90.0   2.95   10          1703.92       0.00     1703.92
+OOS    2.76   77.8   1.34   9            877.21       0.00      877.21
+
+=== WF (IS 2006-2015 / OOS 2016-2026) — swap AS CODED (-2.5/+1.0) ===
+SWAP MODEL                 PF     WR%    DD%    TRADES  NET$        SWAP$      PRIX$      
+PHASE  PF     WR%    DD%    TRADES  NET$        SWAP$      PRIX$      
+IS     36.70  90.0   2.97   10           226.42   -1477.50     1703.92
+OOS    2.76   77.8   2.32   9           -447.79   -1325.00      877.21
+
+=== WF (IS 2006-2015 / OOS 2016-2026) — swap RÉEL diff (0 spread) ===
+SWAP MODEL                 PF     WR%    DD%    TRADES  NET$        SWAP$      PRIX$      
+PHASE  PF     WR%    DD%    TRADES  NET$        SWAP$      PRIX$      
+IS     36.70  90.0   2.95   10          1626.22     -77.70     1703.92
+OOS    2.76   77.8   1.34   9            895.93      18.72      877.21
+
+DONE

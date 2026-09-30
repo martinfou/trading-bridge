@@ -28,7 +28,7 @@ public final class GoldenBacktestBaseline {
     /** Absolute tolerance on max drawdown percentage points. */
     public static final double MAX_DRAWDOWN_TOLERANCE_PCT = 0.01;
 
-    public static final String CAPTURED_AT = "2026-05-31";
+    public static final String CAPTURED_AT = "2026-09-30";
 
     public record Profile(
         int bars,
@@ -48,11 +48,17 @@ public final class GoldenBacktestBaseline {
         double finalEquity
     ) {}
 
+    /**
+     * Re-based 2026-09-30 when the fees/swaps realism model was merged: the previous values were
+     * captured with optimistic costs. The engine now charges real commission, spread and swap, so
+     * these numbers are the honest ones (EUR_USD 2012 went from +4.72% to +0.61%). Recorded via
+     * {@code GoldenBaselineCapture}; see {@code docs/testing.md}.
+     */
     public static final Profile CI_SUBSET = new Profile(
-        744, 4, 0.0081560714285711, 8.1560714285711100, 0.0146909287845764);
+        744, 4, 0.0045260714285707, 4.5260714285706870, 0.0160909676992726);
 
     public static final Profile EUR_USD_2012 = new Profile(
-        8760, 68, 0.0472230357142860, 47.2230357142859840, 0.0591888881489990);
+        8760, 68, 0.0060930357142771, 6.0930357142770575, 0.0679411375084674);
 
     private GoldenBacktestBaseline() {}
 

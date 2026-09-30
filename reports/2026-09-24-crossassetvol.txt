@@ -1,0 +1,305 @@
+=== javac trading-intelligence/src/main/java/com/martinfou/trading/intelligence/research/CrossAssetVolRegimeCheck.java ===
+Note: trading-intelligence/src/main/java/com/martinfou/trading/intelligence/research/CrossAssetVolRegimeCheck.java uses unchecked or unsafe operations.
+Note: Recompile with -Xlint:unchecked for details.
+=== run com.martinfou.trading.intelligence.research.CrossAssetVolRegimeCheck | 2026-09-24T11:04:07Z ===
+=====================================================================
+CROSS-ASSET VOL REGIME CHECK — jeudi 24 sept 2026 (42e, intermarket)
+La volatilité (propre vs ACTIONS) conditionne-t-elle l'amplitude des
+edges calendaires FX — et fait-elle franchir le seuil de survie 3.4 bp ?
+=====================================================================
+[load] GBP_JPY   2006-01-01 → 2026-05-19 (7424 jours)
+[load] GBP_USD   2006-01-01 → 2026-05-19 (7198 jours)
+[load] AUD_USD   2006-01-01 → 2026-05-19 (6954 jours)
+[load] NZD_USD   2006-01-01 → 2026-05-19 (7015 jours)
+[load] EUR_USD   2006-01-01 → 2026-05-19 (7198 jours)
+[load] USD_CHF   2006-01-01 → 2026-05-19 (7139 jours)
+[load] USD_JPY   2006-01-01 → 2026-05-19 (7136 jours)
+[load] USD_CAD   2006-01-01 → 2026-05-19 (7198 jours)
+[load] MES_D1.csv 2006-01-03 → 2026-08-21 (5198 jours)
+[load] MNQ_D1.csv 2006-01-03 → 2026-08-21 (5198 jours)
+[composite] 2006-01-02 → 2026-05-19 (6680 dates communes)
+
+##################################################################
+# P0 — CALIBRATION (doit reproduire le 37e / 41e AU BP)
+##################################################################
+Référence 37e : EUR -0.032 % | GBP -0.054 % | GBP_JPY -0.056 % | CAD +0.005 %
+Référence 41e : EUR vendredi -0.0320 % (définition « dernière barre du jour »)
+  GBP_JPY   n=1061  avg -0.0563%  hit  48%  méd -0.0310%  t -2.40
+  GBP_USD   n=1029  avg -0.0536%  hit  47%  méd -0.0269%  t -2.87
+  AUD_USD   n= 995  avg -0.0432%  hit  49%  méd -0.0236%  t -1.69
+  NZD_USD   n=1001  avg -0.0349%  hit  49%  méd -0.0243%  t -1.48
+  EUR_USD   n=1029  avg -0.0320%  hit  49%  méd -0.0109%  t -1.84
+  USD_CHF   n=1021  avg -0.0344%  hit  47%  méd -0.0339%  t -1.91
+  USD_JPY   n=1021  avg -0.0166%  hit  47%  méd -0.0223%  t -0.79
+  USD_CAD   n=1029  avg +0.0049%  hit  51%  méd +0.0087%  t  0.29
+
+Vol 21j disponible : GBP_JPY=7403 GBP_USD=7177 AUD_USD=6933 NZD_USD=6994 EUR_USD=7177 USD_CHF=7118 USD_JPY=7115 USD_CAD=7177 | MES=5177 MNQ=5177
+>> Loader et définitions validés si les valeurs sont identiques au bp.
+
+##################################################################
+# P1 — BASELINE INCONDITIONNELLE (contrôle bêta : la dérive du jour)
+##################################################################
+Rappel de la loi du seuil : un edge journalier FX meurt sous 3.4 bp.
+PAIRE     | TOUS JOURS (n/avg bp/t)            | VENDREDI (n/avg bp/t)             
+GBP_JPY   | 7423   +0.287 bp  t  0.37          | 1061   -5.634 bp  t -2.40
+GBP_USD   | 7197   -0.225 bp  t -0.38          | 1029   -5.362 bp  t -2.87
+AUD_USD   | 6953   +0.178 bp  t  0.22          |  995   -4.320 bp  t -1.69
+NZD_USD   | 7014   +0.005 bp  t  0.01          | 1001   -3.490 bp  t -1.48
+EUR_USD   | 7197   +0.088 bp  t  0.15          | 1029   -3.200 bp  t -1.84
+USD_CHF   | 7138   -0.564 bp  t -0.88          | 1021   -3.442 bp  t -1.91
+USD_JPY   | 7135   +0.567 bp  t  0.89          | 1021   -1.660 bp  t -0.79
+USD_CAD   | 7197   +0.337 bp  t  0.63          | 1029   +0.494 bp  t  0.29
+
+COMPOSITE F (dollar fort/risk-off, standardisé) : vendredi n=956 avg +0.0522 t  2.50 | autres jours n=5724 avg -0.0084 t -1.14
+>> Le composite F est en unités de σ ; le seuil 3.4 bp ne s'y applique pas directement.
+
+##################################################################
+# P2 — QUINTILES DE VOL ACTIONS (MES, rang percentile CAUSAL) — LEÇON : LIRE DANS L'ORDRE
+##################################################################
+Vendredi classé par le rang de vol 21j du S&P **mesuré jusqu'à la veille** (look-ahead safe).
+Q1 = 20 % de vendredis les plus CALMES … Q5 = les plus STRESSÉS. avg en bp.
+
+--- GBP_JPY ---
+  Q | n   |  avg bp  |  hit  |    t  |  IS bp  | OOS bp | seuil 3.4 bp
+  1 |  177 |   +1.844 |   50% |  0.48 |  -8.207 | +7.966 | -
+  2 |  161 |   -9.420 |   47% | -1.96 | -10.063 | -9.049 | FRANCHI
+  3 |  177 |   -0.506 |   47% | -0.09 |  +3.379 | -3.233 | -
+  4 |  167 |  -13.928 |   45% | -2.73 | -11.452 | -15.317 | FRANCHI
+  5 |  172 |  -16.057 |   47% | -2.29 |  -4.309 | -21.433 | FRANCHI
+
+--- GBP_USD ---
+  Q | n   |  avg bp  |  hit  |    t  |  IS bp  | OOS bp | seuil 3.4 bp
+  1 |  162 |   -1.130 |   46% | -0.31 |  -1.387 | -0.949 | -
+  2 |  151 |   -5.244 |   49% | -1.23 |  -8.142 | -3.385 | FRANCHI
+  3 |  173 |   -0.382 |   55% | -0.08 |  +3.933 | -3.532 | -
+  4 |  165 |   -8.399 |   42% | -1.98 |  -8.134 | -8.550 | FRANCHI
+  5 |  171 |  -17.362 |   41% | -3.10 | -11.450 | -20.090 | FRANCHI
+
+--- AUD_USD ---
+  Q | n   |  avg bp  |  hit  |    t  |  IS bp  | OOS bp | seuil 3.4 bp
+  1 |  161 |   -4.621 |   48% | -0.98 |  +1.515 | -8.994 | FRANCHI
+  2 |  147 |   -4.796 |   53% | -0.74 | -11.108 | -0.565 | FRANCHI
+  3 |  169 |   +2.095 |   47% |  0.41 |  +4.850 | +0.001 | -
+  4 |  159 |   -6.672 |   50% | -1.26 | -11.482 | -3.756 | FRANCHI
+  5 |  152 |  -10.959 |   41% | -1.44 |  +4.437 | -19.442 | FRANCHI
+
+--- NZD_USD ---
+  Q | n   |  avg bp  |  hit  |    t  |  IS bp  | OOS bp | seuil 3.4 bp
+  1 |  155 |   -1.530 |   51% | -0.32 |  +5.456 | -6.848 | -
+  2 |  146 |   -4.621 |   47% | -0.82 | -10.748 | -0.465 | FRANCHI
+  3 |  167 |   +0.357 |   46% |  0.07 |  +0.499 | +0.246 | -
+  4 |  158 |   -4.543 |   50% | -0.81 |  -9.844 | -1.299 | FRANCHI
+  5 |  168 |  -10.331 |   44% | -1.88 | +17.396 | -23.464 | FRANCHI
+
+--- EUR_USD ---
+  Q | n   |  avg bp  |  hit  |    t  |  IS bp  | OOS bp | seuil 3.4 bp
+  1 |  162 |   -6.696 |   46% | -1.66 |  -8.815 | -5.201 | FRANCHI
+  2 |  151 |   -2.672 |   48% | -0.64 |  -3.542 | -2.114 | -
+  3 |  173 |   +2.891 |   54% |  0.71 |  +6.760 | +0.067 | -
+  4 |  165 |   -5.726 |   49% | -1.36 | -12.162 | -2.048 | FRANCHI
+  5 |  171 |   -3.361 |   47% | -0.82 |  +6.334 | -7.836 | -
+
+--- USD_CHF ---
+  Q | n   |  avg bp  |  hit  |    t  |  IS bp  | OOS bp | seuil 3.4 bp
+  1 |  162 |   -4.284 |   41% | -1.12 |  -3.272 | -4.998 | FRANCHI
+  2 |  149 |   -4.718 |   46% | -1.13 |  -4.881 | -4.612 | FRANCHI
+  3 |  171 |   -9.206 |   47% | -2.23 | -10.413 | -8.307 | FRANCHI
+  4 |  162 |   -2.765 |   48% | -0.66 |  +0.460 | -4.661 | -
+  5 |  170 |   -0.871 |   52% | -0.21 |  +3.671 | -2.986 | -
+
+--- USD_JPY ---
+  Q | n   |  avg bp  |  hit  |    t  |  IS bp  | OOS bp | seuil 3.4 bp
+  1 |  162 |   -0.134 |   49% | -0.03 |  -7.952 | +5.379 | -
+  2 |  150 |   -7.284 |   41% | -1.55 |  -1.946 | -10.744 | FRANCHI
+  3 |  171 |   -0.459 |   44% | -0.10 |  -1.301 | +0.169 | -
+  4 |  161 |   -4.658 |   43% | -0.73 |  -4.172 | -4.947 | FRANCHI
+  5 |  170 |   -0.826 |   53% | -0.16 |  +7.539 | -4.721 | -
+
+--- USD_CAD ---
+  Q | n   |  avg bp  |  hit  |    t  |  IS bp  | OOS bp | seuil 3.4 bp
+  1 |  162 |   -2.822 |   48% | -0.82 |  -1.184 | -3.977 | -
+  2 |  151 |   -2.116 |   47% | -0.50 |  +3.871 | -5.956 | -
+  3 |  173 |   -1.196 |   53% | -0.32 |  +6.647 | -6.921 | -
+  4 |  165 |   +6.408 |   53% |  1.51 | +20.176 | -1.459 | FRANCHI
+  5 |  171 |   +6.961 |   58% |  2.07 |  +4.295 | +8.192 | FRANCHI
+
+=== COMPOSITE F : vendredi par quintile de vol actions ===
+  Q1 | n= 154  avg +0.0330 σ  hit  56%  t  0.95 | IS +0.0509 → OOS +0.0192  STABLE
+  Q2 | n= 140  avg +0.0564 σ  hit  54%  t  1.24 | IS +0.1159 → OOS +0.0130  STABLE
+  Q3 | n= 160  avg -0.0224 σ  hit  51%  t -0.48 | IS +0.0009 → OOS -0.0419  MEURT EN OOS
+  Q4 | n= 146  avg +0.1305 σ  hit  58%  t  2.73 | IS +0.1774 → OOS +0.0978  STABLE
+  Q5 | n= 149  avg +0.1457 σ  hit  61%  t  2.64 | IS -0.0342 → OOS +0.2479  LATE-BLOOMER
+>> MONOTONIE = conditionnement réel. Non monotone = tests multiples (leçon du 23 sept).
+
+##################################################################
+# P3 — QUINTILES DE VOL PROPRE DE LA PAIRE (le CONTRÔLE de spécificité)
+##################################################################
+Même construction, mais la vol de l'ACTIF LUI-MÊME. Si seul P3 est monotone →
+l'information est endogène (la vol propre n'est pas un signal intermarket).
+
+--- GBP_JPY ---
+  Q | n   |  avg bp  |  hit  |    t  |  IS bp  | OOS bp | seuil 3.4 bp
+  1 |  204 |   -2.216 |   50% | -0.65 |  -8.910 | +4.746 | -
+  2 |  186 |   -3.876 |   44% | -0.95 |  -0.244 | -6.276 | FRANCHI
+  3 |  157 |   -2.576 |   49% | -0.49 |  +1.740 | -5.468 | -
+  4 |  165 |  -10.053 |   44% | -1.91 |  -3.709 | -14.391 | FRANCHI
+  5 |  205 |  -15.389 |   49% | -1.84 | -11.125 | -17.506 | FRANCHI
+
+--- GBP_USD ---
+  Q | n   |  avg bp  |  hit  |    t  |  IS bp  | OOS bp | seuil 3.4 bp
+  1 |  184 |   -1.627 |   46% | -0.52 |  +5.605 | -8.255 | -
+  2 |  164 |   +0.663 |   51% |  0.18 |  -3.095 | +3.989 | -
+  3 |  162 |   -8.507 |   45% | -1.99 |  -2.665 | -12.628 | FRANCHI
+  4 |  182 |   -7.453 |   46% | -1.78 | -12.163 | -3.921 | FRANCHI
+  5 |  193 |  -16.194 |   45% | -2.54 | -17.806 | -15.356 | FRANCHI
+
+--- AUD_USD ---
+  Q | n   |  avg bp  |  hit  |    t  |  IS bp  | OOS bp | seuil 3.4 bp
+  1 |  183 |   -2.665 |   47% | -0.46 |  +3.431 | -8.564 | -
+  2 |  170 |   +2.476 |   51% |  0.56 |  +7.234 | -1.754 | -
+  3 |  135 |   -5.953 |   53% | -0.93 | -12.498 | -1.022 | FRANCHI
+  4 |  160 |   -7.719 |   45% | -1.33 |  -1.294 | -12.590 | FRANCHI
+  5 |  203 |  -11.801 |   47% | -1.53 | -17.747 | -8.012 | FRANCHI
+
+--- NZD_USD ---
+  Q | n   |  avg bp  |  hit  |    t  |  IS bp  | OOS bp | seuil 3.4 bp
+  1 |  191 |   -2.378 |   48% | -0.57 |  +8.860 | -13.043 | -
+  2 |  155 |   +4.356 |   55% |  0.91 |  +7.287 | +2.005 | FRANCHI
+  3 |  161 |   -2.767 |   51% | -0.56 |  +7.421 | -10.409 | -
+  4 |  155 |   -7.070 |   41% | -1.15 | -13.907 | -1.585 | FRANCHI
+  5 |  195 |  -11.976 |   45% | -1.61 | -14.641 | -10.274 | FRANCHI
+
+--- EUR_USD ---
+  Q | n   |  avg bp  |  hit  |    t  |  IS bp  | OOS bp | seuil 3.4 bp
+  1 |  176 |   +0.279 |   52% |  0.08 |  +1.873 | -1.210 | -
+  2 |  165 |   -2.045 |   52% | -0.53 |  -0.792 | -3.090 | -
+  3 |  178 |   -5.376 |   44% | -1.44 |  -4.576 | -5.919 | FRANCHI
+  4 |  169 |   -5.217 |   48% | -1.12 |  -9.480 | -2.346 | FRANCHI
+  5 |  197 |   -8.930 |   46% | -1.80 | -15.762 | -4.639 | FRANCHI
+
+--- USD_CHF ---
+  Q | n   |  avg bp  |  hit  |    t  |  IS bp  | OOS bp | seuil 3.4 bp
+  1 |  180 |   -6.314 |   44% | -1.80 |  -9.478 | -3.218 | FRANCHI
+  2 |  167 |   +2.156 |   53% |  0.55 |  +8.723 | -3.882 | -
+  3 |  173 |   +0.658 |   46% |  0.15 |  +7.474 | -4.437 | -
+  4 |  167 |   -2.211 |   48% | -0.50 |  -4.900 | -0.497 | -
+  5 |  190 |   -7.754 |   45% | -1.57 |  -1.004 | -11.517 | FRANCHI
+
+--- USD_JPY ---
+  Q | n   |  avg bp  |  hit  |    t  |  IS bp  | OOS bp | seuil 3.4 bp
+  1 |  208 |   -1.159 |   49% | -0.41 |  -3.351 | +0.950 | -
+  2 |  131 |   +0.195 |   47% |  0.05 |  -2.020 | +1.848 | -
+  3 |  150 |   -5.895 |   42% | -1.32 |  -5.963 | -5.837 | FRANCHI
+  4 |  176 |   -1.832 |   41% | -0.30 |  +0.107 | -3.144 | -
+  5 |  212 |   -0.316 |   51% | -0.05 | +10.900 | -6.977 | -
+
+--- USD_CAD ---
+  Q | n   |  avg bp  |  hit  |    t  |  IS bp  | OOS bp | seuil 3.4 bp
+  1 |  176 |   +0.776 |   52% |  0.27 |  +4.595 | -2.957 | -
+  2 |  169 |   -1.755 |   49% | -0.52 |  -2.915 | -0.808 | -
+  3 |  166 |   +3.698 |   55% |  0.92 |  +6.121 | +2.017 | FRANCHI
+  4 |  179 |   -0.594 |   51% | -0.14 |  +1.699 | -2.174 | -
+  5 |  195 |   +5.389 |   51% |  1.07 | +20.728 | -3.590 | FRANCHI
+
+=== COMPOSITE F : vendredi par quintile de vol PROPRE MOYENNE du panier ===
+  Q1 | n=  66  avg -0.0194 σ  hit  42%  t -0.36
+  Q2 | n= 214  avg +0.0381 σ  hit  56%  t  1.08
+  Q3 | n= 248  avg +0.0857 σ  hit  58%  t  2.60
+  Q4 | n= 181  avg +0.0618 σ  hit  56%  t  1.11
+  Q5 | n= 103  avg +0.1424 σ  hit  56%  t  1.45
+
+##################################################################
+# P4 — TEST INCRÉMENTAL 2×2 : vol ACTIONS × vol PROPRE (l'info externe ajoute-t-elle ?)
+##################################################################
+Seaux = rang percentile causal ≥ 0.60 (haut) / ≤ 0.40 (bas). avg en bp, IS/OOS séparés.
+Si la vol actions n'ajoute RIEN dans les lignes ET colonnes → information redondante.
+
+POOL 8 PAIRES (rendements FX bruts signés, bp) :
+  vol actions HAUTE × vol propre HAUTE : n=1403  avg -10.287 bp  t -5.04  | IS  -4.967 → OOS -12.313  NÉGATIF 2 CÔTÉS
+  vol actions HAUTE × vol propre BASSE: n= 794  avg  +0.042 bp  t  0.02
+  vol actions BASSE × vol propre HAUTE: n= 722  avg  -6.507 bp  t -2.62
+  vol actions BASSE × vol propre BASSE: n=1311  avg  -2.388 bp  t -1.89  | IS  -4.087 → OOS  -1.129  NÉGATIF 2 CÔTÉS
+
+COMPOSITE F (vendredi, unités σ) — même 2×2 :
+  H×H n= 153 avg +0.1714 t  3.01 | H×B n=  59 avg +0.0294 t  0.48
+  B×H n=  52 avg +0.0707 t  0.78 | B×B n= 150 avg +0.0165 t  0.46
+>> Comparer H×B (info ACTIONS seule) et B×H (info PROPRE seule) : qui porte ?
+
+##################################################################
+# P5 — LE CONDITIONNEL EXTRÊME EST-IL UN ARTEFACT DE CRISE ? (Pattern D)
+##################################################################
+Composite F le vendredi : quintile HAUT (rang ≥ 0.60) vs BAS (≤ 0.40), par ère.
+ÈRE              | F | vol actions HAUTE        | F | vol actions BASSE       
+2006-2010        | n=  17 avg +0.3470 t  1.56   | n=  21 avg -0.1129 t -0.83
+2010-2014        | n=  98 avg +0.0465 t  0.78   | n=  98 avg +0.0400 t  0.78
+2016-2020        | n=  95 avg +0.1976 t  2.73   | n=  83 avg -0.0094 t -0.19
+2020-2024        | n=  76 avg +0.1479 t  2.43   | n=  75 avg +0.0239 t  0.44
+F vendredi (toutes années)            : HAUT n= 295 avg +0.1382 t  3.79 | BAS n= 295 avg +0.0433 t  1.54 | Δ +0.0948
+F vendredi (hors 2008/11/15/20/22)    : HAUT n= 248 avg +0.1562 t  3.91 | BAS n= 234 avg +0.0150 t  0.50 | Δ +0.1412
+>> Si le conditionnel ne survit PAS hors crises → c'est la crise qui porte, pas la vol.
+
+##################################################################
+# P6 — SPÉCIFICITÉ DU JOUR : le conditionnement par la vol est-il VENDREDI-spécifique ?
+##################################################################
+Composite F par jour de semaine ; HAUT = vol actions ≥ 0.60, BAS = ≤ 0.40 (rang causal).
+JOUR      | vol HAUTE (n/avg/t)            | vol BASSE (n/avg/t)            | Δ (t de Welch)
+MONDAY    | n= 296 avg -0.0187 t -0.58 | n= 306 avg +0.0192 t  0.84 | -0.0380 (t -0.96)
+TUESDAY   | n= 295 avg +0.0431 t  1.26 | n= 307 avg -0.0485 t -1.54 | +0.0916 (t  1.97)
+WEDNESDAY | n= 293 avg -0.0229 t -0.71 | n= 294 avg -0.0133 t -0.44 | -0.0095 (t -0.22)
+THURSDAY  | n= 291 avg +0.0151 t  0.40 | n= 299 avg +0.0115 t  0.36 | +0.0036 (t  0.07)
+FRIDAY    | n= 295 avg +0.1382 t  3.79 | n= 295 avg +0.0433 t  1.54 | +0.0948 (t  2.06)
+
+##################################################################
+# P7 — LE CONDITIONNEMENT VOL S'APPLIQUE-T-IL AUSSI À LA RÉVERSION DU LUNDI (39e) ?
+##################################################################
+Config 39e = LONG lundi conditionnel au rendement lundi-jeudi précédent (W4 < 0).
+Ici : ce LONG du lundi, splité par la vol ACTIONS au vendredi précédent. avg en bp.
+  TOUS RÉGIMES        : n=3105 avg  +4.454 bp t  5.01
+  vol actions HAUTE   : n=1275 avg  +4.504 bp t  2.94 | IS  -1.049 → OOS  +7.585  LATE-BLOOMER
+  vol actions BASSE   : n=1195 avg  +3.254 bp t  2.55 | IS  +2.025 → OOS  +4.093  S'AMÉLIORE
+  >> À comparer au seuil de survie : 3.4 bp (coûts 2.14 + swap ~1.2)
+
+##################################################################
+# P8 — SENSIBILITÉ À LA MESURE DE VOL (la conclusion dépend-elle du proxy ?)
+##################################################################
+Trois proxies : (a) std 21j MES [défaut], (b) std 63j MES, (c) |rendement| moyen 21j MES,
+(d) std 21j NASDAQ (2e indice). Composite F le vendredi, HAUT vs BAS (rang causal).
+  std63_MES    : HAUT n= 300 avg +0.0896 t  2.51 | BAS n= 291 avg +0.0298 t  1.01 | Δ +0.0598
+  absdev21_MES : HAUT n= 300 avg +0.1093 t  2.91 | BAS n= 297 avg +0.0602 t  2.20 | Δ +0.0492
+  std21_MNQ    : HAUT n= 303 avg +0.1055 t  2.93 | BAS n= 297 avg +0.0187 t  0.65 | Δ +0.0869
+  --- fenêtre de traîne du rang causal (TRAIL) : le rang n'existe qu'après TRAIL obs ---
+  TRAIL=250   (1er rang 2006-12-21) : HAUT n= 371 avg +0.0963 t  2.35 | BAS n= 360 avg +0.0361 t  1.29 | Δ +0.0602
+  TRAIL=500   (1er rang 2007-12-20) : HAUT n= 356 avg +0.0913 t  2.21 | BAS n= 333 avg +0.0549 t  1.91 | Δ +0.0364
+  TRAIL=1000  (1er rang 2009-12-21) : HAUT n= 295 avg +0.1382 t  3.79 | BAS n= 295 avg +0.0433 t  1.54 | Δ +0.0948
+  TRAIL=2000  (1er rang 2013-12-17) : HAUT n= 215 avg +0.1713 t  4.04 | BAS n= 215 avg +0.0519 t  1.63 | Δ +0.1195
+
+##################################################################
+# P9 — CONTRÔLE DÉCISIF : NORMALISATION PAR LA VOL COURANTE (z-score)
+##################################################################
+z = rendement / vol 21j de l'actif MESURÉE LA VEILLE. Si l'effet vol actions
+disparaît en z, l'amplitude brute n'était que de l'échelle (pas un conditionnement).
+
+z(F) VENDREDI : n=953 avg +0.151  t  3.53 | autres jours n=5706 avg -0.021 t -1.43
+
+(a) z(F) le vendredi par quintile de vol ACTIONS :
+    Q1 | n= 154  avg +0.069 z  hit  56%  t  0.79
+    Q2 | n= 140  avg +0.189 z  hit  54%  t  1.57
+    Q3 | n= 160  avg +0.004 z  hit  51%  t  0.04
+    Q4 | n= 146  avg +0.302 z  hit  58%  t  3.08
+    Q5 | n= 149  avg +0.448 z  hit  61%  t  3.50
+
+(b) z(F) par JOUR et par régime de vol actions (spécificité en z) :
+JOUR      | vol HAUTE                | vol BASSE                | Δ (t)
+MONDAY    | n= 296 avg -0.087 t -1.19 | n= 306 avg +0.038 t  0.70 | -0.125 (t -1.37)
+TUESDAY   | n= 295 avg +0.123 t  1.56 | n= 307 avg -0.067 t -0.92 | +0.189 (t  1.77)
+WEDNESDAY | n= 293 avg -0.029 t -0.38 | n= 294 avg -0.046 t -0.63 | +0.018 (t  0.17)
+THURSDAY  | n= 291 avg -0.001 t -0.02 | n= 299 avg +0.050 t  0.58 | -0.052 (t -0.43)
+FRIDAY    | n= 295 avg +0.376 t  4.65 | n= 295 avg +0.124 t  1.70 | +0.252 (t  2.32)
+
+(c) POOL 8 PAIRES : vendredi en z (rendement / vol propre de la veille) :
+    vol actions H × vol propre H : n=1403 avg -0.126 z t -4.41
+    vol actions H × vol propre B : n= 794 avg -0.001 z t -0.03
+    vol actions B × vol propre H : n= 722 avg -0.103 z t -2.48
+    vol actions B × vol propre B : n=1311 avg -0.075 z t -2.21
+>> Lecture : si z(H×H) ≈ z(H×B) ≈ z(L×H) ≈ z(L×B), aucun conditionnement en z.
+>> Si z augmente UNIQUEMENT avec la vol propre → information endogène (pas intermarket).

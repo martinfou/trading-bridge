@@ -1,0 +1,148 @@
+=== RunSeasonalityFilterAudit | 2026-09-30T11:04:31Z ===
+================================================================
+AUDIT DE LA BIBLIOTHÈQUE SeasonalityFilter — 30 sept 2026
+Rendu au 30 sept 2026 : la bibliothèque revendique 72-94 % de hit.
+================================================================
+
+=== A) INTÉGRITÉ DE LA BIBLIOTHÈQUE (bugs silencieux) ===
+A1) Normalisation du symbole — getBias() compare p.symbol().equals(symbol) SANS normaliser
+PATTERN                CLÉ CODÉE  getBias(clé) getBias(pair)  CONVENTION OK ?
+USDCAD 10/12→11/26     USDCAD     BUY          null           NON — MORTE   
+USD_JPY 09/27→11/11    USD_JPY    BUY          BUY            oui           
+GBP_USD 03/11→04/25    GBP_USD    BUY          BUY            oui           
+EUR_USD 03/16→04/30    EUR_USD    BUY          BUY            oui           
+AUD_USD 06/04→07/19    AUD_USD    BUY          BUY            oui           
+USDCAD 04/01→04/30     USDCAD     SELL         null           NON — MORTE   
+GBP_USD 04/01→04/30    GBP_USD    BUY          BUY            oui           
+EUR_USD 04/01→04/30    EUR_USD    BUY          BUY            oui           
+→ 2/8 patterns NE SE DÉCLENCHENT PAS quand on passe le symbole du runner (USD_CAD).
+   (les miroirs inline de trading-strategies, eux, normalisent sym.replace("_","") :
+    4 copies actives + 8 rejetées ⇒ DEUX sources de vérité qui ont déjà divergé)
+
+A2) Fuseau — getBias() compte les jours en America/New_York (pitfall documenté : UTC obligatoire)
+PATTERN                DÉBUT (UTC)    BASCULE UTC constatée  DÉCALAGE              
+USDCAD 10/12→11/26     2020-10-12     04:00Z                 04:00Z au lieu de 00:00Z
+USD_JPY 09/27→11/11    2020-09-27     04:00Z                 04:00Z au lieu de 00:00Z
+GBP_USD 03/11→04/25    2020-03-11     04:00Z                 04:00Z au lieu de 00:00Z
+EUR_USD 03/16→04/30    2020-03-16     04:00Z                 04:00Z au lieu de 00:00Z
+AUD_USD 06/04→07/19    2020-06-04     04:00Z                 04:00Z au lieu de 00:00Z
+USDCAD 04/01→04/30     2020-04-01     04:00Z                 04:00Z au lieu de 00:00Z
+GBP_USD 04/01→04/30    2020-04-01     00:00Z                 00:00Z au lieu de 00:00Z
+EUR_USD 04/01→04/30    2020-04-01     00:00Z                 00:00Z au lieu de 00:00Z
+
+A3) Chevauchement de fenêtres — premier match gagne (getBias retourne le 1er pattern trouvé)
+USDCAD   2 fenêtres : [10/12→11/26, 04/01→04/30]
+GBP_USD  2 fenêtres : [03/11→04/25, 04/01→04/30]
+EUR_USD  2 fenêtres : [03/16→04/30, 04/01→04/30]
+→ GBP_USD : 25 jours d'avril satisfont DEUX fenêtres (3/11-4/25 ET 4/1-4/30) :
+  le pattern « April strength 88.9 % » n'est JAMAIS évalué (le 1er match gagne).
+
+--- COUVERTURE RÉELLE DES DONNÉES (barres réelles high>low) ---
+EUR_USD  6168 jours réels | 2006-01-01 → 2026-05-19
+GBP_USD  6167 jours réels | 2006-01-01 → 2026-05-19
+USD_JPY  6114 jours réels | 2006-01-01 → 2026-05-19
+AUD_USD  5956 jours réels | 2006-01-01 → 2026-05-19
+USD_CAD  6167 jours réels | 2006-01-01 → 2026-05-19
+NZD_USD  6009 jours réels | 2006-01-01 → 2026-05-19
+USD_CHF  6118 jours réels | 2006-01-01 → 2026-05-19
+GBP_JPY  6361 jours réels | 2006-01-01 → 2026-05-19
+
+=== B) VALIDATION EMPIRIQUE DES 8 PATTERNS (rendement de fenêtre par année) ===
+IS = 2006-2015 | OOS = 2016-2026 | ctrl = hold non conditionné de MÊME DURÉE (dérive d'ère)
+
+--- USDCAD 10/12→11/26 BUY  (hit revendiqué 94% — « End of driving season → oil ↓ → CAD ↓ → USDCAD ↑ »)
+données 2006-01-01 → 2026-05-19 | fenêtre ≈ 41 jours de bourse | années sautées 2
+PHASE  n       mean%   med%     hit%    t              
+ALL    19      1.26    1.66    84.2     3.34   
+IS     10      1.64    1.57    90.0     3.66   
+OOS    9       0.83    1.71    77.8     1.35   
+CTRL   -       0.16    -       -        -      
+SPÉCIFICITÉ (mean/hit) : -2m:0.13%/53%  -1m:1.48%/68%  +1m:1.11%/74%  +2m:0.27%/35%  
+VERDICT : 🔬 SURVIT — candidate à backtester avec coûts [IS 1.64% / OOS 0.83% ; ctrl 0.16% ; Δ ALL−ctrl 1.10%]
+
+--- USD_JPY 09/27→11/11 BUY  (hit revendiqué 88% — « Fiscal half-end → JPY weakness → USDJPY ↑ »)
+données 2006-01-01 → 2026-05-19 | fenêtre ≈ 41 jours de bourse | années sautées 2
+PHASE  n       mean%   med%     hit%    t              
+ALL    19      0.69    0.99    73.7     0.84   
+IS     10      -0.26   0.40    70.0     -0.21  
+OOS    9       1.75    1.20    77.8     1.71   
+CTRL   -       0.28    -       -        -      
+SPÉCIFICITÉ (mean/hit) : -2m:-0.58%/37%  -1m:0.65%/74%  +1m:0.75%/47%  +2m:0.85%/55%  
+VERDICT : ❌ REJET — edge absent (IS ou OOS ≤ 0) [IS -0.26% / OOS 1.75% ; ctrl 0.28% ; Δ ALL−ctrl 0.42%]
+
+--- GBP_USD 03/11→04/25 BUY  (hit revendiqué 83% — « UK spring economic upswing + new tax year »)
+données 2006-01-01 → 2026-05-19 | fenêtre ≈ 40 jours de bourse | années sautées 0
+PHASE  n       mean%   med%     hit%    t              
+ALL    21      1.46    1.42    71.4     2.42   
+IS     10      2.64    3.02    90.0     4.06   
+OOS    11      0.38    0.66    54.5     0.42   
+CTRL   -       -0.12   -       -        -      
+SPÉCIFICITÉ (mean/hit) : -2m:0.05%/55%  -1m:-0.53%/45%  +1m:0.68%/55%  +2m:-0.23%/55%  
+VERDICT : 🔬 SURVIT — candidate à backtester avec coûts [IS 2.64% / OOS 0.38% ; ctrl -0.12% ; Δ ALL−ctrl 1.58%]
+
+--- EUR_USD 03/16→04/30 BUY  (hit revendiqué 72% — « European dividend season → EUR repatriation »)
+données 2006-01-01 → 2026-05-19 | fenêtre ≈ 41 jours de bourse | années sautées 0
+PHASE  n       mean%   med%     hit%    t              
+ALL    21      1.29    1.24    61.9     2.00   
+IS     10      2.15    2.02    70.0     2.24   
+OOS    11      0.50    0.76    54.5     0.60   
+CTRL   -       0.03    -       -        -      
+SPÉCIFICITÉ (mean/hit) : -2m:-0.44%/35%  -1m:0.70%/65%  +1m:-0.19%/35%  +2m:0.45%/45%  
+VERDICT : 🔬 SURVIT — candidate à backtester avec coûts [IS 2.15% / OOS 0.50% ; ctrl 0.03% ; Δ ALL−ctrl 1.25%]
+
+--- AUD_USD 06/04→07/19 BUY  (hit revendiqué 75% — « End of Australian fiscal year »)
+données 2006-01-01 → 2026-05-19 | fenêtre ≈ 40 jours de bourse | années sautées 2
+PHASE  n       mean%   med%     hit%    t              
+ALL    19      0.63    0.98    63.2     0.70   
+IS     10      0.94    1.08    70.0     0.69   
+OOS    9       0.28    0.98    55.6     0.23   
+CTRL   -       0.06    -       -        -      
+SPÉCIFICITÉ (mean/hit) : -2m:-0.36%/53%  -1m:-0.25%/45%  +1m:-0.70%/47%  +2m:-0.68%/37%  
+VERDICT : 🔬 SURVIT — candidate à backtester avec coûts [IS 0.94% / OOS 0.28% ; ctrl 0.06% ; Δ ALL−ctrl 0.56%]
+
+--- USDCAD 04/01→04/30 SELL  (hit revendiqué 72% — « April effect: USDCAD bearish, mirror of EUR/GBP strength »)
+données 2006-01-01 → 2026-05-19 | fenêtre ≈ 27 jours de bourse | années sautées 0
+PHASE  n       mean%   med%     hit%    t              
+ALL    21      1.47    1.05    71.4     2.86   
+IS     10      2.53    2.21    90.0     4.08   
+OOS    11      0.51    0.47    54.5     0.72   
+CTRL   -       -0.10   -       -        -      
+SPÉCIFICITÉ (mean/hit) : -2m:-0.18%/60%  -1m:-0.02%/55%  +1m:-0.06%/50%  +2m:-0.24%/47%  
+VERDICT : 🔬 SURVIT — candidate à backtester avec coûts [IS 2.53% / OOS 0.51% ; ctrl -0.10% ; Δ ALL−ctrl 1.57%]
+
+--- GBP_USD 04/01→04/30 BUY  (hit revendiqué 89% — « April seasonal strength for GBP »)
+données 2006-01-01 → 2026-05-19 | fenêtre ≈ 27 jours de bourse | années sautées 0
+PHASE  n       mean%   med%     hit%    t              
+ALL    21      1.42    1.63    85.7     3.04   
+IS     10      2.30    1.93    100.0    4.51   
+OOS    11      0.62    1.42    72.7     0.89   
+CTRL   -       -0.08   -       -        -      
+SPÉCIFICITÉ (mean/hit) : -2m:-0.68%/40%  -1m:-0.17%/45%  +1m:-0.44%/30%  +2m:-0.10%/63%  
+VERDICT : 🔬 SURVIT — candidate à backtester avec coûts [IS 2.30% / OOS 0.62% ; ctrl -0.08% ; Δ ALL−ctrl 1.50%]
+
+--- EUR_USD 04/01→04/30 BUY  (hit revendiqué 72% — « April seasonal strength for EUR »)
+données 2006-01-01 → 2026-05-19 | fenêtre ≈ 27 jours de bourse | années sautées 0
+PHASE  n       mean%   med%     hit%    t              
+ALL    21      0.94    0.68    57.1     1.74   
+IS     10      1.54    1.46    60.0     2.04   
+OOS    11      0.40    0.63    54.5     0.51   
+CTRL   -       0.02    -       -        -      
+SPÉCIFICITÉ (mean/hit) : -2m:-0.41%/40%  -1m:0.76%/60%  +1m:-0.84%/35%  +2m:0.31%/58%  
+VERDICT : 🔬 SURVIT — candidate à backtester avec coûts [IS 1.54% / OOS 0.40% ; ctrl 0.02% ; Δ ALL−ctrl 0.92%]
+
+DONE
+=== RunSeasonalityFilterAudit | 2026-09-30T11:05:23Z ===
+=== C) SPÉCIFICITÉ DE LA FENÊTRE OFFICIELLE USD_CAD 10/12→11/26 (net $, swap RÉEL) ===
+FENÊTRE            PF     WR%    DD%    TRADES  NET$        SWAP$      
+07:05:24,072 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@527e5409 - Resource [logback.xml] occurs multiple times on the classpath.
+07:05:24,073 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@527e5409 - Resource [logback.xml] occurs at [file:/home/martinfou/projects/tb-research/trading-backtest/target/classes/logback.xml]
+07:05:24,073 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@527e5409 - Resource [logback.xml] occurs at [jar:file:/home/martinfou/.m2/repository/com/martinfou/trading/trading-backtest/1.0.0-SNAPSHOT/trading-backtest-1.0.0-SNAPSHOT.jar!/logback.xml]
+
+−2m 08/12→09/26    1.20   52.6   3.20   19            60.26     -340.17
+−1m 09/12→10/26    3.09   68.4   2.88   19          2902.66     -330.19
+OFFICIEL 10/12→11/26 5.73   84.2   2.95   19          2241.90     -339.23
++1m 11/12→12/26    3.28   68.4   2.25   19          2045.04     -331.50
+NOV 11/01→11/30    2.09   63.2   2.02   19          1152.59     -219.44
+OCT 10/01→10/31    1.96   63.2   3.21   19          1595.67     -228.59
+SEP 09/01→09/30    1.34   52.6   2.98   19           387.19     -220.92
+→ meilleur net = $2902.66

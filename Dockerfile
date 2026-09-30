@@ -42,4 +42,17 @@ RUN chmod +x /app/entrypoint.sh
 COPY config/ /app/config/
 
 ENV CLASSPATH="/app/classes/trading-core:/app/classes/trading-data:/app/classes/trading-strategies:/app/classes/trading-broker:/app/classes/trading-parser:/app/libs/*"
+
+# Liveness — « le conteneur tourne » ne veut pas dire « la stratégie trade ».
+# Un token OANDA révoqué laissait les conteneurs « Up » avec des stratégies
+# mortes pendant 69 jours (10 juil → 21 sept 2026). Cette sonde exige que le
+# processus LiveStrategyRunner existe réellement : sinon `docker ps` affiche
+# « Up (unhealthy) » au lieu de « Up ».
+# Le motif est coupé en deux (« LiveStrategy » + « Runner ») parce qu'une
+# sonde qui cherche un littéral se retrouve dans sa propre ligne de commande
+# et se déclare toujours saine — piège reproduit puis corrigé le 21 sept 2026.
+# Outils utilisés (tr/grep) vérifiés présents dans l'image finale.
+HEALTHCHECK --interval=60s --timeout=10s --start-period=120s --retries=3 \
+  CMD n="LiveStrategy"; n="${n}Runner"; for p in /proc/[0-9]*; do tr '\0' ' ' < "$p/cmdline" 2>/dev/null | grep -q "$n" && exit 0; done; exit 1
+
 ENTRYPOINT ["/app/entrypoint.sh"]

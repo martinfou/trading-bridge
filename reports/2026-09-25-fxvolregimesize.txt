@@ -1,0 +1,317 @@
+########## --base
+=== MODE: --base | 2026-09-25T11:04:44Z ===
+==============================================================
+FX FRIDAY FADE × RÉGIME DE VOLATILITÉ — GATE vs OVERLAY (43e)
+Mode: --base | coûts $0.07 + 0.01% | capital $50000.0 | 10000.0 u
+==============================================================
+[régime] MES vol21 rang causal : 2006-02-02 → 2026-08-21 (5176 obs)
+[régime] rangs propres construits pour 8 paires
+
+==============================================================
+CALIBRATION — SELL FRI 1u, 8 paires (référence 37e : GBP_JPY 1.18 / GBP_USD 1.13 / EUR 1.00 / CAD 0.80)
+==============================================================
+PAIRE         PF   WR%    DD%  TRADES        NET$      SWAP$   $/TRADE
+GBP_JPY     1.18   51%  3.67%    1061     6854.24    1699.20      6.46
+GBP_USD     1.13   52%  5.05%    1029     2359.86   -1691.50      2.29
+AUD_USD     1.01   50% 42.07%     995   -20897.37  -21067.60    -21.00
+NZD_USD     0.98   49% 44.67%    1001   -22268.96  -21684.00    -22.25
+USD_CHF     0.94   47% 34.18%    1021   -16873.90  -15282.00    -16.53
+EUR_USD     1.00   49%  3.06%    1029     3823.97    4059.60      3.72
+USD_JPY     0.99   48% 39.88%    1021   -19661.65  -19249.67    -19.26
+USD_CAD     0.80   45% 13.46%    1029    -5684.69       0.00     -5.52
+
+DONE
+########## --gate
+=== MODE: --gate | 2026-09-25T11:05:05Z ===
+==============================================================
+FX FRIDAY FADE × RÉGIME DE VOLATILITÉ — GATE vs OVERLAY (43e)
+Mode: --gate | coûts $0.07 + 0.01% | capital $50000.0 | 10000.0 u
+==============================================================
+[régime] MES vol21 rang causal : 2006-02-02 → 2026-08-21 (5176 obs)
+[régime] rangs propres construits pour 8 paires
+
+==============================================================
+GATE — n'entrer que si le rang de la veille ∈ [60,100] (haut) vs [0,40] (bas, contrôle contrapositif)
+==============================================================
+Un gate n'est PAS un filtre : il RE-TIME toutes les entrées suivantes (leçon du 15 sept).
+PAIRE     VAR.                       PF  TRADES        NET$   $/TRADE      SWAP$
+GBP_JPY   baseline 1u (aucun gate)   1.18    1061     6854.24      6.46    1699.20
+GBP_JPY   GATE AND haut            1.40     224     3762.86     16.80     358.93
+GBP_JPY   GATE AND bas             1.13     653     2894.88      4.43    1045.87
+GBP_JPY   GATE EQ haut             1.34     411     4697.34     11.43     658.67
+GBP_JPY   GATE OWN haut            1.27     391     4516.13     11.55     626.13
+
+GBP_USD   baseline 1u (aucun gate)   1.13    1029     2359.86      2.29   -1691.50
+GBP_USD   GATE AND haut            1.20     237     1386.41      5.85    -502.50
+GBP_USD   GATE AND bas             1.16     619     1580.68      2.55    -929.00
+GBP_USD   GATE EQ haut             1.11     410      838.74      2.05    -762.50
+GBP_USD   GATE OWN haut            1.38     403     4625.81     11.48    -751.50
+
+AUD_USD   baseline 1u (aucun gate)   1.01     995   -20897.37    -21.00  -21067.60
+AUD_USD   GATE AND haut            0.96     248    -7533.26    -30.38   -7161.00
+AUD_USD   GATE AND bas             1.10     579    -9876.30    -17.06  -10781.80
+AUD_USD   GATE EQ haut             0.90     381   -10789.85    -28.32   -9641.00
+AUD_USD   GATE OWN haut            1.06     387    -9071.37    -23.44   -9746.40
+
+NZD_USD   baseline 1u (aucun gate)   0.98    1001   -22268.96    -22.25  -21684.00
+NZD_USD   GATE AND haut            0.98     226    -4590.06    -20.31   -4413.50
+NZD_USD   GATE AND bas             0.96     597   -12101.03    -20.27  -11648.00
+NZD_USD   GATE EQ haut             0.96     389   -10148.48    -26.09   -9743.50
+NZD_USD   GATE OWN haut            1.10     362    -6209.50    -17.15   -7065.50
+
+USD_CHF   baseline 1u (aucun gate)   0.94    1021   -16873.90    -16.53  -15282.00
+USD_CHF   GATE AND haut            0.87     220    -5487.10    -24.94   -4464.00
+USD_CHF   GATE AND bas             0.85     620   -10333.09    -16.67   -8374.50
+USD_CHF   GATE EQ haut             0.93     402    -7783.78    -19.36   -6921.00
+USD_CHF   GATE OWN haut            0.91     377    -7693.50    -20.41   -6583.50
+
+EUR_USD   baseline 1u (aucun gate)   1.00    1029     3823.97      3.72    4059.60
+EUR_USD   GATE AND haut            1.07     242     1810.91      7.48    1224.00
+EUR_USD   GATE AND bas             0.99     629     2015.73      3.20    2265.60
+EUR_USD   GATE EQ haut             0.98     410     1469.85      3.58    1830.00
+EUR_USD   GATE OWN haut            1.12     392     3280.17      8.37    1764.00
+
+USD_JPY   baseline 1u (aucun gate)   0.99    1021   -19661.65    -19.26  -19249.67
+USD_JPY   GATE AND haut            0.95     221    -6071.98    -27.48   -5638.33
+USD_JPY   GATE AND bas             0.98     643   -11253.60    -17.50  -10936.67
+USD_JPY   GATE EQ haut             1.08     402    -7999.42    -19.90   -8721.00
+USD_JPY   GATE OWN haut            0.89     404   -10374.72    -25.68   -8749.33
+
+
+==============================================================
+AGRÉGAT PANIER (7 paires, PF agrégé sur les PnL de trades)
+==============================================================
+VAR.                    PFagg  TRADES        NET$   $/TRADE      SWAP$
+baseline 1u                  1.04    7157   -66663.82     -9.31  -73215.97
+GATE AND haut                1.07    1618   -16722.22    -10.34  -20596.40
+GATE AND bas                 1.06    2811   -28760.86    -10.23  -33786.97
+GATE EQ haut                 1.05    2805   -29715.61    -10.59  -33300.33
+GATE OWN haut                1.11    2716   -20926.99     -7.71  -30506.10
+
+DONE
+########## --overlay
+=== MODE: --overlay | 2026-09-25T11:05:53Z ===
+==============================================================
+FX FRIDAY FADE × RÉGIME DE VOLATILITÉ — GATE vs OVERLAY (43e)
+Mode: --overlay | coûts $0.07 + 0.01% | capital $50000.0 | 10000.0 u
+==============================================================
+[régime] MES vol21 rang causal : 2006-02-02 → 2026-08-21 (5176 obs)
+[régime] rangs propres construits pour 8 paires
+
+==============================================================
+OVERLAY — taille 2u si rang ≥ 60, sinon 1u — vs FLAT à EXPOSITION ÉGALE (benchmark obligatoire)
+==============================================================
+FLAT-u = quantité uniforme = moyenne pondérée des unités de l'overlay (comptée sur les vendredis réels).
+PAIRE     VAR.                           PF u/trade  TRADES        NET$         DD%   $/TRADE
+GBP_JPY   baseline 1u                  1.18   1.00    1061     6854.24       3.67      6.46
+GBP_JPY   OVERLAY 2u/1u (AND≥60)       1.23   1.21    1061    10648.47       4.82     10.04
+GBP_JPY   FLAT 1.21u (éq. exposition)   1.18   1.21    1061     8346.31       4.32      7.87
+   → part de vendredis en régime HAUT (AND≥60) : 21.3%
+
+GBP_USD   baseline 1u                  1.13   1.00    1029     2359.86       5.05      2.29
+GBP_USD   OVERLAY 2u/1u (AND≥60)       1.15   1.23    1029     3779.45       6.39      3.67
+GBP_USD   FLAT 1.23u (éq. exposition)   1.13   1.23    1029     2936.93       6.20      2.85
+   → part de vendredis en régime HAUT (AND≥60) : 23.0%
+
+AUD_USD   baseline 1u                  1.01   1.00     995   -20897.37      42.07    -21.00
+AUD_USD   OVERLAY 2u/1u (AND≥60)       1.00   1.26     995   -28395.91      56.99    -28.54
+AUD_USD   FLAT 1.26u (éq. exposition)   1.01   1.26     995   -26223.18      52.79    -26.35
+   → part de vendredis en régime HAUT (AND≥60) : 25.7%
+
+NZD_USD   baseline 1u                  0.98   1.00    1001   -22268.96      44.67    -22.25
+NZD_USD   OVERLAY 2u/1u (AND≥60)       0.98   1.23    1001   -26827.39      53.78    -26.80
+NZD_USD   FLAT 1.23u (éq. exposition)   0.98   1.23    1001   -27423.47      55.00    -27.40
+   → part de vendredis en régime HAUT (AND≥60) : 23.3%
+
+USD_CHF   baseline 1u                  0.94   1.00    1021   -16873.90      34.18    -16.53
+USD_CHF   OVERLAY 2u/1u (AND≥60)       0.92   1.22    1021   -22330.20      45.02    -21.87
+USD_CHF   FLAT 1.22u (éq. exposition)   0.94   1.22    1021   -20513.21      41.49    -20.09
+   → part de vendredis en régime HAUT (AND≥60) : 21.8%
+
+EUR_USD   baseline 1u                  1.00   1.00    1029     3823.97       3.06      3.72
+EUR_USD   OVERLAY 2u/1u (AND≥60)       1.01   1.23    1029     5668.77       4.30      5.51
+EUR_USD   FLAT 1.23u (éq. exposition)   1.00   1.23    1029     4750.10       3.77      4.62
+   → part de vendredis en régime HAUT (AND≥60) : 23.3%
+
+USD_JPY   baseline 1u                  0.99   1.00    1021   -19661.65      39.88    -19.26
+USD_JPY   OVERLAY 2u/1u (AND≥60)       0.98   1.21    1021   -25702.70      51.93    -25.17
+USD_JPY   FLAT 1.21u (éq. exposition)   0.99   1.21    1021   -23849.73      48.28    -23.36
+   → part de vendredis en régime HAUT (AND≥60) : 21.5%
+
+
+==============================================================
+AGRÉGAT PANIER — net, PF agrégé et $/trade à EXPOSITION ÉGALE
+==============================================================
+VAR.                        PFagg  TRADES       NET$  $/TRADE(u)    NET$/u
+baseline 1u                  1.04    7157   -66663.82     -9.31  -73215.97
+OVERLAY 2u/1u (AND≥60)       1.05    7157  -83159.51      -11.62 -67699.63
+FLAT 2u (référence non éq.)   1.04    7157  -132325.65    -18.49 -146431.93
+FLAT 1.5u (éq. exposition, approx)   1.04    7157   -99494.73    -13.90 -109823.95
+
+DONE
+########## --sweep
+=== MODE: --sweep | 2026-09-25T11:06:55Z ===
+==============================================================
+FX FRIDAY FADE × RÉGIME DE VOLATILITÉ — GATE vs OVERLAY (43e)
+Mode: --sweep | coûts $0.07 + 0.01% | capital $50000.0 | 10000.0 u
+==============================================================
+[régime] MES vol21 rang causal : 2006-02-02 → 2026-08-21 (5176 obs)
+[régime] rangs propres construits pour 8 paires
+
+==============================================================
+ROBUSTESSE PARAMÉTRIQUE — balayage du seuil de gate (plateau = robuste, pic = curve fitting)
+==============================================================
+SEUIL        VAR.                    PFagg  TRADES        NET$   $/TRADE
+GATE AND [50-100]            1.07    2176   -23174.00    -10.65  -28064.80
+GATE AND [60-100]            1.07    1618   -16722.22    -10.34  -20596.40
+GATE AND [70-100]            1.08    1217   -13309.91    -10.94  -16613.20
+GATE AND [80-100]            1.12     814    -6880.08     -8.45  -10581.90
+GATE AND [60-90]             1.07    1618   -16722.22    -10.34  -20596.40
+GATE BAS [0-50]              1.03    4961   -42842.30     -8.64  -44953.27
+GATE BAS [0-40]              1.03    4340   -37072.73     -8.54  -39358.50
+GATE BAS [0-30]              1.07    3583   -27644.26     -7.72  -32204.70
+GATE BAS [0-20]              1.03    2627   -22332.16     -8.50  -23309.40
+(GATE BAS : on n'entre que sous le seuil indiqué — contrôle contrapositif du gate haut)
+
+DONE
+########## --wf
+=== MODE: --wf | 2026-09-25T11:07:39Z ===
+==============================================================
+FX FRIDAY FADE × RÉGIME DE VOLATILITÉ — GATE vs OVERLAY (43e)
+Mode: --wf | coûts $0.07 + 0.01% | capital $50000.0 | 10000.0 u
+==============================================================
+[régime] MES vol21 rang causal : 2006-02-02 → 2026-08-21 (5176 obs)
+[régime] rangs propres construits pour 8 paires
+
+==============================================================
+WALK-FORWARD — IS 2006-2015 / OOS 2016-2026
+==============================================================
+PAIRE     VAR.                   PÉRIODE              PF  TRADES        NET$
+GBP_JPY   baseline 1u            IS 2006-2015       1.15     520     3106.79
+GBP_JPY   GATE AND haut          IS 2006-2015       1.34     125     2173.81
+GBP_JPY   OVERLAY 2u/1u          IS 2006-2015       1.20     520     5298.09
+
+GBP_JPY   baseline 1u            OOS 2016-2026      1.22     540     3761.42
+GBP_JPY   GATE AND haut          OOS 2016-2026      1.55      99     1589.06
+GBP_JPY   OVERLAY 2u/1u          OOS 2016-2026      1.28     540     5364.34
+
+GBP_USD   baseline 1u            IS 2006-2015       1.05     520      117.05
+GBP_USD   GATE AND haut          IS 2006-2015       1.09     129      369.72
+GBP_USD   OVERLAY 2u/1u          IS 2006-2015       1.06     520      504.83
+
+GBP_USD   baseline 1u            OOS 2016-2026      1.24     508     2245.29
+GBP_USD   GATE AND haut          OOS 2016-2026      1.41     108     1016.69
+GBP_USD   OVERLAY 2u/1u          OOS 2016-2026      1.28     508     3277.10
+
+AUD_USD   baseline 1u            IS 2006-2015       0.97     520   -10172.18
+AUD_USD   GATE AND haut          IS 2006-2015       0.93     150    -3268.03
+AUD_USD   OVERLAY 2u/1u          IS 2006-2015       0.96     520   -13419.21
+
+AUD_USD   baseline 1u            OOS 2016-2026      1.09     474   -10715.50
+AUD_USD   GATE AND haut          OOS 2016-2026      1.05      98    -4265.23
+AUD_USD   OVERLAY 2u/1u          OOS 2016-2026      1.08     474   -14967.01
+
+EUR_USD   baseline 1u            IS 2006-2015       1.01     520     2045.23
+EUR_USD   GATE AND haut          IS 2006-2015       1.09     140     1033.04
+EUR_USD   OVERLAY 2u/1u          IS 2006-2015       1.03     520     3097.87
+
+EUR_USD   baseline 1u            OOS 2016-2026      0.97     508     1766.35
+EUR_USD   GATE AND haut          OOS 2016-2026      1.03     102      777.88
+EUR_USD   OVERLAY 2u/1u          OOS 2016-2026      0.98     508     2558.51
+
+USD_CAD   baseline 1u            IS 2006-2015       0.78     520    -3380.51
+USD_CAD   GATE AND haut          IS 2006-2015       0.90     152     -636.80
+USD_CAD   OVERLAY 2u/1u          IS 2006-2015       0.82     520    -3996.03
+
+USD_CAD   baseline 1u            OOS 2016-2026      0.82     508    -2265.77
+USD_CAD   GATE AND haut          OOS 2016-2026      0.92      95     -238.96
+USD_CAD   OVERLAY 2u/1u          OOS 2016-2026      0.84     508    -2491.42
+
+
+DONE
+########## --regime
+=== MODE: --regime | 2026-09-25T11:07:59Z ===
+==============================================================
+FX FRIDAY FADE × RÉGIME DE VOLATILITÉ — GATE vs OVERLAY (43e)
+Mode: --regime | coûts $0.07 + 0.01% | capital $50000.0 | 10000.0 u
+==============================================================
+[régime] MES vol21 rang causal : 2006-02-02 → 2026-08-21 (5176 obs)
+[régime] rangs propres construits pour 8 paires
+
+==============================================================
+RÉGIMES DE MARCHÉ — bull 2006-2012 / taper 2013-2015 / bull2 2016-2026
+==============================================================
+PAIRE     RÉGIME           VAR.                       PF  TRADES        NET$
+GBP_JPY   baseline 1u            bull 2006-2012     1.14     364     2185.55
+GBP_JPY   GATE AND haut          bull 2006-2012     1.41     109     2326.32
+
+GBP_JPY   baseline 1u            taper 2013-2015    1.22     156     1044.58
+GBP_JPY   GATE AND haut          taper 2013-2015    0.70      16     -152.51
+
+GBP_JPY   baseline 1u            bull2 2016-2026    1.22     540     3761.42
+GBP_JPY   GATE AND haut          bull2 2016-2026    1.55      99     1589.06
+
+GBP_USD   baseline 1u            bull 2006-2012     0.93     364    -1797.13
+GBP_USD   GATE AND haut          bull 2006-2012     1.00     101     -179.92
+
+GBP_USD   baseline 1u            taper 2013-2015    1.74     156     1992.57
+GBP_USD   GATE AND haut          taper 2013-2015    2.29      28      549.64
+
+GBP_USD   baseline 1u            bull2 2016-2026    1.24     508     2245.29
+GBP_USD   GATE AND haut          bull2 2016-2026    1.41     108     1016.69
+
+
+DONE
+########## --control
+=== MODE: --control | 2026-09-25T11:08:12Z ===
+==============================================================
+FX FRIDAY FADE × RÉGIME DE VOLATILITÉ — GATE vs OVERLAY (43e)
+Mode: --control | coûts $0.07 + 0.01% | capital $50000.0 | 10000.0 u
+==============================================================
+[régime] MES vol21 rang causal : 2006-02-02 → 2026-08-21 (5176 obs)
+[régime] rangs propres construits pour 8 paires
+
+==============================================================
+CONTRÔLE 1 — SPÉCIFICITÉ DU JOUR : le gate vol appliqué à LUNDI-JEUDI doit échouer
+==============================================================
+(42e : le mardi répliquait 75 % du Δ du vendredi → test décisif)
+PAIRE     VAR.                      PFagg  TRADES        NET$
+Mon-Jeu gate AND haut        0.94    6522   -46632.15     -7.15  -32218.57
+Mon-Jeu baseline             0.90   28597  -212284.22     -7.42 -133771.77
+
+==============================================================
+CONTRÔLE 2 — DÉRIVE DU JOUR (la bêta non conditionnée) : FRI vs Mon-Jeu vs ALLDAYS
+==============================================================
+PAIRE     MODE                 PF  TRADES        NET$   $/TRADE
+GBP_JPY   SELL FRI                 1.18    1061     6854.24      6.46    1699.20
+GBP_JPY   SELL Mon-Jeu             0.86    4241   -14851.41     -3.50    3403.73
+GBP_JPY   SELL ALLDAYS             0.92    5302    -7997.17     -1.51    5102.93
+
+GBP_USD   SELL FRI                 1.13    1029     2359.86      2.29   -1691.50
+GBP_USD   SELL Mon-Jeu             0.88    4111   -19337.52     -4.70   -3092.50
+GBP_USD   SELL ALLDAYS             0.93    5140   -16977.67     -3.30   -4784.00
+
+EUR_USD   SELL FRI                 1.00    1029     3823.97      3.72    4059.60
+EUR_USD   SELL Mon-Jeu             0.89    4111    -5418.97     -1.32    7422.00
+EUR_USD   SELL ALLDAYS             0.91    5140    -1595.00     -0.31   11481.60
+
+USD_CAD   SELL FRI                 0.80    1029    -5684.69     -5.52       0.00
+USD_CAD   SELL Mon-Jeu             0.91    4111    -9497.17     -2.31       0.00
+USD_CAD   SELL ALLDAYS             0.88    5140   -15181.85     -2.95       0.00
+
+
+==============================================================
+CONTRÔLE 3 — PART DE L'EDGE PAR TRADE : la jambe de PRIX seule (net − swap)
+==============================================================
+PAIRE     VAR.                   PRIX$/trade SWAP$/trade  NET$/trade
+GBP_JPY   baseline 1u                  4.86       1.60        6.46
+GBP_JPY   GATE AND haut               15.20       1.60       16.80
+
+GBP_USD   baseline 1u                  3.94      -1.64        2.29
+GBP_USD   GATE AND haut                7.97      -2.12        5.85
+
+EUR_USD   baseline 1u                 -0.23       3.95        3.72
+EUR_USD   GATE AND haut                2.43       5.06        7.48
+
+
+DONE
