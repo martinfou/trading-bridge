@@ -56,6 +56,14 @@ public class LiveStrategyRunner implements Runnable {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final AtomicBoolean RUNNING = new AtomicBoolean(true);
 
+    /**
+     * Per-runner liveness. RUNNING is PROCESS-wide and belongs to the shutdown hook only: setting it
+     * false from one strategy's failure ended every OTHER strategy's run loop (the main loop is
+     * gated on RUNNING) plus the aggregated monitor thread, so a single bad strategy silently
+     * stopped the whole swarm. Found by the 2026-09-30 agy review.
+     */
+    private final AtomicBoolean alive = new AtomicBoolean(true);
+
     /** Aggregated monitor file for the paper-trading cron — written by the orchestrator. */
     private static final Path AGGREGATED_MONITOR = Paths.get("/tmp/paper-trading-status.json");
 
@@ -591,6 +599,13 @@ public class LiveStrategyRunner implements Runnable {
      */
     private double legacyRiskCap(double balance, double riskPct, double slDistance,
                                  double requestedUnits, String oandaSymbol) {
+        if (slDistance <= 0) {
+            // Never let the division below produce Infinity: Infinity makes the comparison at the end
+            // of this method false, and the requested units pass through completely uncapped.
+            log.error("⛔ legacyRiskCap called with slDistance {} — refusing to size, capping to {} units",
+                slDistance, NO_RISK_UNITS_CAP);
+            return Math.min(requestedUnits, NO_RISK_UNITS_CAP);
+        }
         double maxUnits = (balance * (riskPct / 100.0)) / slDistance;
         if (requestedUnits > maxUnits) {
             log.info("📐 Legacy risk cap: {} units requested, {} max ({} × {}% / {}) — capping to {}",
@@ -660,6 +675,7 @@ public class LiveStrategyRunner implements Runnable {
                 LiveStrategyRunner r = entry.getValue();
                 ObjectNode sn = strategiesArray.addObject();
                 sn.put("name", entry.getKey());
+                sn.put("running", r.alive.get());
                 sn.put("displayName", r.strategy.name());
                 sn.put("instrument", r.toOandaSymbol());
                 sn.put("granularity", r.granularity);
@@ -754,12 +770,12 @@ public class LiveStrategyRunner implements Runnable {
         try {
             runLoop();
         } catch (BrokerException e) {
-            log.error("❌ Broker exception in strategy thread '{}': {}. Attempting shutdown.", strategyShortName, e.getMessage(), e);
-            RUNNING.set(false);
+            log.error("❌ Broker exception in strategy thread '{}': {}. This runner stops; the others keep going.", strategyShortName, e.getMessage(), e);
+            alive.set(false);
             saveStateFailed(e.getMessage());
         } catch (Throwable e) {
-            log.error("❌ Fatal unhandled exception in strategy thread '{}': {}", strategyShortName, e.getMessage(), e);
-            RUNNING.set(false);
+            log.error("❌ Fatal unhandled exception in strategy thread '{}': {}. This runner stops; the others keep going.", strategyShortName, e.getMessage(), e);
+            alive.set(false);
             saveStateFailed(e.getMessage());
         } finally {
             MDC.clear();
@@ -845,7 +861,7 @@ public class LiveStrategyRunner implements Runnable {
 
         // Main loop
         log.info("▶ Entering main loop ({}s interval)...", intervalSec);
-        while (RUNNING.get()) {
+        while (RUNNING.get() && alive.get()) {
             try {
                 lastHeartbeatTime = TimeConventions.now();
                 Instant loopStart = TimeConventions.now();
@@ -859,8 +875,10 @@ public class LiveStrategyRunner implements Runnable {
                 Thread.sleep(sleepMs);
 
             } catch (InterruptedException e) {
+                // This runner stops; the others must not. Setting the PROCESS-wide RUNNING here used to
+                // end every other strategy's loop for an event that only concerns this thread.
                 Thread.currentThread().interrupt();
-                RUNNING.set(false);
+                alive.set(false);
             } catch (BrokerException e) {
                 log.warn("⚠ Broker error in loop for '{}' (will retry in 5s): {}", strategyShortName, e.getMessage());
                 try { Thread.sleep(5000); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
@@ -933,13 +951,24 @@ public class LiveStrategyRunner implements Runnable {
     // ========================================================================
 
     void checkPendingOrders(String oandaSymbol) throws Exception {
-        if (hasUnconfirmedReconciliation()) {
-            log.warn("⚠️ Entry orders blocked because there is a trade awaiting OANDA reconciliation.");
-            strategy.getPendingOrders(); // Consume/clear strategy queue
-            return;
-        }
         List<Order> orders = strategy.getPendingOrders();
         if (orders == null || orders.isEmpty()) return;
+
+        if (hasUnconfirmedReconciliation()) {
+            // Entries stay blocked while a trade awaits reconciliation, but a CLOSE reduces risk and
+            // must never be dropped. Clearing the whole queue discarded exit signals along with the
+            // entries, leaving the broker position open with nothing managing it (2026-09-30 agy
+            // review; the same finding the earlier pass raised).
+            List<Order> closes = orders.stream().filter(Order::isCloseOnly).toList();
+            if (closes.isEmpty()) {
+                log.warn("⚠️ {} entry order(s) blocked because there is a trade awaiting OANDA reconciliation.",
+                    orders.size());
+                return;
+            }
+            log.warn("⚠️ {} entry order(s) blocked while awaiting reconciliation; {} close-only order(s) still processed.",
+                orders.size() - closes.size(), closes.size());
+            orders = closes;
+        }
 
         // Get current price to determine if we should execute
         var price = priceClient.getPrice(oandaSymbol);
@@ -1006,12 +1035,20 @@ public class LiveStrategyRunner implements Runnable {
                 double riskPct = riskForStrategy(strategyShortName);
                 double balance = getCurrentBalance();
                 double sizedUnits;
-                if (order.stopLoss() <= 0 || order.price() <= 0) {
-                    sizedUnits = Math.min(requestedUnits, 2000);
-                    log.warn("⚠ No stop on STOP entry — safety cap: {} units → {} units",
+                double slDistance = (order.price() > 0 && order.stopLoss() > 0)
+                    ? Math.abs(order.price() - order.stopLoss())
+                    : 0;
+                if (slDistance <= 0) {
+                    // Guard (2026-09-30 agy review): a zero stop distance makes the budget
+                    // (balance × risk / slDistance) divide by zero, yield Infinity, and let the
+                    // REQUESTED units through uncapped: the same size-explosion class as the
+                    // 2026-09-30 incident, on the pending-STOP path instead of the MARKET path.
+                    // There is no risk budget without a stop distance, so fail small.
+                    sizedUnits = Math.min(requestedUnits, NO_RISK_UNITS_CAP);
+                    log.warn("⚠ No usable stop distance on STOP entry (price {}, stop {}) — safety cap: {} units → {} units",
+                        formatPrice(order.price(), oandaSymbol), formatPrice(order.stopLoss(), oandaSymbol),
                         (int) requestedUnits, (int) sizedUnits);
                 } else {
-                    double slDistance = Math.abs(order.price() - order.stopLoss());
                     sizedUnits = legacyRiskCap(balance, riskPct, slDistance, requestedUnits, oandaSymbol);
                     log.info("⏳ STOP entry sized cut-only (two-sided raise disabled for pending stops — "
                         + "a filled STOP is never reconciled into activeTrades): {} units",
@@ -1141,7 +1178,7 @@ public class LiveStrategyRunner implements Runnable {
                 // Guard: every tracked trade for this symbol already awaits broker reconciliation →
                 // the position is already being closed. Do not send a second reduce-only order and do
                 // not touch the counters.
-                if (!hasClosableTrades(oandaSymbol)) {
+                if (isAlreadyClosing(oandaSymbol)) {
                     log.info("EXIT signal for {} ignored — position already closing (awaiting broker reconciliation).", oandaSymbol);
                     return;
                 }
@@ -1263,16 +1300,27 @@ public class LiveStrategyRunner implements Runnable {
     }
 
     /** True while at least one tracked trade for the symbol can still be closed by a signal. */
-    private boolean hasClosableTrades(String oandaSymbol) {
+    /**
+     * True ONLY when this symbol has tracked trades and none of them can still be closed, meaning the
+     * position is already closing and a second reduce-only order would be a duplicate.
+     *
+     * An EMPTY activeTrades is deliberately NOT "already closing": that is exactly the untracked broker
+     * position the close path sizes from brokerOpenUnits(), and the wider test this replaced
+     * (!hasClosableTrades, removed as dead code alongside it) dropped those exits silently, leaving
+     * the broker position open and unmanaged (2026-09-30 agy review).
+     */
+    private boolean isAlreadyClosing(String oandaSymbol) {
+        boolean anyTracked = false;
         synchronized (activeTrades) {
             for (ActiveTrade at : activeTrades) {
-                if (at.symbol.equals(oandaSymbol)
-                    && !"UNCONFIRMED_RECONCILIATION".equals(at.reconciliationStatus)) {
-                    return true;
+                if (!at.symbol.equals(oandaSymbol)) continue;
+                anyTracked = true;
+                if (!"UNCONFIRMED_RECONCILIATION".equals(at.reconciliationStatus)) {
+                    return false;
                 }
             }
         }
-        return false;
+        return anyTracked;
     }
 
     /**
@@ -1933,7 +1981,7 @@ public class LiveStrategyRunner implements Runnable {
             if (!"CLOSED".equals(state)) {
                 return 0;
             }
-            if (!tNode.has("realizedPL")) {
+            if (!tNode.hasNonNull("realizedPL")) {
                 log.warn("⚠️ P&L integrity: trade ID {} is CLOSED but has no realizedPL at the broker — cannot verify, skipping.", tradeId);
                 return 0;
             }
