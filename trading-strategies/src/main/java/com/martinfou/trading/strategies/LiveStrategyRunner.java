@@ -63,12 +63,14 @@ public class LiveStrategyRunner implements Runnable {
     private static final double UNKNOWN_STRATEGY_RISK_PCT = 0.5;
 
     /**
-     * Version of the realized-P&L accumulator.
+     * Version of the realized-P&L ledger.
      * v1 (implicit) mixed a local estimate in the instrument's QUOTE currency with the broker's
-     * account-currency value; v2 takes the broker value only, once per trade.
+     * account-currency value; v2 took the broker value only, once per trade, but still as a scalar
+     * accumulator with no per-trade dedupe; v3 stores the broker value keyed by trade id in a
+     * ledger, so an overlapping reconciliation can never double-count the same trade.
      * A saved accumulator older than this version is discarded on load rather than carried over.
      */
-    static final int PNL_ACCOUNTING_VERSION = 2;
+    static final int PNL_ACCOUNTING_VERSION = 3;
     private static final Map<String, Double> STRATEGY_RISK_PCT = new ConcurrentHashMap<>();
 
     // ---- Per-instance paths ----
@@ -96,9 +98,12 @@ public class LiveStrategyRunner implements Runnable {
     private volatile Instant lastHeartbeatTime = Instant.now();
     private int totalEntries = 0;
     private int totalExits = 0;
-    private double totalPnl = 0.0;
+    /** Realized-P&L ledger — the ONLY writer of realized P&L (account currency, broker-sourced, once per trade). */
+    private final RealizedPnlLedger ledger = new RealizedPnlLedger();
     private Instant lastStateSave = Instant.MIN;
     private Instant lastReconciliationTime = Instant.MIN;
+    private Instant lastIntegrityCheck = Instant.MIN;
+    private int pnlIntegrityMismatches = 0;
     private Instant lastBarTime = null;
 
     // ---- Shared orchestrator state ----
@@ -484,7 +489,7 @@ public class LiveStrategyRunner implements Runnable {
                 sn.put("granularity", r.granularity);
                 sn.put("totalEntries", r.totalEntries);
                 sn.put("totalExits", r.totalExits);
-                sn.put("totalPnl", r.totalPnl);
+                sn.put("totalPnl", r.getTotalPnl());
                 sn.put("activeTrades", r.activeTrades.size());
                 sn.put("pendingStops", r.pendingStops.size());
                 sn.put("signalCount", r.signalCount);
@@ -630,6 +635,7 @@ public class LiveStrategyRunner implements Runnable {
                 Instant loopStart = TimeConventions.now();
                 tick(oandaSymbol);
                 saveStatePeriodic();
+                runIntegrityCheck();
 
                 // Sleep for the remaining interval
                 long elapsedMs = Duration.between(loopStart, TimeConventions.now()).toMillis();
@@ -703,7 +709,7 @@ public class LiveStrategyRunner implements Runnable {
 
         // 6. Log summary
         log.info("📈 Bars: {} | Entries: {} | Exits: {} | P&L: ${}",
-            barHistory.size(), totalEntries, totalExits, String.format("%.2f", totalPnl));
+            barHistory.size(), totalEntries, totalExits, String.format("%.2f", ledger.total()));
     }
 
     // ========================================================================
@@ -831,7 +837,7 @@ public class LiveStrategyRunner implements Runnable {
                 // ACCOUNTING RULE (bugfix 2026-09-29). Realized P&L is ALWAYS taken from the broker,
                 // in the account's home currency, and exactly once. The local estimate below lives in
                 // the instrument's QUOTE currency (JPY for GBP_JPY, USD for EUR_USD) and must NEVER
-                // enter `totalPnl`: for GBP_JPY it overstated the counter by ~108x, it was never
+                // enter the realized-P&L ledger: for GBP_JPY it overstated the counter by ~108x, it was never
                 // corrected afterwards (the trade was dropped from activeTrades before reconciliation),
                 // and it was double-counted whenever the async reconciliation completed the trade too.
                 var price = priceClient.getPrice(oandaSymbol);
@@ -848,7 +854,7 @@ public class LiveStrategyRunner implements Runnable {
                 // Use REDUCE_ONLY so this closes the existing position on hedging-enabled accounts
                 var result = executor.placeMarketOrder(oandaSymbol, unitsStr, tag, true);
                 // Keep the trade(s) tracked and queue them: the broker's realizedPL (account
-                // currency) lands in totalPnl via completeReconciliation().
+                // currency) lands in the realized-P&L ledger via completeReconciliation().
                 int registered = registerSignalExitForReconciliation(oandaSymbol);
                 if (registered == 0) {
                     // Closing something we never tracked (e.g. position opened outside this runner):
@@ -935,7 +941,7 @@ public class LiveStrategyRunner implements Runnable {
 
     /**
      * DISPLAY-ONLY estimate of the pending exit P&L, in the instrument's QUOTE currency
-     * (JPY for GBP_JPY, USD for EUR_USD). Never add this to {@code totalPnl}: the account
+     * (JPY for GBP_JPY, USD for EUR_USD). Never add this to the realized-P&L ledger: the account
      * currency value comes from the broker at reconciliation.
      */
     private double estimateExitPnl(String oandaSymbol, double currentBid, double currentAsk) {
@@ -1002,9 +1008,24 @@ public class LiveStrategyRunner implements Runnable {
         return tradeIds;
     }
 
-    /** Realized P&L accumulated in the ACCOUNT currency (broker-sourced). */
+    /** Realized P&L accumulated in the ACCOUNT currency (broker-sourced, once per trade). */
     public double getTotalPnl() {
-        return totalPnl;
+        return ledger.total();
+    }
+
+    /** Number of trades whose broker P&L is recorded in the ledger (package-private for tests/observability). */
+    int getPnlLedgerTrades() {
+        return ledger.trades();
+    }
+
+    /** Number of local quote-currency estimates ignored (package-private for tests/observability). */
+    int getPnlIgnoredLocalEstimates() {
+        return ledger.ignoredLocalEstimates();
+    }
+
+    /** Number of ledger-vs-broker divergences found by the most recent integrity check. */
+    public int getPnlIntegrityMismatches() {
+        return pnlIntegrityMismatches;
     }
 
     public int getTotalExits() {
@@ -1175,7 +1196,14 @@ public class LiveStrategyRunner implements Runnable {
             root.put("totalEntries", totalEntries);
             root.put("totalExits", totalExits);
             root.put("pnlAccountingVersion", PNL_ACCOUNTING_VERSION);
-            root.put("totalPnl", totalPnl);
+            // Realized-P&L ledger keyed by trade id, plus observability counters.
+            ObjectNode pnlLedger = root.putObject("pnlLedger");
+            for (Map.Entry<String, Double> e : ledger.snapshot().entrySet()) {
+                pnlLedger.put(e.getKey(), e.getValue());
+            }
+            root.put("pnlLedgerTrades", ledger.trades());
+            root.put("ignoredLocalEstimates", ledger.ignoredLocalEstimates());
+            root.put("pnlIntegrityMismatches", pnlIntegrityMismatches);
             root.put("savedAt", TimeConventions.now().toString());
             if (lastBarTime != null) root.put("lastBarTime", lastBarTime.toString());
             root.put("inTrade", !activeTrades.isEmpty());
@@ -1265,10 +1293,21 @@ public class LiveStrategyRunner implements Runnable {
 
     public void reconcileTradeFallback(String tradeId) {
         synchronized (activeTrades) {
-            for (ActiveTrade t : activeTrades) {
+            Iterator<ActiveTrade> it = activeTrades.iterator();
+            while (it.hasNext()) {
+                ActiveTrade t = it.next();
                 if (tradeId.equals(t.tradeId)) {
-                    log.warn("⚠️ Fallback reconciliation executed for trade ID {}. Using local state PnL: ${}", tradeId, t.unrealizedPnl);
-                    completeReconciliation(tradeId, t.unrealizedPnl);
+                    double localQuoteCcy = t.unrealizedPnl;
+                    it.remove();
+                    totalExits++;
+                    // The local value is in the instrument's QUOTE currency, so it must NOT move
+                    // the total: record it only as an ignored estimate.
+                    ledger.recordIgnoredLocalEstimate(tradeId, localQuoteCcy);
+                    log.warn("⚠️ Fallback reconciliation for trade ID {}: broker value unavailable. "
+                        + "Local P&L ${} is in QUOTE currency, so the trade's P&L stays UNKNOWN "
+                        + "(never wrong) — the total is NOT changed. A broker or manual reconciliation is required.",
+                        tradeId, String.format("%.2f", localQuoteCcy));
+                    saveStateNow();
                     return;
                 }
             }
@@ -1276,21 +1315,82 @@ public class LiveStrategyRunner implements Runnable {
     }
 
     public void completeReconciliation(String tradeId, double realizedPL) {
+        // Move the total only when the broker value is recorded for the first time (dedupe guard).
+        boolean counted = ledger.recordBrokerPnl(tradeId, realizedPL);
+        boolean removed = false;
         synchronized (activeTrades) {
             Iterator<ActiveTrade> it = activeTrades.iterator();
             while (it.hasNext()) {
                 ActiveTrade t = it.next();
                 if (tradeId.equals(t.tradeId)) {
                     totalExits++;
-                    totalPnl += realizedPL;
                     it.remove();
-                    log.info("Reconciliation complete. Removed trade ID {} from activeTrades. Total exits: {}, Total realized PnL: ${}", 
-                        tradeId, totalExits, String.format("%.2f", totalPnl));
-                    saveStateNow();
-                    return;
+                    removed = true;
+                    break;
                 }
             }
         }
+        if (counted) {
+            log.info("Reconciliation complete. Removed trade ID {} from activeTrades. Total exits: {}, Total realized PnL: ${}",
+                tradeId, totalExits, String.format("%.2f", ledger.total()));
+        } else {
+            log.warn("⚠️ Duplicate broker P&L for trade ID {} ignored — value ${} was NOT double-counted. Ledger total stays ${}.",
+                tradeId, String.format("%.2f", realizedPL), String.format("%.2f", ledger.total()));
+        }
+        if (removed || counted) {
+            saveStateNow();
+        }
+    }
+
+    /**
+     * Integrity watchdog: at most once every 30 minutes, verify every ledger entry against the
+     * broker's realizedPL for CLOSED trades. The mismatch count is kept (and persisted) for
+     * observability; the check never corrects anything and never throws.
+     */
+    private void runIntegrityCheck() {
+        Instant now = TimeConventions.now();
+        if (Duration.between(lastIntegrityCheck, now).toSeconds() < 1800) return;
+        lastIntegrityCheck = now;
+        pnlIntegrityMismatches = verifyLedgerAgainstBroker();
+    }
+
+    /**
+     * Compares every realized-P&L entry in the ledger against the broker's realizedPL for that
+     * trade, but only when the broker reports the trade CLOSED. Divergences are logged per-trade at
+     * ERROR plus a summary ERROR, and the count is returned. Broker outages or malformed responses
+     * are caught and logged at debug — they never throw and never produce a false positive.
+     */
+    public int verifyLedgerAgainstBroker() {
+        int divergences = 0;
+        for (Map.Entry<String, Double> entry : ledger.snapshot().entrySet()) {
+            String tradeId = entry.getKey();
+            double ledgerValue = entry.getValue();
+            try {
+                JsonNode details = executor.getTradeDetails(tradeId);
+                if (details == null || !details.has("trade")) {
+                    continue;
+                }
+                JsonNode tNode = details.get("trade");
+                String state = tNode.has("state") ? tNode.get("state").asText() : "";
+                if (!"CLOSED".equals(state)) {
+                    continue;
+                }
+                double brokerValue = tNode.has("realizedPL") ? tNode.get("realizedPL").asDouble() : 0.0;
+                double tolerance = Math.max(0.02, Math.abs(brokerValue) * 0.01);
+                if (Math.abs(brokerValue - ledgerValue) > tolerance) {
+                    divergences++;
+                    log.error("❌ P&L integrity mismatch for trade ID {}: broker realizedPL ${} vs ledger ${} (tolerance ${})",
+                        tradeId, String.format("%.2f", brokerValue),
+                        String.format("%.2f", ledgerValue), String.format("%.2f", tolerance));
+                }
+            } catch (Exception e) {
+                log.debug("P&L integrity check: cannot fetch trade {} from broker ({}).", tradeId, e.getMessage());
+            }
+        }
+        if (divergences > 0) {
+            log.error("❌ P&L integrity check: {} divergence(s) between broker realizedPL and the ledger.", divergences);
+        }
+        return divergences;
     }
 
     public void markUnconfirmed(String tradeId) {
@@ -1344,21 +1444,25 @@ public class LiveStrategyRunner implements Runnable {
             if (root.has("totalEntries")) totalEntries = root.get("totalEntries").asInt();
             if (root.has("totalExits")) totalExits = root.get("totalExits").asInt();
 
-            // Realized-P&L accumulator: only trust it when it was written by the corrected
-            // accounting. Older files mix quote-currency estimates with account-currency values,
-            // so they are discarded rather than carried into the corrected counter.
-            if (root.has("totalPnl")) {
-                int statePnlVersion = root.has("pnlAccountingVersion")
-                    ? root.get("pnlAccountingVersion").asInt(0) : 0;
-                if (statePnlVersion >= PNL_ACCOUNTING_VERSION) {
-                    totalPnl = root.get("totalPnl").asDouble();
-                } else {
-                    log.warn("⚠️ Discarding legacy totalPnl={} (state v{}, current v{}): it was accumulated with "
-                        + "the quote-currency estimate and is not in the account currency. Realized P&L restarts at 0 "
-                        + "and now comes from the broker only.",
-                        root.get("totalPnl").asDouble(), statePnlVersion, PNL_ACCOUNTING_VERSION);
-                    totalPnl = 0.0;
-                }
+            // Realized-P&L ledger: only trust a v3+ state file that carries the trade-id-keyed
+            // ledger. Older files (v1/v2) mixed quote-currency estimates with account-currency
+            // values, so they are discarded rather than carried into the corrected ledger.
+            int statePnlVersion = root.has("pnlAccountingVersion")
+                ? root.get("pnlAccountingVersion").asInt(0) : 0;
+            if (statePnlVersion >= PNL_ACCOUNTING_VERSION && root.has("pnlLedger")) {
+                Map<String, Double> savedLedger = new LinkedHashMap<>();
+                JsonNode pnlLedgerNode = root.get("pnlLedger");
+                pnlLedgerNode.fields().forEachRemaining(e ->
+                    savedLedger.put(e.getKey(), e.getValue().asDouble()));
+                ledger.restore(savedLedger);
+            } else if (statePnlVersion < PNL_ACCOUNTING_VERSION) {
+                log.warn("⚠️ Discarding legacy realized-P&L accumulator (state v{}, current v{}): it was "
+                    + "accumulated with the quote-currency estimate and is not in the account currency. "
+                    + "Realized P&L restarts at 0 and now comes from the broker only (once per trade).",
+                    statePnlVersion, PNL_ACCOUNTING_VERSION);
+            }
+            if (root.has("pnlIntegrityMismatches")) {
+                pnlIntegrityMismatches = root.get("pnlIntegrityMismatches").asInt();
             }
             if (root.has("lastBarTime")) lastBarTime = Instant.parse(root.get("lastBarTime").asText());
 
@@ -1417,7 +1521,7 @@ public class LiveStrategyRunner implements Runnable {
 
             log.info("♻ Resumed state: {} active trades, {} pending stops, {} entries, ${} P&L",
                 activeTrades.size(), pendingStops.size(), totalEntries,
-                String.format("%.2f", totalPnl));
+                String.format("%.2f", ledger.total()));
 
         } catch (Exception e) {
             log.warn("Failed to resume state (corrupted?): {}", e.getMessage());
