@@ -134,28 +134,9 @@ DONE
 === RunSeasonalityFilterAudit | 2026-09-30T11:05:23Z ===
 === C) SPÉCIFICITÉ DE LA FENÊTRE OFFICIELLE USD_CAD 10/12→11/26 (net $, swap RÉEL) ===
 FENÊTRE            PF     WR%    DD%    TRADES  NET$        SWAP$      
-07:05:24,060 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.5.34
-07:05:24,067 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2cbb3d47 - No custom configurators were discovered as a service.
-07:05:24,067 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2cbb3d47 - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
-07:05:24,069 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2cbb3d47 - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
-07:05:24,070 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.xml]
-07:05:24,071 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback.xml] at [file:/home/martinfou/projects/tb-research/trading-backtest/target/classes/logback.xml]
 07:05:24,072 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@527e5409 - Resource [logback.xml] occurs multiple times on the classpath.
 07:05:24,073 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@527e5409 - Resource [logback.xml] occurs at [file:/home/martinfou/projects/tb-research/trading-backtest/target/classes/logback.xml]
 07:05:24,073 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@527e5409 - Resource [logback.xml] occurs at [jar:file:/home/martinfou/.m2/repository/com/martinfou/trading/trading-backtest/1.0.0-SNAPSHOT/trading-backtest-1.0.0-SNAPSHOT.jar!/logback.xml]
-07:05:24,340 |-INFO in ch.qos.logback.classic.model.processor.ConfigurationModelHandlerFull - Scan attribute not set or set to unrecognized value.
-07:05:24,348 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [STDERR]
-07:05:24,348 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
-07:05:24,362 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
-07:05:24,426 |-INFO in ch.qos.logback.core.ConsoleAppender[STDERR] - NOTE: Writing to the console can be slow. Try to avoid logging to the 
-07:05:24,426 |-INFO in ch.qos.logback.core.ConsoleAppender[STDERR] - console in production environments, especially in high volume systems.
-07:05:24,426 |-INFO in ch.qos.logback.core.ConsoleAppender[STDERR] - See also https://logback.qos.ch/codes.html#slowConsole
-07:05:24,428 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [com.martinfou.trading.backtest.BacktestEngine] to WARN
-07:05:24,429 |-INFO in ch.qos.logback.classic.model.processor.RootLoggerModelHandler - Setting level of ROOT logger to WARN
-07:05:24,429 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [STDERR] to Logger[ROOT]
-07:05:24,430 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@1198b989 - End of configuration.
-07:05:24,431 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@7ff95560 - Registering current configuration as safe fallback point
-07:05:24,435 |-INFO in ch.qos.logback.classic.util.ContextInitializer@2cbb3d47 - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 362 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
 
 −2m 08/12→09/26    1.20   52.6   3.20   19            60.26     -340.17
 −1m 09/12→10/26    3.09   68.4   2.88   19          2902.66     -330.19
