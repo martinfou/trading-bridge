@@ -53,6 +53,25 @@ MIN_RUN_THRESHOLD="${MIN_RUN_THRESHOLD:-300}"   # if Java ran < 5 min, it was a 
 # {"errorMessage":"Insufficient authorization to perform request."}
 AUTH_FAILURE_RE='OANDA API error 401|OANDA API returned error status 401|Insufficient authorization|Invalid authorization|401 Unauthorized'
 
+# --- prune quotidienne de la base, indépendante de Hermes -------------------------------------
+# events.db a atteint 18,86 Go le 2026-09-30 : l'exhaust de backtests s'empile depuis toujours et
+# rien ne le récupérait. En arrière-plan pour ne jamais retarder la boucle de stratégie, et à 04:17
+# pour rester hors des heures de marché. Les règles de rétention et les invariants sont dans
+# scripts/prune-db.sh ; désactivable avec PRUNE_ENABLED=false.
+if [ "${PRUNE_ENABLED:-true}" = "true" ] && [ -x /app/prune-db.sh ]; then
+    (
+        while true; do
+            NOW=$(date +%s)
+            TARGET=$(date -d "today 04:17" +%s 2>/dev/null || echo $((NOW + 86400)))
+            [ "$TARGET" -le "$NOW" ] && TARGET=$((TARGET + 86400))
+            sleep $((TARGET - NOW))
+            /app/prune-db.sh >> /app/data/runtime/prune.log 2>&1 \
+                || echo "[prune] échec, voir /app/data/runtime/prune.log" >&2
+        done
+    ) &
+    echo "[entrypoint] prune quotidienne planifiée (journal : /app/data/runtime/prune.log)"
+fi
+
 while true; do
     START_TS=$(date +%s)
     OUTFILE=$(mktemp)
