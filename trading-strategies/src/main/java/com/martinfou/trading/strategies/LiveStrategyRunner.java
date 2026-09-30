@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Order;
+import com.martinfou.trading.core.RiskSizing;
 import com.martinfou.trading.core.Strategy;
 import com.martinfou.trading.core.exceptions.BrokerException;
 import com.martinfou.trading.core.TimeConventions;
@@ -64,6 +65,21 @@ public class LiveStrategyRunner implements Runnable {
     private static double DEFAULT_RISK_PCT = 1.5;
     /** Conservative fallback for strategies not in config — no backtest data available. */
     private static final double UNKNOWN_STRATEGY_RISK_PCT = 0.5;
+
+    /**
+     * Risk-budget sizing (two-sided): every order is sized so that its loss at the stop equals
+     * {@code riskPct}% of the live NAV. The strategy's own quantity becomes intent only. When false,
+     * the legacy currency-naive cap is used and a strategy asking for 1,000 units stays at 1,000.
+     */
+    private static boolean RISK_SIZING_ENABLED = true;
+    /** Broker lot step for the sized order. */
+    private static long RISK_ROUND_TO_UNITS = RiskSizing.ROUND_TO_UNITS;
+    /**
+     * Rail against a tiny stop demanding an absurd order (1% risk at a 5-pip stop on GBP/JPY is
+     * ~2.2M units). Not a risk parameter: it only fires on stops far tighter than any live strategy
+     * uses, and it logs loudly when it binds.
+     */
+    private static double RISK_MAX_UNITS_PER_ORDER = 1_000_000;
 
     /**
      * Version of the realized-P&L ledger.
@@ -391,6 +407,16 @@ public class LiveStrategyRunner implements Runnable {
                 log.info("📋 Default risk: {}%", DEFAULT_RISK_PCT);
             }
 
+            if (LIVE_CONFIG.has("riskSizing")) {
+                JsonNode rs = LIVE_CONFIG.get("riskSizing");
+                RISK_SIZING_ENABLED = rs.path("enabled").asBoolean(true);
+                RISK_ROUND_TO_UNITS = rs.path("roundToUnits").asLong(RiskSizing.ROUND_TO_UNITS);
+                RISK_MAX_UNITS_PER_ORDER = rs.path("maxUnitsPerOrder").asDouble(1_000_000);
+                log.info("📐 Risk sizing: {} | round to {} units | max {} units/order",
+                    RISK_SIZING_ENABLED ? "BUDGET (two-sided, per-strategy risk %)" : "OFF (legacy cap only)",
+                    RISK_ROUND_TO_UNITS, (int) RISK_MAX_UNITS_PER_ORDER);
+            }
+
             if (LIVE_CONFIG.has("strategies")) {
                 JsonNode strategies = LIVE_CONFIG.get("strategies");
                 strategies.fieldNames().forEachRemaining(name -> {
@@ -451,41 +477,121 @@ public class LiveStrategyRunner implements Runnable {
     }
 
     /**
-     * Calculate the maximum position size (in units) that respects the risk % rule.
-     * @param balance  Current account balance (NAV)
-     * @param riskPct  % of balance to risk per trade (e.g. 1.5)
-     * @param entryPrice  Order entry price
-     * @param stopLoss    Stop loss price (0 if none)
-     * @param requestedUnits  Units the strategy wants to trade
-     * @return Capped position size
+     * Sizes an order to the risk budget: the trade risks {@code riskPct}% of the live NAV and the
+     * units are DERIVED from the distance to the stop (two-sided — it raises a too-small request as
+     * well as trimming a too-large one). The strategy's own quantity is intent only.
+     *
+     * <pre>units = (NAV × riskPct/100) / (stopDistance × quoteToAccountFactor)</pre>
+     *
+     * <p>The conversion factor is mandatory (see {@link RiskSizing}): P&amp;L is earned in the
+     * instrument's QUOTE currency (JPY for GBP_JPY), not in the account's. Omitting it is what made
+     * the old cap 1.38× too loose on USD-quoted pairs and ~100× too tight on JPY-quoted pairs.
+     *
+     * <p>Two fail-safe paths, both erring SMALL: without a stop there is no risk denominator (2,000-unit
+     * safety cap, no scaling up); with an unknown conversion factor the legacy cap applies.
+     *
+     * @param balance         Current account balance (NAV), in account currency
+     * @param riskPct         % of NAV to risk on this trade (e.g. 0.75)
+     * @param entryPrice      Order entry price
+     * @param stopLoss        Stop loss price (0 if none)
+     * @param requestedUnits  Units the strategy asked for (intent)
+     * @param oandaSymbol     Instrument, used for the quote→home conversion factor
+     * @return Position size in units
      */
-    private double cappedPositionSize(double balance, double riskPct, double entryPrice,
-                                       double stopLoss, double requestedUnits) {
+    private double riskSizedUnits(double balance, double riskPct, double entryPrice,
+                                  double stopLoss, double requestedUnits, String oandaSymbol) {
         if (stopLoss <= 0 || entryPrice <= 0) {
-            // Safety cap: without a stop loss, limit to 2 micro lots max (2000 units)
             double hardCap = Math.min(requestedUnits, 2000);
-            log.warn("⚠ No stop loss set — safety cap: {} units → {} units",
-                (int)requestedUnits, (int)hardCap);
+            log.warn("⚠ No stop loss set — safety cap: {} units → {} units (no risk budget without a stop)",
+                (int) requestedUnits, (int) hardCap);
             return hardCap;
         }
         double slDistance = Math.abs(entryPrice - stopLoss);
         if (slDistance <= 0.0) return requestedUnits;
 
-        // Max loss in dollar terms
-        double maxLoss = balance * (riskPct / 100.0);
-        // Max units = maxLoss / SL_distance (in price units)
-        double maxUnits = maxLoss / slDistance;
+        if (!RISK_SIZING_ENABLED) {
+            return legacyRiskCap(balance, riskPct, slDistance, requestedUnits, oandaSymbol);
+        }
+        double factor = quoteToAccountFactor(oandaSymbol);
+        if (!(factor > 0)) {
+            return legacyRiskCap(balance, riskPct, slDistance, requestedUnits, oandaSymbol);
+        }
 
+        long target = RiskSizing.unitsForRisk(balance, riskPct, slDistance, factor, RISK_ROUND_TO_UNITS);
+        if (target <= 0) {
+            log.warn("⚠ Risk sizing undefined for {} (NAV {} × {}% / stop {}) — keeping the requested {} units",
+                oandaSymbol, String.format("%.2f", balance), riskPct,
+                formatPrice(slDistance, oandaSymbol), (int) requestedUnits);
+            return requestedUnits;
+        }
+
+        double sized = target;
+        if (sized > RISK_MAX_UNITS_PER_ORDER) {
+            log.warn("⛔ Max-units rail for {}: {}% of {} at a {} stop wants {} units — capped to {}",
+                oandaSymbol, riskPct, String.format("%.2f", balance),
+                formatPrice(slDistance, oandaSymbol), target, (int) RISK_MAX_UNITS_PER_ORDER);
+            sized = RISK_MAX_UNITS_PER_ORDER;
+        }
+
+        if (Math.abs(sized - requestedUnits) > 1) {
+            log.info("📐 Risk sizing: {} → {} units | {}% of {} = {} risked, stop {} (quote→home {}) | strategy asked {}",
+                (int) requestedUnits, (int) sized, riskPct, String.format("%.2f", balance),
+                String.format("%.2f", RiskSizing.riskAmount((long) sized, slDistance, factor)),
+                formatPrice(slDistance, oandaSymbol), String.format("%.8f", factor), (int) requestedUnits);
+        }
+        return sized;
+    }
+
+    /**
+     * Legacy currency-naive cap: {@code NAV × risk% / stopDistance}. Kept ONLY as the fail-safe path
+     * when risk sizing is disabled or the conversion factor is unavailable — it treats one quote-currency
+     * unit as one account unit, so it errs small on JPY-quoted pairs and ~1.4× loose on USD-quoted pairs
+     * with a CAD account. Never the primary path.
+     */
+    private double legacyRiskCap(double balance, double riskPct, double slDistance,
+                                 double requestedUnits, String oandaSymbol) {
+        double maxUnits = (balance * (riskPct / 100.0)) / slDistance;
         if (requestedUnits > maxUnits) {
-            log.info("📐 Risk cap: {} units requested, {} max (${} × {}% / {} pips) — capping to {}",
-                (int)requestedUnits, (int)maxUnits,
-                String.format("%.0f", balance), riskPct,
-                formatPrice(slDistance, toOandaSymbol()),
-                (int)maxUnits);
+            log.info("📐 Legacy risk cap: {} units requested, {} max ({} × {}% / {}) — capping to {}",
+                (int) requestedUnits, (int) maxUnits, String.format("%.0f", balance), riskPct,
+                formatPrice(slDistance, oandaSymbol), (int) maxUnits);
             return Math.floor(maxUnits);
         }
         return requestedUnits;
     }
+
+    /**
+     * Quote→account-currency factor for {@code oandaSymbol}, from the broker's {@code homeConversions}
+     * (click-through: {@code OandaPriceClient.getQuoteToHomeLossFactor}), cached 60s. Returns {@code -1}
+     * while unknown so callers fail safe instead of silently assuming 1.0 (which would reintroduce the
+     * currency bug).
+     */
+    private double quoteToAccountFactor(String oandaSymbol) {
+        long now = System.currentTimeMillis();
+        if (lastConversionFactor > 0 && now - lastConversionFactorMs < 60_000) {
+            return lastConversionFactor;
+        }
+        long start = now;
+        try {
+            double f = priceClient.getQuoteToHomeLossFactor(oandaSymbol);
+            lastConversionFactorMs = System.currentTimeMillis();
+            if (f > 0) {
+                if (lastConversionFactor <= 0) {
+                    log.info("💱 {} quote→home loss factor: {} (fetched in {} ms)",
+                        oandaSymbol, String.format("%.8f", f), lastConversionFactorMs - start);
+                }
+                lastConversionFactor = f;
+            }
+            return lastConversionFactor;
+        } catch (Exception e) {
+            lastConversionFactorMs = System.currentTimeMillis();  // back off 60s, don't hammer the API
+            log.warn("⚠ Could not fetch the quote→home conversion factor for {}: {}. Last known: {}",
+                oandaSymbol, e.getMessage(), lastConversionFactor);
+            return lastConversionFactor;
+        }
+    }
+    private double lastConversionFactor = -1;
+    private long lastConversionFactorMs = 0;
 
     /** Get current account balance from OANDA API. Caches for 60s to avoid rate limits. */
     private double getCurrentBalance() {
@@ -795,16 +901,16 @@ public class LiveStrategyRunner implements Runnable {
 
     private void placeOandaStopOrder(Order order, String oandaSymbol) {
         try {
-            // Risk-cap the position size for stop orders too
+            // Size to the risk budget (two-sided) for stop orders too
             double requestedUnits = Math.abs(order.quantity());
             double riskPct = riskForStrategy(strategyShortName);
             double balance = getCurrentBalance();
-            double cappedUnits = cappedPositionSize(balance, riskPct,
-                order.price(), order.stopLoss(), requestedUnits);
+            double sizedUnits = riskSizedUnits(balance, riskPct,
+                order.price(), order.stopLoss(), requestedUnits, oandaSymbol);
 
             double units = order.side() == Order.Side.BUY
-                ? cappedUnits
-                : -cappedUnits;
+                ? sizedUnits
+                : -sizedUnits;
             String unitsStr = String.valueOf((int) units);
             int precision = switch (oandaSymbol) {
                 case "GBP_JPY", "USD_JPY" -> 3;
@@ -832,16 +938,16 @@ public class LiveStrategyRunner implements Runnable {
 
     private void executeTrade(Order order, String oandaSymbol, double execPrice) {
         try {
-            // Risk-cap the position size
+            // Size to the risk budget (two-sided): the strategy's units are intent, the risk % is the budget
             double requestedUnits = Math.abs(order.quantity());
             double riskPct = riskForStrategy(strategyShortName);
             double balance = getCurrentBalance();
-            double cappedUnits = cappedPositionSize(balance, riskPct, execPrice,
-                order.stopLoss(), requestedUnits);
+            double sizedUnits = riskSizedUnits(balance, riskPct, execPrice,
+                order.stopLoss(), requestedUnits, oandaSymbol);
 
             double units = order.side() == Order.Side.BUY
-                ? cappedUnits
-                : -cappedUnits;
+                ? sizedUnits
+                : -sizedUnits;
             String unitsStr = String.valueOf((int) units);
 
             var tag = strategyShortName + "_" + oandaSymbol.replace("_", "");
