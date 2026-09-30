@@ -135,6 +135,12 @@ if [[ -n "$EXTRA" ]]; then
 Additional instructions for this review: $EXTRA"
 fi
 
+# Pin the reviewer, so the gate does not silently change model when agy updates its own default
+# (measured 2026-09-30: unset AGY_MODEL meant an unreviewed drift to whatever agy defaulted to).
+# Gemini is covered by Martin's Google/Antigravity subscription, so it is the default.
+# Claude credits are limited: opt in explicitly when the diff really warrants it,
+# e.g. AGY_MODEL=claude-opus-4-6-thinking scripts/agy-review.sh <ref>
+AGY_MODEL="${AGY_MODEL:-gemini-3.1-pro-high}"
 MODEL_ARGS=()
 [[ -n "${AGY_MODEL:-}" ]] && MODEL_ARGS+=(--model "$AGY_MODEL")
 [[ -n "${AGY_EFFORT:-}" ]] && MODEL_ARGS+=(--effort "$AGY_EFFORT")
