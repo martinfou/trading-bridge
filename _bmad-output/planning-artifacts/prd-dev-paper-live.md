@@ -47,6 +47,13 @@ Trois environnements, **une seule image**, séparés par **l'axe compte**, pas p
   Method, décision explicite de Martin sur la méthode).
 - **D4** — Aucun déploiement sans revue indépendante et tests (règle permanente, rappelée par le
   skill BMad : « skipping code review is a workflow error »).
+- **D5** — Ordre de construction : l'architecture se bâtit **maintenant**, avec dev sur un sous-compte
+  practice jetable, et le service `live` **défini mais non démarré**. On ne bloque pas la
+  structuration sur la création des comptes.
+- **D6** — La création des deux comptes OANDA manquants appartient à Martin : l'API OANDA n'expose
+  aucun moyen de créer un sous-compte, et cela demande une connexion à son interface. L'architecture
+  les référence donc comme prérequis, avec l'emplacement de configuration prêt et marqué comme tel.
+  Aucun travail d'Hermes ne doit supposer qu'ils existent déjà.
 
 ## 4. Le problème des comptes, énoncé franchement
 
