@@ -50,6 +50,12 @@ Trois environnements, **une seule image**, séparés par **l'axe compte**, pas p
 - **D5** — Ordre de construction : l'architecture se bâtit **maintenant**, avec dev sur un sous-compte
   practice jetable, et le service `live` **défini mais non démarré**. On ne bloque pas la
   structuration sur la création des comptes.
+- **D7** — Promotion **proposée, jamais exécutée** : une règle mesurée (durée en environnement,
+  nombre de trades, P&L) calcule si une stratégie a gagné sa place dans l'environnement suivant, et
+  le système le PROPOSE. Martin confirme. Une stratégie ne change jamais d'environnement toute seule :
+  le passage vers le compte réel reste une décision humaine, parce que c'est la seule étape où une
+  erreur coûte de l'argent réel. Le critère mesuré sert à éviter la promotion par impression, pas à
+  remplacer la décision.
 - **D6** — La création des deux comptes OANDA manquants appartient à Martin : l'API OANDA n'expose
   aucun moyen de créer un sous-compte, et cela demande une connexion à son interface. L'architecture
   les référence donc comme prérequis, avec l'emplacement de configuration prêt et marqué comme tel.
