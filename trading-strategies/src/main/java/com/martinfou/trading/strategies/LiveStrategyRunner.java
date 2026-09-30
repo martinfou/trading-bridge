@@ -80,6 +80,21 @@ public class LiveStrategyRunner implements Runnable {
      * uses, and it logs loudly when it binds.
      */
     private static double RISK_MAX_UNITS_PER_ORDER = 1_000_000;
+    /**
+     * Fail-safe size used whenever no risk budget can be computed: no stop, a zero stop distance, or
+     * an undefined target. Deliberately tiny. These paths used to return the strategy's requested
+     * units unbudgeted, which is the one direction a risk budget must never fail in.
+     */
+    static final int NO_RISK_UNITS_CAP = 2000;
+    /**
+     * Notional rail (policy set by Martin, 2026-09-30). No single order may carry more than this
+     * multiple of the live NAV in notional value, expressed in account currency:
+     * {@code units x entryPrice x quoteToAccountFactor <= N x NAV}. The absolute unit cap above is a
+     * typo guard, not a risk limit: units alone say nothing about exposure. On GBP_JPY with a 96k CAD
+     * NAV this holds an order to roughly 2.5 lots (5x leverage) instead of the 10 lots the
+     * 1,000,000-unit rail allowed. 0 disables the rail.
+     */
+    private static double RISK_MAX_NOTIONAL_NAV_MULTIPLE = 5.0;
 
     /**
      * Version of the realized-P&L ledger.
@@ -412,9 +427,10 @@ public class LiveStrategyRunner implements Runnable {
                 RISK_SIZING_ENABLED = rs.path("enabled").asBoolean(true);
                 RISK_ROUND_TO_UNITS = rs.path("roundToUnits").asLong(RiskSizing.ROUND_TO_UNITS);
                 RISK_MAX_UNITS_PER_ORDER = rs.path("maxUnitsPerOrder").asDouble(1_000_000);
-                log.info("📐 Risk sizing: {} | round to {} units | max {} units/order",
+                RISK_MAX_NOTIONAL_NAV_MULTIPLE = rs.path("maxNotionalNavMultiple").asDouble(5.0);
+                log.info("📐 Risk sizing: {} | round to {} units | max {} units/order | max notional {}x NAV",
                     RISK_SIZING_ENABLED ? "BUDGET (two-sided, per-strategy risk %)" : "OFF (legacy cap only)",
-                    RISK_ROUND_TO_UNITS, (int) RISK_MAX_UNITS_PER_ORDER);
+                    RISK_ROUND_TO_UNITS, (int) RISK_MAX_UNITS_PER_ORDER, RISK_MAX_NOTIONAL_NAV_MULTIPLE);
             }
 
             if (LIVE_CONFIG.has("strategies")) {
@@ -498,16 +514,26 @@ public class LiveStrategyRunner implements Runnable {
      * @param oandaSymbol     Instrument, used for the quote→home conversion factor
      * @return Position size in units
      */
-    private double riskSizedUnits(double balance, double riskPct, double entryPrice,
-                                  double stopLoss, double requestedUnits, String oandaSymbol) {
+    double riskSizedUnits(double balance, double riskPct, double entryPrice,
+                          double stopLoss, double requestedUnits, String oandaSymbol) {
         if (stopLoss <= 0 || entryPrice <= 0) {
-            double hardCap = Math.min(requestedUnits, 2000);
+            double hardCap = Math.min(requestedUnits, NO_RISK_UNITS_CAP);
             log.warn("⚠ No stop loss set — safety cap: {} units → {} units (no risk budget without a stop)",
                 (int) requestedUnits, (int) hardCap);
             return hardCap;
         }
         double slDistance = Math.abs(entryPrice - stopLoss);
-        if (slDistance <= 0.0) return requestedUnits;
+        if (slDistance <= 0.0) {
+            // Entry and stop at the same price: there is no risk denominator. Returning the
+            // requested units here would be unbudgeted, which is how a zero-distance stop turns
+            // into an arbitrarily large order once the two prices are computed from different
+            // sources (a historical stop against a live price). Fail SMALL instead.
+            double hardCap = Math.min(requestedUnits, NO_RISK_UNITS_CAP);
+            log.warn("⚠ Zero stop distance (entry {} vs stop {}) for {} — safety cap: {} units → {} units",
+                formatPrice(entryPrice, oandaSymbol), formatPrice(stopLoss, oandaSymbol),
+                oandaSymbol, (int) requestedUnits, (int) hardCap);
+            return hardCap;
+        }
 
         if (!RISK_SIZING_ENABLED) {
             return legacyRiskCap(balance, riskPct, slDistance, requestedUnits, oandaSymbol);
@@ -519,10 +545,11 @@ public class LiveStrategyRunner implements Runnable {
 
         long target = RiskSizing.unitsForRisk(balance, riskPct, slDistance, factor, RISK_ROUND_TO_UNITS);
         if (target <= 0) {
-            log.warn("⚠ Risk sizing undefined for {} (NAV {} × {}% / stop {}) — keeping the requested {} units",
+            double hardCap = Math.min(requestedUnits, NO_RISK_UNITS_CAP);
+            log.warn("⚠ Risk sizing undefined for {} (NAV {} × {}% / stop {}) — safety cap: {} units → {} units",
                 oandaSymbol, String.format("%.2f", balance), riskPct,
-                formatPrice(slDistance, oandaSymbol), (int) requestedUnits);
-            return requestedUnits;
+                formatPrice(slDistance, oandaSymbol), (int) requestedUnits, (int) hardCap);
+            return hardCap;
         }
 
         double sized = target;
@@ -531,6 +558,20 @@ public class LiveStrategyRunner implements Runnable {
                 oandaSymbol, riskPct, String.format("%.2f", balance),
                 formatPrice(slDistance, oandaSymbol), target, (int) RISK_MAX_UNITS_PER_ORDER);
             sized = RISK_MAX_UNITS_PER_ORDER;
+        }
+
+        // Notional rail: the bound that actually matters. The unit cap above is a typo guard, because
+        // units alone say nothing about exposure. cap = N x NAV / (price x quoteToAccountFactor).
+        if (RISK_MAX_NOTIONAL_NAV_MULTIPLE > 0 && entryPrice > 0) {
+            double maxUnitsByNotional = (RISK_MAX_NOTIONAL_NAV_MULTIPLE * balance) / (entryPrice * factor);
+            double notionalCap = Math.floor(maxUnitsByNotional / RISK_ROUND_TO_UNITS) * RISK_ROUND_TO_UNITS;
+            if (notionalCap >= RiskSizing.MIN_UNITS && sized > notionalCap) {
+                log.warn("⛔ Notional rail for {}: {}x NAV = {} notional allows {} units at {} — capped from {}",
+                    oandaSymbol, RISK_MAX_NOTIONAL_NAV_MULTIPLE,
+                    String.format("%.0f", RISK_MAX_NOTIONAL_NAV_MULTIPLE * balance),
+                    (int) notionalCap, formatPrice(entryPrice, oandaSymbol), (int) sized);
+                sized = notionalCap;
+            }
         }
 
         if (Math.abs(sized - requestedUnits) > 1) {
@@ -747,10 +788,27 @@ public class LiveStrategyRunner implements Runnable {
             lastBarTime = initialBars.get(initialBars.size() - 1).timestamp();
         }
         // Historical bars must not trade: drop whatever the strategies queued while warming up.
-        List<Order> queuedWhileWarming = strategy.getPendingOrders();
-        if (queuedWhileWarming != null && !queuedWhileWarming.isEmpty()) {
+        // Drain in a bounded loop. Most strategies clear their queue on the first call, but a strategy
+        // whose getPendingOrders() COMPUTES orders from its position state (GoBigStrategy,
+        // CasinoStrategy) never empties. Such a strategy does not honour the drain contract, so a
+        // position left over from the historical replay would reach the broker on the first live tick.
+        // Detect that and say so loudly, instead of logging a clean drain that never happened.
+        int discarded = 0;
+        List<Order> drained = strategy.getPendingOrders();
+        for (int i = 0; drained != null && !drained.isEmpty() && i < 10; i++) {
+            discarded += drained.size();
+            drained = strategy.getPendingOrders();
+        }
+        if (discarded > 0) {
             log.info("🧹 Discarded {} order(s) queued by the {} warm-up bar(s) — historical bars never trade.",
-                queuedWhileWarming.size(), initialBars.size());
+                discarded, initialBars.size());
+        }
+        if (drained != null && !drained.isEmpty()) {
+            log.error("⛔ Strategy '{}' does not honour the drain contract: getPendingOrders() still returns {} "
+                + "order(s) after warm-up. Its orders are computed from position state, so one derived from the "
+                + "historical replay can reach the broker on the first live tick. Sync the strategy to the broker "
+                + "position, or use a strategy that drains, before running it live.",
+                strategyShortName, drained.size());
         }
         log.info("Warmed up with {} bars. Last bar: {}", initialBars.size(), lastBarTime);
     }
@@ -1042,6 +1100,21 @@ public class LiveStrategyRunner implements Runnable {
                 }
             } else {
                 // Entry: two-sided risk budget — the strategy's units are intent, the risk % is the budget
+                // Guard (2026-09-30 incident): the order carries the stop computed on its SIGNAL bar, but
+                // it is priced at the LIVE market. When the market has already reached or crossed that
+                // stop, the risk distance collapses toward zero and the budget inflates the size without
+                // bound (measured: a 1,857,300-unit request, clipped only by the max-units rail). There is
+                // no valid risk budget for an entry whose stop is already gone: refuse it instead.
+                boolean stopAlreadyCrossed = order.stopLoss() > 0
+                    && ((order.side() == Order.Side.BUY && execPrice <= order.stopLoss())
+                        || (order.side() == Order.Side.SELL && execPrice >= order.stopLoss()));
+                if (stopAlreadyCrossed) {
+                    log.error("⛔ Entry refused for {} {}: live price {} has already reached the order's stop {} — "
+                        + "the risk distance is zero or inverted, so any size would be unbudgeted.",
+                        oandaSymbol, order.side(),
+                        formatPrice(execPrice, oandaSymbol), formatPrice(order.stopLoss(), oandaSymbol));
+                    return;
+                }
                 sizedUnits = riskSizedUnits(balance, riskPct, execPrice,
                     order.stopLoss(), requestedUnits, oandaSymbol);
             }
