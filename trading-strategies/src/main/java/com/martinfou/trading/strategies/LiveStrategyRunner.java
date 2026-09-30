@@ -878,6 +878,16 @@ public class LiveStrategyRunner implements Runnable {
             log.warn("Could not fetch account summary: {}", e.getMessage());
         }
 
+        // Reconcile the restored trades against the broker BEFORE the loop starts. Without this the first
+        // tick calls checkPendingOrders() before updatePositions(), so a position the broker already closed
+        // during downtime (its own SL/TP fired) is still treated as live, and an exit derived from the
+        // restored state can be sent as a REDUCE_ONLY order against a position that no longer exists.
+        try {
+            updatePositions(oandaSymbol);
+        } catch (Exception e) {
+            log.warn("Startup reconciliation pass failed ({}); the main loop will retry.", e.getMessage());
+        }
+
         // Main loop
         log.info("▶ Entering main loop ({}s interval)...", intervalSec);
         while (RUNNING.get() && alive.get()) {
@@ -2184,7 +2194,19 @@ public class LiveStrategyRunner implements Runnable {
             if (root.has("pnlIntegrityMismatches")) {
                 pnlIntegrityMismatches = root.get("pnlIntegrityMismatches").asInt();
             }
-            if (root.has("lastBarTime")) lastBarTime = Instant.parse(root.get("lastBarTime").asText());
+            if (root.hasNonNull("lastBarTime")) {
+                // has() alone is not enough: an explicit JSON null passes it, asText() then yields the
+                // string "null", and Instant.parse throws. That exception escapes to the catch below and
+                // aborts the WHOLE restore, so activeTrades, pendingStops and the strategy state are all
+                // lost and a process holding a position comes back believing it is flat (2026-09-30 review).
+                try {
+                    lastBarTime = Instant.parse(root.get("lastBarTime").asText());
+                } catch (Exception e) {
+                    log.warn("⚠️ Saved state has an unparseable lastBarTime ('{}') — keeping the warm-up "
+                        + "cursor instead of aborting the whole state restore.",
+                        String.valueOf(root.get("lastBarTime")));
+                }
+            }
 
             if (root.has("activeTrades")) {
                 for (JsonNode tn : root.get("activeTrades")) {
