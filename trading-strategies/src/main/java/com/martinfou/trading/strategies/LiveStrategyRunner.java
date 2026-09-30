@@ -384,11 +384,21 @@ public class LiveStrategyRunner implements Runnable {
             log.info("🧵 Launched thread for '{}' ({})", entry.getKey(), entry.getValue().name());
         }
 
-        // Start aggregated monitor writer (writes combined status every 30s)
+        // Start aggregated monitor writer (writes combined status every 30s and
+        // pushes it to the hub). The push is attached to THIS thread - never a
+        // strategy thread - so a slow HTTP call can never delay a trading tick.
+        OperationsSnapshotPusher pusher = OperationsSnapshotPusher.fromEnv();
+        if (pusher == null) {
+            log.warn("Operations snapshot push disabled: HERMES_WEB_URL and HERMES_WEB_TOKEN are not both set. The hub will report this trader as silent.");
+        }
+
         Thread monitorThread = new Thread(() -> {
             while (RUNNING.get()) {
                 try {
-                    writeAggregatedMonitor();
+                    String snapshotJson = writeAggregatedMonitor();
+                    if (pusher != null && snapshotJson != null) {
+                        pusher.push(snapshotJson);
+                    }
                     Thread.sleep(30000);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
@@ -662,7 +672,13 @@ public class LiveStrategyRunner implements Runnable {
     }
     private double lastKnownBalance = 10000;
 
-    private static void writeAggregatedMonitor() {
+    /**
+     * Builds the enriched aggregated monitor, writes it to the monitor file and
+     * returns the exact same JSON string that was written, so the caller can push
+     * it to the hub. Returns null when the write fails - the caller must then skip
+     * the push, since a snapshot the file does not carry must not be pushed.
+     */
+    static String writeAggregatedMonitor() {
         try {
             ObjectNode root = MAPPER.createObjectNode();
             root.put("running", RUNNING.get());
@@ -693,10 +709,81 @@ public class LiveStrategyRunner implements Runnable {
                 sn.put("liveness", r.getLivenessStatus());
             }
 
-            MAPPER.writerWithDefaultPrettyPrinter().writeValue(AGGREGATED_MONITOR.toFile(), root);
+            enrichAggregatedMonitor(root);
+
+            String json = MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(root);
+            Files.writeString(AGGREGATED_MONITOR, json);
+            return json;
         } catch (Exception e) {
             log.warn("Failed to write aggregated monitor: {}", e.getMessage());
+            return null;
         }
+    }
+
+    /**
+     * Enriches the aggregated monitor root with the fields the hub needs for the
+     * snapshot ingest: {@code account_id} and {@code snapshot_id} (idempotence key),
+     * the account NAV, the most recent heartbeat across runners, the flattened
+     * {@code open_positions[]} and {@code unreconciled_trades[]}, and the P&L
+     * integrity mismatch count.
+     *
+     * <p>{@code open_positions} is read under {@code synchronized (activeTrades)},
+     * the same lock every other accessor in this class uses - never an
+     * unsynchronized read racing a strategy thread.
+     */
+    static void enrichAggregatedMonitor(ObjectNode root) {
+        String accountId = ACTIVE_RUNNERS.isEmpty() ? "" : ACTIVE_RUNNERS.values().iterator().next().accountId;
+        String timestamp = root.path("timestamp").asText(TimeConventions.now().toString());
+        root.put("account_id", accountId);
+        root.put("snapshot_id", accountId + ":" + timestamp);
+
+        double nav = ACTIVE_RUNNERS.isEmpty() ? 0.0 : ACTIVE_RUNNERS.values().iterator().next().lastKnownBalance;
+        root.put("nav", nav);
+
+        Instant latestHeartbeat = null;
+        int pnlMismatches = 0;
+        ArrayNode openPositions = root.putArray("open_positions");
+        ArrayNode unreconciled = root.putArray("unreconciled_trades");
+
+        for (LiveStrategyRunner r : ACTIVE_RUNNERS.values()) {
+            Instant hb = r.getLastHeartbeatTime();
+            if (hb != null && (latestHeartbeat == null || hb.isAfter(latestHeartbeat))) {
+                latestHeartbeat = hb;
+            }
+            pnlMismatches += r.getPnlIntegrityMismatches();
+
+            synchronized (r.activeTrades) {
+                for (ActiveTrade t : r.activeTrades) {
+                    ObjectNode tn = openPositions.addObject();
+                    tn.put("strategy", r.strategyShortName);
+                    tn.put("tradeId", t.tradeId);
+                    tn.put("symbol", t.symbol);
+                    tn.put("side", t.side);
+                    tn.put("entryPrice", t.entryPrice);
+                    tn.put("quantity", t.quantity);
+                    tn.put("stopLoss", t.stopLoss);
+                    tn.put("takeProfit", t.takeProfit);
+                    if (t.entryTime != null) {
+                        tn.put("entryTime", t.entryTime.toString());
+                    }
+                    tn.put("reconciliationStatus", t.reconciliationStatus);
+                }
+            }
+
+            for (UnreconciledTrade u : r.getUnreconciledTrades()) {
+                ObjectNode un = unreconciled.addObject();
+                un.put("strategy", r.strategyShortName);
+                un.put("tradeId", u.tradeId);
+                un.put("symbol", u.symbol);
+                un.put("reason", u.reason);
+                un.put("timestamp", u.timestamp.toString());
+            }
+        }
+
+        if (latestHeartbeat != null) {
+            root.put("heartbeat_at", latestHeartbeat.toString());
+        }
+        root.put("pnl_integrity_mismatches", pnlMismatches);
     }
 
     // ========================================================================
