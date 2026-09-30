@@ -2,6 +2,7 @@ package com.martinfou.trading.strategies;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.martinfou.trading.core.Order;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.net.URI;
@@ -83,15 +84,29 @@ public class OandaExecutor {
     public record StopOrderResult(String orderId, String status, String price) {}
 
     public StopOrderResult placeStopOrder(String instrument, String units, String price, String tag) throws Exception {
+        return placeStopOrder(instrument, units, price, tag, false, null, null);
+    }
+
+    public StopOrderResult placeStopOrder(String instrument, String units, String price, String tag,
+                                          boolean reduceOnly, String stopLossOnFill, String takeProfitOnFill) throws Exception {
+        var orderBody = new java.util.LinkedHashMap<String, Object>();
+        orderBody.put("type", "STOP");
+        orderBody.put("instrument", instrument);
+        orderBody.put("units", units);
+        orderBody.put("price", price);
+        orderBody.put("timeInForce", "GTC");
+        orderBody.putAll(clientExtensions(tag));
+        if (reduceOnly) {
+            orderBody.put("positionFill", "REDUCE_ONLY");
+        }
+        if (stopLossOnFill != null) {
+            orderBody.put("stopLossOnFill", new java.util.HashMap<>() {{ put("price", stopLossOnFill); }});
+        }
+        if (takeProfitOnFill != null) {
+            orderBody.put("takeProfitOnFill", new java.util.HashMap<>() {{ put("price", takeProfitOnFill); }});
+        }
         String body = mapper.writeValueAsString(new java.util.HashMap<>() {{
-            put("order", new java.util.HashMap<>() {{
-                put("type", "STOP");
-                put("instrument", instrument);
-                put("units", units);
-                put("price", price);
-                put("timeInForce", "GTC");
-                putAll(clientExtensions(tag));
-            }});
+            put("order", orderBody);
         }});
 
         var req = HttpRequest.newBuilder()
@@ -172,6 +187,49 @@ public class OandaExecutor {
             }
         }
         return ids;
+    }
+
+    /**
+     * Total {@code |currentUnits|} currently open at the broker for {@code instrument} on the side a
+     * {@code closingSide} order would reduce (a BUY close reduces shorts, a SELL close reduces
+     * longs). One GET {@code /openTrades} call. Returns 0 when no such position is open or the units
+     * cannot be read — callers treat 0 as "nothing to close".
+     */
+    public double getOpenPositionUnits(String instrument, Order.Side closingSide) throws Exception {
+        var req = HttpRequest.newBuilder()
+            .uri(URI.create(baseUrl + "accounts/" + accountId + "/openTrades"))
+            .header("Authorization", "Bearer " + apiKey)
+            .timeout(Duration.ofSeconds(10))
+            .GET()
+            .build();
+
+        com.martinfou.trading.data.oanda.OandaRateLimiter.GLOBAL.acquire(true);
+        var resp = client.send(req, HttpResponse.BodyHandlers.ofString());
+        if (resp.statusCode() != 200) {
+            throw new RuntimeException("Failed to fetch open trades: status " + resp.statusCode() + ", body " + resp.body());
+        }
+
+        var json = mapper.readTree(resp.body());
+        double total = 0;
+        if (json.has("trades")) {
+            for (var trade : json.get("trades")) {
+                if (!instrument.equals(trade.path("instrument").asText())) continue;
+                double currentUnits = 0;
+                try {
+                    currentUnits = trade.has("currentUnits")
+                        ? Double.parseDouble(trade.path("currentUnits").asText()) : 0;
+                } catch (NumberFormatException ignored) {
+                    continue;
+                }
+                boolean isLong = currentUnits > 0;
+                boolean reduced = (closingSide == Order.Side.BUY && !isLong && currentUnits < 0)
+                    || (closingSide == Order.Side.SELL && isLong);
+                if (reduced) {
+                    total += Math.abs(currentUnits);
+                }
+            }
+        }
+        return total;
     }
 
     public JsonNode getTradeDetails(String tradeId) throws Exception {

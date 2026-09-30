@@ -568,7 +568,7 @@ public class LiveStrategyRunner implements Runnable {
      */
     private double quoteToAccountFactor(String oandaSymbol) {
         long now = System.currentTimeMillis();
-        if (lastConversionFactor > 0 && now - lastConversionFactorMs < 60_000) {
+        if (lastConversionFactorMs != 0 && now - lastConversionFactorMs < 60_000) {
             return lastConversionFactor;
         }
         long start = now;
@@ -901,26 +901,52 @@ public class LiveStrategyRunner implements Runnable {
 
     private void placeOandaStopOrder(Order order, String oandaSymbol) {
         try {
-            // Size to the risk budget (two-sided) for stop orders too
             double requestedUnits = Math.abs(order.quantity());
-            double riskPct = riskForStrategy(strategyShortName);
-            double balance = getCurrentBalance();
-            double sizedUnits = riskSizedUnits(balance, riskPct,
-                order.price(), order.stopLoss(), requestedUnits, oandaSymbol);
+            double units;
+            boolean reduceOnly;
 
-            double units = order.side() == Order.Side.BUY
-                ? sizedUnits
-                : -sizedUnits;
+            if (order.isCloseOnly()) {
+                // Close-only STOP: reduce the tracked position, never risk-size it. A risk-sized
+                // close would be sized like an entry and, without REDUCE_ONLY, open a NEW opposite
+                // position on this hedging-enabled account instead of reducing.
+                double tracked = trackedOpenUnits(oandaSymbol, order.side());
+                if (tracked <= 0) {
+                    log.error("⛔ Close-only STOP for {} with no tracked position — REFUSING to place it "
+                        + "(a REDUCE_ONLY stop with nothing to reduce would be rejected, or open a new "
+                        + "position on a hedging account).", oandaSymbol);
+                    return;
+                }
+                units = order.side() == Order.Side.BUY ? tracked : -tracked;
+                reduceOnly = true;
+            } else {
+                // STOP entry: cut-only legacy cap, NOT the two-sided raise. A filled pending STOP is
+                // never reconciled into activeTrades, so a raised STOP entry would become a large
+                // untracked position with no SL/TP. Only MARKET entries use the two-sided budget.
+                double riskPct = riskForStrategy(strategyShortName);
+                double balance = getCurrentBalance();
+                double sizedUnits;
+                if (order.stopLoss() <= 0 || order.price() <= 0) {
+                    sizedUnits = Math.min(requestedUnits, 2000);
+                    log.warn("⚠ No stop on STOP entry — safety cap: {} units → {} units",
+                        (int) requestedUnits, (int) sizedUnits);
+                } else {
+                    double slDistance = Math.abs(order.price() - order.stopLoss());
+                    sizedUnits = legacyRiskCap(balance, riskPct, slDistance, requestedUnits, oandaSymbol);
+                    log.info("⏳ STOP entry sized cut-only (two-sided raise disabled for pending stops — "
+                        + "a filled STOP is never reconciled into activeTrades): {} units",
+                        (int) sizedUnits);
+                }
+                units = order.side() == Order.Side.BUY ? sizedUnits : -sizedUnits;
+                reduceOnly = false;
+            }
+
             String unitsStr = String.valueOf((int) units);
-            int precision = switch (oandaSymbol) {
-                case "GBP_JPY", "USD_JPY" -> 3;
-                case "XAU_USD", "XAG_USD" -> 1;
-                default -> 5;
-            };
-            String priceStr = String.format("%." + precision + "f", order.price());
+            String priceStr = formatPrice(order.price(), oandaSymbol);
+            String slStr = order.stopLoss() > 0 ? formatPrice(order.stopLoss(), oandaSymbol) : null;
+            String tpStr = order.takeProfit() > 0 ? formatPrice(order.takeProfit(), oandaSymbol) : null;
 
             var tag = strategyShortName + "_" + oandaSymbol.replace("_", "");
-            var result = executor.placeStopOrder(oandaSymbol, unitsStr, priceStr, tag);
+            var result = executor.placeStopOrder(oandaSymbol, unitsStr, priceStr, tag, reduceOnly, slStr, tpStr);
             log.info("⏳ STOP ORDER PLACED: {} {} @ {} (OANDA ID: {})",
                 oandaSymbol, order.side(), priceStr, result.orderId());
 
@@ -974,10 +1000,22 @@ public class LiveStrategyRunner implements Runnable {
                             (int) requestedUnits, (int) tracked);
                     }
                 } else {
-                    sizedUnits = requestedUnits;
-                    log.warn("⚠ Close order for {} with no tracked position ({} units requested) — sending the "
-                        + "requested quantity; verify the broker position afterwards.",
-                        oandaSymbol, (int) requestedUnits);
+                    // Nothing tracked, but the broker may still hold the position (opened outside this
+                    // runner, or lost state). Sending the strategy's micro-lot REDUCE_ONLY here would
+                    // close 1,000 of e.g. 48,000 units and leave the rest open and unmanaged — the
+                    // exact failure dc9509a7 set out to fix. Size from the broker's actual open
+                    // position; if that is unavailable, refuse to send rather than leak a partial close.
+                    double brokerUnits = brokerOpenUnits(oandaSymbol, order.side());
+                    if (brokerUnits > 0) {
+                        sizedUnits = brokerUnits;
+                        log.info("📐 Close sizing (broker truth): {} units requested → {} units (the broker's open position)",
+                            (int) requestedUnits, (int) brokerUnits);
+                    } else {
+                        log.error("⛔ Close order for {} with no tracked position and no broker position to reduce — "
+                            + "REFUSING to send the {} unit micro-lot (would leave an untracked position open).",
+                            oandaSymbol, (int) requestedUnits);
+                        return;
+                    }
                 }
             } else {
                 // Entry: two-sided risk budget — the strategy's units are intent, the risk % is the budget
@@ -1111,6 +1149,21 @@ public class LiveStrategyRunner implements Runnable {
             }
         }
         return total;
+    }
+
+    /**
+     * Broker-truth sizing for a close: total |currentUnits| the broker holds for the instrument on
+     * the side the close reduces, from a single read of {@code /openTrades}. Returns 0 when the
+     * broker has nothing to reduce or the read fails — callers must then refuse to send.
+     */
+    private double brokerOpenUnits(String oandaSymbol, Order.Side closingSide) {
+        try {
+            return executor.getOpenPositionUnits(oandaSymbol, closingSide);
+        } catch (Exception e) {
+            log.warn("⚠ Could not read the broker's open position for {} to size a close: {}",
+                oandaSymbol, e.getMessage());
+            return 0;
+        }
     }
 
     /** True while at least one tracked trade for the symbol can still be closed by a signal. */

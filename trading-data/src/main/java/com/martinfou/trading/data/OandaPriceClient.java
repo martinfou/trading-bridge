@@ -48,9 +48,11 @@ public class OandaPriceClient {
      * Quote→home conversion factor for a LOSS in {@code instrument}'s quote currency (JPY for GBP_JPY),
      * used to turn a stop-loss distance into account currency.
      *
-     * <p>OANDA converts a negative P&amp;L at {@code accountLoss} and a positive one at {@code accountGain};
-     * the loss factor is the larger of the two (JPY on a CAD account: 0.0091533 vs 0.0089720), so sizing a
-     * stop with it can only err SMALL. That is the honest direction for a risk budget.
+     * <p>OANDA converts a negative P&amp;L at {@code accountLoss}; sizing a stop with it can only err
+     * SMALL. {@code accountGain} is deliberately NOT a fallback: it is SMALLER than {@code accountLoss}
+     * (measured on GBP_JPY: 0.008942039415 vs 0.009122686676), so under-sizing the factor would
+     * over-size the position and let the real stop-out exceed the risk budget. The fallback order is
+     * {@code accountLoss}, then {@code positionValue}, then fail.
      *
      * <p>The endpoint only returns {@code homeConversions} when asked via
      * {@code includeHomeConversions=true}; plain pricing responses omit the field entirely (the per-price
@@ -74,7 +76,6 @@ public class OandaPriceClient {
             if (hc == null || !quote.equals(hc.path("currency").asText())) continue;
             double loss = doubleOrZero(hc, "accountLoss");
             if (!(loss > 0)) loss = doubleOrZero(hc, "positionValue");
-            if (!(loss > 0)) loss = doubleOrZero(hc, "accountGain");
             if (!(loss > 0)) {
                 throw new OandaApiException("Invalid OANDA response: non-positive conversion for " + quote);
             }
