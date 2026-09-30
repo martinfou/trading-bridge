@@ -38,6 +38,11 @@ public final class IbkrBracketOrderRouter {
 
     /**
      * Builds a native CME bracket order bundle from an entry order with stop and target prices.
+     *
+     * <p>The entry order is the OCA <b>parent</b> and MUST NOT share the SL/TP OCA group: if it
+     * did, the parent's fill would immediately cancel the protective SL/TP (OCA type 1 = "cancel
+     * with block"), leaving a naked position. Only the SL and TP are mutually cancelling siblings
+     * in the same OCA group, linked to the parent via {@code parentId}.</p>
      */
     public static BracketBundle createBracket(Order entryOrder, double stopLossPrice, double takeProfitPrice) {
         Objects.requireNonNull(entryOrder, "entryOrder is required");
@@ -47,8 +52,8 @@ public final class IbkrBracketOrderRouter {
 
         Order.Side exitSide = (entryOrder.side() == Order.Side.BUY) ? Order.Side.SELL : Order.Side.BUY;
 
-        Order parent = entryOrder
-            .withOcaGroup(ocaGroup, ocaType);
+        // Parent entry order: standalone, NOT in the SL/TP OCA group.
+        Order parent = entryOrder;
 
         Order stopOrder = null;
         if (stopLossPrice > 0) {

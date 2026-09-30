@@ -49,15 +49,18 @@ public final class IbkrContractResolver {
         if (futOpt.isPresent()) {
             FuturesContract contract = futOpt.get();
             CmeFuturesCalendar.ContractSpec spec = CmeFuturesCalendar.activeContract(contract.symbol(), tradeDate);
-            String yyyymm = String.format("%04d%02d", spec.year(), spec.quarterMonth().monthValue());
+            // IBKR resolves CME futures via exchange=GLOBEX (electronic venue). Use the full
+            // YYYYMMDD last-trade-date so the contract is unambiguous (the 3rd-Friday expiry).
+            String yyyymmdd = String.format("%04d%02d%02d",
+                spec.expiryDate().getYear(), spec.expiryDate().getMonthValue(), spec.expiryDate().getDayOfMonth());
             return new IbkrContractDetails(
                 contract.symbol(),
                 SecType.FUT,
-                "CME",
-                "CME",
+                "GLOBEX",
+                null,
                 "USD",
                 contract.multiplier(),
-                yyyymm
+                yyyymmdd
             );
         }
 

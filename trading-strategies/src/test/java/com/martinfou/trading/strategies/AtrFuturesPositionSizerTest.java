@@ -45,4 +45,30 @@ class AtrFuturesPositionSizerTest {
         assertEquals(100.0, result.riskAmountUsd(), 1e-6);
         assertTrue(result.marginFeasible());
     }
+
+    @Test
+    void testPositionSizingNeverExceedsAvailableMargin() {
+        // $2,000 account, 2% risk ($40 budget), 1-point stop ($5 risk/contract)
+        // Risk sizing alone -> floor(40/5) = 8 contracts, but margin cap = floor(2000/1200) = 1 contract.
+        // MUST NOT size 8 contracts (would require $9,600 initial margin > $2,000 equity).
+        AtrFuturesPositionSizer.SizingResult result = AtrFuturesPositionSizer.calculatePositionSize(
+            "MES", 2_000.0, 0.02, 1.0
+        );
+
+        assertEquals(1, result.contracts(), "Sizing must be capped by available initial margin");
+        assertEquals(1_200.0, result.requiredInitialMarginUsd(), 1e-6);
+        assertTrue(result.marginFeasible());
+    }
+
+    @Test
+    void testPositionSizingZeroWhenCannotAffordInitialMargin() {
+        // $500 account cannot afford 1 MES contract ($1,200 initial margin)
+        AtrFuturesPositionSizer.SizingResult result = AtrFuturesPositionSizer.calculatePositionSize(
+            "MES", 500.0, 0.01, 10.0
+        );
+
+        assertEquals(0, result.contracts());
+        assertEquals(0.0, result.requiredInitialMarginUsd(), 1e-6);
+        assertFalse(result.marginFeasible());
+    }
 }
