@@ -18,10 +18,13 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
@@ -71,6 +74,8 @@ public class LiveStrategyRunner implements Runnable {
      * A saved accumulator older than this version is discarded on load rather than carried over.
      */
     static final int PNL_ACCOUNTING_VERSION = 3;
+    /** Upper bound on how many previously-unreconciled trades the watchdog re-attempts per pass. */
+    private static final int MAX_REATTEMPT_PER_PASS = 50;
     private static final Map<String, Double> STRATEGY_RISK_PCT = new ConcurrentHashMap<>();
 
     // ---- Per-instance paths ----
@@ -103,7 +108,13 @@ public class LiveStrategyRunner implements Runnable {
     private Instant lastStateSave = Instant.MIN;
     private Instant lastReconciliationTime = Instant.MIN;
     private Instant lastIntegrityCheck = Instant.MIN;
-    private int pnlIntegrityMismatches = 0;
+    private volatile int pnlIntegrityMismatches = 0;
+    /** Dedicated daemon executor for the integrity watchdog — never the strategy loop thread. */
+    private ExecutorService integrityExecutor = null;
+    /** Serializes every state/monitor file write; the writes are also atomic (tmp + move). */
+    private final Object stateWriteLock = new Object();
+    /** Trades whose broker P&L could not be reconciled after retries — re-attempted by the watchdog. */
+    private final List<UnreconciledTrade> unreconciledTrades = new ArrayList<>();
     private Instant lastBarTime = null;
 
     // ---- Shared orchestrator state ----
@@ -160,6 +171,24 @@ public class LiveStrategyRunner implements Runnable {
             this.quantity = quantity;
             this.stopLoss = stopLoss;
             this.takeProfit = takeProfit;
+        }
+    }
+
+    /**
+     * A trade whose broker P&L could not be reconciled (the fallback fired after all retries).
+     * Kept so the condition is observable and the watchdog can re-attempt the id later.
+     */
+    public static final class UnreconciledTrade {
+        public final String tradeId;
+        public final String symbol;
+        public final String reason;
+        public final Instant timestamp;
+
+        public UnreconciledTrade(String tradeId, String symbol, String reason, Instant timestamp) {
+            this.tradeId = tradeId;
+            this.symbol = symbol;
+            this.reason = reason;
+            this.timestamp = timestamp;
         }
     }
 
@@ -789,12 +818,13 @@ public class LiveStrategyRunner implements Runnable {
             log.info("⏳ STOP ORDER PLACED: {} {} @ {} (OANDA ID: {})",
                 oandaSymbol, order.side(), priceStr, result.orderId());
 
-            pendingStops.add(new PendingStop(
-                result.orderId(), oandaSymbol,
-                order.side().name(), order.price(),
-                units, order.stopLoss(), order.takeProfit()
-            ));
-
+            synchronized (pendingStops) {
+                pendingStops.add(new PendingStop(
+                    result.orderId(), oandaSymbol,
+                    order.side().name(), order.price(),
+                    units, order.stopLoss(), order.takeProfit()
+                ));
+            }
         } catch (Exception e) {
             log.error("❌ Failed to place stop order: {}", e.getMessage());
         }
@@ -819,13 +849,15 @@ public class LiveStrategyRunner implements Runnable {
             // Detect if this order closes an existing active trade BEFORE margin check
             boolean isClose = order.isCloseOnly();
             if (!isClose) {
-                for (ActiveTrade at : activeTrades) {
-                    if (at.symbol.equals(oandaSymbol)) {
-                        boolean isOpposite = (order.side() == Order.Side.BUY && at.side.equals("SELL"))
-                            || (order.side() == Order.Side.SELL && at.side.equals("BUY"));
-                        if (isOpposite) {
-                            isClose = true;
-                            break;
+                synchronized (activeTrades) {
+                    for (ActiveTrade at : activeTrades) {
+                        if (at.symbol.equals(oandaSymbol)) {
+                            boolean isOpposite = (order.side() == Order.Side.BUY && at.side.equals("SELL"))
+                                || (order.side() == Order.Side.SELL && at.side.equals("BUY"));
+                            if (isOpposite) {
+                                isClose = true;
+                                break;
+                            }
                         }
                     }
                 }
@@ -860,9 +892,10 @@ public class LiveStrategyRunner implements Runnable {
                     // Closing something we never tracked (e.g. position opened outside this runner):
                     // no broker reconciliation will follow, so count the exit here.
                     totalExits++;
-                } else {
-                    totalExits += registered; // one exit per registered trade, counted at reconciliation
                 }
+                // Otherwise the exit is NOT counted here: completeReconciliation() counts it exactly
+                // once per trade when the broker answers. Counting it here too would double-count the
+                // signal-driven exit (the SL/TP exit path increments only at reconciliation).
                 log.info("═══════ EXIT {} {} {} @ {} | {} trade(s) pending broker reconciliation (local estimate {} {} NOT counted) ═══════",
                     oandaSymbol, order.side(),
                     String.format("%.2f", units / 100000.0) + " lots",
@@ -909,11 +942,13 @@ public class LiveStrategyRunner implements Runnable {
 
             // Track trade
             if (result.tradeId() != null && !result.tradeId().equals("N/A")) {
-                activeTrades.add(new ActiveTrade(
-                    result.tradeId(), oandaSymbol, order.side().name(), fillPrice,
-                    Math.abs(units), order.stopLoss(), order.takeProfit(),
-                    TimeConventions.now()
-                ));
+                synchronized (activeTrades) {
+                    activeTrades.add(new ActiveTrade(
+                        result.tradeId(), oandaSymbol, order.side().name(), fillPrice,
+                        Math.abs(units), order.stopLoss(), order.takeProfit(),
+                        TimeConventions.now()
+                    ));
+                }
             }
 
         } catch (Exception e) {
@@ -1021,6 +1056,23 @@ public class LiveStrategyRunner implements Runnable {
     /** Number of local quote-currency estimates ignored (package-private for tests/observability). */
     int getPnlIgnoredLocalEstimates() {
         return ledger.ignoredLocalEstimates();
+    }
+
+    /** The bounded ledger itself (package-private for tests/observability). */
+    RealizedPnlLedger getPnlLedger() {
+        return ledger;
+    }
+
+    /** Number of entries currently held individually in the recent window (package-private for tests). */
+    int getPnlLedgerRecentSize() {
+        return ledger.recentSize();
+    }
+
+    /** Trades whose broker P&L is still unknown after the fallback fired (copy; watchdog re-attempts them). */
+    public List<UnreconciledTrade> getUnreconciledTrades() {
+        synchronized (unreconciledTrades) {
+            return new ArrayList<>(unreconciledTrades);
+        }
     }
 
     /** Number of ledger-vs-broker divergences found by the most recent integrity check. */
@@ -1185,7 +1237,7 @@ public class LiveStrategyRunner implements Runnable {
         saveStateNow();
     }
 
-    private void saveStateNow() {
+    void saveStateNow() {
         try {
             ObjectNode root = MAPPER.createObjectNode();
             root.put("strategy", strategyShortName);
@@ -1196,14 +1248,32 @@ public class LiveStrategyRunner implements Runnable {
             root.put("totalEntries", totalEntries);
             root.put("totalExits", totalExits);
             root.put("pnlAccountingVersion", PNL_ACCOUNTING_VERSION);
-            // Realized-P&L ledger keyed by trade id, plus observability counters.
+            // Realized-P&L ledger: the recent window keyed by trade id, plus the rolled-up total
+            // and the dedupe id set, so the exact total and dedupe survive a restart.
             ObjectNode pnlLedger = root.putObject("pnlLedger");
             for (Map.Entry<String, Double> e : ledger.snapshot().entrySet()) {
                 pnlLedger.put(e.getKey(), e.getValue());
             }
+            root.put("pnlLedgerConfirmedTotal", ledger.confirmedTotal());
+            ArrayNode recordedIdsArray = root.putArray("pnlLedgerRecordedIds");
+            for (String id : ledger.recordedIds()) {
+                recordedIdsArray.add(id);
+            }
             root.put("pnlLedgerTrades", ledger.trades());
             root.put("ignoredLocalEstimates", ledger.ignoredLocalEstimates());
             root.put("pnlIntegrityMismatches", pnlIntegrityMismatches);
+            // Unreconciled trades (fallback fired, broker value still unknown) — observable, not silent.
+            ArrayNode unreconciledArray = root.putArray("unreconciledTrades");
+            synchronized (unreconciledTrades) {
+                for (UnreconciledTrade u : unreconciledTrades) {
+                    ObjectNode un = unreconciledArray.addObject();
+                    un.put("tradeId", u.tradeId);
+                    un.put("symbol", u.symbol);
+                    un.put("reason", u.reason);
+                    un.put("timestamp", u.timestamp.toString());
+                }
+                root.put("unreconciledTradesCount", unreconciledTrades.size());
+            }
             root.put("savedAt", TimeConventions.now().toString());
             if (lastBarTime != null) root.put("lastBarTime", lastBarTime.toString());
             root.put("inTrade", !activeTrades.isEmpty());
@@ -1241,9 +1311,13 @@ public class LiveStrategyRunner implements Runnable {
                 }
             }
 
-            // Pending stops
+            // Pending stops — snapshot under the monitor so an async save can't race a strategy-thread append.
             ArrayNode stopsArray = root.putArray("pendingStops");
-            for (PendingStop p : pendingStops) {
+            List<PendingStop> stopsSnapshot;
+            synchronized (pendingStops) {
+                stopsSnapshot = new ArrayList<>(pendingStops);
+            }
+            for (PendingStop p : stopsSnapshot) {
                 ObjectNode pn = stopsArray.addObject();
                 pn.put("orderId", p.orderId);
                 pn.put("symbol", p.symbol);
@@ -1254,12 +1328,40 @@ public class LiveStrategyRunner implements Runnable {
                 pn.put("takeProfit", p.takeProfit);
             }
 
-            MAPPER.writerWithDefaultPrettyPrinter().writeValue(stateFile.toFile(), root);
-            root.put("running", RUNNING.get());
-            MAPPER.writerWithDefaultPrettyPrinter().writeValue(monitorFile.toFile(), root);
+            writeStateAtomic(root);
             lastStateSave = TimeConventions.now();
         } catch (Exception e) {
             log.warn("Failed to save state for '{}': {}", strategyShortName, e.getMessage());
+        }
+    }
+
+    /**
+     * Serializes the two state files atomically, behind the state-write lock, so concurrent saves
+     * (strategy thread + async worker) can never truncate a file. The state file is written without
+     * the "running" flag, the monitor file with it — same content as before, only atomic now.
+     */
+    private void writeStateAtomic(ObjectNode root) throws IOException {
+        synchronized (stateWriteLock) {
+            writeJsonAtomic(stateFile, root);
+            root.put("running", RUNNING.get());
+            writeJsonAtomic(monitorFile, root);
+            root.remove("running");
+        }
+    }
+
+    /** Writes JSON to {@code file + ".tmp"} then atomically moves it over the target. */
+    private void writeJsonAtomic(Path file, ObjectNode node) throws IOException {
+        Path tmp = file.resolveSibling(file.getFileName().toString() + ".tmp");
+        try {
+            MAPPER.writerWithDefaultPrettyPrinter().writeValue(tmp.toFile(), node);
+            Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            try {
+                Files.deleteIfExists(tmp);
+            } catch (Exception ignore) {
+                // best-effort cleanup only
+            }
+            throw e;
         }
     }
 
@@ -1280,43 +1382,162 @@ public class LiveStrategyRunner implements Runnable {
             com.fasterxml.jackson.databind.JsonNode tNode = details.get("trade");
             String state = tNode.has("state") ? tNode.get("state").asText() : "";
             if ("CLOSED".equals(state)) {
-                double realizedPL = tNode.has("realizedPL") ? tNode.get("realizedPL").asDouble() : 0.0;
-                log.info("Reconciled trade ID {} from OANDA. Realized PnL: ${}", tradeId, realizedPL);
-                completeReconciliation(tradeId, realizedPL);
+                reconcileClosedTrade(tradeId, tNode);
             } else {
-                log.info("Trade ID {} is still open at OANDA. Skipping reconciliation.", tradeId);
+                reconcileOpenTrade(tradeId);
             }
         } else {
             throw new RuntimeException("Trade details node not found in OANDA response");
         }
     }
 
-    public void reconcileTradeFallback(String tradeId) {
+    /**
+     * Handles a broker-reported CLOSED trade. If the broker response carries no {@code realizedPL}
+     * field the value is <em>unknown</em>, so it is postponed (the trade stays pending for a later
+     * attempt) rather than silently recorded as 0.0 — a 0.0 would lose a real broker value and,
+     * because of first-wins dedupe, could never be corrected.
+     */
+    void reconcileClosedTrade(String tradeId, com.fasterxml.jackson.databind.JsonNode tNode) {
+        if (!tNode.hasNonNull("realizedPL")) {
+            // The trade IS CLOSED at the broker but the response carries no usable P&L. Note
+            // hasNonNull, not has: has() is TRUE for an explicit JSON null, and asDouble() would
+            // read that as 0.0 — which the first-wins ledger could never correct (the M2 bug, in a
+            // variant). The value is UNKNOWN, so:
+            //   - do NOT record 0;
+            //   - EVICT the trade (it is closed at the broker). Keeping it tracked would make the
+            //     60s sweep find it missing from the broker's open trades and re-flag it
+            //     UNCONFIRMED forever (a re-block loop), and would make later opposite signals be
+            //     misread as closes, sending REDUCE_ONLY orders the broker rejects;
+            //   - park it so the watchdog's re-attempt pass fetches the real value later.
+            log.warn("⚠️ Trade ID {} is CLOSED but has no usable realizedPL — P&L unknown, NOT recorded as 0. "
+                + "Trade evicted from tracking (it is closed) and parked for a broker re-attempt.", tradeId);
+            parkUnreconciledTrade(tradeId, "CLOSED without usable realizedPL");
+            evictFromActiveTrades(tradeId);
+            saveStateNow();
+            return;
+        }
+        double realizedPL = tNode.get("realizedPL").asDouble();
+        log.info("Reconciled trade ID {} from OANDA. Realized PnL: ${}", tradeId, realizedPL);
+        completeReconciliation(tradeId, realizedPL);
+    }
+
+    /** Removes a trade from tracking and counts the exit. @return true when it was tracked. */
+    private boolean evictFromActiveTrades(String tradeId) {
         synchronized (activeTrades) {
             Iterator<ActiveTrade> it = activeTrades.iterator();
             while (it.hasNext()) {
                 ActiveTrade t = it.next();
                 if (tradeId.equals(t.tradeId)) {
-                    double localQuoteCcy = t.unrealizedPnl;
                     it.remove();
                     totalExits++;
-                    // The local value is in the instrument's QUOTE currency, so it must NOT move
-                    // the total: record it only as an ignored estimate.
-                    ledger.recordIgnoredLocalEstimate(tradeId, localQuoteCcy);
-                    log.warn("⚠️ Fallback reconciliation for trade ID {}: broker value unavailable. "
-                        + "Local P&L ${} is in QUOTE currency, so the trade's P&L stays UNKNOWN "
-                        + "(never wrong) — the total is NOT changed. A broker or manual reconciliation is required.",
-                        tradeId, String.format("%.2f", localQuoteCcy));
-                    saveStateNow();
-                    return;
+                    return true;
                 }
             }
         }
+        return false;
+    }
+
+    /**
+     * A queued reconciliation found the trade still open at the broker (the exit never filled).
+     * Reverting to CONFIRMED lets the periodic position sweep keep monitoring it instead of leaving
+     * it UNCONFIRMED_RECONCILIATION forever — which would block every future entry order.
+     */
+    void reconcileOpenTrade(String tradeId) {
+        log.info("Trade ID {} is still open at OANDA. Reverting to CONFIRMED so the position stays tracked.", tradeId);
+        revertToConfirmed(tradeId);
+    }
+
+    private void revertToConfirmed(String tradeId) {
+        boolean changed = false;
+        synchronized (activeTrades) {
+            for (ActiveTrade t : activeTrades) {
+                if (tradeId.equals(t.tradeId)) {
+                    if ("UNCONFIRMED_RECONCILIATION".equals(t.reconciliationStatus)) {
+                        t.reconciliationStatus = "CONFIRMED";
+                        changed = true;
+                    }
+                    break;
+                }
+            }
+        }
+        if (changed) {
+            saveStateNow();
+        }
+    }
+
+    /**
+     * Parks a trade whose broker P&L could not be obtained, so the watchdog's re-attempt pass can
+     * fetch it later instead of losing it silently. Deduplicated by trade id.
+     */
+    private void parkUnreconciledTrade(String tradeId, String reason) {
+        String symbol = null;
+        synchronized (activeTrades) {
+            for (ActiveTrade t : activeTrades) {
+                if (tradeId.equals(t.tradeId)) {
+                    symbol = t.symbol;
+                    break;
+                }
+            }
+        }
+        boolean added = false;
+        synchronized (unreconciledTrades) {
+            for (UnreconciledTrade u : unreconciledTrades) {
+                if (tradeId.equals(u.tradeId)) {
+                    return; // already pending a re-attempt
+                }
+            }
+            unreconciledTrades.add(new UnreconciledTrade(tradeId, symbol, reason, TimeConventions.now()));
+            added = true;
+        }
+        // No save here on purpose: callers batch the state write, so a single logical change
+        // (park + evict) does not trigger two consecutive atomic disk writes.
+        if (added) {
+            log.debug("Parked unreconciled trade {} ({}) for a later broker re-attempt.", tradeId, reason);
+        }
+    }
+
+    public void reconcileTradeFallback(String tradeId) {
+        String symbol = null;
+        double localQuoteCcy = 0.0;
+        boolean found = false;
+        synchronized (activeTrades) {
+            Iterator<ActiveTrade> it = activeTrades.iterator();
+            while (it.hasNext()) {
+                ActiveTrade t = it.next();
+                if (tradeId.equals(t.tradeId)) {
+                    localQuoteCcy = t.unrealizedPnl;
+                    symbol = t.symbol;
+                    it.remove();
+                    totalExits++;
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if (!found) {
+            return;
+        }
+        // The local value is in the instrument's QUOTE currency, so it must NOT move the total:
+        // record it only as an ignored estimate.
+        ledger.recordIgnoredLocalEstimate();
+        // Persist the fact that this trade's broker P&L is still unknown, so the watchdog can
+        // re-attempt it later instead of losing it silently.
+        synchronized (unreconciledTrades) {
+            unreconciledTrades.add(new UnreconciledTrade(
+                tradeId, symbol, "broker value unavailable after 5 attempts", TimeConventions.now()));
+        }
+        log.warn("⚠️ Fallback reconciliation for trade ID {}: broker value unavailable. "
+            + "Local P&L ${} is in QUOTE currency, so the trade's P&L stays UNKNOWN "
+            + "(never wrong) — the total is NOT changed. The watchdog will re-attempt the broker value.",
+            tradeId, String.format("%.2f", localQuoteCcy));
+        saveStateNow();
     }
 
     public void completeReconciliation(String tradeId, double realizedPL) {
         // Move the total only when the broker value is recorded for the first time (dedupe guard).
         boolean counted = ledger.recordBrokerPnl(tradeId, realizedPL);
+        // Reconciled for good: it must not stay queued for a watchdog re-attempt.
+        removeUnreconciledTrade(tradeId);
         boolean removed = false;
         synchronized (activeTrades) {
             Iterator<ActiveTrade> it = activeTrades.iterator();
@@ -1343,54 +1564,138 @@ public class LiveStrategyRunner implements Runnable {
     }
 
     /**
-     * Integrity watchdog: at most once every 30 minutes, verify every ledger entry against the
-     * broker's realizedPL for CLOSED trades. The mismatch count is kept (and persisted) for
-     * observability; the check never corrects anything and never throws.
+     * Integrity watchdog: at most once every 30 minutes, decide whether to schedule the check. The
+     * check itself never runs on the strategy loop thread — it is submitted to a dedicated daemon
+     * executor, so a slow broker call cannot stall the trading loop and miss bars.
      */
     private void runIntegrityCheck() {
         Instant now = TimeConventions.now();
         if (Duration.between(lastIntegrityCheck, now).toSeconds() < 1800) return;
         lastIntegrityCheck = now;
-        pnlIntegrityMismatches = verifyLedgerAgainstBroker();
+        integrityExecutor().submit(() -> {
+            try {
+                pnlIntegrityMismatches = verifyLedgerAgainstBroker();
+                reattemptUnreconciledTrades();
+            } catch (Throwable t) {
+                log.warn("⚠️ P&L integrity check failed: {}", t.getMessage());
+            }
+        });
+    }
+
+    /** Lazily creates the single-thread daemon executor that runs the watchdog, off the loop thread. */
+    private synchronized ExecutorService integrityExecutor() {
+        if (integrityExecutor == null) {
+            integrityExecutor = Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "pnl-integrity-" + strategyShortName);
+                t.setDaemon(true);
+                return t;
+            });
+        }
+        return integrityExecutor;
     }
 
     /**
-     * Compares every realized-P&L entry in the ledger against the broker's realizedPL for that
-     * trade, but only when the broker reports the trade CLOSED. Divergences are logged per-trade at
-     * ERROR plus a summary ERROR, and the count is returned. Broker outages or malformed responses
-     * are caught and logged at debug — they never throw and never produce a false positive.
+     * Compares the bounded recent ledger window (at most {@link RealizedPnlLedger#RECENT_WINDOW}
+     * entries) against the broker's realizedPL for each CLOSED trade, pacing one broker call every
+     * 50 ms. Divergences are logged per-trade at ERROR plus a summary ERROR, and the count is
+     * returned. Broker outages or malformed responses are caught and logged at debug — they never
+     * throw and never produce a false positive. A CLOSED trade with no {@code realizedPL} is logged
+     * at WARN and skipped (it cannot be compared, and must not be treated as a 0.0 divergence).
      */
     public int verifyLedgerAgainstBroker() {
         int divergences = 0;
         for (Map.Entry<String, Double> entry : ledger.snapshot().entrySet()) {
-            String tradeId = entry.getKey();
-            double ledgerValue = entry.getValue();
+            divergences += verifyOneLedgerEntry(entry.getKey(), entry.getValue());
+            // Pace the broker calls so the check never floods the rate limiter.
             try {
-                JsonNode details = executor.getTradeDetails(tradeId);
-                if (details == null || !details.has("trade")) {
-                    continue;
-                }
-                JsonNode tNode = details.get("trade");
-                String state = tNode.has("state") ? tNode.get("state").asText() : "";
-                if (!"CLOSED".equals(state)) {
-                    continue;
-                }
-                double brokerValue = tNode.has("realizedPL") ? tNode.get("realizedPL").asDouble() : 0.0;
-                double tolerance = Math.max(0.02, Math.abs(brokerValue) * 0.01);
-                if (Math.abs(brokerValue - ledgerValue) > tolerance) {
-                    divergences++;
-                    log.error("❌ P&L integrity mismatch for trade ID {}: broker realizedPL ${} vs ledger ${} (tolerance ${})",
-                        tradeId, String.format("%.2f", brokerValue),
-                        String.format("%.2f", ledgerValue), String.format("%.2f", tolerance));
-                }
-            } catch (Exception e) {
-                log.debug("P&L integrity check: cannot fetch trade {} from broker ({}).", tradeId, e.getMessage());
+                Thread.sleep(50);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                break;
             }
         }
         if (divergences > 0) {
             log.error("❌ P&L integrity check: {} divergence(s) between broker realizedPL and the ledger.", divergences);
         }
         return divergences;
+    }
+
+    /** Verifies a single ledger entry against the broker; never throws. Returns 1 on a divergence. */
+    private int verifyOneLedgerEntry(String tradeId, double ledgerValue) {
+        try {
+            JsonNode details = executor.getTradeDetails(tradeId);
+            if (details == null || !details.has("trade")) {
+                return 0;
+            }
+            JsonNode tNode = details.get("trade");
+            String state = tNode.has("state") ? tNode.get("state").asText() : "";
+            if (!"CLOSED".equals(state)) {
+                return 0;
+            }
+            if (!tNode.has("realizedPL")) {
+                log.warn("⚠️ P&L integrity: trade ID {} is CLOSED but has no realizedPL at the broker — cannot verify, skipping.", tradeId);
+                return 0;
+            }
+            double brokerValue = tNode.get("realizedPL").asDouble();
+            double tolerance = Math.max(0.02, Math.abs(brokerValue) * 0.01);
+            if (Math.abs(brokerValue - ledgerValue) > tolerance) {
+                log.error("❌ P&L integrity mismatch for trade ID {}: broker realizedPL ${} vs ledger ${} (tolerance ${})",
+                    tradeId, String.format("%.2f", brokerValue),
+                    String.format("%.2f", ledgerValue), String.format("%.2f", tolerance));
+                return 1;
+            }
+            return 0;
+        } catch (Exception e) {
+            log.debug("P&L integrity check: cannot fetch trade {} from broker ({}).", tradeId, e.getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * Re-attempts (bounded, paced) the trades that the fallback could not reconcile, and removes
+     * them from the unreconciled list once the broker answers with a CLOSED realizedPL. Never throws.
+     */
+    private void reattemptUnreconciledTrades() {
+        List<String> ids;
+        synchronized (unreconciledTrades) {
+            ids = new ArrayList<>();
+            for (UnreconciledTrade u : unreconciledTrades) {
+                ids.add(u.tradeId);
+            }
+        }
+        int checked = 0;
+        for (String tradeId : ids) {
+            if (checked >= MAX_REATTEMPT_PER_PASS) break;
+            checked++;
+            try {
+                JsonNode details = executor.getTradeDetails(tradeId);
+                if (details != null && details.has("trade")) {
+                    JsonNode tNode = details.get("trade");
+                    String state = tNode.has("state") ? tNode.get("state").asText() : "";
+                    if ("CLOSED".equals(state) && tNode.hasNonNull("realizedPL")) {
+                        double realizedPL = tNode.get("realizedPL").asDouble();
+                        completeReconciliation(tradeId, realizedPL);
+                        removeUnreconciledTrade(tradeId);
+                        log.info("♻ Unreconciled trade {} recovered from the broker: realizedPL ${}.",
+                            tradeId, String.format("%.2f", realizedPL));
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("Unreconciled trade {} still unavailable from broker: {}", tradeId, e.getMessage());
+            }
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+    }
+
+    private void removeUnreconciledTrade(String tradeId) {
+        synchronized (unreconciledTrades) {
+            unreconciledTrades.removeIf(u -> tradeId.equals(u.tradeId));
+        }
     }
 
     public void markUnconfirmed(String tradeId) {
@@ -1417,8 +1722,10 @@ public class LiveStrategyRunner implements Runnable {
             root.put("error", error);
             root.put("savedAt", TimeConventions.now().toString());
             root.put("running", false);
-            MAPPER.writerWithDefaultPrettyPrinter().writeValue(stateFile.toFile(), root);
-            MAPPER.writerWithDefaultPrettyPrinter().writeValue(monitorFile.toFile(), root);
+            synchronized (stateWriteLock) {
+                writeJsonAtomic(stateFile, root);
+                writeJsonAtomic(monitorFile, root);
+            }
         } catch (Exception e) {
             log.warn("Failed to save failed state for '{}': {}", strategyShortName, e.getMessage());
         }
@@ -1454,7 +1761,21 @@ public class LiveStrategyRunner implements Runnable {
                 JsonNode pnlLedgerNode = root.get("pnlLedger");
                 pnlLedgerNode.fields().forEachRemaining(e ->
                     savedLedger.put(e.getKey(), e.getValue().asDouble()));
-                ledger.restore(savedLedger);
+                double confirmedTotal = root.has("pnlLedgerConfirmedTotal")
+                    ? root.get("pnlLedgerConfirmedTotal").asDouble() : 0.0;
+                List<String> recordedIds = new ArrayList<>();
+                if (root.has("pnlLedgerRecordedIds")) {
+                    for (JsonNode id : root.get("pnlLedgerRecordedIds")) {
+                        recordedIds.add(id.asText());
+                    }
+                } else {
+                    // Backward-compat with a v3 file written before the bounded ledger: the dedupe
+                    // ids are exactly the recent-window keys.
+                    recordedIds.addAll(savedLedger.keySet());
+                }
+                int ignoredLocalEstimates = root.has("ignoredLocalEstimates")
+                    ? root.get("ignoredLocalEstimates").asInt() : 0;
+                ledger.restore(confirmedTotal, savedLedger, recordedIds, ignoredLocalEstimates);
             } else if (statePnlVersion < PNL_ACCOUNTING_VERSION) {
                 log.warn("⚠️ Discarding legacy realized-P&L accumulator (state v{}, current v{}): it was "
                     + "accumulated with the quote-currency estimate and is not in the account currency. "
@@ -1499,6 +1820,17 @@ public class LiveStrategyRunner implements Runnable {
                     p.stopLoss = pn.has("stopLoss") ? pn.get("stopLoss").asDouble() : 0;
                     p.takeProfit = pn.has("takeProfit") ? pn.get("takeProfit").asDouble() : 0;
                     pendingStops.add(p);
+                }
+            }
+
+            if (root.has("unreconciledTrades")) {
+                for (JsonNode un : root.get("unreconciledTrades")) {
+                    unreconciledTrades.add(new UnreconciledTrade(
+                        un.get("tradeId").asText(),
+                        un.get("symbol").asText(),
+                        un.has("reason") ? un.get("reason").asText() : "",
+                        Instant.parse(un.get("timestamp").asText())
+                    ));
                 }
             }
 
