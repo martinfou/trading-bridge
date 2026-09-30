@@ -1,0 +1,25 @@
+# Build context hygiene.
+#
+# The Dockerfile's builder stage runs Maven against the sources, and the final image copies ONLY
+# target/classes plus libs/. Nothing here is needed to build, but data/ is 20GB of historical candles
+# and runtime state and it was being shipped into the builder on every single build, which is the whole
+# reason a rebuild took ten minutes. Measured 2026-09-30: context 21GB, data/ 20GB, docker-buildx at a
+# sustained 36% CPU for nine minutes doing nothing but digesting it.
+#
+# This file does NOT affect the running container: runtime data comes from the compose mounts, not from
+# the image.
+
+.git
+.gitignore
+data
+target
+**/target
+*.log
+logs
+reports
+node_modules
+.idea
+.vscode
+*.iml
+.DS_Store
+Thumbs.db
