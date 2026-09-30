@@ -23,7 +23,6 @@ public final class PropStrategyCatalog {
         register("LondonOpenRangeBreakout", LondonOpenRangeBreakoutStrategy::new);
         register("AsianRangeMeanReversion", AsianRangeMeanReversionStrategy::new);
         register("SupplyDemandZone", SupplyDemandZoneStrategy::new);
-        register("EmaPullbackContinuation", EmaPullbackContinuationStrategy::new);
         register("ConnorsRsi2", ConnorsRsi2Strategy::new);
         register("PdhlSweepReversal", PdhlSweepReversalStrategy::new);
         register("NyContinuation", NyContinuationStrategy::new);

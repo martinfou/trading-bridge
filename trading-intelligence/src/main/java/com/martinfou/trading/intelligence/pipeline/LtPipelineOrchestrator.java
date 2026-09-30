@@ -1,7 +1,6 @@
 package com.martinfou.trading.intelligence.pipeline;
 
 import com.martinfou.trading.backtest.BacktestResult;
-import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
 import com.martinfou.trading.core.Bar;
@@ -403,7 +402,8 @@ public class LtPipelineOrchestrator {
                 return null;
             }
 
-            var costs = BacktestExecutionCost.ZERO;
+            // Uses RunContext's non-zero DEFAULT cost model (US-39.1) — real
+            // commission+slippage instead of the old implicit zero-cost artifact.
             RunContext context = RunContext.forStrategy(strategy, oandaSymbol, RunMode.BACKTEST, bars, CAPITAL);
             BacktestResult br = context.run();
 

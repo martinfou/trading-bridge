@@ -198,7 +198,10 @@ class PlatformRobustnessTest {
     }
 
     private static BacktestResult runMode(Strategy strategy, List<Bar> bars, RunMode mode) {
-        return RunContext.forStrategy(strategy, SYMBOL, mode, bars, CAPITAL).run();
+        // ZERO explicitly: this test asserts exact fill prices, not cost realism.
+        return RunContext.forStrategy(
+            null, null, strategy, SYMBOL, mode, bars, CAPITAL, null,
+            BacktestExecutionCost.ZERO).run();
     }
 
     private static void assertPlatformParity(BacktestResult backtest, BacktestResult paper) {

@@ -1,0 +1,33 @@
+#!/bin/bash
+# RunUsdcadSwapRetest — re-test de USD/CAD Oct12→Nov26 avec le SWAP RÉELLEMENT appliqué
+# (lundi 28 sept 2026, action DUE de la revue hebdo du 26 sept).
+#
+# Corrige aussi la cause racine : SwapCalculator normalise désormais les underscores
+# (clé « USDCAD » vs symbole « USD_CAD » ⇒ swap silencieusement à 0).
+export JAVA_HOME=/home/martinfou/.local/share/mise/installs/java/26.0
+export PATH="$JAVA_HOME/bin:$PATH"
+REPO=/home/martinfou/projects/trading-bridge
+MLOCAL=$HOME/.m2/repository
+cd "$REPO" || exit 1
+
+CP="trading-examples/target/classes"
+CP="$CP:trading-strategies/target/classes"
+CP="$CP:trading-backtest/target/classes"
+CP="$CP:trading-core/target/classes"
+CP="$CP:trading-data/target/classes"
+CP="$CP:trading-intelligence/target/classes"
+for jar in $(find $MLOCAL/com/fasterxml/jackson -name "*.jar" -not -name "*sources*" -not -name "*javadoc*" 2>/dev/null); do CP="$CP:$jar"; done
+CP="$CP:$(find $MLOCAL -name 'jackson-datatype-jsr310*.jar' 2>/dev/null | head -1)"
+for jar in $(find $MLOCAL/org/slf4j -name "slf4j-api-2*.jar" -not -name "*sources*" 2>/dev/null); do CP="$CP:$jar"; done
+for jar in $MLOCAL/ch/qos/logback/logback-classic/1.*/logback-classic-1.*.jar; do [ -f "$jar" ] && CP="$CP:$jar"; done
+for jar in $MLOCAL/ch/qos/logback/logback-core/1.*/logback-core-1.*.jar; do [ -f "$jar" ] && CP="$CP:$jar"; done
+CP="$CP:$(cat /tmp/bt-cp.txt 2>/dev/null)"
+
+javac -nowarn -cp "$CP" -d trading-backtest/target/classes \
+  trading-backtest/src/main/java/com/martinfou/trading/backtest/SwapCalculator.java || exit 1
+javac -nowarn -cp "$CP" -d trading-examples/target/classes \
+  trading-examples/src/main/java/com/martinfou/trading/examples/RunUsdcadSwapRetest.java || exit 1
+
+MODE="${1:---all}"
+echo "=== MODE: $MODE | $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
+timeout --preserve-status 1500 java -cp "$CP" com.martinfou.trading.examples.RunUsdcadSwapRetest "$MODE" 2>/tmp/usdcad-swap-stderr.log
