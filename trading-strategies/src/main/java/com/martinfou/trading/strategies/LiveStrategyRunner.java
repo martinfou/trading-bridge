@@ -836,10 +836,11 @@ public class LiveStrategyRunner implements Runnable {
     private void runLoop() throws Exception {
         log.info("━━━ Starting strategy: {} (instrument: {}) ━━━", strategy.name(), toOandaSymbol());
 
-        // Resume from saved state if available
-        resumeState();
-
-        // Get initial candles to warm up the strategy
+        // Warm up FIRST, then resume state. The order is deliberate and was inverted until 2026-09-30:
+        // the 200-bar replay calls strategy.onBar(), so resuming first meant the restored strategy state
+        // (inTrade, direction, cooldown, trades today) was immediately overwritten by the historical view,
+        // and a process that came back holding a position believed it was flat. The saved state is the
+        // truth and the replay is only history, so the replay must happen first.
         String oandaSymbol = toOandaSymbol();
         log.info("Fetching initial {} candles for {} ...", granularity, oandaSymbol);
         List<Bar> initialBars = priceClient.getCandles(oandaSymbol, granularity, 200);
@@ -850,6 +851,20 @@ public class LiveStrategyRunner implements Runnable {
 
         // Warm up: feed historical bars but don't trade them
         warmUp(initialBars);
+
+        // Remember where the replay left the bar cursor. resumeState() also restores lastBarTime, and the
+        // saved value can be OLDER than the newest replayed bar: rewinding it would make the main loop
+        // process bars the strategy has just been fed, which is exactly how historical signals reach the
+        // broker. The cursor may only move forward.
+        Instant warmedUpTo = lastBarTime;
+
+        // Restore the saved state AFTER the replay, so it has the last word on the position
+        resumeState();
+        if (warmedUpTo != null && (lastBarTime == null || lastBarTime.isBefore(warmedUpTo))) {
+            log.info("Bar cursor kept at the warm-up end ({} instead of the saved {}): those bars were "
+                + "already replayed and must not be processed twice.", warmedUpTo, lastBarTime);
+            lastBarTime = warmedUpTo;
+        }
 
         // Verify account
         try {
