@@ -1,0 +1,121 @@
+# PRD — Environnements dev / paper / live pour le trading bridge
+
+> **Track** : BMad Method — Phase 2 (Planning)
+> **Auteur** : Hermes, à partir des décisions de Martin (Product Owner)
+> **Statut** : BROUILLON, en attente des réponses aux questions ouvertes
+> **Date** : 2026-09-30
+
+## 1. Problème
+
+Cinq services Docker tournent depuis un même dépôt, tous branchés sur le **même compte OANDA**
+(`101-002-4729622-012`), tous construits depuis le **même code**. Le découpage se présente comme une
+séparation mais n'en est pas une :
+
+| Constat mesuré (2026-09-30) | Valeur |
+|---|---|
+| Mémoire des 4 conteneurs actifs | 253 MiB au total (83,5 + 59,3 + 54,6 + 55,9) |
+| CPU au repos | 0,06 % chacun |
+| Images du même code | 5, dont 3 vieilles de deux mois |
+| Comptes OANDA distincts | 1 seul pour les 5 services |
+
+Les ressources ne sont donc pas le problème. Le problème est la **dérive silencieuse** : parce que
+chaque service a sa propre image, trois conteneurs ont continué à trader avec un code de juillet
+pendant que le quatrième recevait les correctifs. Le correctif de sizing risquait risque de n'être
+déployé que sur un seul des quatre, et rien n'aurait signalé les trois autres.
+
+Conséquence secondaire, du même défaut : un correctif déployé sans moyen de le valider sur des
+exécutions réelles. Le 2026-09-30, la première mise en service du sizing correct a coûté 494 CAD en
+sept secondes sur le compte de production, parce qu'il n'existait aucun endroit où l'exécuter d'abord.
+
+## 2. Vision
+
+Trois environnements, **une seule image**, séparés par **l'axe compte**, pas par stratégie :
+
+| Environnement | Compte | Rôle | Peut perdre de l'argent réel |
+|---|---|---|---|
+| **dev** | Sous-compte practice jetable (à créer) | Valider les vraies exécutions, casse libre, remis à zéro sans conséquence | Non |
+| **paper** | Compte practice | Stratégies en cours de validation, observation prolongée | Non |
+| **live** | Compte réel (à créer) | Stratégies prouvées uniquement | **Oui** |
+
+## 3. Décisions déjà prises (Martin, 2026-09-30)
+
+- **D1** — Trois environnements : dev, paper, live. *(choix explicite, question 1)*
+- **D2** — dev trade un **sous-compte practice jetable** pour tester les vraies exécutions, au lieu
+  d'un environnement qui ne ferait que compiler et tester. Un mock ne reproduit pas le comportement
+  qui a coûté 494 CAD ; seule une exécution réelle le fait.
+- **D3** — Le PRD et les stories précèdent toute modification du `docker-compose.yml` (track BMad
+  Method, décision explicite de Martin sur la méthode).
+- **D4** — Aucun déploiement sans revue indépendante et tests (règle permanente, rappelée par le
+  skill BMad : « skipping code review is a workflow error »).
+
+## 4. Le problème des comptes, énoncé franchement
+
+Les trois sous-comptes existants sont pris : `-008` (health-dashboard), `-011` (hermes-web),
+`-012` (le bridge, celui que les conteneurs tradent). L'architecture cible en demande deux de plus :
+
+- un **sous-compte practice jetable** pour dev (il sera cassé volontairement, il ne doit rien
+  partager avec ce qui compte) ;
+- un **compte réel** pour live (il n'en existe aucun aujourd'hui : tout tourne sur practice).
+
+Ces deux créations sont du ressort de Martin dans l'interface OANDA. Tant qu'elles n'existent pas,
+l'architecture peut être construite et le service `live` défini mais non démarré.
+
+## 5. Invariant de sécurité non négociable
+
+**Le runner doit REFUSER de démarrer si l'environnement déclaré et les identifiants ne concordent
+pas.** Exemple : `ENV=live` accompagné d'un token practice, ou `ENV=paper` accompagné d'un token
+réel. Sans cette garde, la séparation est décorative : une variable mal réglée suffit à envoyer un
+ordre de test sur le compte réel. C'est l'invariant central de cette refonte, et il doit être vérifié
+par un test, pas par une relecture.
+
+Corollaire, tiré du défaut trouvé aujourd'hui : **un identifiant ne doit pas être partagé entre deux
+environnements**. Le token `-012` est actuellement partagé entre le bridge et les outils Hermes, ce
+qui est exactement la faute que cette refonte doit rendre impossible.
+
+## 6. Stories utilisateur (valeur)
+
+| # | En tant que... | Je veux... | Pourquoi |
+|---|---|---|---|
+| US-1 | Martin, propriétaire du compte | pouvoir essayer une stratégie sans risquer un dollar réel | le 494 CAD perdu en 7 s l'a été sur le compte de production, faute d'endroit où essayer |
+| US-2 | Martin | que le compte réel ne puisse pas être atteint par une erreur de configuration | une variable mal réglée ne doit jamais suffire à trader de l'argent réel |
+| US-3 | Martin | voir d'un coup d'œil quel environnement tourne quel code | trois conteneurs ont dérivé deux mois sans que rien ne le signale |
+| US-4 | Martin | promouvoir une stratégie de dev vers paper puis live par une décision explicite | une stratégie ne doit pas se retrouver en réel par défaut |
+| US-5 | Martin | qu'un redéploiement ne perde plus l'état d'une position ouverte | la position GBP_JPY a failli être perdue à chaque déploiement |
+
+## 7. Coding stories (à découper après les réponses)
+
+Squelette, à figer en Phase 3 :
+
+| # | Story | Effort | Dépend de |
+|---|---|---|---|
+| 1 | Sortir l'état de `/tmp` vers un volume monté | S | US-5 |
+| 2 | Garde d'environnement dans le runner (refus si flag et identifiants divergent) + test | M | US-2 |
+| 3 | Un seul `build:` partagé, services multiples par `image:` | S | US-3 |
+| 4 | Définir les 3 services (dev, paper, live) avec leurs comptes | M | US-1, US-4 |
+| 5 | Service `live` défini mais non démarré, avec procédure de promotion | S | US-4 |
+| 6 | Vérification d'environnement affichée au démarrage et dans le monitoring | S | US-3 |
+
+## 8. Questions ouvertes (à poser une à la fois)
+
+- **Q2** — Qui fournit les deux comptes manquants (practice jetable pour dev, réel pour live) et
+  quand ? L'architecture peut être bâtie sans, mais `live` ne peut pas démarrer.
+- **Q3** — Promotion d'une stratégie : décision manuelle de Martin, ou règle automatique sur des
+  critères mesurés (durée, P&L, nombre de trades) ?
+- **Q4** — Que devient `nfp-week`, défini dans le compose et jamais démarré : environnement, ou
+  suppression ?
+- **Q5** — Les 3 services actuels (`lt-rsi3`, `comp-momentum`, `month-week`) : paper ou dev ?
+- **Q6** — L'état doit-il être partagé entre environnements (non) ou un volume par environnement ?
+
+## 9. Hors périmètre
+
+- Changer les stratégies elles-mêmes ou leurs paramètres de risque.
+- Le nettoyage de `events.db` (fait le 2026-09-30, avec prune quotidienne dans le conteneur).
+- La bascule vers un courtier autre qu'OANDA.
+
+## 10. Critères de succès
+
+1. Un `docker compose build` ne produit **qu'une seule image** pour tous les environnements.
+2. Le runner **refuse de démarrer** sur incohérence environnement / identifiants, prouvé par un test.
+3. Un redéploiement ne perd **aucune position ouverte**, sans intervention manuelle.
+4. Aucun identifiant OANDA partagé entre deux environnements.
+5. `git rev-list --count origin/master..master` vaut 0 après chaque étape.
