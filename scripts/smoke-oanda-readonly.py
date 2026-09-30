@@ -55,6 +55,13 @@ def main() -> int:
 
     print(f"   → account {account} ({acct['currency']}) reachable")
     print(f"     balance {acct['balance']} | NAV {acct['NAV']} | open trades {acct['openTradeCount']}")
+
+    # The whole accounting rule assumes the account is in CAD: realized P&L is stored as
+    # broker-sourced ACCOUNT-currency. A USD practice account would silently pass the gate.
+    if acct.get("currency") != "CAD":
+        print(f"   ✗ account currency is {acct.get('currency')}, expected CAD — the realized-P&L")
+        print("     ledger assumes account currency; check the account ID before deploying")
+        return 1
     return 0
 
 

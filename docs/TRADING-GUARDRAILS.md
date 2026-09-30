@@ -83,3 +83,28 @@ merge dans la branche par défaut — jamais Martin.
   contre une stratégie qui perd de l'argent par conception.
 - Pas une autorisation d'augmenter le risque : toute hausse de taille, de levier ou de périmètre
   passe par une modification explicite de ce fichier.
+
+## Journal des revues indépendantes
+
+### 2026-09-29 — commit `62500873` (revue par un second agent, lecture seule)
+
+Verdict : **aucun BLOCKER**. L'invariant comptable tient (devise du compte, source courtier, une
+fois par transaction). La revue a néanmoins trouvé **2 MAJEURS, 4 MINEURS, 4 NITs** — dont un bug
+introduit par moi au commit `2777bda8`, que mon propre résumé ne mentionnait pas.
+
+| # | Sévérité | Constat | État |
+|---|---|---|---|
+| M1 | majeur | Le watchdog tournait **sur le thread de trading** et appelait le courtier une fois par entrée, sans borne → blocages du loop et ~175 000 appels/jour après un an | corrigé (thread worker, fenêtre bornée à 200, pacing 50 ms) |
+| M2 | majeur | Une transaction CLOSED **sans champ `realizedPL`** était enregistrée **0,00 $** et ne pouvait plus être corrigée (dedupe premier-gagnant) — le watchdog ne pouvait pas le voir, même repli | corrigé (on reporte, on n'enregistre jamais 0 par défaut) |
+| M3 | mineur | Après 5 échecs, le repli retirait la transaction **sans jamais enregistrer** son P&L courtier → perdu définitivement et **invisible** du watchdog | corrigé (liste persistée + nouvelle tentative bornée + compteur d'état) |
+| M4 | mineur | `totalExits` compté **deux fois** sur les sorties déclenchées par un signal (au signal ET à la réconciliation) | corrigé — **bug de ma part** au commit `2777bda8` |
+| M5 | mineur | Registre non borné : une entrée par transaction, **pour toujours**, réécrite dans l'état toutes les 60 s | corrigé (total exact + fenêtre récente de 200 + plafond d'ids) |
+| M6 | mineur | État écrit **non atomiquement** et depuis deux threads sans verrou → un état tronqué fait perdre le registre au redémarrage | corrigé (fichier temporaire + `ATOMIC_MOVE` + verrou d'écriture) |
+| N1-N3 | nit | Signature trompeuse, compteur non restauré, smoke test qui n'exigeait pas CAD | corrigés |
+| N4 | nit | Fenêtre check-then-act étroite entre `hasClosableTrades` et l'enregistrement | laissé tel quel (étroit, préexistant) |
+
+**Leçon à garder** : le résumé de l'agent qui écrit le code n'est pas une preuve. Un second agent a
+trouvé un défaut de ressource que le test vert ne montrait pas, et un compteur faux que j'avais
+écrit moi-même. La revue indépendante n'est pas une cérémonie — c'est la couche qui remplace la
+relecture par Martin.
+
