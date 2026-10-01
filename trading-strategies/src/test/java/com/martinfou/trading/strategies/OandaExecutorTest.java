@@ -119,6 +119,21 @@ class OandaExecutorTest {
     }
 
     @Test
+    void marketOrderCarriesStopLossOnFillInTheOrderBody() throws Exception {
+        responsePayload.set("{\"orderCreateTransaction\":{\"id\":\"4\"},"
+            + "\"orderFillTransaction\":{\"tradeOpened\":{\"tradeID\":\"t4\"},\"price\":\"207.500\"}}");
+        OandaExecutor exec = createExecutor();
+
+        exec.placeMarketOrder("GBP_JPY", "1000", "TAG", false, "206.000", null);
+
+        JsonNode order = sentOrder();
+        assertEquals("MARKET", order.get("type").asText());
+        assertEquals("206.000", order.get("stopLossOnFill").get("price").asText(),
+            "story 1.7: the stop rides the order body, not a second call after the fill");
+        assertFalse(order.has("takeProfitOnFill"), "D30: the target is never attached to the order");
+    }
+
+    @Test
     void openPositionUnitsSumsOnlyTheSideTheCloseReduces() throws Exception {
         responseStatus.set(200);
         responsePayload.set("""

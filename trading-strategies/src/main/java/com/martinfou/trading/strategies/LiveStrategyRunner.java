@@ -146,6 +146,8 @@ public class LiveStrategyRunner implements Runnable {
     private volatile Instant lastHeartbeatTime = Instant.now();
     private volatile int totalEntries = 0;
     private volatile int totalExits = 0;
+    /** Entries refused by the story 1.4 guard (a live entry that carried no protective stop). */
+    private volatile int rejectedNoStopEntries = 0;
     /** Realized-P&L ledger — the ONLY writer of realized P&L (account currency, broker-sourced, once per trade). */
     private final RealizedPnlLedger ledger = new RealizedPnlLedger();
     private Instant lastStateSave = Instant.MIN;
@@ -1127,6 +1129,26 @@ public class LiveStrategyRunner implements Runnable {
         }
     }
 
+    /**
+     * Live-entry guard (story 1.4): an entry with no protective stop is refused, logged and counted.
+     * The predicate itself ({@link Order#hasProtectiveStop()}) lives ONCE in trading-core; this is the
+     * single live call site that turns a missing stop into a refusal + observability counter. It is
+     * deliberately NOT called from the backtest engine (the mirror is deferred, per the spec): a general
+     * guard there would break stopless strategies (harness, fixed quantity).
+     *
+     * @return true when the entry was rejected — the caller must not send it.
+     */
+    boolean rejectEntryWithoutStop(Order order, String oandaSymbol) {
+        if (order.hasProtectiveStop()) {
+            return false;
+        }
+        rejectedNoStopEntries++;
+        log.error("⛔ Entry refused for {} {}: the order carries no stop loss — a live entry without a stop "
+            + "has no risk denominator and no broker protection (guard story 1.4). Refusals so far: {}",
+            oandaSymbol, order.side(), rejectedNoStopEntries);
+        return true;
+    }
+
     private void executeTrade(Order order, String oandaSymbol, double execPrice) {
         try {
             // Size to the risk budget (two-sided): the strategy's units are intent, the risk % is the budget
@@ -1183,6 +1205,14 @@ public class LiveStrategyRunner implements Runnable {
                     }
                 }
             } else {
+                // Story 1.4 guard: no stop ⇒ no entry. The predicate lives once in trading-core
+                // (Order.hasProtectiveStop()); this is the single live call site, before any sizing.
+                // This is a semantic change: a stopless entry used to be accepted and capped at
+                // NO_RISK_UNITS_CAP with a warn; it is now refused, logged and counted.
+                if (rejectEntryWithoutStop(order, oandaSymbol)) {
+                    return;
+                }
+
                 // Entry: two-sided risk budget — the strategy's units are intent, the risk % is the budget
                 // Guard (2026-09-30 incident): the order carries the stop computed on its SIGNAL bar, but
                 // it is priced at the LIVE market. When the market has already reached or crossed that
@@ -1253,41 +1283,23 @@ public class LiveStrategyRunner implements Runnable {
                 return;
             }
 
-            // ─── New entry — place market order ───
-            var result = executor.placeMarketOrder(oandaSymbol, unitsStr, tag);
-            totalEntries++;
-
-            log.info("═══════ ENTRY {} {} {} @ {} ═══════",
-                oandaSymbol, order.side(),
-                String.format("%.2f", units / 100000.0) + " lots",
-                result.fillPrice());
-
-            // Attach SL/TP
-            double fillPrice = Double.parseDouble(result.fillPrice());
+            // ─── New entry — place market order with the stop IN the order (story 1.7) ───
+            // The stop rides stopLossOnFill in the same order body: a crash in the fill→attach window can
+            // no longer leave a naked position, and a failed attach can no longer be logged away
+            // (warn-and-continue). The take profit is deliberately NOT attached (D30): the target stays
+            // with the strategy, so the broker never receives a TP.
             String slStr = order.stopLoss() > 0
                 ? formatPrice(order.stopLoss(), oandaSymbol) : null;
-            String tpStr = order.takeProfit() > 0
-                ? formatPrice(order.takeProfit(), oandaSymbol) : null;
+            var result = executor.placeMarketOrder(oandaSymbol, unitsStr, tag, false, slStr, null);
+            totalEntries++;
 
-            if (slStr != null && result.tradeId() != null && !result.tradeId().equals("N/A")) {
-                String slResult = executor.addStopLoss(result.tradeId(), slStr, tag);
-                if (slResult.equals("OK")) {
-                    log.info("   SL set @ {}", slStr);
-                } else {
-                    log.warn("   SL failed: {}", slResult);
-                }
-            }
-
-            if (tpStr != null && result.tradeId() != null && !result.tradeId().equals("N/A")) {
-                String tpResult = executor.addTakeProfit(result.tradeId(), tpStr, tag);
-                if (tpResult.equals("OK")) {
-                    log.info("   TP set @ {}", tpStr);
-                } else {
-                    log.warn("   TP failed: {}", tpResult);
-                }
-            }
+            log.info("═══════ ENTRY {} {} {} @ {} (stop on fill: {}) ═══════",
+                oandaSymbol, order.side(),
+                String.format("%.2f", units / 100000.0) + " lots",
+                result.fillPrice(), slStr != null ? slStr : "none");
 
             // Track trade
+            double fillPrice = Double.parseDouble(result.fillPrice());
             if (result.tradeId() != null && !result.tradeId().equals("N/A")) {
                 synchronized (activeTrades) {
                     activeTrades.add(new ActiveTrade(
@@ -1478,6 +1490,11 @@ public class LiveStrategyRunner implements Runnable {
 
     public int getTotalExits() {
         return totalExits;
+    }
+
+    /** Entries refused by the story 1.4 guard (package-private for tests/observability). */
+    int getRejectedNoStopEntries() {
+        return rejectedNoStopEntries;
     }
 
     // ========================================================================
