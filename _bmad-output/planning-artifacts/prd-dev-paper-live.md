@@ -103,6 +103,30 @@ Les trois sous-comptes existants sont pris : `-008` (health-dashboard), `-011` (
 Ces deux créations sont du ressort de Martin dans l'interface OANDA. Tant qu'elles n'existent pas,
 l'architecture peut être construite et le service `live` défini mais non démarré.
 
+## 4bis. Vérification du compte live (2026-09-30, D12 appliquée)
+
+Un seul appel de lecture (`GET /v3/accounts/001-002-1889378-005/summary` sur `api-fxtrade.oanda.com`),
+autorisé explicitement, a confirmé que le token live ouvre bien ce compte :
+
+| Champ | Valeur |
+|---|---|
+| id | `001-002-1889378-005` |
+| alias | `OANDA-live` |
+| devise | CAD |
+| balance / NAV | 2 000,0000 CAD |
+| positions ouvertes / trades | 0 / 0 |
+| HTTP | 200 |
+
+**Implication de sizing à traiter dans l'architecture** : sur 2 000 CAD de NAV, un budget de risque de
+0,75 % vaut 15 CAD par transaction. Combiné à un plancher de 2 000 unités en cas d'absence de budget
+(`NO_RISK_UNITS_CAP`), c'est le genre de rapport qui produit soit des positions microscopiques, soit un
+plancher qui dépasse le budget réel. À traiter explicitement plutôt que de laisser le moteur décider.
+
+**Le token live a été transmis par la messagerie**, donc il doit être considéré comme exposé : il figure
+dans l'historique de la conversation et dans les journaux de session. Il est stocké en `.env.live`
+(mode 600, ignoré par git, vérifié), mais la mesure correcte est de le régénérer dans l'interface OANDA
+et de déposer le nouveau **directement dans le fichier sur la machine**, sans passer par un message.
+
 ## 5. Invariant de sécurité non négociable
 
 **Le runner doit REFUSER de démarrer si l'environnement déclaré et les identifiants ne concordent
