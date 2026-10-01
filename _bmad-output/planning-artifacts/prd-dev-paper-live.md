@@ -244,6 +244,22 @@ microscopique.
     silencieusement. C'est le même piège que la perte d'état à chaque recréation (D9), appliqué à
     l'échelle du compte.
 
+## 4quater. Rotation des clés exposées : offerte, déclinée (2026-10-01)
+
+Trois jetons ont transité par la messagerie pendant la session : la clé live (`9250a361…`, compte réel
+`001-002-1889378-005`, 2 000 CAD), l'ancienne clé practice `-012`, et une nouvelle clé ouvrant les
+13 sous-comptes. L'ancienne `-012` renvoie 401 : elle est morte, ce qui est le résultat attendu.
+
+La rotation des deux autres a été proposée avec la méthode propre (régénérer dans l'interface OANDA et
+déposer la nouvelle valeur directement dans les fichiers `.env*` sur la machine, sans repasser par un
+message). **Martin a décliné : « ce n'est pas un risque pour moi, on laisse tomber. »** C'est son
+compte, sa décision, et elle est enregistrée ici pour qu'un lecteur futur sache que l'exposition était
+connue et acceptée, plutôt que de la découvrir et de croire à un oubli.
+
+Conséquence pratique à garder en tête : les fichiers `.env.live`, `.env.dev` et `.env.paper` portent des
+jetons qui ont circulé dans un historique de conversation. Ils sont en mode 600 et ignorés par git,
+donc ils ne fuient pas par le dépôt. La seule exposition restante est l'historique de session.
+
 ## 5. Invariant de sécurité non négociable
 
 **Le runner doit REFUSER de démarrer si l'environnement déclaré et les identifiants ne concordent
