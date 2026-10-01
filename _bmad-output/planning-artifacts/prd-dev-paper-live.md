@@ -50,6 +50,13 @@ Trois environnements, **une seule image**, séparés par **l'axe compte**, pas p
 - **D5** — Ordre de construction : l'architecture se bâtit **maintenant**, avec dev sur un sous-compte
   practice jetable, et le service `live` **défini mais non démarré**. On ne bloque pas la
   structuration sur la création des comptes.
+- **D9** — L'état vit dans **un volume par environnement** (`strategy-state-dev`, `-paper`, `-live`),
+  avec un fichier JSON par stratégie à l'intérieur, exactement la forme actuelle mais hors de `/tmp`.
+  Le plus simple des trois choix, et il suffit : il supprime la perte d'état à chaque recréation, donc
+  la danse manuelle de sauvegarde et restauration qui a failli perdre la position GBP_JPY ce soir, et
+  qui a silencieusement gelé le fichier de monitorage du trader. Un volume par stratégie a été écarté
+  comme sur-ingénierie à ce stade : le risque réel est la perte à la recréation, pas la contamination
+  entre stratégies, qui partagent déjà le même compte et le même processus.
 - **D8** — `lt-rsi3` (EUR_USD), `comp-momentum` et `month-week` vont en **paper**, pas en dev : ce sont
   des stratégies suivies sérieusement, pas des bacs à sable. Elles restent donc sur un compte practice
   et gardent leur historique. Conséquence à trancher : `-012` est aujourd'hui le compte practice
