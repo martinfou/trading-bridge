@@ -29,9 +29,10 @@ import org.slf4j.LoggerFactory;
  * loop) can open an explicit, test-only gate via {@link #allowOrdersForTestingOnly()}. The gate is
  * honoured only while a test runtime is detected, the install call itself throws in production, and
  * — crucially — a gate-honoured order may only target a <em>local</em> destination
- * ({@code localhost}, {@code 127.0.0.1}, {@code ::1}). Even an open gate can therefore never reach a
- * real broker. {@link #decision(Map, String)} remains the pure, unchanged fail-closed decision
- * function.
+ * ({@code localhost}, {@code 127.0.0.1}, {@code ::1}) that is <em>not</em> a known broker port
+ * (4001-4004, 7496, 7497): loopback proves nothing for IBKR, whose local gateway relays to a real
+ * broker. Even an open gate can therefore never reach a real broker. {@link #decision(Map, String)}
+ * remains the pure, unchanged fail-closed decision function.
  */
 public final class OrderTripwire {
 
@@ -51,16 +52,18 @@ public final class OrderTripwire {
      *
      * <p><b>MEASUREMENT (do not widen without re-measuring).</b> The production image was inspected
      * on 2026-10-01 ({@code docker run --rm --entrypoint sh <prod-image> -c 'ls /app/libs'}):
-     * <b>47 jars</b>, of which <b>6 are JUnit</b> ({@code junit-jupiter-5.11.0},
-     * {@code junit-jupiter-api}, {@code junit-jupiter-engine}, {@code junit-jupiter-params},
-     * {@code junit-platform-commons}, {@code junit-platform-engine}) and <b>0</b> are
-     * {@code surefire}, {@code testng} or {@code idea_rt}. JUnit therefore <em>lives on the
-     * production classpath</em>. Adding {@code junit} (or {@code jupiter}, or {@code platform}) to
-     * this list would classify every production container as a test runtime and refuse
-     * <em>every</em> order even with {@value #ENV_ALLOW_ORDERS}=1 — a silent total trading outage.
-     * <b>NEVER add junit/jupiter/platform here.</b>
+     * <b>47 jars</b> ({@code trading-bridge-trader:latest}), of which <b>6 are JUnit</b>
+     * ({@code junit-jupiter-5.11.0}, {@code junit-jupiter-api}, {@code junit-jupiter-engine},
+     * {@code junit-jupiter-params}, {@code junit-platform-commons}, {@code junit-platform-engine})
+     * and <b>0</b> are {@code surefire}, {@code failsafe}, {@code testng}, {@code idea_rt} or
+     * {@code gradle}. JUnit therefore <em>lives on the production classpath</em>. Adding
+     * {@code junit} (or {@code jupiter}, or {@code platform}) to this list would classify every
+     * production container as a test runtime and refuse <em>every</em> order even with
+     * {@value #ENV_ALLOW_ORDERS}=1 — a silent total trading outage. <b>NEVER add
+     * junit/jupiter/platform here.</b>
      */
-    private static final String[] TEST_RUNTIME_TOKENS = {"surefire", "idea_rt", "testng", "gradle"};
+    private static final String[] TEST_RUNTIME_TOKENS =
+            {"surefire", "failsafe", "idea_rt", "testng", "gradle"};
 
     /**
      * Test-only escape hatch. Installed exclusively by test code via
@@ -146,14 +149,18 @@ public final class OrderTripwire {
      * Logs exactly once per JVM when the path is authorised (proof that a container carries the flag).
      *
      * <p>When the test-only gate is honoured, the destination {@code target} MUST be local
-     * ({@code localhost}, {@code 127.0.0.1}, {@code ::1}); any other destination is refused even
-     * though the gate is open. In production (flag path) the destination is not restricted.
+     * ({@code localhost}, {@code 127.0.0.1}, {@code ::1}) AND must NOT use a known broker port
+     * (4001-4004, 7496, 7497). The broker-port check matters because loopback proves nothing for
+     * IBKR: the live gateway client connects to an IB Gateway on loopback that relays orders to a
+     * real broker. In production (flag path) the destination is not restricted.
      *
      * @param instrument instrument (or the most specific identifier available at the call site)
      * @param units      units (or the most specific quantity available at the call site)
      * @param context    human-readable call-site label, e.g. {@code OandaExecutor.placeMarketOrder}
-     * @param target     the destination host or base URL of this order (e.g. {@code baseUrl} for the
-     *                   OANDA clients, {@code config.host()} for the IBKR gateway client)
+     * @param target     the destination host (with port) or base URL of this order (e.g.
+     *                   {@code baseUrl} for the OANDA clients, {@code config.host() + ":" +
+     *                   config.port()} for the IBKR gateway client — the port is required so the
+     *                   broker-port refusal can fire)
      */
     public static void checkOrderAllowed(String instrument, String units, String context, String target) {
         checkOrderAllowed(instrument, units, context, target, System.getenv(), runtimeClassPath());
@@ -174,10 +181,11 @@ public final class OrderTripwire {
     static void checkOrderAllowed(String instrument, String units, String context, String target,
                                   Map<String, String> env, String classPath) {
         if (isTestRuntime(env, classPath) && TEST_GATE_INSTALLED.get()) {
-            if (!isLocalDestination(target)) {
+            if (!isLocalDestination(target) || isKnownBrokerPort(target)) {
                 throw new IllegalStateException(
                         "Order refused by the order tripwire: the test-only gate authorises orders ONLY "
-                                + "to a local destination (localhost, 127.0.0.1, ::1), but the destination is "
+                                + "to a local destination (localhost, 127.0.0.1, ::1) that is NOT a known "
+                                + "broker port (4001-4004, 7496, 7497), but the destination is "
                                 + (target == null ? "<missing>" : target) + ". A test must never reach a real broker. "
                                 + "instrument=" + instrument + ", units=" + units + ", context=" + context
                                 + ". See " + GUARDRAILS_DOC + ".");
@@ -211,6 +219,77 @@ public final class OrderTripwire {
         return "localhost".equalsIgnoreCase(host)
                 || "127.0.0.1".equals(host)
                 || "::1".equals(host);
+    }
+
+    /**
+     * Known broker ports on the loopback interface. For IBKR a <em>loopback</em> destination is NOT
+     * proof of safety: the live {@code TcpIbkrGatewayClient} connects to an IB Gateway / TWS
+     * listening on loopback ({@code IbkrConnectionConfig.DEFAULT_PAPER_PORT=7497},
+     * {@code DEFAULT_LIVE_PORT=7496}; IB Gateway also listens on 4001-4004), and that gateway
+     * forwards the order to a <em>real</em> broker. A test stub can never legitimately listen on
+     * these ports, so the test-only gate refuses them even though the host is loopback.
+     */
+    private static final int[] KNOWN_BROKER_PORTS = {4001, 4002, 4003, 4004, 7496, 7497};
+
+    /**
+     * True when {@code target} carries a known broker port (see {@link #KNOWN_BROKER_PORTS}).
+     * Loopback proves nothing for IBKR: an IB Gateway / TWS on {@code 127.0.0.1:7497} relays the
+     * order to a real broker, so the test-only gate must refuse those ports even when the host is
+     * local. This fires <em>before</em> any I/O (it is evaluated in {@code checkOrderAllowed}, ahead
+     * of any connection or request).
+     */
+    static boolean isKnownBrokerPort(String target) {
+        int port = extractPort(target);
+        for (int brokerPort : KNOWN_BROKER_PORTS) {
+            if (port == brokerPort) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Returns the port of a destination string, or {@code -1} when none is present or parseable. */
+    private static int extractPort(String target) {
+        if (target == null) {
+            return -1;
+        }
+        String t = target.trim();
+        if (t.isEmpty()) {
+            return -1;
+        }
+        int schemeIdx = t.indexOf("://");
+        if (schemeIdx >= 0) {
+            try {
+                return URI.create(t).getPort(); // -1 when absent
+            } catch (IllegalArgumentException invalidUri) {
+                return -1;
+            }
+        }
+        int slash = t.indexOf('/');
+        if (slash >= 0) {
+            t = t.substring(0, slash);
+        }
+        if (t.startsWith("[") && t.contains("]")) {
+            String rest = t.substring(t.indexOf(']') + 1);
+            return rest.startsWith(":") ? parsePort(rest.substring(1)) : -1;
+        }
+        int firstColon = t.indexOf(':');
+        int lastColon = t.lastIndexOf(':');
+        if (firstColon >= 0 && firstColon == lastColon) {
+            return parsePort(t.substring(firstColon + 1)); // single colon => host:port
+        }
+        return -1; // bare host, or bare IPv6 (multiple colons) => no port
+    }
+
+    private static int parsePort(String value) {
+        if (value == null || value.isBlank()) {
+            return -1;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException notANumber) {
+            return -1;
+        }
     }
 
     private static String extractHost(String target) {
@@ -281,16 +360,39 @@ public final class OrderTripwire {
     }
 
     /**
-     * Classpath used for test-runtime detection. Surefire forks the test JVM and does NOT put its
-     * own jars on {@code java.class.path}; it ships the surefirebooter jar in the
-     * {@code surefire.real.class.path} system property instead (and the test classes in
-     * {@code surefire.test.class.path}). Merging them is what makes the defence-in-depth detection
-     * actually fire in a real test run, not just in a synthetic unit test. IntelliJ ({@code idea_rt})
-     * and Gradle worker jars, by contrast, do sit on {@code java.class.path} directly.
+     * Classpath used for test-runtime detection. The JVM classpath and the surefire / failsafe
+     * booter properties are fixed at JVM startup and never change during the JVM's lifetime, so the
+     * merged classpath is computed <em>once</em> (on first use) and memoised. This keeps the
+     * expensive rebuild-and-rescan off the order path: every subsequent {@code checkOrderAllowed}
+     * reuses the cached string instead of re-reading and re-splitting system properties.
+     *
+     * <p>{@link #decision(Map, String)} remains pure and unchanged; only the <em>access to the real
+     * classpath</em> is memoised here. Surefire forks the test JVM and does NOT put its own jars on
+     * {@code java.class.path}; it ships the surefirebooter jar in {@code surefire.real.class.path}
+     * (and the test classes in {@code surefire.test.class.path}). Failsafe — the Maven
+     * integration-test runner — mirrors this with {@code failsafe.real.class.path} /
+     * {@code failsafe.test.class.path}. Merging all four is what makes the defence-in-depth detection
+     * actually fire in a real test / integration-test run, not just in a synthetic unit test.
+     * IntelliJ ({@code idea_rt}) and Gradle worker jars, by contrast, sit on {@code java.class.path}
+     * directly.
      */
+    private static volatile String cachedRuntimeClassPath;
+
     static String runtimeClassPath() {
+        String cp = cachedRuntimeClassPath;
+        if (cp == null) {
+            cp = buildRuntimeClassPath();
+            cachedRuntimeClassPath = cp;
+        }
+        return cp;
+    }
+
+    /** Rebuilds the merged classpath from the live system properties (memoised by {@link #runtimeClassPath()}). */
+    static String buildRuntimeClassPath() {
         StringBuilder cp = new StringBuilder(System.getProperty("java.class.path", ""));
-        for (String key : new String[] {"surefire.test.class.path", "surefire.real.class.path"}) {
+        for (String key : new String[] {
+                "surefire.test.class.path", "surefire.real.class.path",
+                "failsafe.test.class.path", "failsafe.real.class.path"}) {
             String value = System.getProperty(key);
             if (value != null && !value.isBlank()) {
                 cp.append(java.io.File.pathSeparator).append(value);

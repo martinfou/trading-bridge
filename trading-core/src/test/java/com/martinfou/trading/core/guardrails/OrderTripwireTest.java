@@ -1,10 +1,12 @@
 package com.martinfou.trading.core.guardrails;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.net.ServerSocket;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -264,5 +266,75 @@ class OrderTripwireTest {
             OrderTripwire.checkOrderAllowed("EUR_USD", "1000", "local-ipv6-bracketed", "[::1]", TEST_ENV, TEST_CP);
             OrderTripwire.checkOrderAllowed("EUR_USD", "1000", "local-ipv6-bare", "::1", TEST_ENV, TEST_CP);
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Broker-port refusal: loopback proves nothing for IBKR
+    // ------------------------------------------------------------------
+
+    @Test
+    void testGate_installedButBrokerPortOnLoopback_refuses() throws Exception {
+        // ANTI-INCIDENT (IBKR): an IB Gateway / TWS on loopback forwards to a REAL broker. The gate
+        // must therefore refuse known broker ports even on 127.0.0.1 — before any I/O (the throw is
+        // in checkOrderAllowed, ahead of any connection, so this is hermetic and sends nothing).
+        try (AutoCloseable ignored = OrderTripwire.allowOrdersForTestingOnly(TEST_ENV, TEST_CP)) {
+            assertThrows(IllegalStateException.class,
+                    () -> OrderTripwire.checkOrderAllowed("EURUSD", "1", "ibkr-7497", "127.0.0.1:7497", TEST_ENV, TEST_CP));
+            assertThrows(IllegalStateException.class,
+                    () -> OrderTripwire.checkOrderAllowed("EURUSD", "1", "ibkr-4002", "127.0.0.1:4002", TEST_ENV, TEST_CP));
+            assertThrows(IllegalStateException.class,
+                    () -> OrderTripwire.checkOrderAllowed("EURUSD", "1", "ibkr-7496-url", "http://localhost:7496/", TEST_ENV, TEST_CP));
+        }
+    }
+
+    @Test
+    void testGate_brokerPortRefusalNamesLocalDestinationRule() throws Exception {
+        try (AutoCloseable ignored = OrderTripwire.allowOrdersForTestingOnly(TEST_ENV, TEST_CP)) {
+            IllegalStateException ex = assertThrows(IllegalStateException.class,
+                    () -> OrderTripwire.checkOrderAllowed("EURUSD", "1", "ibkr", "127.0.0.1:7497", TEST_ENV, TEST_CP));
+            assertTrue(ex.getMessage().contains("local destination"),
+                    "broker-port refusal must still name the local-destination rule: " + ex.getMessage());
+        }
+    }
+
+    @Test
+    void testGate_installedAndEphemeralStubPortOnLoopback_allows() throws Exception {
+        // POSITIVE CONTROL: a real ephemeral port (a test stub on 127.0.0.1) is authorised. The OS
+        // ephemeral range (typically 32768-60999 on Linux) never includes the broker ports, so this
+        // is the legitimate local-stub case the gate exists for.
+        try (ServerSocket stub = new ServerSocket(0)) {
+            int ephemeralPort = stub.getLocalPort();
+            try (AutoCloseable ignored = OrderTripwire.allowOrdersForTestingOnly(TEST_ENV, TEST_CP)) {
+                OrderTripwire.checkOrderAllowed("EUR_USD", "1000", "local-stub",
+                        "127.0.0.1:" + ephemeralPort, TEST_ENV, TEST_CP);
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Failsafe token + memoisation of the runtime classpath
+    // ------------------------------------------------------------------
+
+    @Test
+    void isTestRuntime_failsafeBooterJar_detected() {
+        // Failsafe is the Maven integration-test runner (failsafe-booter-*.jar). It must be
+        // recognised as a test runtime so an integration test with the gate open cannot pass real
+        // orders. (Measured: 0 failsafe jars in the production image, so this token is safe.)
+        String failsafeCp = "/maven/failsafe-booter-3.5.2.jar";
+        assertTrue(OrderTripwire.isTestRuntime(Map.of(), failsafeCp));
+        assertFalse(OrderTripwire.decision(envWithFlag("1"), failsafeCp),
+                "a failsafe-booter jar on the classpath must refuse even with the flag set");
+    }
+
+    @Test
+    void runtimeClassPath_memoisedOncePerJvmAndVerdictUnchanged() {
+        String cached = OrderTripwire.runtimeClassPath();
+        String fresh = OrderTripwire.buildRuntimeClassPath();
+        assertEquals(fresh, cached, "memoised value must equal a freshly-rebuilt classpath");
+        assertEquals(OrderTripwire.isTestRuntime(System.getenv(), fresh),
+                OrderTripwire.isTestRuntime(System.getenv(), cached),
+                "memoisation must not change the test-runtime verdict");
+        assertTrue(OrderTripwire.isTestRuntime(System.getenv(), cached),
+                "this JVM runs under Surefire, so the memoised classpath must still detect it");
     }
 }
