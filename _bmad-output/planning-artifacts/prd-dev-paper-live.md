@@ -352,6 +352,33 @@ l'environnement.
     conçue pour frapper le courtier dès que des identifiants sont présents. C'est la même famille de
     défaut que la garde de démarrage de la section 5, appliquée aux runs de développement.
 
+### 4septies. D28–D31 — deux défauts du chemin live, vérifiés le 2026-10-01
+
+Trouvés en auditant le backtest contre le courtier (fee/swaps + backtest vs paper), pas en cherchant des
+bugs. Les deux sont des écarts entre ce que la configuration **dit** et ce que le runner **fait** : voir
+la classe de défaut « doc vs code » ajoutée à `docs/TRADING-GUARDRAILS.md`.
+
+- **D28** — L'instrument tradé doit venir d'une **source explicite**, jamais du **nom d'affichage** de
+  la stratégie. Vérifié : `LiveStrategyRunner.toOandaSymbol()` (`LiveStrategyRunner.java:1616-1646`)
+  résout par `name.contains(...)` et retombe sur `GBP_JPY`. `VWPReversionStrategy` porte le nom
+  `"🔁 VWAP Reversion"` (`VWPReversionStrategy.java:33`) que la table ne reconnaît pas (`VWPREVERSION`),
+  donc `vwpreversion` tradait **GBP_JPY** pendant que sa config annonçait **USD_CHF**. Corollaire
+  mesuré : `STRATEGY_PAIR` du compose est **inerte** pour ce runner.
+- **D29** — Le mécanisme est corrigé **avant** de trancher la paire : `vwpreversion` sera re-backtestée
+  sur USD_CHF et GBP_JPY, et la paire retenue le sera **sur preuve**. Aucun choix par défaut.
+- **D30** — `ltrsi3` (`LtRSI3Momentum.evaluateEntry()`) émet ses entrées **sans stop** : le stop ATR et
+  la cible sont des champs internes, jamais attachés à l'ordre. Décision : le **stop ATR part sur
+  l'ordre** (il vit chez le courtier), la **cible reste gérée par la stratégie**, et une **garde du
+  moteur refuse toute entrée sans stop** (elle est aussi le dénominateur du budget de risque, sans quoi
+  la taille envoyée n'est pas celle de la policy).
+- **D31** — Une **seconde porte** est écrite pour les edges mono-instrument : OOS PF stable, DD ≤ 10 %,
+  faible nombre de trades admis lorsque le mécanisme est calendaire ou de session, la période paper de
+  30 jours fournissant l'échantillon manquant. La porte actuelle (PF ≥ 1,2 sur 2 paires sur 3, ≥ 30
+  trades) bloque structurellement 5 candidats validés depuis six semaines.
+
+Tech-spec, user stories, coding stories et critères d'acceptation :
+`_bmad-output/planning-artifacts/tech-spec-live-path-instrument-and-stop.md`.
+
 ## 5. Invariant de sécurité non négociable
 
 **Le runner doit REFUSER de démarrer si l'environnement déclaré et les identifiants ne concordent

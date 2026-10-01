@@ -162,9 +162,20 @@ echo "── summary ───────────────────�
 BLOCKERS=$(grep -ciE '^\**BLOCKER' "$OUT" || true)
 MAJORS=$(grep -ciE '^\**MAJOR' "$OUT" || true)
 MINORS=$(grep -ciE '^\**MINOR' "$OUT" || true)
-VERDICT=$(grep -oE 'VERDICT: *(APPROVED|NEEDS_FIX)' "$OUT" | tail -1 || true)
+# Accept the whole family of non-pass words, not only NEEDS_FIX. A reviewer that
+# writes "VERDICT: REJECTED" IS stating a fail, and reporting that as
+# "<not stated>" hides the reason from the operator. Measured 2026-10-01: a
+# REJECTED carrying 1 BLOCKER + 1 MAJOR was summarised as "no verdict line",
+# which reads like a tool crash instead of a rejection.
+# The safe direction is unchanged: anything unrecognised still fails the gate.
+VERDICT=$(grep -oE 'VERDICT: *(APPROVED|NEEDS_FIX|REJECTED|REJECTS|REJECT|FAIL|FAILED)' "$OUT" | tail -1 || true)
+STATED=$(grep -coE 'VERDICT:' "$OUT" || true)
 echo "   BLOCKER: $BLOCKERS   MAJOR: $MAJORS   MINOR: $MINORS"
 echo "   ${VERDICT:-VERDICT: <not stated by the reviewer>}"
+if [[ -z "$VERDICT" && "${STATED:-0}" -gt 0 ]]; then
+  echo "   ⚠ the reviewer DID write a VERDICT line, but not in the accepted vocabulary:"
+  echo "     $(grep -oE 'VERDICT:.*' "$OUT" | tail -1)"
+fi
 echo "   raw review kept at: $OUT"
 
 # A review with no verdict line is a FAILED review, never a pass. This was a real
