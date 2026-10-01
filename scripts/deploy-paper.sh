@@ -66,7 +66,11 @@ fi
 if [ "${#SERVICES[@]}" -eq 0 ]; then
   mapfile -t SERVICES < <(docker compose ps --services --status running 2>/dev/null | sort)
 fi
-[ "${#SERVICES[@]}" -gt 0 ] || { echo "${RED}✗ no running service found${NC}"; exit 1; }
+[ "${#SERVICES[@]}" -gt 0 ] || {
+  echo "${RED}✗ no service found. If the stack is stopped, name the services explicitly:${NC}"
+  echo "   scripts/deploy-paper.sh --apply trader month-week comp-momentum lt-rsi3"
+  exit 1
+}
 echo "→ services: ${SERVICES[*]}"
 
 # The account every paper container uses, so verification asks the right broker.
@@ -87,14 +91,22 @@ echo "→ copying strategy state out of the LIVE containers"
 run mkdir -p "$BACKUP_DIR"
 for svc in "${SERVICES[@]}"; do
   if [ "$APPLY" = 1 ]; then
-    cid=$(docker compose ps -q "$svc" | head -1)
-    [ -n "$cid" ] || { echo "   ${YELLOW}$svc: not running, skipped${NC}"; continue; }
-    files=$(docker exec "$cid" sh -c 'ls /tmp/live-strategy-state-*.json 2>/dev/null' || true)
-    for f in $files; do
-      docker cp "$cid:$f" "$BACKUP_DIR/$svc-$(basename "$f")" >/dev/null
-      echo "   $svc: saved $(basename "$f")"
+    cid=$(docker compose ps -aq "$svc" | head -1)
+    if [ -z "$cid" ]; then echo "   $svc: no container, skipped"; continue; fi
+    st=$(docker inspect "$cid" --format '{{.State.Status}}')
+    # Look at EVERY container, not only running ones, and use docker cp rather than docker exec:
+    # docker cp works on a stopped container, and recreating a stopped container would otherwise
+    # silently discard a position the runner still has to re-adopt. Found by deploying a paused stack.
+    tmp=$(mktemp -d)
+    docker cp "$cid:/tmp/." "$tmp/" >/dev/null 2>&1 || true
+    found=0
+    for f in "$tmp"/live-strategy-state-*.json; do
+      [ -e "$f" ] || continue
+      cp "$f" "$BACKUP_DIR/$svc-$(basename "$f")"; found=1
+      echo "   $svc ($st): saved $(basename "$f")"
     done
-    [ -n "$files" ] || echo "   $svc: no state file yet (runner has not traded)"
+    [ "$found" = 1 ] || echo "   $svc ($st): no strategy-state file to save"
+    rm -rf "$tmp"
   else
     echo "      [dry-run] docker cp <state files> from $svc -> $BACKUP_DIR/$svc-*"
   fi
