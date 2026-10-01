@@ -19,10 +19,10 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Regression tests for the STOP-order path (FIX 1b) and the broker-truth position read (FIX 4):
- * a close-only STOP must carry {@code positionFill: REDUCE_ONLY} (never open a new position on a
- * hedging account), an entry STOP may carry {@code stopLossOnFill}/{@code takeProfitOnFill}, and
- * {@code getOpenPositionUnits} must sum only the side the close order reduces.
+ * Regression tests for the STOP-order path (FIX 1b), the market-order stop-on-fill body (story 1.7)
+ * and the broker-truth position read (FIX 4). The order body shape is now asserted through the
+ * package-private {@code build*OrderBody} builders, because the {@code place*} methods are guarded
+ * by the order tripwire and refuse to send in a test runtime (see {@code OandaExecutorTripwireTest}).
  */
 class OandaExecutorTest {
 
@@ -31,6 +31,7 @@ class OandaExecutorTest {
     private final AtomicReference<String> requestBody = new AtomicReference<>("");
     private final AtomicReference<String> responsePayload = new AtomicReference<>("");
     private final java.util.concurrent.atomic.AtomicInteger responseStatus = new java.util.concurrent.atomic.AtomicInteger(201);
+    private final ObjectMapper mapper = new ObjectMapper();
 
     @BeforeEach
     void setUp() throws Exception {
@@ -61,30 +62,18 @@ class OandaExecutorTest {
     }
 
     private OandaExecutor createExecutor() {
-        OandaExecutor exec = new OandaExecutor("fake-key", "123", true);
-        try {
-            java.lang.reflect.Field field = OandaExecutor.class.getDeclaredField("baseUrl");
-            field.setAccessible(true);
-            field.set(exec, "http://localhost:" + port + "/");
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-        return exec;
+        return new OandaExecutor("fake-key", "123", "http://localhost:" + port + "/");
     }
 
-    private JsonNode sentOrder() throws Exception {
-        JsonNode root = new ObjectMapper().readTree(requestBody.get());
-        return root.get("order");
+    private JsonNode orderFrom(String body) throws Exception {
+        return mapper.readTree(body).get("order");
     }
 
     @Test
     void closeOnlyStopSetsReduceOnlyAndNoSlTp() throws Exception {
-        responsePayload.set("{\"orderCreateTransaction\":{\"id\":\"1\",\"price\":\"207.500\"}}");
-        OandaExecutor exec = createExecutor();
+        OandaExecutor exec = new OandaExecutor("fake-key", "123", true);
+        JsonNode order = orderFrom(exec.buildStopOrderBody("GBP_JPY", "1000", "207.500", "TAG", true, null, null));
 
-        exec.placeStopOrder("GBP_JPY", "1000", "207.500", "TAG", true, null, null);
-
-        JsonNode order = sentOrder();
         assertEquals("REDUCE_ONLY", order.get("positionFill").asText(),
             "a close-only STOP must be REDUCE_ONLY or it opens a new position on a hedging account");
         assertFalse(order.has("stopLossOnFill"), "close-only STOP carries no SL on fill");
@@ -93,12 +82,9 @@ class OandaExecutorTest {
 
     @Test
     void entryStopCarriesSlAndTpOnFillButNotReduceOnly() throws Exception {
-        responsePayload.set("{\"orderCreateTransaction\":{\"id\":\"2\",\"price\":\"207.500\"}}");
-        OandaExecutor exec = createExecutor();
+        OandaExecutor exec = new OandaExecutor("fake-key", "123", true);
+        JsonNode order = orderFrom(exec.buildStopOrderBody("GBP_JPY", "1000", "207.500", "TAG", false, "206.000", "209.000"));
 
-        exec.placeStopOrder("GBP_JPY", "1000", "207.500", "TAG", false, "206.000", "209.000");
-
-        JsonNode order = sentOrder();
         assertFalse(order.has("positionFill"), "an entry STOP is not reduce-only");
         assertEquals("206.000", order.get("stopLossOnFill").get("price").asText());
         assertEquals("209.000", order.get("takeProfitOnFill").get("price").asText());
@@ -106,12 +92,9 @@ class OandaExecutorTest {
 
     @Test
     void fourArgPlaceStopOrderDelegatesWithoutReduceOnly() throws Exception {
-        responsePayload.set("{\"orderCreateTransaction\":{\"id\":\"3\",\"price\":\"207.500\"}}");
-        OandaExecutor exec = createExecutor();
+        OandaExecutor exec = new OandaExecutor("fake-key", "123", true);
+        JsonNode order = orderFrom(exec.buildStopOrderBody("GBP_JPY", "1000", "207.500", "TAG", false, null, null));
 
-        exec.placeStopOrder("GBP_JPY", "1000", "207.500", "TAG");
-
-        JsonNode order = sentOrder();
         assertFalse(order.has("positionFill"), "the legacy 4-arg signature stays a plain STOP");
         assertFalse(order.has("stopLossOnFill"));
         assertFalse(order.has("takeProfitOnFill"));
@@ -120,13 +103,9 @@ class OandaExecutorTest {
 
     @Test
     void marketOrderCarriesStopLossOnFillInTheOrderBody() throws Exception {
-        responsePayload.set("{\"orderCreateTransaction\":{\"id\":\"4\"},"
-            + "\"orderFillTransaction\":{\"tradeOpened\":{\"tradeID\":\"t4\"},\"price\":\"207.500\"}}");
-        OandaExecutor exec = createExecutor();
+        OandaExecutor exec = new OandaExecutor("fake-key", "123", true);
+        JsonNode order = orderFrom(exec.buildMarketOrderBody("GBP_JPY", "1000", "TAG", false, "206.000", null));
 
-        exec.placeMarketOrder("GBP_JPY", "1000", "TAG", false, "206.000", null);
-
-        JsonNode order = sentOrder();
         assertEquals("MARKET", order.get("type").asText());
         assertEquals("206.000", order.get("stopLossOnFill").get("price").asText(),
             "story 1.7: the stop rides the order body, not a second call after the fill");

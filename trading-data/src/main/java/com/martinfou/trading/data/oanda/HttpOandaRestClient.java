@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.martinfou.trading.core.Order;
+import com.martinfou.trading.core.guardrails.OrderTripwire;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -244,18 +245,9 @@ public class HttpOandaRestClient implements OandaRestClient {
 
     @Override
     public OandaMarketOrderResult placeMarketOrder(String instrument, long units, String clientTag) {
+        OrderTripwire.checkOrderAllowed(instrument, String.valueOf(units), "HttpOandaRestClient.placeMarketOrder", baseUrl);
         try {
-            Map<String, Object> order = new LinkedHashMap<>();
-            order.put("type", "MARKET");
-            order.put("instrument", instrument);
-            order.put("units", String.valueOf(units));
-            order.put("timeInForce", "FOK");
-            if (clientTag != null && !clientTag.isBlank()) {
-                Map<String, String> ext = Map.of("tag", clientTag, "comment", clientTag);
-                order.put("clientExtensions", ext);
-                order.put("tradeClientExtensions", ext);
-            }
-            String body = mapper.writeValueAsString(Map.of("order", order));
+            String body = mapper.writeValueAsString(Map.of("order", buildMarketOrder(instrument, units, clientTag)));
 
             HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + "accounts/" + accountId + "/orders"))
@@ -287,50 +279,27 @@ public class HttpOandaRestClient implements OandaRestClient {
         }
     }
 
+    /** Builds the MARKET order body map (extracted so the shape is testable without sending). */
+    Map<String, Object> buildMarketOrder(String instrument, long units, String clientTag) {
+        Map<String, Object> order = new LinkedHashMap<>();
+        order.put("type", "MARKET");
+        order.put("instrument", instrument);
+        order.put("units", String.valueOf(units));
+        order.put("timeInForce", "FOK");
+        if (clientTag != null && !clientTag.isBlank()) {
+            Map<String, String> ext = Map.of("tag", clientTag, "comment", clientTag);
+            order.put("clientExtensions", ext);
+            order.put("tradeClientExtensions", ext);
+        }
+        return order;
+    }
+
     @Override
     public OandaMarketOrderResult placeOrder(String type, String instrument, long units, double price, double stopLoss, double takeProfit, double trailingStop, boolean guaranteed, String clientTag, boolean reduceOnly) {
+        OrderTripwire.checkOrderAllowed(instrument, String.valueOf(units), "HttpOandaRestClient.placeOrder", baseUrl);
         try {
             OandaInstrument instMeta = getInstrument(instrument);
-            String fmt = "%." + instMeta.displayPrecision() + "f";
-            Map<String, Object> order = new LinkedHashMap<>();
-            order.put("type", type.toUpperCase());
-            order.put("instrument", instrument);
-            order.put("units", String.valueOf(units));
-            if (type.equalsIgnoreCase("MARKET")) {
-                order.put("timeInForce", "FOK");
-            } else {
-                order.put("timeInForce", "GTC");
-                order.put("price", String.format(java.util.Locale.US, fmt, price));
-            }
-            if (reduceOnly) {
-                order.put("positionFill", "REDUCE_ONLY");
-            }
-            if (stopLoss > 0) {
-                Map<String, Object> sl = new LinkedHashMap<>();
-                sl.put("price", String.format(java.util.Locale.US, fmt, stopLoss));
-                sl.put("timeInForce", "GTC");
-                if (guaranteed) {
-                    sl.put("guaranteed", true);
-                }
-                order.put("stopLossOnFill", sl);
-            }
-            if (takeProfit > 0) {
-                Map<String, Object> tp = new LinkedHashMap<>();
-                tp.put("price", String.format(java.util.Locale.US, fmt, takeProfit));
-                tp.put("timeInForce", "GTC");
-                order.put("takeProfitOnFill", tp);
-            }
-            if (trailingStop > 0) {
-                Map<String, Object> ts = new LinkedHashMap<>();
-                ts.put("distance", String.format(java.util.Locale.US, fmt, trailingStop));
-                ts.put("timeInForce", "GTC");
-                order.put("trailingStopLossOnFill", ts);
-            }
-            if (clientTag != null && !clientTag.isBlank()) {
-                Map<String, String> ext = Map.of("tag", clientTag, "comment", clientTag);
-                order.put("clientExtensions", ext);
-                order.put("tradeClientExtensions", ext);
-            }
+            Map<String, Object> order = buildOrder(type, instrument, units, price, stopLoss, takeProfit, trailingStop, guaranteed, clientTag, reduceOnly, instMeta.displayPrecision());
             String body = mapper.writeValueAsString(Map.of("order", order));
 
             HttpRequest request = HttpRequest.newBuilder()
@@ -379,6 +348,54 @@ public class HttpOandaRestClient implements OandaRestClient {
             log.warn("OANDA order placement failed: {}", e.getMessage());
             return OandaMarketOrderResult.failure(0, e.getMessage());
         }
+    }
+
+    /** Builds the generic order body map (extracted so the shape is testable without sending). */
+    Map<String, Object> buildOrder(String type, String instrument, long units, double price,
+                                   double stopLoss, double takeProfit, double trailingStop,
+                                   boolean guaranteed, String clientTag, boolean reduceOnly,
+                                   int displayPrecision) {
+        String fmt = "%." + displayPrecision + "f";
+        Map<String, Object> order = new LinkedHashMap<>();
+        order.put("type", type.toUpperCase());
+        order.put("instrument", instrument);
+        order.put("units", String.valueOf(units));
+        if (type.equalsIgnoreCase("MARKET")) {
+            order.put("timeInForce", "FOK");
+        } else {
+            order.put("timeInForce", "GTC");
+            order.put("price", String.format(java.util.Locale.US, fmt, price));
+        }
+        if (reduceOnly) {
+            order.put("positionFill", "REDUCE_ONLY");
+        }
+        if (stopLoss > 0) {
+            Map<String, Object> sl = new LinkedHashMap<>();
+            sl.put("price", String.format(java.util.Locale.US, fmt, stopLoss));
+            sl.put("timeInForce", "GTC");
+            if (guaranteed) {
+                sl.put("guaranteed", true);
+            }
+            order.put("stopLossOnFill", sl);
+        }
+        if (takeProfit > 0) {
+            Map<String, Object> tp = new LinkedHashMap<>();
+            tp.put("price", String.format(java.util.Locale.US, fmt, takeProfit));
+            tp.put("timeInForce", "GTC");
+            order.put("takeProfitOnFill", tp);
+        }
+        if (trailingStop > 0) {
+            Map<String, Object> ts = new LinkedHashMap<>();
+            ts.put("distance", String.format(java.util.Locale.US, fmt, trailingStop));
+            ts.put("timeInForce", "GTC");
+            order.put("trailingStopLossOnFill", ts);
+        }
+        if (clientTag != null && !clientTag.isBlank()) {
+            Map<String, String> ext = Map.of("tag", clientTag, "comment", clientTag);
+            order.put("clientExtensions", ext);
+            order.put("tradeClientExtensions", ext);
+        }
+        return order;
     }
 
     @Override

@@ -8,6 +8,7 @@ import com.ib.client.EJavaSignal;
 import com.ib.client.EReader;
 import com.ib.client.Execution;
 import com.martinfou.trading.core.Order;
+import com.martinfou.trading.core.guardrails.OrderTripwire;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -152,6 +153,8 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
 
     @Override
     public IbkrMarketOrderResult placeMarketOrder(String symbol, double quantity, Order.Side side, String clientTag) {
+        OrderTripwire.checkOrderAllowed(symbol, String.valueOf(quantity), "TcpIbkrGatewayClient.placeMarketOrder",
+                config.host() + ":" + config.port());
         if (!isConnected()) {
             return IbkrMarketOrderResult.failure("IB Gateway not connected");
         }
