@@ -579,6 +579,7 @@ class RunManagerTest {
             int threads = 5;
             java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(threads);
             java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+            java.util.List<Exception> failures = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
             java.util.concurrent.atomic.AtomicInteger successCount = new java.util.concurrent.atomic.AtomicInteger(0);
 
             for (int i = 0; i < threads; i++) {
@@ -588,19 +589,23 @@ class RunManagerTest {
                         manager.startRun(req);
                         successCount.incrementAndGet();
                     } catch (Exception e) {
-                        // ignore — the assertion below fails if any thread did not register
+                        // Collect instead of swallowing. When successCount < threads the assertion must
+                        // show WHY it failed (duplicate rejection, lock error, deadlock), not just a count.
+                        failures.add(e);
                     }
                 });
             }
 
             latch.countDown();
             pool.shutdown();
-            // This bound is a deadlock detector, not a throughput target: with BACKTEST mode and
-            // in-memory sample bars each startRun returns in microseconds, so 30s can only trip on a
-            // genuine lock regression. A lost update would surface as successCount < threads below.
-            assertTrue(pool.awaitTermination(30, java.util.concurrent.TimeUnit.SECONDS));
+            // A deadlock detector, not a throughput target. With BACKTEST mode and in-memory sample
+            // bars each startRun returns in microseconds, so 10s of margin is already ~10^6 times the
+            // expected cost: it can only trip on a genuine lock regression, without turning a deadlock
+            // into a long CI hang. A lost update surfaces as successCount < threads below.
+            assertTrue(pool.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS));
 
-            assertEquals(threads, successCount.get(), "Expected all threads to successfully register and start runs");
+            assertEquals(threads, successCount.get(),
+                "Expected all threads to successfully register and start runs; failures=" + failures);
         }
     }
 
