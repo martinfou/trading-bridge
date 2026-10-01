@@ -140,6 +140,18 @@ et de déposer le nouveau **directement dans le fichier sur la machine**, sans p
   semaine déclenche une proposition. Le système propose, Martin confirme (D7), et rien ne se déplace
   automatiquement vers l'argent réel.
 
+- **D15** — Les **2 000 CAD du compte live sont le capital réellement engagé**, pas un montant
+  provisoire. Le sizing part de là :
+  - budget de risque à 0,75 % = **15 CAD** par transaction ;
+  - plancher NAV-proportionnel (D13) à 0,5 % = **10 CAD** de risque ;
+  - le plafond de notional à 5x NAV vaut 10 000 CAD, ce qui laisse de la marge pour des positions
+    légitimes sur GBP_JPY et EUR_USD, mais pas pour une erreur de sizing.
+  Conséquence : le compte live ne peut pas absorber la taille qu'une stratégie produirait en paper sans
+  re-calcul. Toute promotion (D7, D14) doit donc **recalculer la taille sur la NAV du compte de
+  destination**, et jamais transporter les unités de l'environnement précédent. Un simple copier-coller
+  de paramètres d'un compte de 95 800 CAD vers un compte de 2 000 CAD produirait une position 48 fois
+  trop grosse.
+
 ## 5. Invariant de sécurité non négociable
 
 **Le runner doit REFUSER de démarrer si l'environnement déclaré et les identifiants ne concordent
