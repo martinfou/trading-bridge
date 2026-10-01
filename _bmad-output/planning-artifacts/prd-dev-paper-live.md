@@ -271,6 +271,40 @@ donc ils ne fuient pas par le dépôt. La seule exposition restante est l'histor
   volontairement) reste en place. C'est une exception délibérée et documentée, pas une incohérence : il
   ne fait que **réduire** une exposition, jamais l'augmenter.
 
+## 4quinquies. Clôture de la position orpheline de `-012` (2026-10-01)
+
+Constat fait après la migration, en vérifiant l'état réel du compte dormant : `-012` n'était **pas à
+plat**. Il y restait une position ouverte que plus aucun processus ne gérait.
+
+| Champ | Valeur |
+|---|---|
+| Instrument | EUR_USD |
+| Unités | −1 000 (short) |
+| Ouverture | 2026-09-30T14:07:41Z (10:07 locale) |
+| Entrée | 1,13623 |
+| Brackets laissés chez OANDA | SL 1,13668 / TP 1,12524 |
+| Géré par | personne — les quatre conteneurs tradent `-014`, qui est à plat |
+
+Elle vient de la migration, pas d'une stratégie : les stratégies LT ont redémarré propres sur `-014`
+(D17) sans transplanter leur état, et la position qu'elles détenaient sur `-012` est restée derrière.
+Un état qui décrit une position inexistante est le danger identifié par D17 ; une position qui survit
+à son état est l'autre moitié du même problème, et elle était passée inaperçue.
+
+- **D26** — La position est **fermée** (trade `2078`, fermeture au marché à 1,13230, `pl = +5,54 CAD`),
+  décision explicite de Martin. `-012` est désormais **réellement à plat** : 0 position, 0 ordre,
+  0 trade, solde 95 605,93 CAD. La raison n'est pas la position elle-même, qui était minuscule, mais le
+  test d'isolation de D23 : à partir de maintenant, **tout ordre apparaissant sur `-012` ne peut venir
+  que de la source inconnue de D20**, puisqu'aucun processus connu n'y a plus accès.
+
+### Indice neuf sur D20
+
+Sur la fenêtre du 17 au 30 septembre, `-012` a reçu **31 ordres EUR_USD** : 2 portent l'étiquette
+`ltrsi3_EURUSD`, **21 un tag UUID anonyme**, et 8 aucun tag. Le code du bridge n'accepte un tag nommé
+que si l'appelant le fournit (`placeMarketOrder(instrument, units, clientTag)`, `HttpOandaRestClient`) :
+les tags UUID viennent donc d'un **chemin de code différent** de celui qui écrit un nom de stratégie.
+C'est la première piste vérifiable de D20, et elle est statique — elle ne demande aucune requête sur un
+compte.
+
 ## 5. Invariant de sécurité non négociable
 
 **Le runner doit REFUSER de démarrer si l'environnement déclaré et les identifiants ne concordent
