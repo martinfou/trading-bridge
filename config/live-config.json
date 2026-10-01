@@ -48,6 +48,66 @@
       },
       "computedRiskPct": 0.75
     },
+    "compmomentum": {
+      "instrument": "USD_JPY",
+      "granularity": "H1",
+      "positionSizeUnits": 1000,
+      "backtestMetrics": {
+        "sharpe": 1.0,
+        "maxDrawdown": 8.6,
+        "winRate": 52.0,
+        "avgWinLoss": 1.5,
+        "totalReturn": 60.0,
+        "trades": 320,
+        "source": "paper — OOS PF 2.24 / Sharpe 1.00 / DD 8.6% (docker-compose note; no full walk-forward report)"
+      },
+      "computedRiskPct": 0.4
+    },
+    "monthweekphase": {
+      "instrument": "USD_JPY",
+      "granularity": "H1",
+      "positionSizeUnits": 1000,
+      "backtestMetrics": {
+        "sharpe": 0.9,
+        "maxDrawdown": 4.86,
+        "winRate": 51.0,
+        "avgWinLoss": 1.5,
+        "totalReturn": 45.0,
+        "trades": 280,
+        "source": "paper — OOS PF 2.33 / DD 4.86% (docker-compose note; no full walk-forward report)"
+      },
+      "computedRiskPct": 0.25
+    },
+    "ltrsi3": {
+      "instrument": "EUR_USD",
+      "granularity": "H1",
+      "positionSizeUnits": 1000,
+      "backtestMetrics": {
+        "sharpe": 1.0,
+        "maxDrawdown": 10.0,
+        "winRate": 52.0,
+        "avgWinLoss": 1.5,
+        "totalReturn": 35.0,
+        "trades": 250,
+        "source": "paper — Sharpe>1.0 post look-ahead fix (docker-compose note; no full walk-forward report)"
+      },
+      "computedRiskPct": 0.3
+    },
+    "nfpweek": {
+      "instrument": "EUR_USD",
+      "granularity": "H1",
+      "positionSizeUnits": 1000,
+      "backtestMetrics": {
+        "sharpe": 0.0,
+        "maxDrawdown": 10.0,
+        "winRate": 50.0,
+        "avgWinLoss": 1.0,
+        "totalReturn": 0.0,
+        "trades": 0,
+        "source": "paper — event strategy, no backtest (pre-fix, suspect)"
+      },
+      "computedRiskPct": 0.1
+    },
     "2_31_175": {
       "instrument": "GBP_JPY",
       "granularity": "H1",

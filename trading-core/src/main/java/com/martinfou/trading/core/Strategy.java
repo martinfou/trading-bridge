@@ -65,6 +65,22 @@ public interface Strategy {
         }
     }
 
+    /**
+     * Reconcile this strategy's internal instrument with the one the runner resolved from
+     * {@code live-config.json}. A strategy that filters bars on {@code bar.symbol()} (or pins its own
+     * pair in an order) must track the resolved instrument, otherwise it silently drops every bar or
+     * trades a stale pair — the "new silent failure" that would otherwise be introduced by resolving
+     * the instrument from config instead of the display name. The default mirrors
+     * {@link #syncPosition}: it reflection-sets a {@code symbol} field when one exists. A {@code final}
+     * field is not settable here (the reflective set is a no-op); such a strategy is made non-final or
+     * overrides this method. Backward compatible: strategies without a {@code symbol} field, or that do
+     * not filter bars, are unaffected.
+     */
+    default void reconcileInstrument(String oandaSymbol) {
+        if (oandaSymbol == null || oandaSymbol.isBlank()) return;
+        setFieldValueOpt("symbol", oandaSymbol);
+    }
+
     private void setFieldValueOpt(String fieldName, Object value) {
         try {
             java.lang.reflect.Field field = this.getClass().getDeclaredField(fieldName);

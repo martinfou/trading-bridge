@@ -25,7 +25,7 @@ transaction. La valeur contaminée était persistée puis rechargée à chaque r
 |---|---|---|---|
 | 1 | **Invariants du code** | La classe de bug elle-même, par construction | en place (revu, testé) |
 | 2 | **Vérification à l'exécution** | Une dérive silencieuse entre le système et le courtier | en place (revu, testé) |
-| 3 | **Limites de risque** | Une perte qui dépasse ce qui a été décidé | **politique cible — PAS ENCORE PROUVÉE dans le code** |
+| 3 | **Limites de risque** | Une perte qui dépasse ce qui a été décidé | **partiellement prouvée** — l'instrument tradé et le stop sur l'ordre le sont (commit `20b28c86`, voir ci-dessous) ; le **plafond de compte (D24) reste NON implémenté** |
 | 4 | **Porte de déploiement** | Du code rouge qui part en production | en place (testée) |
 | 5 | **Rapports courtier** | Un chiffre inventé présenté comme la vérité | en place |
 
@@ -69,7 +69,49 @@ transaction. La valeur contaminée était persistée puis rechargée à chaque r
 - **Une position ouverte par stratégie et par instrument** ; pas d'augmentation de levier sans
   changement explicite de configuration.
 - **Compte** : `paper`/`practice` uniquement. Aucun ordre sur un compte réel sans décision
-  explicite de Martin, écrite dans ce document.
+  explicite de Martin, écrit dans ce document.
+- **L'instrument tradé est celui de la config, ou le runner refuse de démarrer.** Vérification du
+  2026-10-01 : `LiveStrategyRunner.toOandaSymbol()` (`LiveStrategyRunner.java:1616-1646`) résolvait
+  l'instrument depuis le **nom d'affichage** de la stratégie et retombait sur `GBP_JPY`. Le nom de
+  `VWPReversionStrategy` est `"🔁 VWAP Reversion"` (`VWPReversionStrategy.java:33`) mais la table
+  teste `"VWPREVERSION"` : pas de correspondance, donc défaut. Résultat observé : `vwpreversion`
+  tradait **GBP_JPY** alors que `config/live-config.json` annonce **USD_CHF**. Corollaire : la
+  promesse « taille plafonnée selon `live-config.json` » ci-dessus était **fausse en fait**, puisque
+  la config ne décrivait pas l'instrument réellement tradé. `STRATEGY_PAIR` était par ailleurs une
+  variable morte pour ce runner.
+- **Aucune entrée ne part sans stop.** Vérification du 2026-10-01 : `LtRSI3Momentum.evaluateEntry()`
+  émet `new Order(symbol, Side.BUY, MARKET, units, entryPrice)` **sans** `withStopLoss` /
+  `withTakeProfit` ; le stop ATR et la cible existent seulement comme champs internes. Conséquences :
+  aucun stop chez le courtier, et le budget de risque (`riskSizedUnits`, qui divise par la distance au
+  stop) n'a **pas de dénominateur**, donc la taille envoyée n'est pas celle que la policy annonce.
+  Seule la vérification in-process protège la position.
+
+> **Classe de défaut nommée le 2026-10-01 : « doc vs code ».** Ces deux-là n'étaient pas des bugs de
+> calcul, mais des écarts entre ce que la configuration et ce document **disent** et ce que le runner
+> **fait**. Ce type d'écart est invisible en test unitaire (chaque côté est cohérent avec lui-même) et
+> n'apparaît qu'en comparant les deux, ou en lisant un log de démarrage. La couche 2 doit donc
+> vérifier non seulement le P&L contre le courtier, mais aussi **l'instrument et la présence du stop**
+> contre la configuration, et **au démarrage**, pas à la première transaction.
+
+**État au 2026-10-01 : les deux sont corrigés dans le code, et aucun des deux n'est déployé.**
+
+- L'instrument est résolu depuis la config (`strategies.<clé>.instrument`), le champ `symbol` de la classe
+  est réconcilié (sinon `ltrsi3` filtrait 100 % de ses barres, panne muette), et un couple incohérent
+  **refuse le démarrage** en nommant la stratégie et la paire attendue. Commit `8cb3e909`, 13 tests dédiés.
+- Le stop part **sur l'ordre d'entrée** (`stopLossOnFill`, plus de second appel après le fill) et une
+  garde **unique** refuse toute entrée sans stop depuis le point de dispatch qui couvre MARKET **et** STOP.
+  Commit `20b28c86`, 82 tests. Le pilote du stop est unique (le SL du courtier) ; le moniteur local reste
+  un filet `REDUCE_ONLY` idempotent.
+- ⚠️ **Corrigé n'est pas déployé** : les conteneurs tournent encore l'ancien build, et le déploiement
+  attend une décision explicite de Martin.
+- ⚠️ **La porte de déploiement est rouge sur un test pré-existant** :
+  `RunManagerTest.testConcurrentStartLocking` échoue **avant** ces travaux (prouvé sur `d10ebb0e`, 17 tests
+  / 1 échec). La porte refuse donc tout déploiement tant que ce test n'est pas rendu déterministe — ce qui
+  est le comportement voulu (une porte qui échoue pour une raison non liée reste un échec, jamais du bruit),
+  mais c'est un chantier à part entière, pas un détail.
+- **Résidu assumé** : le plafond de risque **par compte** (D24, 3 % de NAV en risque simultané) n'est
+  toujours pas implémenté. En attendant, la somme des `computedRiskPct` des stratégies déployées est
+  **2,3 %**, sous le plafond de 3 %, et doit le rester à chaque édition de `live-config.json`.
 
 ### Couche 4 — Porte de déploiement
 

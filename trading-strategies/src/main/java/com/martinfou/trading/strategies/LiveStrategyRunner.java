@@ -130,6 +130,10 @@ public class LiveStrategyRunner implements Runnable {
     private final String strategyShortName;
     private final String granularity;
     private final int intervalSec;
+    /** OANDA instrument actually used, resolved once at startup from an explicit source (config-first). */
+    private volatile String resolvedInstrument = null;
+    /** Provenance of {@link #resolvedInstrument}: {@code config strategies.<key>.instrument} or the name table. */
+    private volatile String instrumentSource = null;
 
     // ---- Runtime state ----
     private final String runId;
@@ -142,6 +146,8 @@ public class LiveStrategyRunner implements Runnable {
     private volatile Instant lastHeartbeatTime = Instant.now();
     private volatile int totalEntries = 0;
     private volatile int totalExits = 0;
+    /** Entries refused by the story 1.4 guard (a live entry that carried no protective stop). */
+    private volatile int rejectedNoStopEntries = 0;
     /** Realized-P&L ledger — the ONLY writer of realized P&L (account currency, broker-sourced, once per trade). */
     private final RealizedPnlLedger ledger = new RealizedPnlLedger();
     private Instant lastStateSave = Instant.MIN;
@@ -770,8 +776,21 @@ public class LiveStrategyRunner implements Runnable {
     public void run() {
         MDC.put("runId", runId);
         MDC.put("strategyId", strategyShortName);
-        MDC.put("symbol", toOandaSymbol());
         try {
+            // Resolve the instrument from an explicit source, reconcile the strategy's own pair, and
+            // guard config-vs-resolved consistency BEFORE anything else, so a refusal is the first
+            // thing this runner logs (stories 1.1, 1.8, 1.2).
+            InstrumentResolution resolution = resolveInstrument(strategyShortName, strategy, LIVE_CONFIG);
+            verifyInstrumentConsistency(strategyShortName, resolution.instrument, resolution.source, LIVE_CONFIG);
+            strategy.reconcileInstrument(resolution.instrument);
+            resolvedInstrument = resolution.instrument;
+            instrumentSource = resolution.source;
+            if (SOURCE_DISPLAY_NAME.equals(resolution.source)) {
+                log.warn("⛔ Instrument for '{}' resolved from the DISPLAY NAME '{}' (last resort): "
+                        + "config strategies.{}.instrument is missing. Fix live-config.json before "
+                        + "relying on this runner.", strategyShortName, strategy.name());
+            }
+            MDC.put("symbol", resolvedInstrument);
             runLoop();
         } catch (BrokerException e) {
             log.error("❌ Broker exception in strategy thread '{}': {}. This runner stops; the others keep going.", strategyShortName, e.getMessage(), e);
@@ -834,7 +853,8 @@ public class LiveStrategyRunner implements Runnable {
     }
 
     private void runLoop() throws Exception {
-        log.info("━━━ Starting strategy: {} (instrument: {}) ━━━", strategy.name(), toOandaSymbol());
+        log.info("━━━ Starting strategy: {} (instrument: {} [source: {}]) ━━━",
+            strategy.name(), resolvedInstrument, instrumentSource);
 
         // Warm up FIRST, then resume state. The order is deliberate and was inverted until 2026-09-30:
         // the 200-bar replay calls strategy.onBar(), so resuming first meant the restored strategy state
@@ -1007,6 +1027,15 @@ public class LiveStrategyRunner implements Runnable {
         for (Order order : orders) {
             if (order.status() != Order.Status.PENDING) continue;
 
+            // ─── Story 1.4 single entry gate: MARKET and STOP entries both pass through HERE ───
+            // Every non-close-only entry must carry a protective stop, checked exactly once at this
+            // dispatch point — before it becomes either a market fill (executeTrade) or a pending stop
+            // (placeOandaStopOrder). Close-only exits are left out: they must never be refused for
+            // lacking a stop.
+            if (refuseEntryOrder(order, oandaSymbol)) {
+                continue;
+            }
+
             boolean shouldExecute = false;
             double execPrice;
 
@@ -1107,6 +1136,43 @@ public class LiveStrategyRunner implements Runnable {
         } catch (Exception e) {
             log.error("❌ Failed to place stop order: {}", e.getMessage());
         }
+    }
+
+    /**
+     * Single entry gate (story 1.4, amended): the ONE place every live entry passes through before it
+     * is submitted — whether it becomes a market fill ({@link #executeTrade}) or a pending stop
+     * ({@link #placeOandaStopOrder}). Close-only orders are exits: they reduce risk and must never be
+     * refused for lacking a stop, so they are deliberately left OUT of the gate. Calling this from a
+     * single dispatch point — instead of once in each entry path — is what keeps the "no stop ⇒ no
+     * entry" rule from diverging between MARKET and STOP submissions.
+     *
+     * @return true when the order must NOT be sent.
+     */
+    boolean refuseEntryOrder(Order order, String oandaSymbol) {
+        if (order.isCloseOnly()) {
+            return false;
+        }
+        return rejectEntryWithoutStop(order, oandaSymbol);
+    }
+
+    /**
+     * Refuses and counts an entry with no protective stop. The predicate itself
+     * ({@link Order#hasProtectiveStop()}) lives ONCE in trading-core; this method is its only live
+     * call site (via {@link #refuseEntryOrder}). It is deliberately NOT called from the backtest
+     * engine (the mirror is deferred, per the spec): a general guard there would break stopless
+     * strategies (harness, fixed quantity).
+     *
+     * @return true when the entry was rejected — the caller must not send it.
+     */
+    boolean rejectEntryWithoutStop(Order order, String oandaSymbol) {
+        if (order.hasProtectiveStop()) {
+            return false;
+        }
+        rejectedNoStopEntries++;
+        log.error("⛔ Entry refused for {} {}: the order carries no stop loss — a live entry without a stop "
+            + "has no risk denominator and no broker protection (guard story 1.4). Refusals so far: {}",
+            oandaSymbol, order.side(), rejectedNoStopEntries);
+        return true;
     }
 
     private void executeTrade(Order order, String oandaSymbol, double execPrice) {
@@ -1235,41 +1301,23 @@ public class LiveStrategyRunner implements Runnable {
                 return;
             }
 
-            // ─── New entry — place market order ───
-            var result = executor.placeMarketOrder(oandaSymbol, unitsStr, tag);
-            totalEntries++;
-
-            log.info("═══════ ENTRY {} {} {} @ {} ═══════",
-                oandaSymbol, order.side(),
-                String.format("%.2f", units / 100000.0) + " lots",
-                result.fillPrice());
-
-            // Attach SL/TP
-            double fillPrice = Double.parseDouble(result.fillPrice());
+            // ─── New entry — place market order with the stop IN the order (story 1.7) ───
+            // The stop rides stopLossOnFill in the same order body: a crash in the fill→attach window can
+            // no longer leave a naked position, and a failed attach can no longer be logged away
+            // (warn-and-continue). The take profit is deliberately NOT attached (D30): the target stays
+            // with the strategy, so the broker never receives a TP.
             String slStr = order.stopLoss() > 0
                 ? formatPrice(order.stopLoss(), oandaSymbol) : null;
-            String tpStr = order.takeProfit() > 0
-                ? formatPrice(order.takeProfit(), oandaSymbol) : null;
+            var result = executor.placeMarketOrder(oandaSymbol, unitsStr, tag, false, slStr, null);
+            totalEntries++;
 
-            if (slStr != null && result.tradeId() != null && !result.tradeId().equals("N/A")) {
-                String slResult = executor.addStopLoss(result.tradeId(), slStr, tag);
-                if (slResult.equals("OK")) {
-                    log.info("   SL set @ {}", slStr);
-                } else {
-                    log.warn("   SL failed: {}", slResult);
-                }
-            }
-
-            if (tpStr != null && result.tradeId() != null && !result.tradeId().equals("N/A")) {
-                String tpResult = executor.addTakeProfit(result.tradeId(), tpStr, tag);
-                if (tpResult.equals("OK")) {
-                    log.info("   TP set @ {}", tpStr);
-                } else {
-                    log.warn("   TP failed: {}", tpResult);
-                }
-            }
+            log.info("═══════ ENTRY {} {} {} @ {} (stop on fill: {}) ═══════",
+                oandaSymbol, order.side(),
+                String.format("%.2f", units / 100000.0) + " lots",
+                result.fillPrice(), slStr != null ? slStr : "none");
 
             // Track trade
+            double fillPrice = Double.parseDouble(result.fillPrice());
             if (result.tradeId() != null && !result.tradeId().equals("N/A")) {
                 synchronized (activeTrades) {
                     activeTrades.add(new ActiveTrade(
@@ -1462,6 +1510,11 @@ public class LiveStrategyRunner implements Runnable {
         return totalExits;
     }
 
+    /** Entries refused by the story 1.4 guard (package-private for tests/observability). */
+    int getRejectedNoStopEntries() {
+        return rejectedNoStopEntries;
+    }
+
     // ========================================================================
     // Position Monitoring
     // ========================================================================
@@ -1614,10 +1667,99 @@ public class LiveStrategyRunner implements Runnable {
     }
 
     private String toOandaSymbol() {
-        return toOandaSymbol(strategy);
+        if (resolvedInstrument == null) {
+            try {
+                InstrumentResolution r = resolveInstrument(strategyShortName, strategy, LIVE_CONFIG);
+                resolvedInstrument = r.instrument;
+                instrumentSource = r.source;
+            } catch (IllegalStateException e) {
+                // The startup guard in run() is what REFUSES to start on an unresolvable instrument.
+                // The state/monitor write path (saveStateNow/resumeState/writeAggregatedMonitor) just
+                // needs a value and must not throw — it degrades to null and logs the gap.
+                log.warn("Instrument unresolved for '{}' during a state/monitor write: {}",
+                    strategyShortName, e.getMessage());
+                return null;
+            }
+        }
+        return resolvedInstrument;
     }
 
-    static String toOandaSymbol(Strategy s) {
+    /** Instrument resolved from {@code strategies.<key>.instrument} in the config. */
+    static final String SOURCE_CONFIG = "config strategies.";
+    /** Instrument resolved from the display-name table — a last resort that must be fixed in config. */
+    static final String SOURCE_DISPLAY_NAME = "display-name table (last resort)";
+
+    static final class InstrumentResolution {
+        final String instrument;
+        final String source;
+        InstrumentResolution(String instrument, String source) {
+            this.instrument = instrument;
+            this.source = source;
+        }
+    }
+
+    /**
+     * Resolve the OANDA instrument from an EXPLICIT source (story 1.1): first
+     * {@code strategies.<shortName>.instrument} in {@code live-config.json}, then — only as a last
+     * resort — the display-name table. There is no silent default pair: if neither yields an
+     * instrument, this throws instead of returning a wrong one.
+     */
+    static InstrumentResolution resolveInstrument(String strategyShortName, Strategy s, JsonNode liveConfig) {
+        JsonNode entry = null;
+        if (liveConfig != null) {
+            JsonNode strategies = liveConfig.get("strategies");
+            if (strategies != null) {
+                entry = strategies.get(strategyShortName);
+            }
+        }
+        if (entry != null && entry.hasNonNull("instrument")) {
+            String configured = entry.get("instrument").asText("").trim();
+            if (!configured.isEmpty()) {
+                return new InstrumentResolution(configured, SOURCE_CONFIG + strategyShortName + ".instrument");
+            }
+        }
+        String fromName = toOandaSymbolFromName(s);
+        if (fromName != null) {
+            return new InstrumentResolution(fromName, SOURCE_DISPLAY_NAME);
+        }
+        throw new IllegalStateException("⛔ Cannot resolve instrument for strategy '" + strategyShortName
+            + "' (" + s.name() + "): no config strategies." + strategyShortName
+            + ".instrument and the display name carries no recognizable pair. "
+            + "Add the instrument to live-config.json.");
+    }
+
+    /**
+     * Startup guard (story 1.2): a strategy with no config entry, or whose config-declared instrument
+     * differs from the resolved one, must NOT start — a silent fallback is the very mechanism of
+     * defect 1. The refusal names the strategy, the expected pair, the resolved pair and the source.
+     */
+    static void verifyInstrumentConsistency(String strategyShortName, String resolved, String source,
+                                            JsonNode liveConfig) {
+        JsonNode entry = null;
+        if (liveConfig != null) {
+            JsonNode strategies = liveConfig.get("strategies");
+            if (strategies != null) {
+                entry = strategies.get(strategyShortName);
+            }
+        }
+        if (entry == null || entry.isMissingNode()) {
+            throw new IllegalStateException("⛔ Refusing to start '" + strategyShortName
+                + "': no strategies." + strategyShortName + " entry in live-config.json. "
+                + "There is no silent fallback.");
+        }
+        String configured = entry.hasNonNull("instrument") ? entry.get("instrument").asText("").trim() : "";
+        if (!configured.isEmpty() && !configured.equals(resolved)) {
+            throw new IllegalStateException("⛔ Refusing to start '" + strategyShortName
+                + "': config expects '" + configured + "' but resolved '" + resolved
+                + "' (source: " + source + ").");
+        }
+    }
+
+    /**
+     * Display-name table — LAST resort only. Returns {@code null} (never a default pair) when nothing
+     * matches, so the caller can fail loudly instead of silently trading a wrong pair.
+     */
+    static String toOandaSymbolFromName(Strategy s) {
         String name = s.name().toUpperCase();
         if (name.contains("GBPJPY") || name.contains("GBP_JPY")) return "GBP_JPY";
         if (name.contains("EURUSD") || name.contains("EUR_USD")) return "EUR_USD";
@@ -1641,8 +1783,8 @@ public class LiveStrategyRunner implements Runnable {
         if (name.contains("MONTHWEEKPHASE")) return "USD_JPY";
         // Long-term strategies
         if (name.contains("LTRSI3")) return "EUR_USD";
-        // Default — safe pair
-        return "GBP_JPY";
+        // No match — the caller must fail loudly, never silently default.
+        return null;
     }
 
     // ========================================================================
@@ -1841,16 +1983,24 @@ public class LiveStrategyRunner implements Runnable {
 
     /** Removes a trade from tracking and counts the exit. @return true when it was tracked. */
     private boolean evictFromActiveTrades(String tradeId) {
+        String symbol = null;
         synchronized (activeTrades) {
             Iterator<ActiveTrade> it = activeTrades.iterator();
             while (it.hasNext()) {
                 ActiveTrade t = it.next();
                 if (tradeId.equals(t.tradeId)) {
+                    symbol = t.symbol;
                     it.remove();
                     totalExits++;
-                    return true;
+                    break;
                 }
             }
+        }
+        if (symbol != null) {
+            // C1: a broker-CLOSED trade is gone, so tell the strategy it is flat (see
+            // syncStrategyFlatIfNoOpenPosition). Done outside the lock, after the removal.
+            syncStrategyFlatIfNoOpenPosition(symbol);
+            return true;
         }
         return false;
     }
@@ -1948,6 +2098,9 @@ public class LiveStrategyRunner implements Runnable {
             + "Local P&L ${} is in QUOTE currency, so the trade's P&L stays UNKNOWN "
             + "(never wrong) — the total is NOT changed. The watchdog will re-attempt the broker value.",
             tradeId, String.format("%.2f", localQuoteCcy));
+        // C1: the trade was removed from tracking, so if nothing else is open for its instrument the
+        // strategy must learn it is flat (see syncStrategyFlatIfNoOpenPosition).
+        syncStrategyFlatIfNoOpenPosition(symbol);
         saveStateNow();
     }
 
@@ -1957,12 +2110,14 @@ public class LiveStrategyRunner implements Runnable {
         // Reconciled for good: it must not stay queued for a watchdog re-attempt.
         removeUnreconciledTrade(tradeId);
         boolean removed = false;
+        String removedSymbol = null;
         synchronized (activeTrades) {
             Iterator<ActiveTrade> it = activeTrades.iterator();
             while (it.hasNext()) {
                 ActiveTrade t = it.next();
                 if (tradeId.equals(t.tradeId)) {
                     totalExits++;
+                    removedSymbol = t.symbol;
                     it.remove();
                     removed = true;
                     break;
@@ -1979,6 +2134,32 @@ public class LiveStrategyRunner implements Runnable {
         if (removed || counted) {
             saveStateNow();
         }
+        if (removed) {
+            syncStrategyFlatIfNoOpenPosition(removedSymbol);
+        }
+    }
+
+    /**
+     * C1 (stories 1.3/1.7): the broker's stop-loss is the single driver of the stop, so the strategy
+     * must learn from the runner's reconciliation that its position is gone — otherwise {@code inTrade}
+     * stays {@code true} forever and the strategy never enters again (the silent-zombie class, already
+     * seen on TurnOfMonthFlowStrategy). Once the runner no longer tracks ANY open position for the
+     * instrument, notify the strategy that it is flat with the canonical
+     * {@code Strategy#syncPosition(null, 0, 0, 0)} — the exact call {@code OandaStreamingExecutor}
+     * makes when no position remains. Reflective and safe: a strategy that already reset itself via
+     * {@code exitPosition()} simply re-affirms a flat state. Must be called AFTER a tracked trade is
+     * removed, never before, or it would flatten a still-open position.
+     */
+    private void syncStrategyFlatIfNoOpenPosition(String oandaSymbol) {
+        if (oandaSymbol == null) return;
+        synchronized (activeTrades) {
+            for (ActiveTrade at : activeTrades) {
+                if (oandaSymbol.equals(at.symbol)) {
+                    return; // still tracked open — the strategy is not flat yet
+                }
+            }
+        }
+        strategy.syncPosition(null, 0.0, 0.0, 0.0);
     }
 
     /**

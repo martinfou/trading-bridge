@@ -41,6 +41,18 @@ public class OandaExecutor {
     }
 
     public OrderResult placeMarketOrder(String instrument, String units, String tag, boolean reduceOnly) throws Exception {
+        return placeMarketOrder(instrument, units, tag, reduceOnly, null, null);
+    }
+
+    /**
+     * Story 1.7: a market order that carries its stop/target in the SAME order body
+     * ({@code stopLossOnFill}/{@code takeProfitOnFill}) instead of a second call after the fill.
+     * The prices arrive already formatted by the caller (see
+     * {@code LiveStrategyRunner.formatPrice}: 3 decimals for JPY, 1 for metals, 5 otherwise), so no
+     * {@code %.5f} hard-coding is reintroduced here.
+     */
+    public OrderResult placeMarketOrder(String instrument, String units, String tag, boolean reduceOnly,
+                                        String stopLossOnFill, String takeProfitOnFill) throws Exception {
         var orderBody = new java.util.LinkedHashMap<String, Object>() {{
             put("type", "MARKET");
             put("instrument", instrument);
@@ -49,6 +61,12 @@ public class OandaExecutor {
             putAll(clientExtensions(tag));
             if (reduceOnly) {
                 put("positionFill", "REDUCE_ONLY");
+            }
+            if (stopLossOnFill != null) {
+                put("stopLossOnFill", new java.util.HashMap<>() {{ put("price", stopLossOnFill); }});
+            }
+            if (takeProfitOnFill != null) {
+                put("takeProfitOnFill", new java.util.HashMap<>() {{ put("price", takeProfitOnFill); }});
             }
         }};
         String body = mapper.writeValueAsString(new java.util.HashMap<>() {{
