@@ -127,6 +127,13 @@ dans l'historique de la conversation et dans les journaux de session. Il est sto
 (mode 600, ignoré par git, vérifié), mais la mesure correcte est de le régénérer dans l'interface OANDA
 et de déposer le nouveau **directement dans le fichier sur la machine**, sans passer par un message.
 
+- **D13** — Le **plancher de taille devient proportionnel à la NAV**, calculé et affiché, jamais fixe.
+  Le `NO_RISK_UNITS_CAP = 2 000` constant est remplacé par un pourcentage de NAV (ex. 0,5 %, soit
+  10 CAD de risque sur un compte de 2 000 CAD), et la valeur retenue est écrite dans le journal au
+  moment où elle s'applique. Raison : un plancher constant est juste sur un compte et faux sur un
+  autre, alors qu'un plancher proportionnel est juste par construction. Sur le compte live à 2 000 CAD,
+  l'ancien plancher engageait plus de risque que le budget entier qu'il était censé remplacer.
+
 ## 5. Invariant de sécurité non négociable
 
 **Le runner doit REFUSER de démarrer si l'environnement déclaré et les identifiants ne concordent
