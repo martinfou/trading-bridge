@@ -133,6 +133,20 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         }
     }
 
+    /**
+     * Seam for the live-candles fetch inside {@link #loadBars}. The production default
+     * ({@link #fetchOandaCandles}) resolves credentials and constructs a real
+     * {@code OandaPriceClient}; a test suite must never reach a real broker, so tests inject a
+     * fetcher that returns synthetic bars or {@code null}. A {@code null} return makes
+     * {@code loadBars} fall back to the {@link BarSourceResolver} path — the same behaviour the
+     * production code already exhibits when no OANDA credentials are present, so the production
+     * wiring is unchanged when this seam is not injected.
+     */
+    @FunctionalInterface
+    interface LiveCandlesFetcher {
+        List<Bar> fetch(RunConfigSnapshot config, Integer limit, Instant to) throws IOException;
+    }
+
     private final EventStore eventStore;
     private final BrokerFactory brokerFactory;
     private final boolean requireOandaCredentials;
@@ -155,28 +169,30 @@ public class RunManager implements RunLifecycle, AutoCloseable {
     private final Map<String, Integer> consecutiveTimeDrifts = new ConcurrentHashMap<>();
     private final Map<String, com.martinfou.trading.data.oanda.OandaStreamingClient> oandaStreamingClients = new ConcurrentHashMap<>();
     private final Map<String, java.util.concurrent.atomic.AtomicInteger> oandaStreamingClientRefCounts = new ConcurrentHashMap<>();
+    private final LiveCandlesFetcher liveCandlesFetcher;
+    private final Runnable startupLockHook;
 
     public RunManager(EventStore eventStore) {
         this(eventStore, BrokerFactory.fromRegistry(BrokerAccountRegistry.loadDefault()), true,
-            new KillSwitchRegistry(), Optional.empty(), BrokerAccountRegistry.loadDefault());
+            new KillSwitchRegistry(), Optional.empty(), BrokerAccountRegistry.loadDefault(), null, null);
     }
 
     /** Control plane wiring — deployment store enables cross-account routing guards. */
     public RunManager(EventStore eventStore, DeploymentStore deploymentStore) {
         this(eventStore, BrokerFactory.fromRegistry(BrokerAccountRegistry.loadDefault()), true,
-            new KillSwitchRegistry(), Optional.of(deploymentStore), BrokerAccountRegistry.loadDefault());
+            new KillSwitchRegistry(), Optional.of(deploymentStore), BrokerAccountRegistry.loadDefault(), null, null);
     }
 
     /** Test hook — inject broker without OANDA environment credentials. */
     RunManager(EventStore eventStore, BrokerFactory brokerFactory) {
         this(eventStore, brokerFactory, false, new KillSwitchRegistry(),
-            Optional.empty(), BrokerAccountRegistry.loadDefault());
+            Optional.empty(), BrokerAccountRegistry.loadDefault(), null, null);
     }
 
     /** Test hook — shared kill switch registry with control plane. */
     RunManager(EventStore eventStore, BrokerFactory brokerFactory, KillSwitchRegistry killSwitchRegistry) {
         this(eventStore, brokerFactory, false, killSwitchRegistry,
-            Optional.empty(), BrokerAccountRegistry.loadDefault());
+            Optional.empty(), BrokerAccountRegistry.loadDefault(), null, null);
     }
 
     /** Test hook — multi-account registry and deployment store. */
@@ -187,7 +203,35 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         BrokerAccountRegistry brokerAccountRegistry
     ) {
         this(eventStore, brokerFactory, false, new KillSwitchRegistry(),
-            Optional.of(deploymentStore), brokerAccountRegistry);
+            Optional.of(deploymentStore), brokerAccountRegistry, null, null);
+    }
+
+    /**
+     * Test seam — inject the live-candles fetcher (so a suite never reaches a real broker) and a
+     * startup-lock hook (so {@code testConcurrentStartLocking} can hold the per-strategy critical
+     * section deterministically). The hook runs while the per-strategy startup lock is held.
+     */
+    RunManager(
+        EventStore eventStore,
+        BrokerFactory brokerFactory,
+        LiveCandlesFetcher liveCandlesFetcher,
+        Runnable startupLockHook
+    ) {
+        this(eventStore, brokerFactory, false, new KillSwitchRegistry(),
+            Optional.empty(), BrokerAccountRegistry.loadDefault(), liveCandlesFetcher, startupLockHook);
+    }
+
+    /**
+     * Test seam — same as above but with the default broker factory (for runs that are not
+     * broker-backed, e.g. BACKTEST and PAPER_STUB), so only the fetcher and hook are injected.
+     */
+    RunManager(
+        EventStore eventStore,
+        LiveCandlesFetcher liveCandlesFetcher,
+        Runnable startupLockHook
+    ) {
+        this(eventStore, BrokerFactory.fromRegistry(BrokerAccountRegistry.loadDefault()), true,
+            new KillSwitchRegistry(), Optional.empty(), BrokerAccountRegistry.loadDefault(), liveCandlesFetcher, startupLockHook);
     }
 
     private RunManager(
@@ -196,7 +240,9 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         boolean requireOandaCredentials,
         KillSwitchRegistry killSwitchRegistry,
         Optional<DeploymentStore> deploymentStore,
-        BrokerAccountRegistry brokerAccountRegistry
+        BrokerAccountRegistry brokerAccountRegistry,
+        LiveCandlesFetcher liveCandlesFetcher,
+        Runnable startupLockHook
     ) {
         if (eventStore == null) {
             throw new IllegalArgumentException("eventStore must not be null");
@@ -212,6 +258,8 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         this.brokerAccountRegistry = brokerAccountRegistry != null
             ? brokerAccountRegistry
             : BrokerAccountRegistry.loadDefault();
+        this.liveCandlesFetcher = liveCandlesFetcher != null ? liveCandlesFetcher : RunManager::fetchOandaCandles;
+        this.startupLockHook = startupLockHook != null ? startupLockHook : () -> { };
         this.alignmentStore = createAlignmentStore(eventStore);
         this.tradeStore = createTradeStore(eventStore);
         this.runRecordStore = createRunRecordStore(eventStore);
@@ -472,7 +520,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         if (record.status() == RunRecord.Status.CREATED) {
             List<com.martinfou.trading.core.Bar> bars;
             try {
-                bars = loadBars(config, null, null);
+                bars = loadBars(config, null, null, liveCandlesFetcher);
             } catch (IOException e) {
                 throw new IllegalArgumentException("Failed to load bars for run " + runId + ": " + e.getMessage(), e);
             }
@@ -668,6 +716,9 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         var lock = startupLocks.computeIfAbsent(request.strategyId(), k -> new java.util.concurrent.locks.ReentrantLock());
         lock.lock();
         try {
+            // Test seam: runs while the per-strategy startup lock is held, before any state change,
+            // so a test can hold the critical section deterministically and observe mutual exclusion.
+            startupLockHook.run();
             if (killSwitchRegistry.isKilled(request.strategyId())) {
                 throw new IllegalArgumentException(
                     "Strategy " + request.strategyId() + " is killed (kill switch active); cannot start new runs");
@@ -1019,26 +1070,16 @@ public class RunManager implements RunLifecycle, AutoCloseable {
     }
 
     static List<Bar> loadBars(RunConfigSnapshot config, Integer limit, Instant to) throws IOException {
+        return loadBars(config, limit, to, RunManager::fetchOandaCandles);
+    }
+
+    static List<Bar> loadBars(RunConfigSnapshot config, Integer limit, Instant to, LiveCandlesFetcher fetcher) throws IOException {
         String mode = config.mode();
         if (mode != null && (mode.equalsIgnoreCase("PAPER") || mode.equalsIgnoreCase("LIVE"))) {
             try {
-                String accountId = config.brokerAccountId();
-                var registry = BrokerAccountRegistry.loadDefault();
-                var oandaCreds = registry.credentials(accountId);
-                if (oandaCreds.isPresent()) {
-                    var creds = oandaCreds.get();
-                    String tf = config.strategyTimeframe();
-                    if (tf == null || tf.isBlank()) {
-                        tf = "H1";
-                    } else {
-                        tf = tf.toUpperCase();
-                    }
-                    com.martinfou.trading.data.OandaPriceClient priceClient = new com.martinfou.trading.data.OandaPriceClient(
-                        creds.apiToken(), creds.accountId(), creds.restUrl().contains("practice")
-                    );
-                    int fetchCount = (limit != null && limit > 0) ? limit : 500;
-                    log.info("Fetching last {} live {} bars from OANDA for symbol {} (to: {})...", fetchCount, tf, config.symbol(), to);
-                    return priceClient.getCandlesBefore(config.symbol(), tf, fetchCount, to);
+                List<Bar> fetched = fetcher.fetch(config, limit, to);
+                if (fetched != null) {
+                    return fetched;
                 }
             } catch (Exception e) {
                 log.warn("Failed to fetch live candles from OANDA: {}. Falling back to default bars.", e.getMessage());
@@ -1101,6 +1142,34 @@ public class RunManager implements RunLifecycle, AutoCloseable {
             allBars = allBars.subList(allBars.size() - limit, allBars.size());
         }
         return allBars;
+    }
+
+    /**
+     * Production live-candles fetch: resolves the broker account credentials and constructs a real
+     * {@code OandaPriceClient}, returning {@code null} when no credentials are configured (so
+     * {@code loadBars} falls back to the {@link BarSourceResolver} path). This is the default
+     * {@link LiveCandlesFetcher}; tests inject their own to avoid reaching a real broker.
+     */
+    private static List<Bar> fetchOandaCandles(RunConfigSnapshot config, Integer limit, Instant to) throws IOException {
+        String accountId = config.brokerAccountId();
+        var registry = BrokerAccountRegistry.loadDefault();
+        var oandaCreds = registry.credentials(accountId);
+        if (oandaCreds.isEmpty()) {
+            return null;
+        }
+        var creds = oandaCreds.get();
+        String tf = config.strategyTimeframe();
+        if (tf == null || tf.isBlank()) {
+            tf = "H1";
+        } else {
+            tf = tf.toUpperCase();
+        }
+        com.martinfou.trading.data.OandaPriceClient priceClient = new com.martinfou.trading.data.OandaPriceClient(
+            creds.apiToken(), creds.accountId(), creds.restUrl().contains("practice")
+        );
+        int fetchCount = (limit != null && limit > 0) ? limit : 500;
+        log.info("Fetching last {} live {} bars from OANDA for symbol {} (to: {})...", fetchCount, tf, config.symbol(), to);
+        return priceClient.getCandlesBefore(config.symbol(), tf, fetchCount, to);
     }
 
     private static void downloadYearSync(String symbol, int year, String tf) throws IOException {
