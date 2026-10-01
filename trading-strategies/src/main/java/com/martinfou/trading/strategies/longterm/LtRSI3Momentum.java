@@ -33,7 +33,7 @@ public class LtRSI3Momentum implements Strategy {
     private static final int COOLDOWN_BARS = 3;
 
     private final String name;
-    private final String symbol;
+    private String symbol;
     private final List<Bar> history = new ArrayList<>();
     private final List<Order> pending = new ArrayList<>();
 
