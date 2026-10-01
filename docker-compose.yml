@@ -75,7 +75,7 @@ services:
     container_name: trading-comp-momentum
     restart: unless-stopped
     env_file:
-      - /home/martinfou/projects/trading-dashboard/.env
+      - ./.env.paper
     environment:
       - OANDA_ENV=practice
       - LOG_LEVEL=INFO
@@ -101,7 +101,7 @@ services:
     container_name: trading-month-week
     restart: unless-stopped
     env_file:
-      - /home/martinfou/projects/trading-dashboard/.env
+      - ./.env.paper
     environment:
       - OANDA_ENV=practice
       - LOG_LEVEL=INFO
@@ -127,7 +127,7 @@ services:
     container_name: trading-lt-rsi3
     restart: unless-stopped
     env_file:
-      - /home/martinfou/projects/trading-dashboard/.env
+      - ./.env.paper
     environment:
       - OANDA_ENV=practice
       - LOG_LEVEL=INFO
