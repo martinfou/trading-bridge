@@ -116,7 +116,11 @@ public class LtRSI3Momentum implements Strategy {
             entryPrice = bar.close();
             stopLoss = entryPrice - atr * SL_MULT;
             takeProfit = entryPrice + atr * TP_MULT;
-            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, units, entryPrice));
+            // Story 1.3 (D30): the ATR stop rides the entry order so it lives at the broker
+            // (stopLossOnFill in live, engine SL in backtest). The take profit is NOT attached:
+            // the target stays managed by this strategy (see managePosition below).
+            pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, units, entryPrice)
+                .withStopLoss(stopLoss));
             inTrade = true;
             tradeDirection = Order.Side.BUY;
             positionUnits = units;
@@ -126,7 +130,9 @@ public class LtRSI3Momentum implements Strategy {
             entryPrice = bar.close();
             stopLoss = entryPrice + atr * SL_MULT;
             takeProfit = entryPrice - atr * TP_MULT;
-            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, units, entryPrice));
+            // Same as the BUY branch: stop on the order, target at the strategy.
+            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, units, entryPrice)
+                .withStopLoss(stopLoss));
             inTrade = true;
             tradeDirection = Order.Side.SELL;
             positionUnits = units;
@@ -135,18 +141,22 @@ public class LtRSI3Momentum implements Strategy {
     }
 
     private void managePosition(Bar bar) {
-        // Check stop loss
-        boolean stopHit = (tradeDirection == Order.Side.BUY && bar.low() <= stopLoss)
-            || (tradeDirection == Order.Side.SELL && bar.high() >= stopLoss);
+        // ── C1: the stop exit is single-driven by the EXECUTION LAYER, not this strategy ──
+        //
+        // D30 says "le stop vit chez le courtier": with story 1.3 the ATR stop rides the entry order,
+        // so in live the broker's stopLossOnFill closes the position, and in backtest the engine's own
+        // checkStopLossesTakeProfits does the same job (it reads position.stopLoss(), now non-zero).
+        // If this strategy ALSO tested stopLoss here and queued its own stop exit, the same stop would
+        // be driven twice — the broker SL and this bar-level check racing to close one position, with the
+        // loser's REDUCE_ONLY landing on an already-closed position. The stop check that lived here is
+        // therefore removed: the stop is no longer self-managed. The take profit stays HERE (D30: the
+        // target remains strategy-managed and is deliberately not attached to the order), so this method
+        // keeps the TP and RSI-neutral exits below.
 
         // Check take profit
         boolean tpHit = (tradeDirection == Order.Side.BUY && bar.high() >= takeProfit)
             || (tradeDirection == Order.Side.SELL && bar.low() <= takeProfit);
 
-        if (stopHit) {
-            exitPosition(stopLoss);
-            return;
-        }
         if (tpHit) {
             exitPosition(takeProfit);
             return;

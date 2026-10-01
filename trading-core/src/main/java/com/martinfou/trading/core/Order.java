@@ -70,6 +70,14 @@ public record Order(
 
     public boolean isCloseOnly() { return closeOnly; }
 
+    /**
+     * Single source of truth for the "no stop ⇒ no entry" guard (story 1.4). True when this order
+     * carries a protective stop loss ({@code stopLoss > 0}). The live entry path refuses any entry
+     * for which this is false, and the (deferred) backtest mirror must call this same predicate —
+     * never re-implement the comparison, or the two paths will diverge again.
+     */
+    public boolean hasProtectiveStop() { return stopLoss > 0; }
+
     public Order withStopLoss(double sl) { return new Order(id, symbol, side, type, quantity, price, sl, takeProfit, trailingStop, guaranteed, closeOnly, status, createdAt, filledAt, strategyId, correlationId, priceDriftLimit, ocaGroup, ocaType, parentId); }
     public Order withTakeProfit(double tp) { return new Order(id, symbol, side, type, quantity, price, stopLoss, tp, trailingStop, guaranteed, closeOnly, status, createdAt, filledAt, strategyId, correlationId, priceDriftLimit, ocaGroup, ocaType, parentId); }
     public Order withTrailingStop(double ts) { return new Order(id, symbol, side, type, quantity, price, stopLoss, takeProfit, ts, guaranteed, closeOnly, status, createdAt, filledAt, strategyId, correlationId, priceDriftLimit, ocaGroup, ocaType, parentId); }
