@@ -212,6 +212,20 @@ migration est viable. Les taux utilisés sont approximatifs (GBP/CAD ≈ 1,80), 
 est l'ordre de grandeur, pas la décimale : le sizing tient sur 2 000 CAD, il ne produit pas de position
 microscopique.
 
+- **D20** — Martin ne sait pas qui envoie les ordres EUR_USD horaires sur `-012`. **Enquête demandée
+  explicitement.** Ce n'est plus une anomalie documentée mais une question ouverte avec un propriétaire :
+  quelque chose trade un compte dont personne n'assume les ordres, depuis juin 2026.
+- **D21** — Le P&L par transaction doit être **converti en devise du compte (CAD)** et non seulement
+  étiqueté, dans les deux sens (positif comme négatif). Un chiffre en JPY face à un résumé en CAD reste
+  faux même correctement étiqueté. L'étiquette seule (déjà poussée) est un état intermédiaire.
+- **D22** — Ordre des opérations : **migrer d'abord** vers `-014`, **restructurer le compose ensuite**,
+  autour de la réalité constatée. La migration est donc la première utilisation de la structure cible,
+  pas une conséquence de sa construction.
+- **D23** — La baisse de `-012` au profit de `-014` (D16, D19) signifie que le compte qui reçoit les
+  ordres mystérieux va devenir **dormant et donc isolé** : après migration, si des ordres horaires
+  continuent d'y apparaître, leur source sera identifiable sans le bruit du bridge. C'est un argument
+  supplémentaire pour migrer d'abord.
+
 ## 5. Invariant de sécurité non négociable
 
 **Le runner doit REFUSER de démarrer si l'environnement déclaré et les identifiants ne concordent
