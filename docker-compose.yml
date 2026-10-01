@@ -17,7 +17,7 @@ services:
     container_name: trading-live
     restart: unless-stopped
     env_file:
-      - /home/martinfou/projects/trading-dashboard/.env
+      - ./.env.paper
     environment:
       - OANDA_ENV=practice
       - LOG_LEVEL=INFO
