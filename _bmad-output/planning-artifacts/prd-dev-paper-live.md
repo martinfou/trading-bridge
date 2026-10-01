@@ -305,6 +305,47 @@ les tags UUID viennent donc d'un **chemin de code différent** de celui qui écr
 C'est la première piste vérifiable de D20, et elle est statique — elle ne demande aucune requête sur un
 compte.
 
+## 4sexies. D20 résolu : la source inconnue est le plan de contrôle en dev (2026-10-01)
+
+**Verdict : les ordres EUR_USD anonymes de `-012` ne viennent d'aucun tiers et d'aucune stratégie
+vivante. Ils viennent de `active-run-123`**, un run dev/test du plan de contrôle
+(`ControlPlaneMain`, `trading-runtime`) portant la stratégie `LondonOpenRangeBreakout` sur `EUR_USD`
+avec l'étiquette d'exécution `PAPER_OANDA`, persisté dans `data/runtime/events.db`.
+
+Le mécanisme, tel que les journaux le montrent :
+
+```
+Restoring active run active-run-123 (LondonOpenRangeBreakout on EUR_USD)...
+BrokerRunExecutor - Restored open position SELL 1000.0 @ 1.13623 for run active-run-123 (restart adoption)
+```
+
+À chaque démarrage du plan de contrôle avec des identifiants OANDA présents dans l'environnement, le
+run persisté est restauré, la position est adoptée chez le courtier, et des ordres au marché réels
+(practice) sont envoyés **sur le compte que l'environnement désigne**. C'est exactement le défaut que
+D23 décrivait : quelque chose trade un compte dont personne n'assume les ordres.
+
+**Ce qui ferme l'enquête, pièce par pièce :**
+
+| Observation | Ce qu'elle prouve |
+|---|---|
+| 17 restaurations dans le journal du 2026-09-30, plus le 2026-08-24 et le 2026-09-29 | le déclencheur est un démarrage du plan de contrôle, pas un calendrier |
+| `Restored open position SELL 1000.0 @ 1.13623` à 12:59 et 14:19 | c'est **la** position fermée par D26 (trade `2078`, entrée 1,13623) |
+| Tags UUID sur les ordres d'ouverture, aucun tag sur les fermetures | `OandaBroker` étiquette avec `order.id()` (UUID) ; `LiveStrategyRunner`, lui, écrit `strategie_SYMBOL` depuis le 2026-05-27 — d'où l'impression d'une source étrangère |
+| Aucun cron Hermes ne lance `mvn` ni `ControlPlaneMain` | le déclencheur est un travail humain ou d'agent, pas un calendrier |
+| Rafales de 3 ouvertures puis fermetures (06:37, 06:59, 07:38, 08:15, 09:14, 09:39, 09:56) | profil d'une exécution de test, pas d'une stratégie |
+
+- **D27** — **D20 est fermé** : la source est identifiée, elle est interne, et elle est nommée dans ce
+  document pour qu'elle ne soit plus jamais un mystère. Deux conséquences à traiter en Phase 3 :
+  - **Le run persisté est un danger pour `-014`.** Depuis la migration, l'environnement du plan de
+    contrôle désigne `-014`, donc le prochain démarrage en dev y enverra des ordres — sur le compte que
+    les quatre stratégies tradent. Une exécution de test peut donc injecter une position fantôme dans
+    un compte suivi, ce qui est plus grave qu'avant puisque ce compte porte désormais des stratégies
+    réelles.
+  - **Un run dev ne doit pas pouvoir utiliser des identifiants réels.** Les tests concernés ne
+    s'exécutent (`assumeTrue`) qu'en l'absence d'identifiants dans l'environnement : la suite est donc
+    conçue pour frapper le courtier dès que des identifiants sont présents. C'est la même famille de
+    défaut que la garde de démarrage de la section 5, appliquée aux runs de développement.
+
 ## 5. Invariant de sécurité non négociable
 
 **Le runner doit REFUSER de démarrer si l'environnement déclaré et les identifiants ne concordent
