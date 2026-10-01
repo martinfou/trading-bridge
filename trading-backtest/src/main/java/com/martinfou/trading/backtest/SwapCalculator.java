@@ -7,9 +7,8 @@ import java.util.*;
 /**
  * SwapCalculator — Calcule les frais de swap (rollover) overnight pour les positions forex.
  *
- * Swap rates vary by broker and change over time. These are approximate rates
- * based on typical interbank rates for standard lot (100k units).
- * For mini lots (1k units), divide by 100.
+ * Swap rates are per-instrument and sourced from OANDA's own financing rates
+ * (see {@link RealCostModel#FINANCING_ANNUAL}), converted to pips/day.
  *
  * Wednesday = triple swap (3× normal rate).
  * Rollover time: 5:00 PM ET (17:00 NY time).
@@ -22,21 +21,28 @@ public class SwapCalculator {
     private static final Map<String, double[]> SWAP_RATES = new LinkedHashMap<>();
 
     static {
-        // Format: { longSwap, shortSwap } in pips per standard lot
-        // Source: approximate interbank rates as of 2024-2026
-        SWAP_RATES.put("EUR_USD",  new double[]{-3.5,  1.2});   // EUR lower rate than USD
-        SWAP_RATES.put("GBP_USD",  new double[]{-1.8,  -0.5});  // Both relatively close
-        SWAP_RATES.put("USD_JPY",  new double[]{ 5.2,  -8.5});  // USD >> JPY
-        SWAP_RATES.put("AUD_USD",  new double[]{ 3.8,  -6.2});  // AUD > USD
-        SWAP_RATES.put("NZD_USD",  new double[]{ 4.0,  -6.5});  // NZD > USD
-        SWAP_RATES.put("USDCAD",   new double[]{-2.5,  1.0});   // CAD lower than USD (usually)
-        SWAP_RATES.put("USD_CHF",  new double[]{ 2.0,  -4.5});  // USD > CHF
-        SWAP_RATES.put("GBP_JPY",  new double[]{-4.5,  0.8});   // Complex cross
-        SWAP_RATES.put("EUR_GBP",  new double[]{-1.2,  0.5});   // EUR < GBP
-        SWAP_RATES.put("AUD_JPY",  new double[]{ 6.5, -10.0});  // AUD >> JPY (high carry!)
-        SWAP_RATES.put("NZD_JPY",  new double[]{ 7.0, -11.0});  // NZD >> JPY (high carry!)
-        SWAP_RATES.put("EUR_JPY",  new double[]{ 2.0,  -4.0});  // EUR > JPY
-        SWAP_RATES.put("XAU_USD",  new double[]{-2.0,  0.5});   // Gold storage costs
+        // Format: { longSwap, shortSwap } in pips per day. Positive = credit (you earn),
+        // Negative = debit (you pay). calculateSwap() scales by the position's pip value
+        // (pipSize × quantity, JPY-converted), so the pip count here is size-independent.
+        // Source: OANDA /v3/instruments financing.longRate / shortRate (annual fraction),
+        // converted with RealCostModel.swapPipsPerDay(rate, mid, symbol) at the 2026-10-01 mids.
+        //   swap[pips/lot/day] = rate × mid / (pipSize × 365)
+        // The previous table (2024-2026 "approximate interbank") had three wrong signs and
+        // was ~32× too small on gold — see FEE-AUDIT.md §4. Keys are underscore-normalized;
+        // ratesFor() tolerates underscore-less lookups.
+        SWAP_RATES.put("EUR_USD",  new double[]{-0.76,  0.14});   // EUR < USD
+        SWAP_RATES.put("GBP_USD",  new double[]{-0.45, -0.29});   // both negative (GBP, USD > 0)
+        SWAP_RATES.put("USD_JPY",  new double[]{ 0.78, -1.65});   // USD >> JPY
+        SWAP_RATES.put("AUD_USD",  new double[]{-0.08, -0.32});   // AUD slightly below USD
+        SWAP_RATES.put("NZD_USD",  new double[]{-0.35,  0.02});   // NZD < USD
+        SWAP_RATES.put("USD_CAD",  new double[]{ 0.26, -1.11});   // USD > CAD
+        SWAP_RATES.put("USD_CHF",  new double[]{ 0.72, -1.20});   // USD > CHF
+        SWAP_RATES.put("GBP_JPY",  new double[]{ 0.89, -2.07});   // GBP >> JPY (carry)
+        SWAP_RATES.put("EUR_GBP",  new double[]{-0.53,  0.04});   // EUR < GBP
+        SWAP_RATES.put("AUD_JPY",  new double[]{ 0.73, -1.35});   // AUD >> JPY (carry)
+        SWAP_RATES.put("NZD_JPY",  new double[]{ 0.13, -0.65});   // NZD > JPY
+        SWAP_RATES.put("EUR_JPY",  new double[]{ 0.16, -1.15});   // EUR > JPY
+        SWAP_RATES.put("XAU_USD",  new double[]{-65.2,  37.0});   // gold: financing ≈ −5.7 %/yr long
     }
 
     private static final ZoneId NY = ZoneId.of("America/New_York");
@@ -91,7 +97,15 @@ public class SwapCalculator {
             return overrideRates;
         }
         double[] rates = SWAP_RATES.get(symbol);
-        if (rates == null) rates = SWAP_RATES.get(symbol.replace("_", ""));
+        if (rates == null) {
+            // Tolerate underscore-less keys (e.g. "USDCAD") by matching against the
+            // underscore-normalized table via the existing samePair() helper.
+            for (Map.Entry<String, double[]> e : SWAP_RATES.entrySet()) {
+                if (samePair(e.getKey(), symbol)) {
+                    return e.getValue();
+                }
+            }
+        }
         return rates;
     }
 
@@ -132,8 +146,8 @@ public class SwapCalculator {
         if (rates == null && !useYearly) return 0.0;
 
         // Convert from standard lot pip rate to actual position
-        // For EUR/USD 1k units: 1 pip = $0.10. So -3.5 pips = -$0.35/day
-        double pipSize = symbol.contains("JPY") ? 0.01 : 0.0001;
+        // For EUR/USD 1k units: 1 pip = $0.10. So -0.76 pips = -$0.076/day
+        double pipSize = RealCostModel.pipSize(symbol);
         // For JPY-quoted pairs the pip value is in JPY; convert to USD (e.g. ÷150).
         // Without this, GBP_JPY/EUR_JPY/USD_JPY swaps are overstated ~150x.
         double pipValueInUSD = symbol.contains("JPY")

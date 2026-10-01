@@ -9,9 +9,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Guards the JPY swap-rate fix: pip values for JPY-quoted pairs must be
- * converted from JPY to USD, otherwise swap costs are overstated ~150x and
- * (because totalSwap is signed negative) totalPnl gets inflated.
+ * Guards the corrected swap model (FEE-AUDIT.md §4): rates are broker financing
+ * (annual fraction → pips/day), JPY-quoted pip values are converted JPY→USD, and
+ * metals use a 0.01 pip size. The previous table (3 wrong signs, gold ~32× too
+ * small) is what these assertions replaced.
  */
 class SwapCalculatorTest {
 
@@ -19,27 +20,35 @@ class SwapCalculatorTest {
     private static final Instant CLOSE = Instant.parse("2024-01-02T12:00:00Z"); // 1 rollover day
 
     @Test
-    void gbpJpySwapConvertsPipValueToUsd() {
-        // GBP_JPY long swap = -4.5 pips/day for a standard lot.
+    void gbpJpyLongSwapIsCreditAndConvertsToUsd() {
+        // GBP_JPY long = +0.89 pips/day (GBP >> JPY carry; the old table said -4.5).
         // 1000 units × 0.01 pip = 10 JPY per pip → /150 = $0.0667 per pip
-        // -4.5 × 0.0667 = -$0.30/day
+        // +0.89 × 0.0667 = +$0.059/day
         double swap = SwapCalculator.calculateSwap("GBP_JPY", Order.Side.BUY, 1000.0, OPEN, CLOSE, 150.0);
-        assertEquals(-0.30, swap, 0.01);
+        assertEquals(0.059, swap, 0.01);
     }
 
     @Test
-    void nonJpyPairUnchanged() {
-        // EUR_USD long swap = -3.5 pips/day. 1000 units × 0.0001 = $0.10 per pip
-        // -3.5 × 0.10 = -$0.35/day
+    void nonJpyPairUsesCorrectedRate() {
+        // EUR_USD long = -0.76 pips/day (EUR < USD). 1000 units × 0.0001 = $0.10 per pip
+        // -0.76 × 0.10 = -$0.076/day
         double swap = SwapCalculator.calculateSwap("EUR_USD", Order.Side.BUY, 1000.0, OPEN, CLOSE, 150.0);
-        assertEquals(-0.35, swap, 0.001);
+        assertEquals(-0.076, swap, 0.005);
     }
 
     @Test
     void usdJpyConvertsPipValueToUsd() {
-        // USD_JPY short swap = -8.5 pips/day. 1000 units × 0.01 = 10 JPY per pip → /150 = $0.0667
+        // USD_JPY short = -1.65 pips/day. 1000 units × 0.01 = 10 JPY per pip → /150 = $0.0667
         double swap = SwapCalculator.calculateSwap("USD_JPY", Order.Side.SELL, 1000.0, OPEN, CLOSE, 150.0);
-        assertEquals(-8.5 * 1000 * 0.01 / 150.0, swap, 0.001);
+        assertEquals(-1.65 * 1000 * 0.01 / 150.0, swap, 0.005);
+    }
+
+    @Test
+    void goldUsesCentPipSize() {
+        // XAU_USD long = -65.2 pips/day with a 0.01 pip (the old table said -2.0).
+        // 100 units (1 lot) × 0.01 = $1.00 per pip → -65.2 × $1 = -$65.2/day
+        double swap = SwapCalculator.calculateSwap("XAU_USD", Order.Side.BUY, 100.0, OPEN, CLOSE, 150.0);
+        assertEquals(-65.2, swap, 1.0);
     }
 
     @Test
@@ -56,12 +65,13 @@ class SwapCalculatorTest {
 
     @Test
     void swapTableLookupIgnoresUnderscores() {
-        // SWAP_RATES stocke la clé "USDCAD" (sans underscore) alors que le moteur
-        // passe "USD_CAD" : sans normalisation le swap vaut 0 (net = PnL prix pur).
+        // The table key is now "USD_CAD" (underscore-normalized); an underscore-less
+        // lookup must still resolve via samePair().
         assertTrue(SwapCalculator.hasRates("USD_CAD"));
-        // USD_CAD long swap = -2.5 pips/day. 1000 units × 0.0001 = $0.10 per pip
+        assertTrue(SwapCalculator.hasRates("USDCAD"));
+        // USD_CAD long = +0.26 pips/day. 1000 units × 0.0001 = $0.10 per pip
         double swap = SwapCalculator.calculateSwap("USD_CAD", Order.Side.BUY, 1000.0, OPEN, CLOSE, 150.0);
-        assertEquals(-2.5 * 1000 * 0.0001, swap, 0.001);
+        assertEquals(0.26 * 1000 * 0.0001, swap, 0.001);
     }
 
     @Test
