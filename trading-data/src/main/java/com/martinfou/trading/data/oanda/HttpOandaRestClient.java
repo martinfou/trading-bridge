@@ -245,7 +245,7 @@ public class HttpOandaRestClient implements OandaRestClient {
 
     @Override
     public OandaMarketOrderResult placeMarketOrder(String instrument, long units, String clientTag) {
-        OrderTripwire.checkOrderAllowed(instrument, String.valueOf(units), "HttpOandaRestClient.placeMarketOrder");
+        OrderTripwire.checkOrderAllowed(instrument, String.valueOf(units), "HttpOandaRestClient.placeMarketOrder", baseUrl);
         try {
             String body = mapper.writeValueAsString(Map.of("order", buildMarketOrder(instrument, units, clientTag)));
 
@@ -296,7 +296,7 @@ public class HttpOandaRestClient implements OandaRestClient {
 
     @Override
     public OandaMarketOrderResult placeOrder(String type, String instrument, long units, double price, double stopLoss, double takeProfit, double trailingStop, boolean guaranteed, String clientTag, boolean reduceOnly) {
-        OrderTripwire.checkOrderAllowed(instrument, String.valueOf(units), "HttpOandaRestClient.placeOrder");
+        OrderTripwire.checkOrderAllowed(instrument, String.valueOf(units), "HttpOandaRestClient.placeOrder", baseUrl);
         try {
             OandaInstrument instMeta = getInstrument(instrument);
             Map<String, Object> order = buildOrder(type, instrument, units, price, stopLoss, takeProfit, trailingStop, guaranteed, clientTag, reduceOnly, instMeta.displayPrecision());

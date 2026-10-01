@@ -1,5 +1,7 @@
 package com.martinfou.trading.core.guardrails;
 
+import java.net.URI;
+import java.nio.file.Path;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -13,21 +15,23 @@ import org.slf4j.LoggerFactory;
  * <p>No order may be sent to a broker unless the environment variable
  * {@value #ENV_ALLOW_ORDERS} is explicitly set to {@code 1} or {@code true} (case-insensitive).
  * Containers carry this flag; test JVMs never do. On top of that, the tripwire always refuses when
- * a test runtime is detected (defence in depth): {@code surefire} present on the JVM classpath, or
+ * a test runtime is detected (defence in depth): a known test-runner jar on the JVM classpath, or
  * any {@code SUREFIRE_*} environment variable. Even an explicit flag does not override a detected
  * test runtime.
  *
  * <p>This is the single decision point for the whole repository: every order-sending method in the
  * live OANDA executor, the live OANDA HTTP client and the live IBKR gateway client calls
- * {@link #checkOrderAllowed(String, String, String)} before building any request. Test doubles
- * ({@code FakeBroker}, {@code StubOandaRestClient}, {@code StubIbkrGatewayClient}) are in-memory and
- * never reach a broker, so they are deliberately not wired to this tripwire.
+ * {@link #checkOrderAllowed(String, String, String, String)} before building any request. Test
+ * doubles ({@code FakeBroker}, {@code StubOandaRestClient}, {@code StubIbkrGatewayClient}) are
+ * in-memory and never reach a broker, so they are deliberately not wired to this tripwire.
  *
  * <p>Test code that must exercise the <em>live</em> order path (e.g. the HTTP client's POST retry
  * loop) can open an explicit, test-only gate via {@link #allowOrdersForTestingOnly()}. The gate is
- * honoured only while a test runtime is detected, and the install call itself throws in production,
- * so it can never authorise a live order. {@link #decision(Map, String)} remains the pure, unchanged
- * fail-closed decision function.
+ * honoured only while a test runtime is detected, the install call itself throws in production, and
+ * — crucially — a gate-honoured order may only target a <em>local</em> destination
+ * ({@code localhost}, {@code 127.0.0.1}, {@code ::1}). Even an open gate can therefore never reach a
+ * real broker. {@link #decision(Map, String)} remains the pure, unchanged fail-closed decision
+ * function.
  */
 public final class OrderTripwire {
 
@@ -41,11 +45,30 @@ public final class OrderTripwire {
     private static final AtomicBoolean ALLOWED_LOGGED = new AtomicBoolean(false);
 
     /**
+     * Filename tokens that identify a test runtime. Matching is done against the FILE NAME of each
+     * classpath entry ({@link Path#getFileName()}), never the full path, so a checkout directory
+     * named e.g. {@code surefire-docs} cannot produce a false positive in production.
+     *
+     * <p><b>MEASUREMENT (do not widen without re-measuring).</b> The production image was inspected
+     * on 2026-10-01 ({@code docker run --rm --entrypoint sh <prod-image> -c 'ls /app/libs'}):
+     * <b>47 jars</b>, of which <b>6 are JUnit</b> ({@code junit-jupiter-5.11.0},
+     * {@code junit-jupiter-api}, {@code junit-jupiter-engine}, {@code junit-jupiter-params},
+     * {@code junit-platform-commons}, {@code junit-platform-engine}) and <b>0</b> are
+     * {@code surefire}, {@code testng} or {@code idea_rt}. JUnit therefore <em>lives on the
+     * production classpath</em>. Adding {@code junit} (or {@code jupiter}, or {@code platform}) to
+     * this list would classify every production container as a test runtime and refuse
+     * <em>every</em> order even with {@value #ENV_ALLOW_ORDERS}=1 — a silent total trading outage.
+     * <b>NEVER add junit/jupiter/platform here.</b>
+     */
+    private static final String[] TEST_RUNTIME_TOKENS = {"surefire", "idea_rt", "testng", "gradle"};
+
+    /**
      * Test-only escape hatch. Installed exclusively by test code via
      * {@link #allowOrdersForTestingOnly()} and honoured by {@link #checkOrderAllowed} ONLY while a
      * test runtime is detected on the classpath/environment. Defaults to {@code false}: a test that
      * does not explicitly install the gate remains refused. Cleared via
-     * {@link #resetForTestingOnly()} so it never leaks across test classes sharing a JVM.
+     * {@link #resetForTestingOnly()} (or, preferably, by closing the {@link AutoCloseable} returned
+     * by {@link #allowOrdersForTestingOnly()}) so it never leaks across test classes sharing a JVM.
      */
     private static final AtomicBoolean TEST_GATE_INSTALLED = new AtomicBoolean(false);
 
@@ -72,12 +95,24 @@ public final class OrderTripwire {
         return "1".equals(value) || "true".equals(value);
     }
 
-    /** True when {@code surefire} appears on the classpath or a {@code SUREFIRE_*} env var is set. */
+    /**
+     * True when a known test-runner jar appears (by file name) on the classpath or a
+     * {@code SUREFIRE_*} env var is set. The comparison is against the <em>file name</em> of each
+     * entry, so a directory whose <em>path</em> happens to contain a token (e.g.
+     * {@code /home/me/surefire-docs/x.jar}) does NOT count.
+     */
     static boolean isTestRuntime(Map<String, String> env, String classPath) {
         if (classPath != null) {
             for (String entry : classPath.split(java.io.File.pathSeparator)) {
-                if (entry.toLowerCase(Locale.ROOT).contains("surefire")) {
-                    return true;
+                String fileName = fileNameOf(entry);
+                if (fileName == null) {
+                    continue;
+                }
+                fileName = fileName.toLowerCase(Locale.ROOT);
+                for (String token : TEST_RUNTIME_TOKENS) {
+                    if (fileName.contains(token)) {
+                        return true;
+                    }
                 }
             }
         }
@@ -91,36 +126,65 @@ public final class OrderTripwire {
         return false;
     }
 
+    /** Returns the file name of a classpath entry, or {@code null} when it has none. */
+    private static String fileNameOf(String entry) {
+        if (entry == null || entry.isEmpty()) {
+            return null;
+        }
+        try {
+            Path fileName = Path.of(entry).getFileName();
+            return fileName == null ? null : fileName.toString();
+        } catch (RuntimeException invalidPath) {
+            int lastSep = Math.max(entry.lastIndexOf('/'), entry.lastIndexOf('\\'));
+            return lastSep >= 0 ? entry.substring(lastSep + 1) : entry;
+        }
+    }
+
     /**
      * Refuses to send an order unless the tripwire is satisfied. Throws {@link IllegalStateException}
      * with an actionable message naming {@value #ENV_ALLOW_ORDERS} and {@value #GUARDRAILS_DOC}.
      * Logs exactly once per JVM when the path is authorised (proof that a container carries the flag).
      *
+     * <p>When the test-only gate is honoured, the destination {@code target} MUST be local
+     * ({@code localhost}, {@code 127.0.0.1}, {@code ::1}); any other destination is refused even
+     * though the gate is open. In production (flag path) the destination is not restricted.
+     *
      * @param instrument instrument (or the most specific identifier available at the call site)
      * @param units      units (or the most specific quantity available at the call site)
      * @param context    human-readable call-site label, e.g. {@code OandaExecutor.placeMarketOrder}
+     * @param target     the destination host or base URL of this order (e.g. {@code baseUrl} for the
+     *                   OANDA clients, {@code config.host()} for the IBKR gateway client)
      */
-    public static void checkOrderAllowed(String instrument, String units, String context) {
-        checkOrderAllowed(instrument, units, context, System.getenv(), runtimeClassPath());
+    public static void checkOrderAllowed(String instrument, String units, String context, String target) {
+        checkOrderAllowed(instrument, units, context, target, System.getenv(), runtimeClassPath());
     }
 
     /**
-     * Package-private overload with an explicit environment and classpath so the fail-closed and
-     * production-refusal contracts can be exercised hermetically (no env / system-property mutation).
-     * The public 3-arg form delegates here with the live {@code System.getenv()} /
-     * {@link #runtimeClassPath()}.
+     * Package-private overload with an explicit environment and classpath so the fail-closed,
+     * production-refusal and destination contracts can be exercised hermetically (no env /
+     * system-property mutation). The public 4-arg form delegates here with the live
+     * {@code System.getenv()} / {@link #runtimeClassPath()}.
      *
      * <p>The test-only gate is honoured <em>only</em> while a test runtime is detected: in a
-     * production environment (no {@code surefire} on the classpath, no {@code SUREFIRE_*} env var)
+     * production environment (no test-runner jar on the classpath, no {@code SUREFIRE_*} env var)
      * the gate is ignored even if the flag was somehow flipped, and only the
-     * {@value #ENV_ALLOW_ORDERS} flag can authorise.
+     * {@value #ENV_ALLOW_ORDERS} flag can authorise. And when the gate IS honoured, the destination
+     * must be local — the gate is strictly weaker than the flag, never able to touch a real broker.
      */
-    static void checkOrderAllowed(String instrument, String units, String context,
+    static void checkOrderAllowed(String instrument, String units, String context, String target,
                                   Map<String, String> env, String classPath) {
         if (isTestRuntime(env, classPath) && TEST_GATE_INSTALLED.get()) {
-            LOG.debug("Order path authorised via test-only override (test runtime detected): "
-                            + "instrument={}, units={}, context={}",
-                    instrument, units, context);
+            if (!isLocalDestination(target)) {
+                throw new IllegalStateException(
+                        "Order refused by the order tripwire: the test-only gate authorises orders ONLY "
+                                + "to a local destination (localhost, 127.0.0.1, ::1), but the destination is "
+                                + (target == null ? "<missing>" : target) + ". A test must never reach a real broker. "
+                                + "instrument=" + instrument + ", units=" + units + ", context=" + context
+                                + ". See " + GUARDRAILS_DOC + ".");
+            }
+            LOG.debug("Order path authorised via test-only override (test runtime detected, local destination): "
+                            + "instrument={}, units={}, context={}, target={}",
+                    instrument, units, context, target);
             return;
         }
         if (decision(env, classPath)) {
@@ -139,29 +203,71 @@ public final class OrderTripwire {
     }
 
     /**
+     * True when {@code target} names a loopback destination. Accepts a full URL (host extracted from
+     * it), a bare {@code host[:port]} and a bracketed or bare IPv6 literal.
+     */
+    static boolean isLocalDestination(String target) {
+        String host = extractHost(target);
+        return "localhost".equalsIgnoreCase(host)
+                || "127.0.0.1".equals(host)
+                || "::1".equals(host);
+    }
+
+    private static String extractHost(String target) {
+        if (target == null) {
+            return "";
+        }
+        String t = target.trim();
+        if (t.isEmpty()) {
+            return "";
+        }
+        int schemeIdx = t.indexOf("://");
+        if (schemeIdx >= 0) {
+            try {
+                return URI.create(t).getHost();
+            } catch (IllegalArgumentException invalidUri) {
+                return "";
+            }
+        }
+        String host = t;
+        int slash = host.indexOf('/');
+        if (slash >= 0) {
+            host = host.substring(0, slash);
+        }
+        if (host.startsWith("[") && host.contains("]")) {
+            return host.substring(1, host.indexOf(']'));
+        }
+        int firstColon = host.indexOf(':');
+        int lastColon = host.lastIndexOf(':');
+        if (firstColon >= 0 && firstColon == lastColon) {
+            host = host.substring(0, firstColon); // single colon => host:port
+        }
+        return host;
+    }
+
+    /**
      * Test-only escape hatch. Authorises {@link #checkOrderAllowed} to pass — but ONLY when a test
-     * runtime is detected ({@code surefire} on the classpath, or a {@code SUREFIRE_*} env var).
+     * runtime is detected (a test-runner jar on the classpath, or a {@code SUREFIRE_*} env var),
+     * and even then only for a <em>local</em> destination.
      *
      * <p>In production (no test runtime) this method <em>throws</em> and never opens the gate, so it
-     * cannot be used to dispatch a live order. In a test runtime it flips an in-process flag that
-     * {@link #checkOrderAllowed} honours only while a test runtime is still detected. The two
-     * mechanisms are mutually exclusive by environment: in production only the
-     * {@value #ENV_ALLOW_ORDERS} flag opens, in test only this gate opens, and neither works in the
-     * other's environment. A test that does not call this method remains refused (no default
-     * authorisation).
+     * cannot be used to dispatch a live order. The returned {@link AutoCloseable} clears the gate
+     * when closed, so prefer the try-with-resources form to avoid leaking the gate across tests
+     * sharing a JVM. A test that does not call this method remains refused (no default authorisation).
      */
-    public static void allowOrdersForTestingOnly() {
-        allowOrdersForTestingOnly(System.getenv(), runtimeClassPath());
+    public static AutoCloseable allowOrdersForTestingOnly() {
+        return allowOrdersForTestingOnly(System.getenv(), runtimeClassPath());
     }
 
     /** Package-private: installs the test gate only when {@code env}/{@code classPath} show a test runtime. */
-    static void allowOrdersForTestingOnly(Map<String, String> env, String classPath) {
+    static AutoCloseable allowOrdersForTestingOnly(Map<String, String> env, String classPath) {
         if (!isTestRuntime(env, classPath)) {
             throw new IllegalStateException(
                     "OrderTripwire: test-only override refused — no test runtime detected on the "
                             + "classpath or in the environment. This gate can never be opened in production.");
         }
         TEST_GATE_INSTALLED.set(true);
+        return OrderTripwire::resetForTestingOnly;
     }
 
     /**
@@ -179,7 +285,8 @@ public final class OrderTripwire {
      * own jars on {@code java.class.path}; it ships the surefirebooter jar in the
      * {@code surefire.real.class.path} system property instead (and the test classes in
      * {@code surefire.test.class.path}). Merging them is what makes the defence-in-depth detection
-     * actually fire in a real test run, not just in a synthetic unit test.
+     * actually fire in a real test run, not just in a synthetic unit test. IntelliJ ({@code idea_rt})
+     * and Gradle worker jars, by contrast, do sit on {@code java.class.path} directly.
      */
     static String runtimeClassPath() {
         StringBuilder cp = new StringBuilder(System.getProperty("java.class.path", ""));

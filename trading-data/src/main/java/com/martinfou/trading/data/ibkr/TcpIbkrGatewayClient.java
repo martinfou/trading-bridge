@@ -153,7 +153,7 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
 
     @Override
     public IbkrMarketOrderResult placeMarketOrder(String symbol, double quantity, Order.Side side, String clientTag) {
-        OrderTripwire.checkOrderAllowed(symbol, String.valueOf(quantity), "TcpIbkrGatewayClient.placeMarketOrder");
+        OrderTripwire.checkOrderAllowed(symbol, String.valueOf(quantity), "TcpIbkrGatewayClient.placeMarketOrder", config.host());
         if (!isConnected()) {
             return IbkrMarketOrderResult.failure("IB Gateway not connected");
         }
