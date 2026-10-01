@@ -1,6 +1,7 @@
 package com.martinfou.trading.runtime;
 
 import org.junit.jupiter.api.Test;
+import com.martinfou.trading.broker.BrokerCredentials;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -29,7 +30,11 @@ class BrokerAccountRegistryTest {
         assertEquals("firm-a", view.id());
         assertEquals("OANDA", view.provider());
         assertFalse(view.accountIdMasked().contains("token"));
-        assertEquals("****", view.accountIdMasked());
+        // In test mode the registry resolves the mock account, so the mask reflects that value.
+        // What must hold in every mode is the shape: a mask, never the account itself.
+        assertTrue(view.accountIdMasked().matches("\\*{4}[A-Za-z0-9]{0,4}"),
+            "le masque doit etre **** ou ****llll, jamais le compte : " + view.accountIdMasked());
+        assertFalse(view.accountIdMasked().contains("firm-a"));
     }
 
     @Test
@@ -60,8 +65,49 @@ class BrokerAccountRegistryTest {
                 null,
                 null));
 
-        assertFalse(registry.credentialsConfigured("missing-env"));
-        assertTrue(registry.credentials("missing-env").isEmpty());
+        // Production behaviour, exercised by temporarily leaving test mode: an entry whose environment
+        // variables are absent yields NO credentials. Kept because it is the fail-closed path that
+        // matters outside tests; unreachable while the JVM is in test mode, which is the point.
+        String saved = System.getProperty(BrokerAccountRegistry.TEST_PROPERTY);
+        System.clearProperty(BrokerAccountRegistry.TEST_PROPERTY);
+        try {
+            assertFalse(registry.credentialsConfigured("missing-env"));
+            assertTrue(registry.credentials("missing-env").isEmpty());
+        } finally {
+            if (saved != null) {
+                System.setProperty(BrokerAccountRegistry.TEST_PROPERTY, saved);
+            }
+        }
+    }
+
+    @Test
+    void credentials_inTestMode_neverResolveARealAccountEvenIfTheEnvHasOne() {
+        // The 2026-10-01 incident: an exported .env.paper in the developer's shell was inherited by the
+        // forked test JVM, and the registry resolved that live account and token, so the test suite sent
+        // 12 real orders to the paper account. Whatever the environment says, test mode must yield the
+        // mock sentinels, and the host must not resolve, so no order can leave the JVM.
+        BrokerAccountRegistry registry = BrokerAccountRegistry.ofEntries(
+            new BrokerAccountRegistry.AccountEntry(
+                "default",
+                "OANDA",
+                BrokerCredentials.ENV_OANDA_TOKEN,
+                BrokerCredentials.ENV_OANDA_ACCOUNT,
+                BrokerCredentials.ENV_OANDA_REST_URL,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null));
+
+        assertTrue(System.getProperty(BrokerAccountRegistry.TEST_PROPERTY) != null,
+            "ce test n'a de sens qu'en mode test (propriete posee par surefire)");
+        BrokerCredentials creds = registry.credentials("default").orElseThrow();
+        assertEquals(BrokerAccountRegistry.MOCK_TOKEN, creds.apiToken());
+        assertEquals(BrokerAccountRegistry.MOCK_ACCOUNT_ID, creds.accountId());
+        assertEquals(BrokerAccountRegistry.MOCK_REST_URL, creds.restUrl());
+        assertFalse(creds.restUrl().contains("oanda.com"),
+            "test mode ne doit jamais pointer un domaine courtier");
     }
 
     @Test
