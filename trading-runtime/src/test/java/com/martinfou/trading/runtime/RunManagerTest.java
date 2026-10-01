@@ -13,6 +13,15 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 class RunManagerTest {
 
+    /**
+     * Hermetic live-candles fetcher: returns 500 deterministic in-memory sample bars, the same count
+     * the production OANDA path would fetch (the {@code start()} call site passes {@code limit=null},
+     * so the production code fetches 500). No network and no {@code OandaPriceClient}: a test suite
+     * must never reach a real broker.
+     */
+    private static final RunManager.LiveCandlesFetcher HERMETIC_FETCHER =
+        (config, limit, to) -> BarSourceResolver.sampleBars(config.symbol(), 500);
+
     @Test
     void startRun_persistsEventsToStore() throws Exception {
         try (RuntimeStores.Bundle stores = RuntimeStores.inMemoryWithBroadcast();
@@ -75,7 +84,9 @@ class RunManagerTest {
         try (RuntimeStores.Bundle stores = RuntimeStores.inMemoryWithBroadcast();
              RunManager manager = new RunManager(
                  stores.eventStore(),
-                 config -> new FakeBroker(config.capital() != null ? config.capital() : 100_000.0))) {
+                 config -> new FakeBroker(config.capital() != null ? config.capital() : 100_000.0),
+                 HERMETIC_FETCHER,
+                 null)) {
 
             String runId = manager.startRun(new RunManager.StartRunRequest(
                 "LondonOpenRangeBreakout",
@@ -478,7 +489,7 @@ class RunManagerTest {
     @Test
     void testDuplicateRunRejection() throws Exception {
         try (RuntimeStores.Bundle stores = RuntimeStores.inMemoryWithBroadcast();
-             RunManager manager = new RunManager(stores.eventStore())) {
+             RunManager manager = new RunManager(stores.eventStore(), HERMETIC_FETCHER, null)) {
 
             var req = new RunManager.StartRunRequest(
                 "LondonOpenRangeBreakout",
@@ -544,57 +555,120 @@ class RunManagerTest {
 
     @Test
     void testConcurrentStartLocking() throws Exception {
+        // The invariant under test is the PER-STRATEGY startup lock in RunManager.startRun: two
+        // concurrent startRun calls for the same strategyId must never interleave inside the
+        // critical section (kill-switch check → duplicate guard → register → start). force=true
+        // only bypasses the duplicate guard; it does NOT bypass the lock. A test that merely counts
+        // 5 successful returns is vacuous, because with force=true all 5 would register with or
+        // without the lock. To prove mutual exclusion we measure concurrency INSIDE the critical
+        // section via an injected hook that holds it open on a latch (a held precondition, not a
+        // duration).
+        java.util.concurrent.atomic.AtomicInteger inCritical = new java.util.concurrent.atomic.AtomicInteger(0);
+        java.util.concurrent.atomic.AtomicInteger maxConcurrent = new java.util.concurrent.atomic.AtomicInteger(0);
+        java.util.concurrent.CountDownLatch firstEntered = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch hold = new java.util.concurrent.CountDownLatch(1);
+
+        // Runs while the per-strategy startup lock is held, before any state change.
+        Runnable startupLockHook = () -> {
+            int c = inCritical.incrementAndGet();
+            maxConcurrent.accumulateAndGet(c, Math::max);
+            firstEntered.countDown();
+            try {
+                hold.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                inCritical.decrementAndGet();
+            }
+        };
+
         try (RuntimeStores.Bundle stores = RuntimeStores.inMemoryWithBroadcast();
-             RunManager manager = new RunManager(stores.eventStore())) {
+             RunManager manager = new RunManager(stores.eventStore(), HERMETIC_FETCHER, startupLockHook)) {
 
             var req = new RunManager.StartRunRequest(
                 "LondonOpenRangeBreakout",
                 "EUR_USD",
-                "PAPER",
-                // 100_000 synthetic bars, not 10. The duplicate guard only blocks a run that is still
-            // RUNNING, and a 10-bar PAPER_STUB run can reach a terminal state before the assertion two
-            // lines below: that is exactly how this test flaked under the full reactor on 2026-09-30
-            // (3.9s for the class inside the suite versus 16.6s in isolation, gate failure
-            // "Expected IllegalArgumentException to be thrown, but nothing was thrown"). The duration of
-            // the run is what the test depends on, so it is made long enough to be reliable.
-            new BarSourceResolver.BarsSource("sample", 100_000, null),
+                "BACKTEST",
+                new BarSourceResolver.BarsSource("sample", 10, null),
                 1000.0,
                 null,
                 null,
                 null,
-                "PAPER_STUB",
                 null,
                 null,
                 null,
                 null,
                 null,
                 null,
-                true // use force to allow multiple concurrent starts
+                null,
+                true // use force to allow multiple concurrent starts of the SAME strategy
             );
 
             int threads = 5;
             java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(threads);
-            java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+            // Release all workers simultaneously so, if the lock were missing, they WOULD pile into
+            // the critical section together and raise maxConcurrent above 1.
+            java.util.concurrent.CyclicBarrier startBarrier = new java.util.concurrent.CyclicBarrier(threads);
+            java.util.concurrent.CountDownLatch allStarted = new java.util.concurrent.CountDownLatch(threads);
             java.util.concurrent.atomic.AtomicInteger successCount = new java.util.concurrent.atomic.AtomicInteger(0);
+            java.util.Set<String> runIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
+            java.util.List<Exception> failures = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
 
             for (int i = 0; i < threads; i++) {
                 pool.submit(() -> {
                     try {
-                        latch.await();
-                        manager.startRun(req);
+                        startBarrier.await();
+                        allStarted.countDown();
+                        String runId = manager.startRun(req);
+                        runIds.add(runId);
                         successCount.incrementAndGet();
                     } catch (Exception e) {
-                        // ignore
+                        failures.add(e);
                     }
                 });
             }
 
-            latch.countDown();
-            pool.shutdown();
-            assertTrue(pool.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS));
+            // One worker now holds the per-strategy startup lock and is blocked inside the hook on
+            // `hold`. The other 4 are queued on the lock (they left the same barrier as the holder).
+            assertTrue(firstEntered.await(10, java.util.concurrent.TimeUnit.SECONDS),
+                "no thread entered the critical section");
+            assertTrue(allStarted.await(10, java.util.concurrent.TimeUnit.SECONDS),
+                "not all threads attempted to start");
+            // (a) While the critical section is held, no other thread may be inside it.
+            assertEquals(1, inCritical.get(),
+                "only the lock holder may be inside the critical section while it is held");
 
-            assertEquals(threads, successCount.get(), "Expected all threads to successfully register and start runs");
+            // Release the hold; the 4 queued workers now proceed one at a time.
+            hold.countDown();
+            pool.shutdown();
+            assertTrue(pool.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS),
+                "startRun calls deadlocked or did not finish");
+
+            // (b) all 5 forced starts registered.
+            assertEquals(threads, successCount.get(), "failures=" + failures);
+            // The lock: at no point were two threads inside the critical section. Had the lock been
+            // removed, the 4 siblings would have entered the hook while the holder held it open and
+            // pushed maxConcurrent to 5.
+            assertEquals(1, maxConcurrent.get(),
+                "critical section was entered concurrently: per-strategy lock is not enforced");
+
+            // (c) 5 DISTINCT runs, each present in the event store (not just a counter).
+            assertEquals(threads, runIds.size(), "expected 5 distinct run ids, got " + runIds);
+            for (String runId : runIds) {
+                assertTrue(waitForEvents(stores.eventStore(), runId),
+                    "run " + runId + " has no events in the event store");
+            }
         }
+    }
+
+    private static boolean waitForEvents(EventStore store, String runId) throws InterruptedException {
+        for (int i = 0; i < 200; i++) {
+            if (store.count(runId) > 0) {
+                return true;
+            }
+            Thread.sleep(25);
+        }
+        return false;
     }
 
     @Test
@@ -632,7 +706,7 @@ class RunManagerTest {
         // 1. Start a run and let it get saved to database as RUNNING
         String runId;
         try (SqliteEventStore eventStore = new SqliteEventStore(config);
-             RunManager manager = new RunManager(eventStore)) {
+             RunManager manager = new RunManager(eventStore, HERMETIC_FETCHER, null)) {
 
             RunConfigSnapshot snapshot = new RunConfigSnapshot(
                 "LondonOpenRangeBreakout", "EUR_USD", "LIVE", "sample", 100, null, 1000.0, null, null, "LIVE_OANDA"
@@ -645,7 +719,7 @@ class RunManagerTest {
 
         // 2. Simulate control plane restart and verify restoreActiveRuns restarts it
         try (SqliteEventStore eventStore = new SqliteEventStore(config);
-             RunManager manager = new RunManager(eventStore)) {
+             RunManager manager = new RunManager(eventStore, HERMETIC_FETCHER, null)) {
             
             // Verify runs map is empty initially
             assertTrue(manager.list(null).isEmpty());
