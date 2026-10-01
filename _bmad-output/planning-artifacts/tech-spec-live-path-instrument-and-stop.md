@@ -169,3 +169,73 @@ défauts sont la démonstration de cette phrase.
 | Re-baseline + validation contre le broker | même fichier — **Epic 41**. L'audit du 2026-10-01 **est** la comparaison courtier de la story 41.2 (spreads et swaps mesurés, tolérance 10-15 %). |
 | Comparabilité backtest/paper (données manquantes) | nouveau : données FX H1 s'arrêtent au 2026-05-20, fenêtre live en sept-oct 2026 → aucune barre commune. À porter comme story quand 40/41 seront faits. |
 | Seconde porte mono-instrument (D31) | `docs/lt-strategy-playbook.md` §4.3 (seuils de passage) + skill `simons` (Quality Gate). |
+
+---
+
+## 12. Révision 2 — après Party Mode (2026-10-01)
+
+Trois agents (Winston architecte, Amelia dev, John PM) ont revu la v1 en lecture seule sur le code réel.
+**Ils ont trouvé des erreurs dans cette spec, dont une qui aurait arrêté trois des cinq conteneurs en
+production.** Les affirmations ci-dessous ont été **revérifiées à la main dans le code** avant d'être
+inscrites ici. Les sections 6 et 7 restent la référence de l'intention ; les amendements qui suivent les
+corrigent et les complètent.
+
+### 12.1 Ce qui était faux dans la v1
+
+| # | Erreur de la v1 | Réalité vérifiée | Conséquence |
+|---|---|---|---|
+| **E1** | « Si une stratégie est absente de `live-config.json`, refuser de démarrer » (§9) | `live-config.json` ne contient que **9 clés** : `vwpreversion`, `consecbar` et 7 `2_*`. **`compmomentum`, `monthweekphase`, `ltrsi3` et `nfpweek` sont ABSENTS.** | La garde 1.2 aurait **arrêté 3 des 5 conteneurs** (comp-momentum, month-week, lt-rsi3), dont `ltrsi3`, sujet même de D30. La garde ne peut pas être activée avant que la config soit complétée. |
+| **E2** | « La config porte l'instrument, il suffit de le lire » | `loadConfig()` **ne lit jamais** le champ `instrument` (`LiveStrategyRunner.java:418-464` ; le mot `instrument` n'apparaît dans le fichier qu'en log/état, lignes 680, 837, 1663). | Il y a **trois** sources concurrentes : le champ `symbol` de la classe (jamais mis à jour, l'instanciation est réflexive **sans argument**, `:333` et `:343`), le champ `instrument` de la config (jamais lu), et `toOandaSymbol()` dérivé du nom (le seul utilisé, et faux pour une stratégie). |
+| **E3** | « La table de noms est cassée » | Elle résout correctement **4 des 5** stratégies déployées. Seule `vwpreversion` casse (`VWPREVERSION` vs le nom affiché `VWAP Reversion`). | Le vrai défaut systémique est la **multiplicité des sources**, pas la table. Le correctif porte sur le mécanisme, pas sur la chaîne. |
+| **E4** | Le `symbol` de classe est décoratif | **Faux pour `ltrsi3`** : `LtRSI3Momentum.onBar()` commence par `if (!bar.symbol().equals(symbol)) return;` (`LtRSI3Momentum.java:64`) avec le défaut de classe `"EUR_USD"` (`:56`). | Le correctif 1.1 peut créer une **panne silencieuse neuve** : si `ltrsi3` résout une autre paire que son champ interne, **100 % des barres sont filtrées et la stratégie trade zéro, sans un log**. C'est pire que le défaut actuel. |
+
+### 12.2 Ce qui manquait (et qui devient des stories)
+
+| # | Story ajoutée | Effort | Pourquoi |
+|---|---------------|--------|----------|
+| **1.7** | **Le stop part DANS l'ordre** au lieu d'un second appel | M | `executeTrade` place l'ordre marché nu (`LiveStrategyRunner.java:1239`) puis attache le stop par `addStopLoss` **après** le fill (`:1254-1270`), en `warn`-and-continue si l'appel échoue. D30 dit « le stop vit chez le courtier » : tant que c'est un second appel, un crash dans la fenêtre fill→attach laisse une position **nue**, et un échec d'attache ne fait que journaliser. OANDA accepte `stopLossOnFill` dans le corps de l'ordre. À corriger dans le même geste que 1.3, sinon D30 n'est pas honoré. ⚠️ Le chemin `setStopLossOnFill` porte en plus un bug de format `%.5f` sur les paires JPY (3 décimales attendues). |
+| **1.8** | **Réconcilier le `symbol` de classe avec l'instrument résolu** | S | Sans ça, E4 transforme un correctif en panne muette. Le pattern maison existe déjà : `Strategy.syncPosition` (`Strategy.java:53-66`) pose des champs par réflexion. Option propre : méthode `default` sur l'interface `Strategy` (rétrocompatible, ~50 implémentations intactes), à surcharger par les stratégies qui filtrent sur `bar.symbol()`. |
+| **1.9** | **Compléter `live-config.json`** (prérequis de 1.2) | S | Ajouter `compmomentum`, `monthweekphase`, `ltrsi3`, `nfpweek` avec instrument + `computedRiskPct` + `backtestMetrics`. **Avant** l'activation de la garde, sinon E1. |
+| **1.10** | **`resumeState()` doit confronter l'instrument sauvegardé au résolu** | S | `resumeState()` restaure `activeTrades` avec leur `symbol` embarqué (`:2224`) **sans jamais comparer** à l'instrument nouvellement résolu, et le fichier d'état est clé par nom court seul (`:250`). C'est la position orpheline de D20-D27 qui se rejoue, dès que la paire de `vwpreversion` change (D29). Refuser d'adopter, ou exiger une adoption explicite tracée. |
+
+### 12.3 Amendements aux stories existantes
+
+- **1.1** — effort réel **M, pas S**. Le chemin le plus simple, dans l'ordre : (a) résoudre par la clé
+  `strategyShortName` (déjà un champ, `:130`) contre `strategies.<clé>.instrument` ; (b) ne pas supprimer
+  la table d'un coup, mais **remplacer le `return "GBP_JPY"` silencieux** (`:1645`) par un échec bruyant ;
+  (c) réconcilier le `symbol` de classe (story 1.8) ; (d) compléter la config (story 1.9) **avant**
+  d'activer la garde. Effort M parce que (c) et (d) sont des prérequis, pas des détails.
+- **1.4** — la garde doit vivre **une seule fois dans `trading-core`** (prédicat partagé appelé par le
+  point d'entrée des deux moteurs), **pas** en « runner + miroir dans `BacktestEngine` ». Un miroir, c'est
+  deux implémentations de la même règle, donc deux occasions de diverger : exactement ce que la garde est
+  censée empêcher. ⚠️ Et c'est un **changement de sémantique**, pas un garde-fou neutre : aujourd'hui une
+  entrée sans stop est **acceptée** et plafonnée à 2 000 unités avec un `warn` (`:527-532`). Une garde
+  générale casserait les stratégies existantes sans stop (harnais, quantité fixe) → à scoper, et le
+  miroir backtest devient un **opt-in**.
+
+### 12.4 Ce que la revue sort du périmètre (et pourquoi)
+
+| Sujet | Décision de séquencement | Raison |
+|---|---|---|
+| **D29** (re-backtest USD_CHF vs GBP_JPY, choix sur preuve) | **hors de cette spec** | C'est de la recherche, pas un correctif. À ne pas mettre sur le chemin critique du déploiement. |
+| Miroir backtest de la garde | **reporté** | Il protège le pipeline, pas le courtier, et devient utile quand les coûts rendront backtest et paper comparables. |
+| **D31** (seconde porte) | **après Epic 40.1** | ⚠️ Argument décisif de la revue : la porte actuelle mesure un **PF qui exclut les coûts** (`Epic 40.1` non implémenté, aucun `spreadPips` dans le code). Écrire une seconde porte maintenant revient à calibrer un seuil sur une métrique fantaisiste. La porte peut être écrite, mais **son seuil doit être exprimé coûts inclus**, donc après 40.1. |
+| `STRATEGY_PAIR` | **supprimer**, pas conserver en repli | Variable morte (0 occurrence en Java), et le compose l'injecte **toujours** avec un défaut (`${STRATEGY_PAIR:-USD_CHF}`), donc le runner ne peut pas distinguer « posée par l'opérateur » de « défaut compose ». La conserver recrée le problème à deux boutons que l'US-3 dénonce. Corollaire : passer les défauts à vide dans `docker-compose.yml`. |
+
+### 12.5 Ce que ça change au séquencement (§10)
+
+1. `1.9` (compléter la config) et `1.8` (réconcilier le `symbol`) — **prérequis**.
+2. `1.1` + `1.2` (instrument + garde de démarrage).
+3. `1.3` + `1.7` (stop sur l'ordre, et dans l'ordre) + `1.4` scopée (garde unique).
+4. `1.10` (instrument sauvegardé vs résolu) — avant tout changement de paire.
+5. `1.5` tests, `1.6` docs.
+6. Revue indépendante `scripts/agy-review.sh`, puis **déploiement seulement sur accord de Martin**.
+
+### 12.6 Le point qui dépasse cette spec
+
+La revue a raison sur un point qu'il faut garder visible : **corriger ces deux défauts ne débloque aucune
+stratégie rentable.** Les candidats sont bloqués à la **porte de backtest**, pas sur le chemin live, et
+cette porte mesure un PF **sans coûts**. La valeur de ces correctifs est l'**intégrité de la mesure** :
+sans eux, les 30 jours de paper ne produisent aucun signal sur l'edge réellement backtesté. Le levier de
+la question « est-ce que ça peut gagner de l'argent » reste **Epic 40.1** (le modèle de coûts).
+
