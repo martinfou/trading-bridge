@@ -134,6 +134,12 @@ et de déposer le nouveau **directement dans le fichier sur la machine**, sans p
   autre, alors qu'un plancher proportionnel est juste par construction. Sur le compte live à 2 000 CAD,
   l'ancien plancher engageait plus de risque que le budget entier qu'il était censé remplacer.
 
+- **D14** — Seuils de proposition de promotion : **30 jours + 30 trades + P&L net positif** dans
+  l'environnement courant. Les trois conditions sont nécessaires, aucune n'est suffisante. 30 trades
+  est le plancher qui distingue une stratégie d'une série chanceuse, et 30 jours empêche qu'une bonne
+  semaine déclenche une proposition. Le système propose, Martin confirme (D7), et rien ne se déplace
+  automatiquement vers l'argent réel.
+
 ## 5. Invariant de sécurité non négociable
 
 **Le runner doit REFUSER de démarrer si l'environnement déclaré et les identifiants ne concordent
