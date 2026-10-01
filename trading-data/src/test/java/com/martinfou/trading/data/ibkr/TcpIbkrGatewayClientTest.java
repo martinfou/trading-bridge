@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TcpIbkrGatewayClientTest {
@@ -23,10 +24,11 @@ class TcpIbkrGatewayClientTest {
     // ------------------------------------------------------------------
 
     @Test
-    void placeMarketOrder_notConnected_returnsFailure() {
-        var result = client.placeMarketOrder("MES", 1.0, Order.Side.BUY, "tag");
-        assertFalse(result.success());
-        assertNotNull(result.errorMessage());
+    void placeMarketOrder_refusesWithoutTouchingTheWire() {
+        // The order tripwire fires before the not-connected check: in a test runtime no order may
+        // be attempted at all, so placeMarketOrder must throw rather than return a failure.
+        assertThrows(IllegalStateException.class,
+            () -> client.placeMarketOrder("MES", 1.0, Order.Side.BUY, "tag"));
     }
 
     @Test

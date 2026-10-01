@@ -30,6 +30,7 @@ services:
       - IBKR_PORT=4002
       - IBKR_CLIENT_ID=1
       - APP_ENV=production
+      - TB_ALLOW_ORDERS=1
     volumes:
       - ../data:/app/data
       - ../config:/app/config
