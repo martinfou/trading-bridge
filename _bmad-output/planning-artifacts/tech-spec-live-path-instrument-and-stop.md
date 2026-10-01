@@ -345,6 +345,33 @@ ressemblait à une panne d'outil au lieu d'un rejet, ce qui rend le journal d'au
 accepte désormais toute la famille non-passante et affiche la ligne `VERDICT:` non reconnue au lieu de la
 passer sous silence ; tout ce qui n'est pas reconnu fait toujours échouer la porte.
 
+### 12.12 La porte rouge : le vrai mécanisme, et un résidu trouvé en vérifiant
+
+Le test qui bloquait `pre-deploy-gate.sh` (`RunManagerTest.testConcurrentStartLocking`) échouait **pour une
+autre raison que celle décrite dans son propre commentaire**.
+
+- **Mécanisme réel** : en mode `PAPER`, `RunManager.startRun()` (`RunManager.java:667`) prend un verrou par
+  `strategyId` puis appelle `start()` (`:704`), qui appelle **synchroniquement** `loadBars(...)` (`:475`)
+  **avant** de soumettre au worker. Or `loadBars` fait un **appel réseau OANDA réel** en mode PAPER/LIVE
+  (`priceClient.getCandlesBefore(...)`, `:1041`, timeout HTTP 10 s). Les 5 threads du test partagent le même
+  `strategyId`, donc ils se **sérialisent sur le verrou** : temps total = somme de 5 latences réseau, contre
+  un `awaitTermination(5 s)`. Le « 100 000 barres » du correctif précédent (déjà mergé) était **inefficace** :
+  en PAPER les barres viennent d'OANDA, pas de la source `sample`.
+- **Correctif livré** (branche `fix/flaky-run-guard-deterministic`, commit `1eaf23f6`, **test-only** : un seul
+  fichier, +18/−11) : le test cible passe en `BACKTEST` (la branche OANDA est sautée), la charge revient à 10
+  barres (sans objet puisque `force=true` court-circuite le garde), et la borne de 5 s devient un simple
+  détecteur de blocage à 30 s. L'invariant est intact : 5 démarrages concurrents forcés s'enregistrent tous.
+- ⚠️ **Résidu mesuré par l'orchestrateur, que l'agent n'avait pas signalé** : la classe `RunManagerTest`
+  continue de faire **4 appels OANDA réels par exécution**, tous sur le thread `main`, depuis d'autres tests
+  en mode PAPER/LIVE. La revendication « plus aucun Fetching » était **fausse**. Conséquence : la porte reste
+  sensible à la latence du courtier (OANDA lent ou indisponible ⇒ ces 4 tests échouent). Le correctif durable
+  est d'**injecter un faux client de prix** pour les tests en mode PAPER, ce qui est un chantier à part
+  entière et qui rejoindrait la règle déjà écrite dans `trading-bridge-live-operations` : *une suite de tests
+  ne doit pas atteindre un vrai courtier*.
+- **Défaut de production signalé et non contourné** : `startRun` charge les barres **en tenant le verrou par
+  stratégie**, donc une réponse lente du courtier bloque tous les démarrages concurrents de cette stratégie.
+  À traiter côté production, pas dans un test.
+
 
 
 
