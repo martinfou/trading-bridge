@@ -163,6 +163,42 @@ Deux faits à connaître sur cette porte, appris le 2026-10-01 :
    fourni), et une passe a recommandé d'ajouter `junit` aux jetons de détection, ce qui aurait arrêté tous
    les conteneurs. Avant d'appliquer un constat qui touche la production : **mesurer le système**.
 
+### Les quatre voies (ajouté le 2026-10-01)
+
+Une seule voie touche quelque chose qui compte, et elle a un nom, un compte et un journal.
+
+| Voie | Compte | Ce qu'on y fait | Règle |
+|---|---|---|---|
+| **Recherche** | aucun | backtests, modèle de coûts, walk-forward, shortlist | aucun courtier, jamais |
+| **Dev** | `-013` (pristine, jamais tradé) | chemins d'ordre, retry, candidat de bout en bout | `scripts/dev-lane.sh`, état dans `./data-dev`, refus de démarrer si le compte dev = le compte paper |
+| **Paper** | `-014`, **la fenêtre** | observer un candidat validé pendant 30 jours | réservé : aucune exploration, baseline consignée dans `docs/paper-window-log.md` |
+| **Live** | `-005` (2 k$) | argent réel | aucun ordre sans décision écrite de Martin dans ce document |
+
+Deux détails qui ont failli coûter cher :
+
+1. **Le token est partagé entre `-013` et `-014`.** Un seul `OANDA_API_KEY` ouvre les deux comptes :
+   l'isolation dev/paper tient donc à une variable d'environnement, pas à une credential. Une
+   isolation réelle demande un token par compte (à créer dans l'interface OANDA ; ce n'est pas
+   automatisable ici). En attendant, `scripts/dev-lane.sh` refuse de démarrer si les deux comptes
+   sont identiques.
+2. **La voie dev a ses propres répertoires d'état** (`./data-dev`, `./logs-dev`) parce que
+   `docker-compose.yml` monte les mêmes `./data` et `./logs` dans les conteneurs de la fenêtre.
+   Un conteneur dev qui écrirait là-dedans contaminerait l'état du runner qui produit
+   l'observation.
+
+#### Mode test : plus aucune credential vivante, jamais
+
+Le 2026-10-01, la suite de tests a envoyé 12 ordres réels. Le mécanisme n'était pas une garde
+manquante : `trading.bridge.test` était bien posé, et `loadDefault()` renvoyait bien le compte
+synthétique, mais ce compte portait `token`/`accountId` **nuls** en nommant les variables
+d'environnement, donc `credentials()` lisait les valeurs réelles. Un `.env.paper` exporté dans le
+shell du développeur était hérité par la JVM de test, et l'état de terminal persiste d'un appel à
+l'autre : la variable est restée exportée des heures.
+
+`credentials()` renvoie maintenant des sentinelles codées en dur en mode test, pour **tous** les
+comptes, quoi que dise l'environnement. Le correctif ne dépend pas de la discipline du shell, ce
+qui est précisément ce qui le rend fiable.
+
 ### Couche 5 — Rapports courtier
 
 - Le **courtier est la seule source** des chiffres de P&L (positions, transactions, `realizedPL`).
