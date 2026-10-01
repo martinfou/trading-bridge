@@ -152,6 +152,33 @@ et de déposer le nouveau **directement dans le fichier sur la machine**, sans p
   de paramètres d'un compte de 95 800 CAD vers un compte de 2 000 CAD produirait une position 48 fois
   trop grosse.
 
+## 4ter. Correction : les tokens OANDA sont par utilisateur, pas par compte
+
+Constat mesuré le 2026-09-30, qui corrige une hypothèse de la section 5 :
+
+| Token | sha256 (8) | Comptes ouverts |
+|---|---|---|
+| ancien | `dfc03530acdf` | 8, dont `-012`, **sans** `-013` ni `-014` |
+| nouveau | `eb1e7e7b172e` | **13**, dont `-013` et `-014` |
+
+Le nouveau token ouvre les treize sous-comptes, y compris `-004`, `-011` et `-012`. Il n'existe
+donc pas de token « propre à un environnement » au sens strict : OANDA rattache un token à
+l'utilisateur, et un token créé **avant** la naissance d'un compte ne le voit pas. C'était la vraie
+cause du 403, pas un défaut de périmètre.
+
+**Conséquence directe sur l'invariant** : la séparation entre dev, paper et live ne peut pas reposer
+sur l'identifiant seul, puisque le même token ouvre les trois. Elle repose donc sur :
+
+1. `OANDA_ACCOUNT_ID` comme frontière réelle (un processus dev ne peut toucher que `-013`) ;
+2. une **garde de démarrage qui refuse un couple environnement / compte incohérent**, en comparant
+   l'identifiant configuré à une table de correspondance versionnée ;
+3. l'**hôte d'API** comme second contrôle (practice contre fxtrade), ce qui empêche un `ENV=paper`
+   de viser le compte réel même avec le bon numéro de compte.
+
+Sans le point 2, le même token dans les trois fichiers rendrait la séparation purement déclarative.
+C'est le seul endroit de ce PRD où une mesure contredit une décision antérieure, et c'est corrigé ici
+plutôt que laissé passer.
+
 ## 5. Invariant de sécurité non négociable
 
 **Le runner doit REFUSER de démarrer si l'environnement déclaré et les identifiants ne concordent
