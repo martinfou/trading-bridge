@@ -1,0 +1,268 @@
+=== MODE: --all | 2026-10-01T11:10:07Z ===
+==============================================================
+FADE DU VENDREDI FX × CARRY RÉEL DES 8 DEVISES (47e, jeudi cross-asset)
+Mode: --all | SELL vendredi 10 000 u | coûts $0.07 + 0.01% | capital $50000.0
+==============================================================
+
+==============================================================
+1) TABLE DE CARRY RÉELLE — famille UNIFORME IR3TIB01 (3 mois interbancaire), 2006-2026
+==============================================================
+PAIRE      moy06-15  moy16-26 |diff|moy  pip/j LONG
+GBP_JPY      +1.75%    +1.83%    1.760%       0.482
+GBP_USD      +0.63%    -0.42%    0.574%       0.022
+AUD_USD      +2.87%    -0.16%    1.743%       0.361
+NZD_USD      +2.94%    +0.08%    1.762%       0.429
+USD_CHF      +1.03%    +2.65%    1.786%       0.489
+EUR_USD      +0.10%    -1.63%    1.193%      -0.207
+USD_JPY      +1.12%    +2.26%    1.710%       0.460
+USD_CAD      -0.03%    +0.57%    0.568%       0.062
+Lecture : pip/j réel = 0.274 × différentiel moyen signé (BASE − QUOTE), 2006-2025.
+La colonne REPO(sell) = taux SHORT de la table du repo (négatif = débit) : à comparer au débit réel.
+          pip/j REPO(SELL) pip/j RÉEL(SELL) ratio REPO/réel
+GBP_JPY           0.80       -0.482        -1.7×
+GBP_USD          -0.50       -0.022       +22.4×
+AUD_USD          -6.20       -0.361       +17.2×
+NZD_USD          -6.50       -0.429       +15.1×
+USD_CHF          -4.50       -0.489        +9.2×
+EUR_USD           1.20        0.207        +5.8×
+USD_JPY          -8.50       -0.460       +18.5×
+USD_CAD           1.00       -0.062       -16.0×
+
+Sensibilité à la FAMILLE de taux (uniforme 3M vs policy du 44e), |diff| moyen :
+   GBP_JPY   uniforme 1.760  vs  policy 1.520   (écart +0.240 pt = 0.066 pip/j)
+   AUD_USD   uniforme 1.743  vs  policy 1.844   (écart -0.101 pt = -0.028 pip/j)
+   USD_CAD   uniforme 0.568  vs  policy 0.563   (écart +0.005 pt = 0.001 pip/j)
+   GBP_USD   uniforme 0.574  vs  policy 0.523   (écart +0.051 pt = 0.014 pip/j)
+   NZD_USD   uniforme 1.762  vs  policy 1.937   (écart -0.175 pt = -0.048 pip/j)
+   USD_CHF   uniforme 1.786  vs  policy 1.581   (écart +0.205 pt = 0.056 pip/j)
+   EUR_USD   uniforme 1.193  vs  policy 1.150   (écart +0.043 pt = 0.012 pip/j)
+   USD_JPY   uniforme 1.710  vs  policy 1.606   (écart +0.104 pt = 0.029 pip/j)
+
+==============================================================
+2) PANIER — 8 paires sous 4 hypothèses de swap (SELL FRI 1u)
+==============================================================
+PAIRE     HYPOTHÈSE                  PF   WR%    DD%  TRADES        NET$      SWAP$      PRIX$   $/TRADE
+07:10:08,168 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.5.34
+07:10:08,171 |-INFO in ch.qos.logback.classic.util.ContextInitializer@6b4a4e18 - No custom configurators were discovered as a service.
+07:10:08,171 |-INFO in ch.qos.logback.classic.util.ContextInitializer@6b4a4e18 - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
+07:10:08,173 |-INFO in ch.qos.logback.classic.util.ContextInitializer@6b4a4e18 - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
+07:10:08,174 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.xml]
+07:10:08,175 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback.xml] at [file:/home/martinfou/projects/tb-research/trading-backtest/target/classes/logback.xml]
+07:10:08,176 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@27c86f2d - Resource [logback.xml] occurs multiple times on the classpath.
+07:10:08,177 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@27c86f2d - Resource [logback.xml] occurs at [file:/home/martinfou/projects/tb-research/trading-backtest/target/classes/logback.xml]
+07:10:08,177 |-WARN in ch.qos.logback.classic.util.DefaultJoranConfigurator@27c86f2d - Resource [logback.xml] occurs at [jar:file:/home/martinfou/.m2/repository/com/martinfou/trading/trading-backtest/1.0.0-SNAPSHOT/trading-backtest-1.0.0-SNAPSHOT.jar!/logback.xml]
+07:10:08,455 |-INFO in ch.qos.logback.classic.model.processor.ConfigurationModelHandlerFull - Scan attribute not set or set to unrecognized value.
+07:10:08,468 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [STDERR]
+07:10:08,468 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
+07:10:08,489 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+07:10:08,585 |-INFO in ch.qos.logback.core.ConsoleAppender[STDERR] - NOTE: Writing to the console can be slow. Try to avoid logging to the 
+07:10:08,585 |-INFO in ch.qos.logback.core.ConsoleAppender[STDERR] - console in production environments, especially in high volume systems.
+07:10:08,585 |-INFO in ch.qos.logback.core.ConsoleAppender[STDERR] - See also https://logback.qos.ch/codes.html#slowConsole
+07:10:08,590 |-INFO in ch.qos.logback.classic.model.processor.LoggerModelHandler - Setting level of logger [com.martinfou.trading.backtest.BacktestEngine] to WARN
+07:10:08,590 |-INFO in ch.qos.logback.classic.model.processor.RootLoggerModelHandler - Setting level of ROOT logger to WARN
+07:10:08,591 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [STDERR] to Logger[ROOT]
+07:10:08,591 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@197d671 - End of configuration.
+07:10:08,592 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@402e37bc - Registering current configuration as safe fallback point
+07:10:08,597 |-INFO in ch.qos.logback.classic.util.ContextInitializer@6b4a4e18 - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 419 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
+
+GBP_JPY   ZERO (jambe de PRIX)     1.18   51%  3.99%    1061     5155.04       0.00    5155.04      4.86
+GBP_JPY   REPO (constantes 2024-26)   1.18   51%  3.67%    1061     6854.24    1699.20    5155.04      6.46
+GBP_JPY   RÉEL 3M 0.00             1.18   51%  4.44%    1061     4123.57   -1031.47    5155.04      3.89
+GBP_JPY   RÉEL 3M +0.25            1.18   51%  4.56%    1061     3592.57   -1562.47    5155.04      3.39
+
+GBP_USD   ZERO (jambe de PRIX)     1.13   52%  4.67%    1029     4051.36       0.00    4051.36      3.94
+GBP_USD   REPO (constantes 2024-26)   1.13   52%  5.05%    1029     2359.86   -1691.50    4051.36      2.29
+GBP_USD   RÉEL 3M 0.00             1.13   52%  4.78%    1029     3984.90     -66.45    4051.36      3.87
+GBP_USD   RÉEL 3M +0.25            1.13   52%  4.97%    1029     3139.15    -912.20    4051.36      3.05
+
+AUD_USD   ZERO (jambe de PRIX)     1.01   50%  5.55%     995      170.23       0.00     170.23      0.17
+AUD_USD   REPO (constantes 2024-26)   1.01   50% 42.07%     995   -20897.37  -21067.60     170.23    -21.00
+AUD_USD   RÉEL 3M 0.00             1.01   50%  7.23%     995     -948.25   -1118.48     170.23     -0.95
+AUD_USD   RÉEL 3M +0.25            1.01   50%  7.73%     995    -1797.75   -1967.98     170.23     -1.81
+
+NZD_USD   ZERO (jambe de PRIX)     0.98   49%  6.18%    1001     -584.96       0.00    -584.96     -0.58
+NZD_USD   REPO (constantes 2024-26)   0.98   49% 44.67%    1001   -22268.96  -21684.00    -584.96    -22.25
+NZD_USD   RÉEL 3M 0.00             0.98   49%  7.75%    1001    -1852.80   -1267.84    -584.96     -1.85
+NZD_USD   RÉEL 3M +0.25            0.98   49%  8.24%    1001    -2686.80   -2101.84    -584.96     -2.68
+
+USD_CHF   ZERO (jambe de PRIX)     0.94   47%  7.88%    1021    -1591.90       0.00   -1591.90     -1.56
+USD_CHF   REPO (constantes 2024-26)   0.94   47% 34.18%    1021   -16873.90  -15282.00   -1591.90    -16.53
+USD_CHF   RÉEL 3M 0.00             0.94   47% 10.01%    1021    -3413.10   -1821.20   -1591.90     -3.34
+USD_CHF   RÉEL 3M +0.25            0.94   47% 11.30%    1021    -4262.10   -2670.20   -1591.90     -4.17
+
+EUR_USD   ZERO (jambe de PRIX)     1.00   49%  4.19%    1029     -235.63       0.00    -235.63     -0.23
+EUR_USD   REPO (constantes 2024-26)   1.00   49%  3.06%    1029     3823.97    4059.60    -235.63      3.72
+EUR_USD   RÉEL 3M 0.00             1.00   49%  4.17%    1029      549.33     784.96    -235.63      0.53
+EUR_USD   RÉEL 3M +0.25            1.00   49%  4.56%    1029     -296.42     -60.79    -235.63     -0.29
+
+USD_JPY   ZERO (jambe de PRIX)     0.99   48%  4.47%    1021     -411.99       0.00    -411.99     -0.40
+USD_JPY   REPO (constantes 2024-26)   0.99   48% 39.88%    1021   -19661.65  -19249.67    -411.99    -19.26
+USD_JPY   RÉEL 3M 0.00             0.99   48%  6.02%    1021    -1524.05   -1112.06    -411.99     -1.49
+USD_JPY   RÉEL 3M +0.25            0.99   48%  6.99%    1021    -2090.22   -1678.23    -411.99     -2.05
+
+USD_CAD   ZERO (jambe de PRIX)     0.80   45% 13.46%    1029    -5684.69       0.00   -5684.69     -5.52
+USD_CAD   REPO (constantes 2024-26)   0.80   45%  8.61%    1029    -2301.69    3383.00   -5684.69     -2.24
+USD_CAD   RÉEL 3M 0.00             0.80   45% 13.58%    1029    -5990.44    -305.75   -5684.69     -5.82
+USD_CAD   RÉEL 3M +0.25            0.80   45% 14.99%    1029    -6836.19   -1151.50   -5684.69     -6.64
+
+
+==============================================================
+AGRÉGAT PANIER 7 PAIRES (hors USD_CAD, contrôle interne du 37e)
+==============================================================
+HYPOTHÈSE                     NET$      SWAP$   TRADES  $/TRADE     PF>=1.2       NET>0
+ZERO (jambe de PRIX)       6552.15       0.00     7157     0.92        0/7        3/7
+REPO (constantes 2024-26)   -66663.82  -73215.97     7157    -9.31        0/7        3/7
+RÉEL 3M 0.00                919.59   -5632.56     7157     0.13        0/7        3/7
+RÉEL 3M +0.25             -4401.57  -10953.72     7157    -0.62        0/7        2/7
+
+==============================================================
+3) SEUIL DE RUPTURE PAR PAIRE (méthode du 44e) — débit max supportable, en pip/lot/jour
+==============================================================
+Probe : swap SHORT = 1.0 pip/lot/jour ⇒ totalSwap$ = 1.0 × pipValue × jours de rollover
+⇒ J = totalSwap$/pipValue ; seuil = netPRIX$ / (pipValue × J).
+carry SELL réel = −0.274 × différentiel signé (PAIE = le fade vendredi paie le carry).
+PAIRE      PRIX net$ J rollovers  seuil pip/j carry SELL pip/j      effet     marge
+GBP_JPY      5155.04        3186        2.427           -0.482       PAIE     5.03×
+GBP_USD      4051.36        3383        1.198           -0.022       PAIE    53.56×
+AUD_USD       170.23        3398        0.050           -0.361       PAIE     0.14×
+NZD_USD      -584.96        3336       -0.175           -0.429       PAIE 0 (prix<0)
+USD_CHF     -1591.90        3396       -0.469           -0.489       PAIE 0 (prix<0)
+EUR_USD      -235.63        3383       -0.070            0.207   ENCAISSE ∞ (crédit)
+USD_JPY      -411.99        3397       -0.182           -0.460       PAIE 0 (prix<0)
+USD_CAD     -5684.69        3383       -1.680           -0.062       PAIE 0 (prix<0)
+
+Marge < 1× ⇒ la paire meurt sur le carry réel ; marge = ∞ ⇒ le fade est PAYÉ pour
+tenir la position (encaisse le carry en vendant la devise à taux élevé).
+
+==============================================================
+4) ÈRES — 2006-2015 vs 2016-2026 (le signe du carry change d'ère)
+==============================================================
+PAIRE     ÈRE             PF_REPO   NET_REPO  SWAP_REPO    PF_RÉEL   NET_RÉEL
+GBP_JPY   2006-2015          1.15    3106.79     833.07       1.15    1775.22
+                       prix: PF 1.15 net 2273.72
+GBP_JPY   2016-2026          1.22    3761.42     864.53       1.22    2364.15
+GBP_USD   2006-2015          1.05     117.05    -781.00       1.05     630.56
+                       prix: PF 1.05 net 898.05
+GBP_USD   2016-2026          1.24    2245.29    -909.00       1.24    3355.21
+AUD_USD   2006-2015          0.97  -10172.18   -9684.40       0.97   -1714.36
+                       prix: PF 0.97 net -487.78
+AUD_USD   2016-2026          1.09  -10715.50  -11364.60       1.09     758.31
+NZD_USD   2006-2015          0.91  -11392.12  -10153.00       0.91   -2496.14
+                       prix: PF 0.91 net -1239.12
+NZD_USD   2016-2026          1.09  -10876.64  -11511.50       1.09     625.43
+USD_CHF   2006-2015          0.93   -8111.01   -7029.00       0.93   -1522.90
+                       prix: PF 0.93 net -1082.01
+USD_CHF   2016-2026          0.95   -8753.95   -8239.50       0.95   -1893.60
+EUR_USD   2006-2015          1.01    2045.23    1874.40       1.01     126.49
+                       prix: PF 1.01 net 170.83
+EUR_USD   2016-2026          0.97    1766.35    2181.60       0.97     413.31
+USD_JPY   2006-2015          1.00   -8861.62   -8851.33       1.00    -330.43
+                       prix: PF 1.00 net -10.29
+USD_JPY   2016-2026          0.97  -10769.27  -10381.33       0.97   -1179.54
+USD_CAD   2006-2015          0.78   -1818.51    1562.00       0.78   -3368.65
+                       prix: PF 0.78 net -3380.51
+USD_CAD   2016-2026          0.82    -447.77    1818.00       0.82   -2583.24
+
+==============================================================
+5) SENSIBILITÉ À LA FAMILLE DE TAUX (uniforme 3M vs policy 44e), 2006-2026, 0 spread
+==============================================================
+PAIRE     FAMILLE                    PF  TRADES        NET$      SWAP$
+GBP_JPY   uniforme 3M              1.18    1061     4123.57   -1031.47
+GBP_JPY   policy (44e)             1.18    1061     4261.93    -893.11
+AUD_USD   uniforme 3M              1.01     995     -948.25   -1118.48
+AUD_USD   policy (44e)             1.01     995    -1121.65   -1291.88
+USD_CAD   uniforme 3M              0.80    1029    -5990.44    -305.75
+USD_CAD   policy (44e)             0.80    1029    -5708.28     -23.59
+
+==============================================================
+6) RE-BASELINE DE LA CONFIG RECOMMANDÉE DU 43e (OVERLAY de vol 2u/1u) SOUS LE CARRY RÉEL
+==============================================================
+[régime] MES vol21 rang causal : 2006-02-02 → 2026-08-21 (5176 obs)
+
+--- GBP_JPY — part de vendredis en régime HAUT (AND ≥ 60) = 21.3% ⇒ FLAT éq. = 1.213u
+HYPOTHÈSE      PÉRIODE      VARIANTE               PF   TRADES        NET$     NET$/u      vs FLAT
+ZERO (jambe de PRIX) 2006-2026    baseline 1u          1.18     1061     5155.04    5155.04           -
+                            OVERLAY 2u/1u        1.23     1061     8590.33    7081.49           -
+                            FLAT 1.213u (éq.)    1.18     1061     6285.07    5181.13      +36.7%
+ZERO (jambe de PRIX) 2006-2015    baseline 1u          1.15      520     2273.72    2273.72           -
+                            OVERLAY 2u/1u        1.20      520     4264.49    3515.46           -
+                            FLAT 1.213u (éq.)    1.15      520     2773.69    2286.51      +53.7%
+ZERO (jambe de PRIX) 2016-2026    baseline 1u          1.22      540     2896.89    2896.89           -
+                            OVERLAY 2u/1u        1.28      540     4341.41    3578.87           -
+                            FLAT 1.213u (éq.)    1.22      540     3530.23    2910.17      +23.0%
+
+REPO (constantes 2024-26) 2006-2026    baseline 1u          1.18     1061     6854.24    6854.24           -
+                            OVERLAY 2u/1u        1.23     1061    10648.47    8778.13           -
+                            FLAT 1.213u (éq.)    1.18     1061     8346.31    6880.33      +27.6%
+REPO (constantes 2024-26) 2006-2015    baseline 1u          1.15      520     3106.79    3106.79           -
+                            OVERLAY 2u/1u        1.20      520     5298.09    4367.51           -
+                            FLAT 1.213u (éq.)    1.15      520     3784.25    3119.57      +40.0%
+REPO (constantes 2024-26) 2016-2026    baseline 1u          1.22      540     3761.42    3761.42           -
+                            OVERLAY 2u/1u        1.28      540     5364.34    4422.13           -
+                            FLAT 1.213u (éq.)    1.22      540     4578.97    3774.70      +17.2%
+
+RÉEL 3M 0.00   2006-2026    baseline 1u          1.18     1061     4123.57    4123.57           -
+                            OVERLAY 2u/1u        1.23     1061     7274.04    5996.40           -
+                            FLAT 1.213u (éq.)    1.18     1061     5033.82    4149.66      +44.5%
+RÉEL 3M 0.00   2006-2015    baseline 1u          1.15      520     1775.22    1775.22           -
+                            OVERLAY 2u/1u        1.20      520     3550.71    2927.05           -
+                            FLAT 1.213u (éq.)    1.15      520     2168.98    1788.01      +63.7%
+RÉEL 3M 0.00   2016-2026    baseline 1u          1.22      540     2364.15    2364.15           -
+                            OVERLAY 2u/1u        1.28      540     3739.13    3082.38           -
+                            FLAT 1.213u (éq.)    1.22      540     2883.98    2377.43      +29.7%
+
+RÉEL 3M +0.25  2006-2026    baseline 1u          1.18     1061     3592.57    3592.57           -
+                            OVERLAY 2u/1u        1.23     1061     6630.87    5466.20           -
+                            FLAT 1.213u (éq.)    1.18     1061     4389.68    3618.66      +51.1%
+RÉEL 3M +0.25  2006-2015    baseline 1u          1.15      520     1514.89    1514.89           -
+                            OVERLAY 2u/1u        1.20      520     3227.71    2660.78           -
+                            FLAT 1.213u (éq.)    1.15      520     1853.17    1527.67      +74.2%
+RÉEL 3M +0.25  2016-2026    baseline 1u          1.22      540     2093.98    2093.98           -
+                            OVERLAY 2u/1u        1.28      540     3419.47    2818.86           -
+                            FLAT 1.213u (éq.)    1.22      540     2556.25    2107.26      +33.8%
+
+
+--- GBP_USD — part de vendredis en régime HAUT (AND ≥ 60) = 23.0% ⇒ FLAT éq. = 1.230u
+HYPOTHÈSE      PÉRIODE      VARIANTE               PF   TRADES        NET$     NET$/u      vs FLAT
+ZERO (jambe de PRIX) 2006-2026    baseline 1u          1.13     1029     4051.36    4051.36           -
+                            OVERLAY 2u/1u        1.15     1029     5973.45    4854.61           -
+                            FLAT 1.230u (éq.)    1.13     1029     5018.27    4078.34      +19.0%
+ZERO (jambe de PRIX) 2006-2015    baseline 1u          1.05      520      898.05     898.05           -
+                            OVERLAY 2u/1u        1.06      520     1479.83    1202.66           -
+                            FLAT 1.230u (éq.)    1.05      520     1121.80     911.69      +31.9%
+ZERO (jambe de PRIX) 2016-2026    baseline 1u          1.24      508     3154.29    3154.29           -
+                            OVERLAY 2u/1u        1.28      508     4494.60    3652.76           -
+                            FLAT 1.230u (éq.)    1.24      508     3897.65    3167.61      +15.3%
+
+REPO (constantes 2024-26) 2006-2026    baseline 1u          1.13     1029     2359.86    2359.86           -
+                            OVERLAY 2u/1u        1.15     1029     3779.45    3071.55           -
+                            FLAT 1.230u (éq.)    1.13     1029     2936.93    2386.84      +28.7%
+REPO (constantes 2024-26) 2006-2015    baseline 1u          1.05      520      117.05     117.05           -
+                            OVERLAY 2u/1u        1.06      520      504.83     410.28           -
+                            FLAT 1.230u (éq.)    1.05      520      160.81     130.69     +213.9%
+REPO (constantes 2024-26) 2016-2026    baseline 1u          1.24      508     2245.29    2245.29           -
+                            OVERLAY 2u/1u        1.28      508     3277.10    2663.30           -
+                            FLAT 1.230u (éq.)    1.24      508     2779.15    2258.61      +17.9%
+
+RÉEL 3M 0.00   2006-2026    baseline 1u          1.13     1029     3984.90    3984.90           -
+                            OVERLAY 2u/1u        1.15     1029     5832.34    4739.93           -
+                            FLAT 1.230u (éq.)    1.13     1029     4936.50    4011.88      +18.1%
+RÉEL 3M 0.00   2006-2015    baseline 1u          1.05      520      630.56     630.56           -
+                            OVERLAY 2u/1u        1.06      520     1098.65     892.87           -
+                            FLAT 1.230u (éq.)    1.05      520      792.66     644.19      +38.6%
+RÉEL 3M 0.00   2016-2026    baseline 1u          1.24      508     3355.21    3355.21           -
+                            OVERLAY 2u/1u        1.28      508     4734.56    3847.77           -
+                            FLAT 1.230u (éq.)    1.24      508     4144.87    3368.53      +14.2%
+
+RÉEL 3M +0.25  2006-2026    baseline 1u          1.13     1029     3139.15    3139.15           -
+                            OVERLAY 2u/1u        1.15     1029     4735.34    3848.40           -
+                            FLAT 1.230u (éq.)    1.13     1029     3895.83    3166.13      +21.5%
+RÉEL 3M +0.25  2006-2015    baseline 1u          1.05      520      240.06     240.06           -
+                            OVERLAY 2u/1u        1.06      520      611.15     496.68           -
+                            FLAT 1.230u (éq.)    1.05      520      312.16     253.69      +95.8%
+RÉEL 3M +0.25  2016-2026    baseline 1u          1.24      508     2900.71    2900.71           -
+                            OVERLAY 2u/1u        1.28      508     4125.81    3353.04           -
+                            FLAT 1.230u (éq.)    1.24      508     3585.62    2914.03      +15.1%
+
+
+DONE
