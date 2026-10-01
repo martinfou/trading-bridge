@@ -93,32 +93,75 @@ transaction. La valeur contaminée était persistée puis rechargée à chaque r
 > vérifier non seulement le P&L contre le courtier, mais aussi **l'instrument et la présence du stop**
 > contre la configuration, et **au démarrage**, pas à la première transaction.
 
-**État au 2026-10-01 : les deux sont corrigés dans le code, et aucun des deux n'est déployé.**
+**État au 2026-10-01, après déploiement (18:31 EDT).**
 
 - L'instrument est résolu depuis la config (`strategies.<clé>.instrument`), le champ `symbol` de la classe
   est réconcilié (sinon `ltrsi3` filtrait 100 % de ses barres, panne muette), et un couple incohérent
   **refuse le démarrage** en nommant la stratégie et la paire attendue. Commit `8cb3e909`, 13 tests dédiés.
+  **Déployé, et constaté dans le journal de démarrage** :
+  `🔁 VWAP Reversion (instrument: USD_CHF [source: config strategies.vwpreversion.instrument])`.
 - Le stop part **sur l'ordre d'entrée** (`stopLossOnFill`, plus de second appel après le fill) et une
   garde **unique** refuse toute entrée sans stop depuis le point de dispatch qui couvre MARKET **et** STOP.
-  Commit `20b28c86`, 82 tests. Le pilote du stop est unique (le SL du courtier) ; le moniteur local reste
-  un filet `REDUCE_ONLY` idempotent.
-- ⚠️ **Corrigé n'est pas déployé** : les conteneurs tournent encore l'ancien build, et le déploiement
-  attend une décision explicite de Martin.
-- ⚠️ **La porte de déploiement est rouge sur un test pré-existant** :
-  `RunManagerTest.testConcurrentStartLocking` échoue **avant** ces travaux (prouvé sur `d10ebb0e`, 17 tests
-  / 1 échec). La porte refuse donc tout déploiement tant que ce test n'est pas rendu déterministe — ce qui
-  est le comportement voulu (une porte qui échoue pour une raison non liée reste un échec, jamais du bruit),
-  mais c'est un chantier à part entière, pas un détail.
-- **Résidu assumé** : le plafond de risque **par compte** (D24, 3 % de NAV en risque simultané) n'est
-  toujours pas implémenté. En attendant, la somme des `computedRiskPct` des stratégies déployées est
-  **2,3 %**, sous le plafond de 3 %, et doit le rester à chaque édition de `live-config.json`.
+  Commit `20b28c86`, 82 tests, et la classe est présente dans l'artefact déployé.
+- **Déployé le 2026-10-01** (commit `d4329edf`) sur les quatre services. Fenêtre d'observation ouverte et
+  consignée dans `docs/paper-window-log.md` : NAV 1981.3922 CAD, `lastTransactionID` 218.
+- **La porte de déploiement est verte** depuis que `RunManagerTest` est hermétique. Le test de concurrence
+  ne compte plus des retours : il mesure la concurrence **dans** la section critique et **échoue 3 fois
+  sur 3** quand on neutralise le verrou (preuve de non-vacuité rejouée par l'orchestrateur). La classe ne
+  touche plus le courtier : 0 appel.
+
+#### Couche 1, invariant 6 : le fil-piège des ordres
+
+Un ordre ne quitte la JVM que si `TB_ALLOW_ORDERS` vaut exactement `1`/`true`, et **jamais** depuis un
+runtime de test. Sept points d'appel couvrent les trois chemins d'ordre (`OandaExecutor` x4,
+`HttpOandaRestClient` x2, `TcpIbkrGatewayClient` x1).
+
+Ce qui l'a rendu nécessaire : **la suite de tests a envoyé 12 ordres réels** sur le compte paper le
+2026-10-01 (12 `MARKET_ORDER` EUR_USD `units=-1000`, tickets 195 à 217), tous annulés avec
+`STOP_LOSS_ON_FILL_LOSS`, **aucun fill**. Le compte n'a pas été touché **par chance** : le stop attaché
+venait de 10 barres synthétiques, donc OANDA l'a rejeté. Avec un stop plausible, ces 12 ordres se
+remplissaient. Le mode `BACKTEST` n'a pas empêché l'envoi : **le mode n'est pas une frontière de
+sécurité**, l'endpoint et la credential le sont.
+
+Détail qui a failli coûter une panne : la détection du runtime de test ne doit **jamais** inclure `junit`.
+L'image de production contient 6 jars JUnit sur 47 (`junit-jupiter-*`, `junit-platform-*`) et zéro
+`surefire`/`failsafe`/`testng`/`idea_rt`/`gradle`. Ajouter `junit` comme jeton ferait refuser **tous** les
+ordres de **tous** les conteneurs, silencieusement. Un test encode cette mesure pour que la panne ne
+puisse pas être réintroduite.
+
+#### Résidus assumés (2026-10-01)
+
+- **Plafond de risque par compte (D24, 3 % de NAV simultanée)** : toujours pas implémenté. La somme des
+  `computedRiskPct` déployés est **2,3 %**, sous le plafond, et doit le rester à chaque édition de
+  `live-config.json`.
+- **Retry d'ordre** : le client OANDA ne réessaie que les échecs de connexion, donc une fermeture du
+  serveur **pendant** l'envoi n'est pas réessayée. Or réessayer un POST d'ordre peut doubler une position :
+  c'est une décision de trading, pas de code, et elle attend sa propre conversation.
 
 ### Couche 4 — Porte de déploiement
 
 `scripts/pre-deploy-gate.sh` : build + suite de tests complète, validation de `docker-compose`,
-et **smoke test OANDA en lecture seule**. Le déploiement (`scripts/deploy-paper.sh`) refuse de
-partir si la porte échoue. Une **revue indépendante par un second agent** est exigée avant le
-merge dans la branche par défaut — jamais Martin.
+et **smoke test OANDA en lecture seule**. Le déploiement (`scripts/deploy-paper.sh`) refuse de partir si
+la porte échoue, et il lance la porte lui-même. Une **revue indépendante** est exigée avant le merge dans
+la branche par défaut, jamais Martin :
+
+| Type de diff | Relecteur |
+|---|---|
+| Chemin d'ordre, chemin live, dimensionnement du risque, tout ce qui touche l'argent réel | **Elliot** (persona développeur senior) **et** la porte `agy` à deux passes |
+| Tout le reste (docs, tests, outillage, recherche) | la porte `agy` à deux passes |
+
+Deux faits à connaître sur cette porte, appris le 2026-10-01 :
+
+1. **Elle validait les mauvaises credentials.** Le smoke test lisait `~/.hermes/.env` (clé et compte
+   `-012`, dormant) alors que le déploiement paper utilise `.env.paper` (compte `-014`). Une porte verte ne
+   prouvait donc rien sur la credential réellement déployée, et la clé périmée la rendait rouge en
+   permanence. Une porte qui échoue pour une mauvaise raison finit contournée, et une porte qui passe pour
+   une mauvaise raison est pire encore. Corrigé : `$TB_ENV_FILE`, puis `.env.paper`, puis
+   `~/.hermes/.env` avec avertissement, et le compte vérifié est toujours imprimé.
+2. **Un constat de relecture est une hypothèse, jamais un verdict.** Le même jour, trois passes ont
+   affirmé qu'un argument de fin n'était pas celui qu'il est (faux : la ligne était hors du hunk du diff
+   fourni), et une passe a recommandé d'ajouter `junit` aux jetons de détection, ce qui aurait arrêté tous
+   les conteneurs. Avant d'appliquer un constat qui touche la production : **mesurer le système**.
 
 ### Couche 5 — Rapports courtier
 
