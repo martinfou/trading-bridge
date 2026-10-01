@@ -50,6 +50,18 @@ Trois environnements, **une seule image**, séparés par **l'axe compte**, pas p
 - **D5** — Ordre de construction : l'architecture se bâtit **maintenant**, avec dev sur un sous-compte
   practice jetable, et le service `live` **défini mais non démarré**. On ne bloque pas la
   structuration sur la création des comptes.
+- **D10** — `nfp-week` va en **paper**, comme les trois autres services LT. Le compose ne le démarre
+  toujours pas : il reste défini, et il rejoint l'environnement paper quand on le lancera.
+- **D11** — Le compte de l'environnement **live** est `001-002-1889378-005` (Martin, 2026-09-30).
+  Le préfixe `001` le distingue des `101-...` qui sont les comptes practice : celui-ci porte de
+  l'argent réel. Cela corrige la section 4 du présent PRD, qui affirmait qu'aucun compte réel
+  n'existait. Deux conséquences :
+  - un **token propre au live** est nécessaire (un token practice ne donne pas accès à un compte réel,
+    et un token par environnement est justement l'invariant de la section 5) ;
+  - l'hôte de l'API diffère, donc le couple environnement / endpoint fait partie de ce que la garde
+    doit vérifier au démarrage.
+  Tant que le token live n'est pas en place et que Martin n'a pas explicitement autorisé un appel,
+  **aucun travail d'Hermes ne touche ce compte**, même en lecture : c'est un compte réel.
 - **D9** — L'état vit dans **un volume par environnement** (`strategy-state-dev`, `-paper`, `-live`),
   avec un fichier JSON par stratégie à l'intérieur, exactement la forme actuelle mais hors de `/tmp`.
   Le plus simple des trois choix, et il suffit : il supprime la perte d'état à chaque recréation, donc
