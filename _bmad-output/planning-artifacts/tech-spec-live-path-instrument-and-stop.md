@@ -372,6 +372,47 @@ autre raison que celle décrite dans son propre commentaire**.
   stratégie**, donc une réponse lente du courtier bloque tous les démarrages concurrents de cette stratégie.
   À traiter côté production, pas dans un test.
 
+### 12.13 La porte sur le correctif de test : deux passes, un constat réfuté, un constat juste
+
+Deux passes indépendantes sur le correctif test-only (`fix/flaky-run-guard-deterministic`) :
+
+- **Passe adversariale** : `NEEDS_FIX` — 2 BLOCKER, 1 MAJOR, 1 MINOR.
+- **Passe invariant-first** : `NEEDS_FIX` — 3 BLOCKER, 1 MAJOR.
+
+**Constat RÉFUTÉ, et les deux passes l'ont fait.** Les deux affirment que `force` n'est pas à `true` dans la
+requête (« field 16 is never set to true »). **Faux** : `StartRunRequest` a **16 champs**, `force` est le
+**16ᵉ**, et l'appel du test passe bien `true` en **dernier argument positionnel** — vérifié dans le fichier,
+deux fois, pas dans le diff.
+
+**Cause de l'erreur, et leçon de méthode** : le dernier argument est **hors du hunk du diff** fourni au
+relecteur, qui ne voit que les lignes modifiées et leur contexte immédiat. Autrement dit **un relecteur à qui
+on ne donne que le diff hallucinera sur les arguments de fin inchangés** — exactement le type de ligne dont
+dépend une signature. Corollaire : pour toute revue portant sur un **appel de constructeur, une signature ou
+une liste d'arguments**, le prompt doit inclure la **méthode englobante en entier**, pas seulement le diff.
+À noter que c'est un **biais du format « diff inline »** adopté pour empêcher agy d'explorer l'arbre : le
+remède au timeout a créé cet angle mort. Les deux constats ne se compensent pas, ils se cumulent : diff
+inline **plus** la méthode englobante.
+
+**Constat ACCEPTÉ, et c'est le plus important** : le test est **vacuous**. `assertEquals(threads,
+successCount.get())` ne prouve que cinq retours sans exception. Avec une charge en mémoire instantanée, les
+cinq démarrages peuvent ne **pas se chevaucher**, donc le test passerait **même si le verrou par stratégie
+était supprimé**. Le premier correctif n'a pas créé cette faiblesse — elle préexistait, **masquée** par le
+fait que les longs appels réseau sérialisés se chevauchaient — il l'a **exposée**. C'est le genre de progrès
+qu'un gate doit produire : la flakiness disparaît et le test révèle qu'il ne testait presque rien.
+
+**Constat ACCEPTÉ, mesuré par l'orchestrateur avant la revue** : la classe n'est pas hermétique (4 appels
+OANDA réels par exécution, depuis d'autres tests en mode PAPER/LIVE).
+
+**Travail de suite** (branche `fix/hermetic-runtime-tests`) : point d'injection minimal dans `RunManager`
+(le client de prix est construit **en dur** à `:1036`, il n'y a aucun seam), classe hermétique prouvée à
+**zéro** appel courtier, et test rendu **significatif** avec une **preuve de non-vacuité** : neutraliser le
+verrou doit faire **échouer** le test, et le vert doit revenir après restauration. Sans cette preuve, un test
+vert de concurrence ne vaut rien.
+
+**Défaut de production NON corrigé, seulement signalé** : `startRun` charge les barres **en tenant le
+verrou par stratégie** (`RunManager.java:667-704` puis `:475`), donc un courtier lent bloque tous les
+démarrages concurrents de cette stratégie. C'est un chantier de production à part entière.
+
 
 
 
