@@ -104,4 +104,81 @@ class OrderTripwireTest {
         assertTrue(OrderTripwire.isTestRuntime(System.getenv(), OrderTripwire.runtimeClassPath()),
                 "Surefire not detected on the live runtime classpath — test-runtime detection is broken");
     }
+
+    // ------------------------------------------------------------------
+    // Test-only gate: can never open in production
+    // ------------------------------------------------------------------
+
+    @Test
+    void testGate_installRefusedWithoutTestRuntime() {
+        // Production environment: no SUREFIRE_* var, no flag; classpath without surefire.
+        assertThrows(IllegalStateException.class,
+                () -> OrderTripwire.allowOrdersForTestingOnly(Map.of(), NO_SUREFIRE));
+    }
+
+    @Test
+    void testGate_cannotOpenInProduction() {
+        Map<String, String> prodEnv = Map.of(); // no SUREFIRE_*, no TB_ALLOW_ORDERS
+        String prodCp = NO_SUREFIRE;
+
+        // 1. Installing the gate in a simulated production environment is refused outright.
+        assertThrows(IllegalStateException.class,
+                () -> OrderTripwire.allowOrdersForTestingOnly(prodEnv, prodCp));
+
+        // 2. The pure decision still refuses (flag absent).
+        assertFalse(OrderTripwire.decision(prodEnv, prodCp));
+
+        // 3. checkOrderAllowed still refuses even after the refused install attempt.
+        assertThrows(IllegalStateException.class,
+                () -> OrderTripwire.checkOrderAllowed("EUR_USD", "1000", "prod-sim", prodEnv, prodCp));
+    }
+
+    @Test
+    void testGate_flagPresentButTestRuntime_refuses() {
+        // Anti-circumvention: flag present AND test runtime detected -> still refused.
+        Map<String, String> env = Map.of(
+                OrderTripwire.ENV_ALLOW_ORDERS, "1",
+                "SUREFIRE_REPORT_DIR", "/tmp/reports");
+        String cp = "/app/lib/x.jar" + java.io.File.pathSeparator + "/maven/surefire-booter-3.2.5.jar";
+
+        assertFalse(OrderTripwire.decision(env, cp));
+        assertThrows(IllegalStateException.class,
+                () -> OrderTripwire.checkOrderAllowed("EUR_USD", "1000", "anti-circumvention", env, cp));
+    }
+
+    @Test
+    void testGate_notInstalledByDefault_refusesUnderTestRuntime() {
+        // No gate installed -> even under a real test runtime the tripwire refuses: no default
+        // authorisation in test.
+        assertThrows(IllegalStateException.class,
+                () -> OrderTripwire.checkOrderAllowed("EUR_USD", "1000", "no-gate"));
+    }
+
+    @Test
+    void testGate_installedUnderTestRuntime_allowsOrders() {
+        OrderTripwire.allowOrdersForTestingOnly();
+        try {
+            // With the gate installed and the live test runtime detected, the 4-arg overload
+            // must authorise (no exception).
+            OrderTripwire.checkOrderAllowed("EUR_USD", "1000", "test-gate",
+                    System.getenv(), OrderTripwire.runtimeClassPath());
+        } finally {
+            OrderTripwire.resetForTestingOnly();
+        }
+    }
+
+    @Test
+    void testGate_flippedButProductionEnv_stillRefuses() {
+        // Install the gate under the real test runtime, then prove that even with the flag
+        // flipped, a production environment (no surefire on the classpath) is still refused:
+        // the gate is honoured ONLY while a test runtime is detected.
+        OrderTripwire.allowOrdersForTestingOnly();
+        try {
+            assertThrows(IllegalStateException.class,
+                    () -> OrderTripwire.checkOrderAllowed("EUR_USD", "1000", "flipped-but-prod",
+                            Map.of(), NO_SUREFIRE));
+        } finally {
+            OrderTripwire.resetForTestingOnly();
+        }
+    }
 }
