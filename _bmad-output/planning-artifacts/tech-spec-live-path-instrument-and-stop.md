@@ -314,6 +314,38 @@ reproduit dans un worktree détaché). Ce n'est donc **pas** causé par ce trava
 besoin de son propre correctif (rendre la précondition déterministe au lieu de relancer la porte en espérant
 du vert — c'est la forme documentée de ce test, qui court après sa propre charge de travail).
 
+### 12.11 La porte de revue : trois tentatives, deux pannes d'outil, et pourquoi
+
+Le rejet du lot 2 (§12.10) a été obtenu du **premier coup**, mais deux passes sur trois ont rendu **zéro
+sortie** — le fichier brut ne contenait qu'une ligne de timeout. Cause identifiée dans le skill `agy`
+(mesure du 2026-10-01, la même) : **le modèle par défaut de `scripts/agy-review.sh`
+(`gemini-3.1-pro-high`) est le tier qui rend la main sans verdict** sur un fichier de la taille de
+`LiveStrategyRunner.java` (~2 200 lignes). Le tier `gemini-3.8-flash-high` termine en ~3 min avec un
+verdict exploitable.
+
+Règles à appliquer pour toute revue de ce chemin :
+
+1. **Poser `AGY_MODEL=gemini-3.8-flash-high` explicitement.** Ne jamais laisser le défaut décider : un
+   run sans verdict n'est pas un pass, c'est une porte laissée ouverte (le wrapper sort 2, l'appelant doit
+   traiter la revue comme **manquante**, jamais comme propre).
+2. **Une question par passe**, jamais N affirmations à falsifier, et donner à agy la commande qui montre
+   le changement (`git show <sha> --stat` puis `git show <sha>`) au lieu de le laisser explorer l'arbre.
+3. **Le contrat est de DEUX passes** (invariant-first puis adversariale) avec **union** des constats. Un
+   run qui rend un verdict une fois sur deux laisse la porte à une seule passe sous son propre contrat :
+   il se **rejoue**, il ne s'accepte pas.
+4. **Un constat d'agy est une hypothèse, pas un verdict.** Sur cette revue, les 2 constats (1 BLOCKER,
+   1 MAJOR) étaient **exacts** et vérifiés en lisant le code ; mais dans la revue de la veille, l'un des
+   constats d'un relecteur s'est révélé **faux** (cf. §12.10, `setStopLossOnFill`). Trier chaque ligne
+   contre le code, en cherchant **toutes** les occurrences et pas la tête d'une liste.
+
+**Correctif apporté à l'outil** (commit dédié) : le parseur de verdict du wrapper n'acceptait que
+`APPROVED|NEEDS_FIX`. Une revue terminant par `VERDICT: REJECTED` était donc résumée en
+« no verdict line » puis « gate: ERROR » : l'issue bloquante restait la bonne, mais la raison affichée
+ressemblait à une panne d'outil au lieu d'un rejet, ce qui rend le journal d'audit trompeur. Le parseur
+accepte désormais toute la famille non-passante et affiche la ligne `VERDICT:` non reconnue au lieu de la
+passer sous silence ; tout ce qui n'est pas reconnu fait toujours échouer la porte.
+
+
 
 
 
