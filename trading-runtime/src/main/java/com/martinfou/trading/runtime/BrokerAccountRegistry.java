@@ -35,7 +35,7 @@ public final class BrokerAccountRegistry {
      * cannot reach a broker, and stays recognisable by ControlPlaneServer's {@code contains("mock")}
      * check. A non-resolving host would have made every test wait for a DNS timeout.
      */
-    public static final String MOCK_REST_URL = "http://localhost:1/mock";
+    public static final String MOCK_REST_URL = "mock://localhost/oanda";
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record AccountEntry(
