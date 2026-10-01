@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -137,5 +138,42 @@ class LtRSI3MomentumStopTest {
 
         assertTrue(s.getPendingOrders().isEmpty(),
             "a bar that only touches the stop must not emit the strategy's own stop exit (C1)");
+    }
+
+    // ========================================================================
+    // C1 (reprise) — after the runner reconciles a broker-SL close, re-enter on the next signal
+    // ========================================================================
+
+    @Test
+    @DisplayName("after a broker-SL close is reconciled (syncPosition null), the strategy re-enters and emits no close for the dead position")
+    void reentersAfterBrokerStopReconciliation() {
+        List<Bar> bars = uptrend(210);
+        LtRSI3Momentum s = primed(bars);
+        List<Order> initial = s.getPendingOrders();
+        assertEquals(1, initial.size(), "precondition: entered once on the warm-up");
+        Order entry = initial.get(0);
+        assertTrue(entry.stopLoss() > 0, "precondition: the entry carries its ATR stop");
+
+        // The broker's SL closed the position. The runner's reconciliation notifies the strategy via
+        // syncPosition(null, 0, 0, 0) — exactly what LiveStrategyRunnerPositionSyncTest pins down.
+        s.syncPosition(null, 0.0, 0.0, 0.0);
+        assertTrue(s.getPendingOrders().isEmpty(),
+            "reconciliation must NOT emit a close order for an already-closed position (C1)");
+
+        // Feed a fresh bullish signal on the NEXT day so the daily trade cap resets.
+        Instant lastT = bars.get(209).timestamp();
+        double lastClose = bars.get(209).close();
+        Instant nextDay = lastT.plusSeconds(24 * 3600L);
+        double c1 = lastClose + 0.001;
+        s.onBar(bar(nextDay, c1 - 0.001, c1 + 0.0005, c1 - 0.0015, c1));
+        s.onBar(bar(nextDay.plusSeconds(3600L), c1, c1 + 0.0015, c1 - 0.0015, c1 + 0.001));
+
+        List<Order> orders = s.getPendingOrders();
+        assertEquals(1, orders.size(),
+            "the strategy re-enters after the broker SL close is reconciled (no zombie)");
+        Order re = orders.get(0);
+        assertEquals(Order.Side.BUY, re.side());
+        assertFalse(re.isCloseOnly(), "the new order is an entry, not a close for the dead position");
+        assertTrue(re.stopLoss() > 0, "the re-entry carries its ATR stop");
     }
 }

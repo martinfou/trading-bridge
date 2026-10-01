@@ -1027,6 +1027,15 @@ public class LiveStrategyRunner implements Runnable {
         for (Order order : orders) {
             if (order.status() != Order.Status.PENDING) continue;
 
+            // ─── Story 1.4 single entry gate: MARKET and STOP entries both pass through HERE ───
+            // Every non-close-only entry must carry a protective stop, checked exactly once at this
+            // dispatch point — before it becomes either a market fill (executeTrade) or a pending stop
+            // (placeOandaStopOrder). Close-only exits are left out: they must never be refused for
+            // lacking a stop.
+            if (refuseEntryOrder(order, oandaSymbol)) {
+                continue;
+            }
+
             boolean shouldExecute = false;
             double execPrice;
 
@@ -1130,11 +1139,28 @@ public class LiveStrategyRunner implements Runnable {
     }
 
     /**
-     * Live-entry guard (story 1.4): an entry with no protective stop is refused, logged and counted.
-     * The predicate itself ({@link Order#hasProtectiveStop()}) lives ONCE in trading-core; this is the
-     * single live call site that turns a missing stop into a refusal + observability counter. It is
-     * deliberately NOT called from the backtest engine (the mirror is deferred, per the spec): a general
-     * guard there would break stopless strategies (harness, fixed quantity).
+     * Single entry gate (story 1.4, amended): the ONE place every live entry passes through before it
+     * is submitted — whether it becomes a market fill ({@link #executeTrade}) or a pending stop
+     * ({@link #placeOandaStopOrder}). Close-only orders are exits: they reduce risk and must never be
+     * refused for lacking a stop, so they are deliberately left OUT of the gate. Calling this from a
+     * single dispatch point — instead of once in each entry path — is what keeps the "no stop ⇒ no
+     * entry" rule from diverging between MARKET and STOP submissions.
+     *
+     * @return true when the order must NOT be sent.
+     */
+    boolean refuseEntryOrder(Order order, String oandaSymbol) {
+        if (order.isCloseOnly()) {
+            return false;
+        }
+        return rejectEntryWithoutStop(order, oandaSymbol);
+    }
+
+    /**
+     * Refuses and counts an entry with no protective stop. The predicate itself
+     * ({@link Order#hasProtectiveStop()}) lives ONCE in trading-core; this method is its only live
+     * call site (via {@link #refuseEntryOrder}). It is deliberately NOT called from the backtest
+     * engine (the mirror is deferred, per the spec): a general guard there would break stopless
+     * strategies (harness, fixed quantity).
      *
      * @return true when the entry was rejected — the caller must not send it.
      */
@@ -1205,14 +1231,6 @@ public class LiveStrategyRunner implements Runnable {
                     }
                 }
             } else {
-                // Story 1.4 guard: no stop ⇒ no entry. The predicate lives once in trading-core
-                // (Order.hasProtectiveStop()); this is the single live call site, before any sizing.
-                // This is a semantic change: a stopless entry used to be accepted and capped at
-                // NO_RISK_UNITS_CAP with a warn; it is now refused, logged and counted.
-                if (rejectEntryWithoutStop(order, oandaSymbol)) {
-                    return;
-                }
-
                 // Entry: two-sided risk budget — the strategy's units are intent, the risk % is the budget
                 // Guard (2026-09-30 incident): the order carries the stop computed on its SIGNAL bar, but
                 // it is priced at the LIVE market. When the market has already reached or crossed that
@@ -1965,16 +1983,24 @@ public class LiveStrategyRunner implements Runnable {
 
     /** Removes a trade from tracking and counts the exit. @return true when it was tracked. */
     private boolean evictFromActiveTrades(String tradeId) {
+        String symbol = null;
         synchronized (activeTrades) {
             Iterator<ActiveTrade> it = activeTrades.iterator();
             while (it.hasNext()) {
                 ActiveTrade t = it.next();
                 if (tradeId.equals(t.tradeId)) {
+                    symbol = t.symbol;
                     it.remove();
                     totalExits++;
-                    return true;
+                    break;
                 }
             }
+        }
+        if (symbol != null) {
+            // C1: a broker-CLOSED trade is gone, so tell the strategy it is flat (see
+            // syncStrategyFlatIfNoOpenPosition). Done outside the lock, after the removal.
+            syncStrategyFlatIfNoOpenPosition(symbol);
+            return true;
         }
         return false;
     }
@@ -2072,6 +2098,9 @@ public class LiveStrategyRunner implements Runnable {
             + "Local P&L ${} is in QUOTE currency, so the trade's P&L stays UNKNOWN "
             + "(never wrong) — the total is NOT changed. The watchdog will re-attempt the broker value.",
             tradeId, String.format("%.2f", localQuoteCcy));
+        // C1: the trade was removed from tracking, so if nothing else is open for its instrument the
+        // strategy must learn it is flat (see syncStrategyFlatIfNoOpenPosition).
+        syncStrategyFlatIfNoOpenPosition(symbol);
         saveStateNow();
     }
 
@@ -2081,12 +2110,14 @@ public class LiveStrategyRunner implements Runnable {
         // Reconciled for good: it must not stay queued for a watchdog re-attempt.
         removeUnreconciledTrade(tradeId);
         boolean removed = false;
+        String removedSymbol = null;
         synchronized (activeTrades) {
             Iterator<ActiveTrade> it = activeTrades.iterator();
             while (it.hasNext()) {
                 ActiveTrade t = it.next();
                 if (tradeId.equals(t.tradeId)) {
                     totalExits++;
+                    removedSymbol = t.symbol;
                     it.remove();
                     removed = true;
                     break;
@@ -2103,6 +2134,32 @@ public class LiveStrategyRunner implements Runnable {
         if (removed || counted) {
             saveStateNow();
         }
+        if (removed) {
+            syncStrategyFlatIfNoOpenPosition(removedSymbol);
+        }
+    }
+
+    /**
+     * C1 (stories 1.3/1.7): the broker's stop-loss is the single driver of the stop, so the strategy
+     * must learn from the runner's reconciliation that its position is gone — otherwise {@code inTrade}
+     * stays {@code true} forever and the strategy never enters again (the silent-zombie class, already
+     * seen on TurnOfMonthFlowStrategy). Once the runner no longer tracks ANY open position for the
+     * instrument, notify the strategy that it is flat with the canonical
+     * {@code Strategy#syncPosition(null, 0, 0, 0)} — the exact call {@code OandaStreamingExecutor}
+     * makes when no position remains. Reflective and safe: a strategy that already reset itself via
+     * {@code exitPosition()} simply re-affirms a flat state. Must be called AFTER a tracked trade is
+     * removed, never before, or it would flatten a still-open position.
+     */
+    private void syncStrategyFlatIfNoOpenPosition(String oandaSymbol) {
+        if (oandaSymbol == null) return;
+        synchronized (activeTrades) {
+            for (ActiveTrade at : activeTrades) {
+                if (oandaSymbol.equals(at.symbol)) {
+                    return; // still tracked open — the strategy is not flat yet
+                }
+            }
+        }
+        strategy.syncPosition(null, 0.0, 0.0, 0.0);
     }
 
     /**
