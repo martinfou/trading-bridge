@@ -3,6 +3,7 @@ package com.martinfou.trading.strategies;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.martinfou.trading.core.Order;
+import com.martinfou.trading.core.guardrails.OrderTripwire;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.net.URI;
@@ -18,9 +19,14 @@ public class OandaExecutor {
     private final ObjectMapper mapper = new ObjectMapper();
 
     public OandaExecutor(String apiKey, String accountId, boolean practice) {
+        this(apiKey, accountId, practice ? "https://api-fxpractice.oanda.com/v3/" : "https://api-fxtrade.oanda.com/v3/");
+    }
+
+    /** Test seam: explicit base URL so tests can point the executor at a local stub. */
+    OandaExecutor(String apiKey, String accountId, String baseUrl) {
         this.apiKey = apiKey;
         this.accountId = accountId;
-        this.baseUrl = practice ? "https://api-fxpractice.oanda.com/v3/" : "https://api-fxtrade.oanda.com/v3/";
+        this.baseUrl = baseUrl.endsWith("/") ? baseUrl : baseUrl + "/";
         this.client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
     }
 
@@ -34,6 +40,30 @@ public class OandaExecutor {
                 put("comment", "Stratégie: " + tag);
             }});
         }};
+    }
+
+    /** Builds the MARKET order JSON body (extracted so the shape is testable without sending). */
+    String buildMarketOrderBody(String instrument, String units, String tag, boolean reduceOnly,
+                                String stopLossOnFill, String takeProfitOnFill) throws Exception {
+        var orderBody = new java.util.LinkedHashMap<String, Object>() {{
+            put("type", "MARKET");
+            put("instrument", instrument);
+            put("units", units);
+            put("timeInForce", "FOK");
+            putAll(clientExtensions(tag));
+            if (reduceOnly) {
+                put("positionFill", "REDUCE_ONLY");
+            }
+            if (stopLossOnFill != null) {
+                put("stopLossOnFill", new java.util.HashMap<>() {{ put("price", stopLossOnFill); }});
+            }
+            if (takeProfitOnFill != null) {
+                put("takeProfitOnFill", new java.util.HashMap<>() {{ put("price", takeProfitOnFill); }});
+            }
+        }};
+        return mapper.writeValueAsString(new java.util.HashMap<>() {{
+            put("order", orderBody);
+        }});
     }
 
     public OrderResult placeMarketOrder(String instrument, String units, String tag) throws Exception {
@@ -53,25 +83,8 @@ public class OandaExecutor {
      */
     public OrderResult placeMarketOrder(String instrument, String units, String tag, boolean reduceOnly,
                                         String stopLossOnFill, String takeProfitOnFill) throws Exception {
-        var orderBody = new java.util.LinkedHashMap<String, Object>() {{
-            put("type", "MARKET");
-            put("instrument", instrument);
-            put("units", units);
-            put("timeInForce", "FOK");
-            putAll(clientExtensions(tag));
-            if (reduceOnly) {
-                put("positionFill", "REDUCE_ONLY");
-            }
-            if (stopLossOnFill != null) {
-                put("stopLossOnFill", new java.util.HashMap<>() {{ put("price", stopLossOnFill); }});
-            }
-            if (takeProfitOnFill != null) {
-                put("takeProfitOnFill", new java.util.HashMap<>() {{ put("price", takeProfitOnFill); }});
-            }
-        }};
-        String body = mapper.writeValueAsString(new java.util.HashMap<>() {{
-            put("order", orderBody);
-        }});
+        OrderTripwire.checkOrderAllowed(instrument, units, "OandaExecutor.placeMarketOrder");
+        String body = buildMarketOrderBody(instrument, units, tag, reduceOnly, stopLossOnFill, takeProfitOnFill);
 
         var req = HttpRequest.newBuilder()
             .uri(URI.create(baseUrl + "accounts/" + accountId + "/orders"))
@@ -105,8 +118,9 @@ public class OandaExecutor {
         return placeStopOrder(instrument, units, price, tag, false, null, null);
     }
 
-    public StopOrderResult placeStopOrder(String instrument, String units, String price, String tag,
-                                          boolean reduceOnly, String stopLossOnFill, String takeProfitOnFill) throws Exception {
+    /** Builds the STOP order JSON body (extracted so the shape is testable without sending). */
+    String buildStopOrderBody(String instrument, String units, String price, String tag,
+                              boolean reduceOnly, String stopLossOnFill, String takeProfitOnFill) throws Exception {
         var orderBody = new java.util.LinkedHashMap<String, Object>();
         orderBody.put("type", "STOP");
         orderBody.put("instrument", instrument);
@@ -123,9 +137,15 @@ public class OandaExecutor {
         if (takeProfitOnFill != null) {
             orderBody.put("takeProfitOnFill", new java.util.HashMap<>() {{ put("price", takeProfitOnFill); }});
         }
-        String body = mapper.writeValueAsString(new java.util.HashMap<>() {{
+        return mapper.writeValueAsString(new java.util.HashMap<>() {{
             put("order", orderBody);
         }});
+    }
+
+    public StopOrderResult placeStopOrder(String instrument, String units, String price, String tag,
+                                          boolean reduceOnly, String stopLossOnFill, String takeProfitOnFill) throws Exception {
+        OrderTripwire.checkOrderAllowed(instrument, units, "OandaExecutor.placeStopOrder");
+        String body = buildStopOrderBody(instrument, units, price, tag, reduceOnly, stopLossOnFill, takeProfitOnFill);
 
         var req = HttpRequest.newBuilder()
             .uri(URI.create(baseUrl + "accounts/" + accountId + "/orders"))
@@ -152,6 +172,7 @@ public class OandaExecutor {
     }
 
     public String addStopLoss(String tradeId, String price, String tag) throws Exception {
+        OrderTripwire.checkOrderAllowed(tradeId, price, "OandaExecutor.addStopLoss");
         String body = "{\"order\":{\"type\":\"STOP_LOSS\",\"tradeID\":\"" 
             + tradeId + "\",\"price\":\"" + price + "\",\"clientExtensions\":{\"tag\":\"" + tag + "\"}}}";
         var req = HttpRequest.newBuilder()
@@ -167,6 +188,7 @@ public class OandaExecutor {
     }
 
     public String addTakeProfit(String tradeId, String price, String tag) throws Exception {
+        OrderTripwire.checkOrderAllowed(tradeId, price, "OandaExecutor.addTakeProfit");
         String body = "{\"order\":{\"type\":\"TAKE_PROFIT\",\"tradeID\":\"" 
             + tradeId + "\",\"price\":\"" + price + "\",\"clientExtensions\":{\"tag\":\"" + tag + "\"}}}";
         var req = HttpRequest.newBuilder()
