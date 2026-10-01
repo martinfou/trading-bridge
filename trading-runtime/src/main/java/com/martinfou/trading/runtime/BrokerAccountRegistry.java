@@ -24,6 +24,19 @@ public final class BrokerAccountRegistry {
 
     public static final String DEFAULT_ID = "default";
 
+    /** The system property that puts a JVM in test mode (set by the surefire configs). */
+    public static final String TEST_PROPERTY = "trading.bridge.test";
+
+    /** Test-mode credential sentinels: hard-coded so no environment variable can substitute a real one. */
+    public static final String MOCK_TOKEN = "mock-token";
+    public static final String MOCK_ACCOUNT_ID = "mock-account";
+    /**
+     * Loopback, port 1, and the word "mock" in the path: resolves instantly, refuses instantly,
+     * cannot reach a broker, and stays recognisable by ControlPlaneServer's {@code contains("mock")}
+     * check. A non-resolving host would have made every test wait for a DNS timeout.
+     */
+    public static final String MOCK_REST_URL = "http://localhost:1/mock";
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record AccountEntry(
         String id,
@@ -266,6 +279,22 @@ public final class BrokerAccountRegistry {
         AccountEntry entry = accountsById.get(id);
         if (entry == null || entry.isIbkr()) {
             return Optional.empty();
+        }
+        if (System.getProperty(TEST_PROPERTY) != null) {
+            // Test mode must NEVER inherit a live credential from the environment.
+            //
+            // On 2026-10-01 the test suite sent 12 real orders to the paper account. The mechanism was
+            // this method, not a missing guard: the surefire property below already put the JVM in test
+            // mode and loadDefault() already returned the synthetic account, but that account carried
+            // null token/accountId and merely NAMED the environment variables, so the real values were
+            // read from the environment. An exported .env.paper in the developer's shell was inherited
+            // by the forked test JVM, and the tests resolved the live paper account and token.
+            //
+            // These sentinels cannot be overridden by any environment variable and the host does not
+            // resolve, so test mode fails closed. MOCK_TOKEN and a "mock" URL are already recognised as
+            // non-live by ControlPlaneServer.
+            return Optional.of(new BrokerCredentials(entry.provider(), MOCK_ACCOUNT_ID, MOCK_TOKEN,
+                    MOCK_REST_URL));
         }
         String token = entry.token() != null && !entry.token().isBlank()
             ? entry.token()
