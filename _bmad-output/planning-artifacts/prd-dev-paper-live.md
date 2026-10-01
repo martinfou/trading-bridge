@@ -50,6 +50,11 @@ Trois environnements, **une seule image**, séparés par **l'axe compte**, pas p
 - **D5** — Ordre de construction : l'architecture se bâtit **maintenant**, avec dev sur un sous-compte
   practice jetable, et le service `live` **défini mais non démarré**. On ne bloque pas la
   structuration sur la création des comptes.
+- **D12** — Une fois le token live créé par Martin, sa validité est vérifiée par **un seul appel de
+  lecture** (résumé de compte), et rien d'autre. Aucun ordre, aucune écriture, aucun test d'exécution
+  sur le compte réel : la garde et les tests d'incohérence s'exercent contre des configurations
+  factices, jamais contre le compte. Un appel de lecture répond à la seule question qui compte (« le
+  token ouvre-t-il bien ce compte ? ») sans créer de risque.
 - **D10** — `nfp-week` va en **paper**, comme les trois autres services LT. Le compose ne le démarre
   toujours pas : il reste défini, et il rejoint l'environnement paper quand on le lancera.
 - **D11** — Le compte de l'environnement **live** est `001-002-1889378-005` (Martin, 2026-09-30).
