@@ -62,4 +62,28 @@ class LiveStrategyRunnerEntryGuardTest {
         assertEquals("1.12345", LiveStrategyRunner.formatPrice(1.12345, "EUR_USD"),
             "default pairs must use 5 decimals");
     }
+
+    @Test
+    @DisplayName("the single entry gate refuses stopless MARKET and STOP entries, and spares close-only exits")
+    void singleEntryGateCoversMarketAndStopAndSparesCloseOnly() {
+        LiveStrategyRunner r = runner();
+        Order marketNoStop = new Order("EUR_USD", Order.Side.BUY, Order.Type.MARKET, 1000, 1.1100);
+        Order stopNoStop = new Order("EUR_USD", Order.Side.BUY, Order.Type.STOP, 1000, 1.1100);
+        Order stopWithStop = new Order("EUR_USD", Order.Side.BUY, Order.Type.STOP, 1000, 1.1100)
+            .withStopLoss(1.0950);
+        Order closeOnlyNoStop = new Order("EUR_USD", Order.Side.SELL, Order.Type.MARKET, 1000, 1.1000)
+            .asCloseOnly();
+
+        assertTrue(r.refuseEntryOrder(marketNoStop, "EUR_USD"),
+            "a stopless MARKET entry must be refused at the single entry gate");
+        assertTrue(r.refuseEntryOrder(stopNoStop, "EUR_USD"),
+            "a stopless STOP entry must be refused at the single entry gate");
+        assertFalse(r.refuseEntryOrder(stopWithStop, "EUR_USD"),
+            "a STOP entry carrying a stop passes the gate");
+        assertFalse(r.refuseEntryOrder(closeOnlyNoStop, "EUR_USD"),
+            "a close-only exit is never refused for lacking a stop");
+
+        assertEquals(2, r.getRejectedNoStopEntries(),
+            "the two stopless entries are counted; the valid entry and the exit are not");
+    }
 }
