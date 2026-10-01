@@ -282,5 +282,38 @@ compte est tenu en attendant D24.
 | **R1** | Les `computedRiskPct` des 4 stratégies ajoutées reposent sur des métriques **non validées** | Les `backtestMetrics` de `compmomentum`, `monthweekphase`, `ltrsi3` et `nfpweek` n'ont **pas** de walk-forward ; leur champ `source` le dit honnêtement (« docker-compose note; no full walk-forward report », « event strategy, no backtest (pre-fix, suspect) »). Or `computedRiskPct` **dérive** de ces métriques (`_riskFormula`). La valeur est donc petite et plafonnée, mais sa provenance est faible : à re-dériver quand Epic 41 aura produit de vrais chiffres. |
 | **R2** | `toOandaSymbol()` dégrade en `null` sur les chemins état/moniteur | Jackson `put(String,String)` est null-safe, donc on écrit `"instrument": null` dans le fichier d'état et dans le moniteur au lieu de lever. **Rien ne lit encore ce champ** (1680/1715 lisent celui de la **config**, via `hasNonNull`). Mais la story **1.10** va comparer l'instrument **sauvegardé** au résolu : elle doit traiter un `null` JSON comme « inconnu », jamais comme une incohérence. C'est exactement la classe de bug de `lastBarTime` (un `null` explicite lu `has()` + `asText()` → « null » → `Instant.parse` lève, et tout le restore est perdu). |
 
+### 12.10 Lot 2 livré, vérifié, et une affirmation de la revue RÉFUTÉE (commit `3555f48a`)
+
+**Livré** : 1.3 (`ltrsi3` attache son stop ATR aux deux branches, cible non attachée conformément à D30),
+1.7 (le stop part **dans** l'ordre via une surcharge de `placeMarketOrder`, le second appel post-fill est
+supprimé), 1.4 scopée (prédicat unique `Order.hasProtectiveStop()` dans `trading-core`, appelé depuis le
+chemin d'entrée **live** seulement, avec compteur `rejectedNoStopEntries`), et **C1**.
+
+**Vérifié à la main par l'orchestrateur** : `LtRSI3MomentumStopTest`, `LiveStrategyRunnerEntryGuardTest`,
+`OrderHasProtectiveStopTest`, `OandaExecutorTest` → **Tests run: 10, Failures: 0, Errors: 0, BUILD SUCCESS**.
+
+**C1 — le SL du courtier gagne.** Le contrôle de stop interne de `LtRSI3Momentum` (`stopHit` dans
+`managePosition`) est **supprimé** : le stop est piloté par une seule couche (le `stopLossOnFill` du courtier
+en live, `checkStopLossesTakeProfits` du moteur en backtest, qui lit désormais un `position.stopLoss()`
+non nul). La cible reste à la stratégie (D30), et le moniteur local SL/TP du runner (`updatePositions`)
+demeure comme filet `REDUCE_ONLY` **idempotent**, donc sans double fermeture. Test dédié : une barre qui ne
+fait que **toucher** le stop ne produit plus d'ordre de sortie émis par la stratégie.
+
+**⚠️ Affirmation réfutée — `setStopLossOnFill` (`.5f`) n'existe pas.** Ce point avait été inscrit en §12.2
+(story 1.7) sur la foi de la revue Amelia. Vérification directe : **aucune** méthode `setStopLossOnFill`
+n'existe dans `trading-strategies/src/main/java`. Les deux occurrences de `%.5f` sont (a) un format de
+**log** dans `TradeSignal.java:19`, et (b) un **javadoc** dans `OandaExecutor.java:52` qui avertit
+explicitement de ne pas réintroduire ce format en dur. `formatPrice` gère déjà JPY=3 / or=1 / défaut=5.
+Leçon à garder : une trouvaille de revue est une **revendication**, pas une mesure — la vérifier avant de
+l'inscrire dans une spec, même quand elle vient d'un agent qui a lu le code.
+
+**Provenance du seul test rouge — pré-existant, prouvé.** `RunManagerTest.testConcurrentStartLocking`
+échoue **à l'identique sur `d10ebb0e`**, avant les deux lots (`Tests run: 17, Failures: 1`, 12,34 s,
+reproduit dans un worktree détaché). Ce n'est donc **pas** causé par ce travail. Mais ⚠️ **il rendra
+`scripts/pre-deploy-gate.sh` rouge**, et la porte est justement ce qui autorise un déploiement : ce test a
+besoin de son propre correctif (rendre la précondition déterministe au lieu de relancer la porte en espérant
+du vert — c'est la forme documentée de ce test, qui court après sa propre charge de travail).
+
+
 
 
