@@ -50,6 +50,12 @@ Trois environnements, **une seule image**, séparés par **l'axe compte**, pas p
 - **D5** — Ordre de construction : l'architecture se bâtit **maintenant**, avec dev sur un sous-compte
   practice jetable, et le service `live` **défini mais non démarré**. On ne bloque pas la
   structuration sur la création des comptes.
+- **D8** — `lt-rsi3` (EUR_USD), `comp-momentum` et `month-week` vont en **paper**, pas en dev : ce sont
+  des stratégies suivies sérieusement, pas des bacs à sable. Elles restent donc sur un compte practice
+  et gardent leur historique. Conséquence à trancher : `-012` est aujourd'hui le compte practice
+  principal (alias « trading bridge 2k », ~95 800 CAD) et tout y tourne, y compris le trader. Dans la
+  cible, c'est lui le compte de l'environnement paper, et dev prend un sous-compte jetable distinct.
+  Aucune stratégie n'est en live aujourd'hui : l'environnement live démarre vide.
 - **D7** — Promotion **proposée, jamais exécutée** : une règle mesurée (durée en environnement,
   nombre de trades, P&L) calcule si une stratégie a gagné sa place dans l'environnement suivant, et
   le système le PROPOSE. Martin confirme. Une stratégie ne change jamais d'environnement toute seule :
