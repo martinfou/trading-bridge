@@ -69,7 +69,29 @@ transaction. La valeur contaminée était persistée puis rechargée à chaque r
 - **Une position ouverte par stratégie et par instrument** ; pas d'augmentation de levier sans
   changement explicite de configuration.
 - **Compte** : `paper`/`practice` uniquement. Aucun ordre sur un compte réel sans décision
-  explicite de Martin, écrite dans ce document.
+  explicite de Martin, écrit dans ce document.
+- **L'instrument tradé est celui de la config, ou le runner refuse de démarrer.** Vérification du
+  2026-10-01 : `LiveStrategyRunner.toOandaSymbol()` (`LiveStrategyRunner.java:1616-1646`) résolvait
+  l'instrument depuis le **nom d'affichage** de la stratégie et retombait sur `GBP_JPY`. Le nom de
+  `VWPReversionStrategy` est `"🔁 VWAP Reversion"` (`VWPReversionStrategy.java:33`) mais la table
+  teste `"VWPREVERSION"` : pas de correspondance, donc défaut. Résultat observé : `vwpreversion`
+  tradait **GBP_JPY** alors que `config/live-config.json` annonce **USD_CHF**. Corollaire : la
+  promesse « taille plafonnée selon `live-config.json` » ci-dessus était **fausse en fait**, puisque
+  la config ne décrivait pas l'instrument réellement tradé. `STRATEGY_PAIR` était par ailleurs une
+  variable morte pour ce runner.
+- **Aucune entrée ne part sans stop.** Vérification du 2026-10-01 : `LtRSI3Momentum.evaluateEntry()`
+  émet `new Order(symbol, Side.BUY, MARKET, units, entryPrice)` **sans** `withStopLoss` /
+  `withTakeProfit` ; le stop ATR et la cible existent seulement comme champs internes. Conséquences :
+  aucun stop chez le courtier, et le budget de risque (`riskSizedUnits`, qui divise par la distance au
+  stop) n'a **pas de dénominateur**, donc la taille envoyée n'est pas celle que la policy annonce.
+  Seule la vérification in-process protège la position.
+
+> **Classe de défaut nommée le 2026-10-01 : « doc vs code ».** Ces deux-là n'étaient pas des bugs de
+> calcul, mais des écarts entre ce que la configuration et ce document **disent** et ce que le runner
+> **fait**. Ce type d'écart est invisible en test unitaire (chaque côté est cohérent avec lui-même) et
+> n'apparaît qu'en comparant les deux, ou en lisant un log de démarrage. La couche 2 doit donc
+> vérifier non seulement le P&L contre le courtier, mais aussi **l'instrument et la présence du stop**
+> contre la configuration, et **au démarrage**, pas à la première transaction.
 
 ### Couche 4 — Porte de déploiement
 
