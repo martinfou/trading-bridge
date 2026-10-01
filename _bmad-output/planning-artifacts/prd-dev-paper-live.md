@@ -379,6 +379,31 @@ la classe de défaut « doc vs code » ajoutée à `docs/TRADING-GUARDRAILS.md`.
 Tech-spec, user stories, coding stories et critères d'acceptation :
 `_bmad-output/planning-artifacts/tech-spec-live-path-instrument-and-stop.md`.
 
+### 4octies. D32–D35 — décisions du 2026-10-01, veille du premier déploiement
+
+- **D32** — La position ouverte du 1er oct (`ltrsi3`, trade `12`, short EUR_USD 2 000) reçoit un **stop
+  courtier** posé au niveau que **la stratégie calcule elle-même** : `entrée + 2 × ATR(14)`, soit
+  **1,13039** (ATR 19,16 pips sur la barre d'entrée, 38,3 pips de stop), en **GTC**, vérifié par relecture
+  du courtier. La cible reste à la stratégie (D30). Motif : la position n'avait **rien au venue** (le build
+  déployé est l'ancien), seule la vérification in-process la protégeait, donc une mort du conteneur la
+  laissait nue. Preuve de plus du défaut : l'état persisté portait `stopLoss: 0.0`, c'est-à-dire ce que
+  l'**ordre** portait, et l'ordre ne portait rien.
+- **D33** — Le compte paper **reste à 2 000 CAD**. La taille issue du budget de risque y vaut **~1 100
+  unités** (0,3 % de 1 986 = 5,96 CAD ÷ (38,3 pips × 0,00014248 CAD/pip/unité)), alors que les 2 000 unités
+  du 1er oct étaient le **plafond de repli « pas de stop »**, pas une taille de risque. Martin retient
+  2 000 parce que c'est le capital qu'il engagerait réellement, et **le caractère granuleux (arrondi à 100
+  unités, plancher du micro-lot) fait partie du test**. À 10 000 CAD la même règle donnerait ~5 500 unités :
+  la question est tranchée, pas oubliée.
+- **D34** — La fenêtre d'observation de **30 jours redémarre au déploiement du build corrigé**. Les trois
+  trades du 1er oct (`consecbar` −15,02 · `vwpreversion` −11,72 · `ltrsi3` encore ouvert) sont
+  **journalisés mais exclus de l'échantillon** : ils ont été placés par un build qui tradait la mauvaise
+  paire et n'attachait aucun stop.
+- **D35** — Ordre de travail : (1) rendre **déterministe** le test pré-existant qui bloque
+  `pre-deploy-gate.sh` ; (2) **déployer** le build corrigé, ce qui démarre la fenêtre propre de D34 ;
+  (3) construire le **modèle de coûts (Epic 40.1)** pendant que la fenêtre tourne. Le modèle de coûts est
+  le levier de la question « est-ce que ça peut gagner de l'argent » : la porte classe aujourd'hui sur un
+  PF qui **exclut** le spread.
+
 ## 5. Invariant de sécurité non négociable
 
 **Le runner doit REFUSER de démarrer si l'environnement déclaré et les identifiants ne concordent
