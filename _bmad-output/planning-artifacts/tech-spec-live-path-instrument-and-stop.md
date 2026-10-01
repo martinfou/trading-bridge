@@ -239,3 +239,48 @@ cette porte mesure un PF **sans coûts**. La valeur de ces correctifs est l'**in
 sans eux, les 30 jours de paper ne produisent aucun signal sur l'edge réellement backtesté. Le levier de
 la question « est-ce que ça peut gagner de l'argent » reste **Epic 40.1** (le modèle de coûts).
 
+### 12.7 Deux compléments oubliés en v2
+
+**C1 — Double pilotage du stop (story 1.3 / 1.7).** Une fois le stop attaché à l'ordre, **deux** chemins
+peuvent fermer la position : le SL du courtier, et le contrôle interne de la stratégie
+(`LtRSI3Momentum.java:139-141` et `:146-149`, qui teste `stopLoss`/`takeProfit` dans `onBar()`). Le runner
+réconcilie via `updatePositions(oandaSymbol)` (`LiveStrategyRunner.java:886`), chemin éprouvé pour les
+autres stratégies mais **neuf pour `ltrsi3`**. La story doit dire explicitement quel chemin gagne et ce que
+devient l'autre : soit le contrôle interne devient un **no-op** dès que le courtier détient le stop, soit la
+réconciliation est étendue et testée sur ce cas. Ne pas laisser les deux se disputer la sortie.
+
+**C2 — Checklist opérationnelle avant tout changement de paire (D29 / 1.10).** Le changement de paire de
+`vwpreversion` ne se fait pas au clic : **avant**, énumérer au courtier les positions ouvertes **et** les
+ordres pendants sur l'**ancienne** paire pour cette stratégie, les rapprocher de l'état sauvegardé, et
+fermer ou adopter **explicitement** (décision écrite, comme D16/D26) ; **après**, vérifier au courtier que
+l'ancienne paire est à plat et qu'aucun état de la stratégie ne décrit encore une position dessus. Côté
+lecture : `GET /v3/accounts/-014/openPositions` et `/pendingOrders`, filtrés sur l'instrument sortant.
+`updatePositions(oandaSymbol)` ne surveille **que** le symbole résolu : une position GBP_JPY laissée
+ouverte après le re-pointage vers USD_CHF resterait ouverte et **non surveillée**.
+
+### 12.8 Lot 1 livré et vérifié (commit `8cb3e909`)
+
+Stories **1.9, 1.8, 1.1, 1.2** implémentées et poussées sur `feature/live-path-instrument-and-stop`.
+**Vérification faite à la main par l'orchestrateur, pas déclarée par l'agent qui a écrit le code** :
+`./mvnw -B -DskipITs -Dspotbugs.skip=true -pl trading-strategies -am -Dtest=LiveStrategyRunnerInstrumentTest,StrategySymbolReconciliationTest -Dsurefire.failIfNoSpecifiedTests=false test`
+→ **Tests run: 13, Failures: 0, Errors: 0 — BUILD SUCCESS**.
+
+Les assertions sont les bonnes : `vwpreversion` résolu en **USD_CHF** avec la **source** `strategies.vwpreversion.instrument` ; `consecbar` reste **GBP_JPY** (non-régression) ; les 4 stratégies nouvellement configurées résolvent leur paire ; une config absente ou incohérente **refuse le démarrage** en nommant la stratégie et la paire attendue ; et les 3 stratégies qui filtrent sur `bar.symbol()` (**E4**) cessent de filtrer après réconciliation — c'est le test qui empêche le correctif de devenir une panne muette.
+
+Fichiers : `config/live-config.json`, `trading-core/.../Strategy.java` (+ méthode `default`
+`reconcileInstrument`), `LiveStrategyRunner.java` (`resolveInstrument` + `verifyInstrumentConsistency`),
+et les 3 stratégies à filtre (`CompositeMomentumRankingStrategy`, `MonthWeekPhaseStrategy`,
+`LtRSI3Momentum`, `symbol` passé de `final` à non-`final`).
+
+**Somme des `computedRiskPct` déployés = 2,3 %** (0,6 + 0,75 + 0,4 + 0,25 + 0,3) ≤ 3 % : le plafond de
+compte est tenu en attendant D24.
+
+### 12.9 Deux réserves à traiter en revue, pas à oublier
+
+| # | Réserve | Détail |
+|---|---------|--------|
+| **R1** | Les `computedRiskPct` des 4 stratégies ajoutées reposent sur des métriques **non validées** | Les `backtestMetrics` de `compmomentum`, `monthweekphase`, `ltrsi3` et `nfpweek` n'ont **pas** de walk-forward ; leur champ `source` le dit honnêtement (« docker-compose note; no full walk-forward report », « event strategy, no backtest (pre-fix, suspect) »). Or `computedRiskPct` **dérive** de ces métriques (`_riskFormula`). La valeur est donc petite et plafonnée, mais sa provenance est faible : à re-dériver quand Epic 41 aura produit de vrais chiffres. |
+| **R2** | `toOandaSymbol()` dégrade en `null` sur les chemins état/moniteur | Jackson `put(String,String)` est null-safe, donc on écrit `"instrument": null` dans le fichier d'état et dans le moniteur au lieu de lever. **Rien ne lit encore ce champ** (1680/1715 lisent celui de la **config**, via `hasNonNull`). Mais la story **1.10** va comparer l'instrument **sauvegardé** au résolu : elle doit traiter un `null` JSON comme « inconnu », jamais comme une incohérence. C'est exactement la classe de bug de `lastBarTime` (un `null` explicite lu `has()` + `asText()` → « null » → `Instant.parse` lève, et tout le restore est perdu). |
+
+
+
