@@ -1,6 +1,8 @@
 package com.martinfou.trading.data.oanda;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.martinfou.trading.core.guardrails.OrderTripwire;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
@@ -21,6 +23,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 class HttpOandaRestClientTest {
@@ -32,6 +35,7 @@ class HttpOandaRestClientTest {
 
     @BeforeEach
     void setUp() throws IOException {
+        OrderTripwire.allowOrdersForTestingOnly();
         server = HttpServer.create(new InetSocketAddress(0), 0);
         server.createContext("/", new HttpHandler() {
             @Override
@@ -76,6 +80,7 @@ class HttpOandaRestClientTest {
         if (server != null) {
             server.stop(0);
         }
+        OrderTripwire.resetForTestingOnly();
     }
 
     @Test
@@ -123,6 +128,73 @@ class HttpOandaRestClientTest {
         var client = new HttpOandaRestClient("token", "123", "http://localhost:" + port + "/");
         Map<String, Object> order = client.buildOrder("STOP", "EUR_USD", 1000, 1.10, 0, 0, 0, false, "my-tag-456", true, 5);
         assertEquals("REDUCE_ONLY", order.get("positionFill"));
+    }
+
+    @Test
+    void placeMarketOrder_propagatesTradeClientExtensions() throws Exception {
+        var client = new HttpOandaRestClient("token", "123", "http://localhost:" + port + "/");
+        OandaMarketOrderResult result = client.placeMarketOrder("EUR_USD", 1000, "my-tag-123");
+        assertNotNull(result);
+
+        String reqBody = lastRequestBody.get();
+        assertNotNull(reqBody);
+
+        JsonNode root = mapper.readTree(reqBody);
+        JsonNode order = root.get("order");
+        assertNotNull(order);
+
+        assertEquals("MARKET", order.get("type").asText());
+        assertEquals("EUR_USD", order.get("instrument").asText());
+        assertEquals("1000", order.get("units").asText());
+
+        JsonNode clientExt = order.get("clientExtensions");
+        assertNotNull(clientExt);
+        assertEquals("my-tag-123", clientExt.get("tag").asText());
+        assertEquals("my-tag-123", clientExt.get("comment").asText());
+
+        JsonNode tradeExt = order.get("tradeClientExtensions");
+        assertNotNull(tradeExt);
+        assertEquals("my-tag-123", tradeExt.get("tag").asText());
+        assertEquals("my-tag-123", tradeExt.get("comment").asText());
+    }
+
+    @Test
+    void placeOrder_propagatesTradeClientExtensions() throws Exception {
+        var client = new HttpOandaRestClient("token", "123", "http://localhost:" + port + "/");
+        OandaMarketOrderResult result = client.placeOrder("LIMIT", "EUR_USD", 1000, 1.10, 1.09, 1.12, 0, false, "my-tag-456", false);
+        assertNotNull(result);
+
+        String reqBody = lastRequestBody.get();
+        assertNotNull(reqBody);
+
+        JsonNode root = mapper.readTree(reqBody);
+        JsonNode order = root.get("order");
+        assertNotNull(order);
+
+        assertEquals("LIMIT", order.get("type").asText());
+
+        JsonNode clientExt = order.get("clientExtensions");
+        assertNotNull(clientExt);
+        assertEquals("my-tag-456", clientExt.get("tag").asText());
+
+        JsonNode tradeExt = order.get("tradeClientExtensions");
+        assertNotNull(tradeExt);
+        assertEquals("my-tag-456", tradeExt.get("tag").asText());
+    }
+
+    @Test
+    void placeOrder_withReduceOnly_addsPositionFill() throws Exception {
+        var client = new HttpOandaRestClient("token", "123", "http://localhost:" + port + "/");
+        OandaMarketOrderResult result = client.placeOrder("STOP", "EUR_USD", 1000, 1.10, 0, 0, 0, false, "my-tag-456", true);
+        assertNotNull(result);
+
+        String reqBody = lastRequestBody.get();
+        assertNotNull(reqBody);
+
+        JsonNode root = mapper.readTree(reqBody);
+        JsonNode order = root.get("order");
+        assertNotNull(order);
+        assertEquals("REDUCE_ONLY", order.get("positionFill").asText());
     }
 
     static class TestHttpOandaRestClient extends HttpOandaRestClient {
@@ -230,6 +302,81 @@ class HttpOandaRestClientTest {
         } finally {
             testServer.stop(0);
         }
+    }
+
+    @Test
+    void placeMarketOrder_notConnected_returnsFailure() throws Exception {
+        int unusedPort = 54321;
+        HttpClient baseClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(1)).build();
+        var client = new TestHttpOandaRestClient("token", "123", "http://localhost:" + unusedPort + "/", baseClient);
+
+        OandaMarketOrderResult result = client.placeMarketOrder("EUR_USD", 1000, "my-tag-123");
+
+        assertNotNull(result);
+        assertFalse(result.success());
+        assertNotNull(result.errorMessage());
+    }
+
+    @Test
+    void placeMarketOrder_transientConnectionFailure_retriesAtMostTwice() throws Exception {
+        HttpServer testServer = HttpServer.create(new InetSocketAddress(0), 0);
+        java.util.concurrent.atomic.AtomicInteger requestCount = new java.util.concurrent.atomic.AtomicInteger(0);
+        testServer.createContext("/accounts/123/orders", new HttpHandler() {
+            @Override
+            public void handle(HttpExchange exchange) throws IOException {
+                int count = requestCount.incrementAndGet();
+                if (count <= 2) {
+                    exchange.close();
+                } else {
+                    String responseBody = "{\n" +
+                            "  \"orderCreateTransaction\": {\n" +
+                            "    \"id\": \"100\"\n" +
+                            "  },\n" +
+                            "  \"orderFillTransaction\": {\n" +
+                            "    \"id\": \"101\",\n" +
+                            "    \"price\": \"1.1000\",\n" +
+                            "    \"tradeOpened\": {\n" +
+                            "      \"tradeID\": \"500\"\n" +
+                            "    }\n" +
+                            "  }\n" +
+                            "}";
+                    byte[] bytes = responseBody.getBytes(StandardCharsets.UTF_8);
+                    exchange.sendResponseHeaders(201, bytes.length);
+                    try (OutputStream os = exchange.getResponseBody()) {
+                        os.write(bytes);
+                    }
+                }
+            }
+        });
+        testServer.start();
+        int testPort = testServer.getAddress().getPort();
+        try {
+            HttpClient baseClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+            var client = new TestHttpOandaRestClient("token", "123", "http://localhost:" + testPort + "/", baseClient);
+
+            OandaMarketOrderResult result = client.placeMarketOrder("EUR_USD", 1000, "my-tag-123");
+
+            assertNotNull(result);
+            assertFalse(result.success());
+
+            assertEquals(1, client.sendCount.get());
+        } finally {
+            testServer.stop(0);
+        }
+    }
+
+    @Test
+    void placeMarketOrder_connectException_retriesTwice() throws Exception {
+        int unusedPort = 54321;
+        HttpClient baseClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(1)).build();
+        var client = new TestHttpOandaRestClient("token", "123", "http://localhost:" + unusedPort + "/", baseClient);
+
+        OandaMarketOrderResult result = client.placeMarketOrder("EUR_USD", 1000, "my-tag-123");
+
+        assertNotNull(result);
+        assertFalse(result.success());
+
+        assertEquals(2, client.sendCount.get());
     }
 
     @Test

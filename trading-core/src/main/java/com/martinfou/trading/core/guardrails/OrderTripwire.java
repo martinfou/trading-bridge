@@ -22,6 +22,12 @@ import org.slf4j.LoggerFactory;
  * {@link #checkOrderAllowed(String, String, String)} before building any request. Test doubles
  * ({@code FakeBroker}, {@code StubOandaRestClient}, {@code StubIbkrGatewayClient}) are in-memory and
  * never reach a broker, so they are deliberately not wired to this tripwire.
+ *
+ * <p>Test code that must exercise the <em>live</em> order path (e.g. the HTTP client's POST retry
+ * loop) can open an explicit, test-only gate via {@link #allowOrdersForTestingOnly()}. The gate is
+ * honoured only while a test runtime is detected, and the install call itself throws in production,
+ * so it can never authorise a live order. {@link #decision(Map, String)} remains the pure, unchanged
+ * fail-closed decision function.
  */
 public final class OrderTripwire {
 
@@ -33,6 +39,15 @@ public final class OrderTripwire {
 
     private static final Logger LOG = LoggerFactory.getLogger(OrderTripwire.class);
     private static final AtomicBoolean ALLOWED_LOGGED = new AtomicBoolean(false);
+
+    /**
+     * Test-only escape hatch. Installed exclusively by test code via
+     * {@link #allowOrdersForTestingOnly()} and honoured by {@link #checkOrderAllowed} ONLY while a
+     * test runtime is detected on the classpath/environment. Defaults to {@code false}: a test that
+     * does not explicitly install the gate remains refused. Cleared via
+     * {@link #resetForTestingOnly()} so it never leaks across test classes sharing a JVM.
+     */
+    private static final AtomicBoolean TEST_GATE_INSTALLED = new AtomicBoolean(false);
 
     private OrderTripwire() {
     }
@@ -86,8 +101,29 @@ public final class OrderTripwire {
      * @param context    human-readable call-site label, e.g. {@code OandaExecutor.placeMarketOrder}
      */
     public static void checkOrderAllowed(String instrument, String units, String context) {
-        Map<String, String> env = System.getenv();
-        if (decision(env, runtimeClassPath())) {
+        checkOrderAllowed(instrument, units, context, System.getenv(), runtimeClassPath());
+    }
+
+    /**
+     * Package-private overload with an explicit environment and classpath so the fail-closed and
+     * production-refusal contracts can be exercised hermetically (no env / system-property mutation).
+     * The public 3-arg form delegates here with the live {@code System.getenv()} /
+     * {@link #runtimeClassPath()}.
+     *
+     * <p>The test-only gate is honoured <em>only</em> while a test runtime is detected: in a
+     * production environment (no {@code surefire} on the classpath, no {@code SUREFIRE_*} env var)
+     * the gate is ignored even if the flag was somehow flipped, and only the
+     * {@value #ENV_ALLOW_ORDERS} flag can authorise.
+     */
+    static void checkOrderAllowed(String instrument, String units, String context,
+                                  Map<String, String> env, String classPath) {
+        if (isTestRuntime(env, classPath) && TEST_GATE_INSTALLED.get()) {
+            LOG.debug("Order path authorised via test-only override (test runtime detected): "
+                            + "instrument={}, units={}, context={}",
+                    instrument, units, context);
+            return;
+        }
+        if (decision(env, classPath)) {
             if (ALLOWED_LOGGED.compareAndSet(false, true)) {
                 LOG.info("Order path authorised ({}={}) — live/paper order dispatch enabled. See {}.",
                         ENV_ALLOW_ORDERS, env.get(ENV_ALLOW_ORDERS), GUARDRAILS_DOC);
@@ -100,6 +136,42 @@ public final class OrderTripwire {
                         + "instrument=" + instrument + ", units=" + units + ", context=" + context
                         + ". Set " + ENV_ALLOW_ORDERS + "=1 on the trading containers "
                         + "(docker-compose.yml) before dispatching orders. See " + GUARDRAILS_DOC + ".");
+    }
+
+    /**
+     * Test-only escape hatch. Authorises {@link #checkOrderAllowed} to pass — but ONLY when a test
+     * runtime is detected ({@code surefire} on the classpath, or a {@code SUREFIRE_*} env var).
+     *
+     * <p>In production (no test runtime) this method <em>throws</em> and never opens the gate, so it
+     * cannot be used to dispatch a live order. In a test runtime it flips an in-process flag that
+     * {@link #checkOrderAllowed} honours only while a test runtime is still detected. The two
+     * mechanisms are mutually exclusive by environment: in production only the
+     * {@value #ENV_ALLOW_ORDERS} flag opens, in test only this gate opens, and neither works in the
+     * other's environment. A test that does not call this method remains refused (no default
+     * authorisation).
+     */
+    public static void allowOrdersForTestingOnly() {
+        allowOrdersForTestingOnly(System.getenv(), runtimeClassPath());
+    }
+
+    /** Package-private: installs the test gate only when {@code env}/{@code classPath} show a test runtime. */
+    static void allowOrdersForTestingOnly(Map<String, String> env, String classPath) {
+        if (!isTestRuntime(env, classPath)) {
+            throw new IllegalStateException(
+                    "OrderTripwire: test-only override refused — no test runtime detected on the "
+                            + "classpath or in the environment. This gate can never be opened in production.");
+        }
+        TEST_GATE_INSTALLED.set(true);
+    }
+
+    /**
+     * Clears the test gate so it never leaks across test classes sharing a JVM. Public (not
+     * package-private) because order-path tests live in other modules/packages. This method only
+     * ever <em>closes</em> the gate — it sets the flag back to the fail-closed default, so it can
+     * never be used to authorise an order.
+     */
+    public static void resetForTestingOnly() {
+        TEST_GATE_INSTALLED.set(false);
     }
 
     /**
