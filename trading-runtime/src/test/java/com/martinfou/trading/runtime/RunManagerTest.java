@@ -547,22 +547,26 @@ class RunManagerTest {
         try (RuntimeStores.Bundle stores = RuntimeStores.inMemoryWithBroadcast();
              RunManager manager = new RunManager(stores.eventStore())) {
 
+            // The invariant here is the per-strategy startup lock: 5 concurrent FORCED starts must all
+            // register (no lost update, no deadlock). It is NOT the duplicate-run guard — force=true
+            // bypasses that check — so the wall-clock duration of each run is irrelevant, and the
+            // 100_000-bar workload was cargo-culted from testDuplicateRunRejection where it does not
+            // belong. Worse, PAPER mode routes RunManager.loadBars() through a live OANDA network
+            // fetch (loadBars, mode PAPER/LIVE branch), so 5 of those serialized behind the lock made
+            // this test race the teardown bound against real network latency — the flake that kept
+            // pre-deploy-gate red on 2026-10-01 (test took 11-12s and tripped awaitTermination(5s)).
+            // BACKTEST mode skips the OANDA branch entirely and loads in-memory sample bars, so
+            // startRun becomes deterministic and instant.
             var req = new RunManager.StartRunRequest(
                 "LondonOpenRangeBreakout",
                 "EUR_USD",
-                "PAPER",
-                // 100_000 synthetic bars, not 10. The duplicate guard only blocks a run that is still
-            // RUNNING, and a 10-bar PAPER_STUB run can reach a terminal state before the assertion two
-            // lines below: that is exactly how this test flaked under the full reactor on 2026-09-30
-            // (3.9s for the class inside the suite versus 16.6s in isolation, gate failure
-            // "Expected IllegalArgumentException to be thrown, but nothing was thrown"). The duration of
-            // the run is what the test depends on, so it is made long enough to be reliable.
-            new BarSourceResolver.BarsSource("sample", 100_000, null),
+                "BACKTEST",
+                new BarSourceResolver.BarsSource("sample", 10, null),
                 1000.0,
                 null,
                 null,
                 null,
-                "PAPER_STUB",
+                null,
                 null,
                 null,
                 null,
@@ -584,14 +588,17 @@ class RunManagerTest {
                         manager.startRun(req);
                         successCount.incrementAndGet();
                     } catch (Exception e) {
-                        // ignore
+                        // ignore — the assertion below fails if any thread did not register
                     }
                 });
             }
 
             latch.countDown();
             pool.shutdown();
-            assertTrue(pool.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS));
+            // This bound is a deadlock detector, not a throughput target: with BACKTEST mode and
+            // in-memory sample bars each startRun returns in microseconds, so 30s can only trip on a
+            // genuine lock regression. A lost update would surface as successCount < threads below.
+            assertTrue(pool.awaitTermination(30, java.util.concurrent.TimeUnit.SECONDS));
 
             assertEquals(threads, successCount.get(), "Expected all threads to successfully register and start runs");
         }
