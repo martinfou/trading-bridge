@@ -260,6 +260,17 @@ Conséquence pratique à garder en tête : les fichiers `.env.live`, `.env.dev` 
 jetons qui ont circulé dans un historique de conversation. Ils sont en mode 600 et ignorés par git,
 donc ils ne fuient pas par le dépôt. La seule exposition restante est l'historique de session.
 
+- **D25** — Le sélecteur dev / paper / live du dashboard est **en lecture seule**. Il change ce qui est
+  affiché, jamais ce qui est agi : aucun bouton du sélecteur ne peut ouvrir, modifier ou fermer quoi que
+  ce soit sur un compte, y compris en paper. La lecture seule n'est pas une timidité de première version,
+  c'est la bonne frontière : le tableau de bord sert à **voir** l'état, et le pilotage reste dans le
+  runner, qui a les gardes, les tests et les limites de risque. Une page web qui peut trader est une
+  surface d'attaque déguisée en commodité, et elle contournerait d'un clic les plafonds de D24.
+
+  Nuance assumée : le bouton de fermeture d'urgence qui existe déjà (décision du 2026-09-30, gardé
+  volontairement) reste en place. C'est une exception délibérée et documentée, pas une incohérence : il
+  ne fait que **réduire** une exposition, jamais l'augmenter.
+
 ## 5. Invariant de sécurité non négociable
 
 **Le runner doit REFUSER de démarrer si l'environnement déclaré et les identifiants ne concordent
