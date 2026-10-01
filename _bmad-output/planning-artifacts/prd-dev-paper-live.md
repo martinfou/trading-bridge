@@ -333,6 +333,12 @@ D23 décrivait : quelque chose trade un compte dont personne n'assume les ordres
 | Tags UUID sur les ordres d'ouverture, aucun tag sur les fermetures | `OandaBroker` étiquette avec `order.id()` (UUID) ; `LiveStrategyRunner`, lui, écrit `strategie_SYMBOL` depuis le 2026-05-27 — d'où l'impression d'une source étrangère |
 | Aucun cron Hermes ne lance `mvn` ni `ControlPlaneMain` | le déclencheur est un travail humain ou d'agent, pas un calendrier |
 | Rafales de 3 ouvertures puis fermetures (06:37, 06:59, 07:38, 08:15, 09:14, 09:39, 09:56) | profil d'une exécution de test, pas d'une stratégie |
+| Les exécutions du 2026-09-30 coïncident avec une session de l'agent Antigravity travaillant sur `BrokerRunExecutor.restoreOpenPosition` et `ControlPlaneServerTest` (fin 11:26) | l'opérateur est un agent qui développait précisément le chemin de restauration — donc quelqu'un qui lançait la suite de tests |
+
+Ce que ça change dans la lecture du risque : **un agent qui travaille sur le code de restauration
+place des ordres réels en lançant les tests.** La suite n'offre aucune barrière entre « je compile et je
+teste » et « j'envoie un ordre au courtier » : il suffit que des identifiants soient présents dans
+l'environnement.
 
 - **D27** — **D20 est fermé** : la source est identifiée, elle est interne, et elle est nommée dans ce
   document pour qu'elle ne soit plus jamais un mystère. Deux conséquences à traiter en Phase 3 :
