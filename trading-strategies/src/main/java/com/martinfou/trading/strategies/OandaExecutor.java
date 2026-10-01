@@ -83,7 +83,7 @@ public class OandaExecutor {
      */
     public OrderResult placeMarketOrder(String instrument, String units, String tag, boolean reduceOnly,
                                         String stopLossOnFill, String takeProfitOnFill) throws Exception {
-        OrderTripwire.checkOrderAllowed(instrument, units, "OandaExecutor.placeMarketOrder");
+        OrderTripwire.checkOrderAllowed(instrument, units, "OandaExecutor.placeMarketOrder", baseUrl);
         String body = buildMarketOrderBody(instrument, units, tag, reduceOnly, stopLossOnFill, takeProfitOnFill);
 
         var req = HttpRequest.newBuilder()
@@ -144,7 +144,7 @@ public class OandaExecutor {
 
     public StopOrderResult placeStopOrder(String instrument, String units, String price, String tag,
                                           boolean reduceOnly, String stopLossOnFill, String takeProfitOnFill) throws Exception {
-        OrderTripwire.checkOrderAllowed(instrument, units, "OandaExecutor.placeStopOrder");
+        OrderTripwire.checkOrderAllowed(instrument, units, "OandaExecutor.placeStopOrder", baseUrl);
         String body = buildStopOrderBody(instrument, units, price, tag, reduceOnly, stopLossOnFill, takeProfitOnFill);
 
         var req = HttpRequest.newBuilder()
@@ -172,7 +172,7 @@ public class OandaExecutor {
     }
 
     public String addStopLoss(String tradeId, String price, String tag) throws Exception {
-        OrderTripwire.checkOrderAllowed(tradeId, price, "OandaExecutor.addStopLoss");
+        OrderTripwire.checkOrderAllowed(tradeId, price, "OandaExecutor.addStopLoss", baseUrl);
         String body = "{\"order\":{\"type\":\"STOP_LOSS\",\"tradeID\":\"" 
             + tradeId + "\",\"price\":\"" + price + "\",\"clientExtensions\":{\"tag\":\"" + tag + "\"}}}";
         var req = HttpRequest.newBuilder()
@@ -188,7 +188,7 @@ public class OandaExecutor {
     }
 
     public String addTakeProfit(String tradeId, String price, String tag) throws Exception {
-        OrderTripwire.checkOrderAllowed(tradeId, price, "OandaExecutor.addTakeProfit");
+        OrderTripwire.checkOrderAllowed(tradeId, price, "OandaExecutor.addTakeProfit", baseUrl);
         String body = "{\"order\":{\"type\":\"TAKE_PROFIT\",\"tradeID\":\"" 
             + tradeId + "\",\"price\":\"" + price + "\",\"clientExtensions\":{\"tag\":\"" + tag + "\"}}}";
         var req = HttpRequest.newBuilder()

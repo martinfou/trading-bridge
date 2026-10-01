@@ -1,5 +1,6 @@
 package com.martinfou.trading.data.oanda;
 
+import com.martinfou.trading.core.guardrails.OrderTripwire;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Proves the live OANDA HTTP client refuses to place an order without sending a request when the
@@ -65,5 +67,20 @@ class HttpOandaRestClientTripwireTest {
         assertThrows(IllegalStateException.class,
                 () -> client.placeOrder("MARKET", "EUR_USD", -1000, 0, 1.05, 0, 0, false, "my-tag", false));
         assertEquals(0, requestCount.get(), "no HTTP request may be sent when the tripwire refuses");
+    }
+
+    @Test
+    void placeMarketOrder_testGateOpenButRealBroker_refusesBeforeAnyRequest() throws Exception {
+        // ANTI-INCIDENT: even with the test-only gate open, a REAL broker destination is refused
+        // before any HTTP request is built or sent. The tripwire throws in checkOrderAllowed (the
+        // first statement of placeMarketOrder, outside its try/catch), so this is hermetic and the
+        // real OANDA practice endpoint is never contacted — zero requests.
+        try (AutoCloseable ignored = OrderTripwire.allowOrdersForTestingOnly()) {
+            var client = new HttpOandaRestClient("token", "123", "https://api-fxpractice.oanda.com/v3/");
+            IllegalStateException ex = assertThrows(IllegalStateException.class,
+                    () -> client.placeMarketOrder("EUR_USD", -1000, "my-tag"));
+            assertTrue(ex.getMessage().contains("local destination"),
+                    "refusal must name the local-destination rule: " + ex.getMessage());
+        }
     }
 }
