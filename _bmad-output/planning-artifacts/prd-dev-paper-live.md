@@ -179,6 +179,39 @@ Sans le point 2, le même token dans les trois fichiers rendrait la séparation 
 C'est le seul endroit de ce PRD où une mesure contredit une décision antérieure, et c'est corrigé ici
 plutôt que laissé passer.
 
+- **D16** — Le trader GBP_JPY **migre vers `-014`** (paper). Conséquence assumée et explicite : la
+  position `2082` (SELL 92 600 GBP_JPY, entry 208,641, SL 209,320, TP 207,976) doit être **fermée**,
+  ce qui réalise la perte en cours (~188 CAD au moment du choix), et le sizing est **recalculé sur
+  2 000 CAD** au lieu de 95 600.
+- **D17** — Les trois stratégies LT migrent vers `-014` et y redémarrent **propres, sans historique de
+  position**. Aucune position n'est transplantée d'un compte à l'autre : un état qui décrit une
+  position inexistante sur le compte cible est précisément le genre d'incohérence qui produit un ordre
+  fantôme au premier cycle.
+- **D18** — `-013` (dev) **reste vide pour l'instant**. Son rôle est d'exister pour valider la
+  plomberie au moment où le besoin apparaît, pas d'héberger du travail en attente. Un environnement
+  vide et fonctionnel vaut mieux qu'un environnement rempli pour justifier son existence.
+- **D19** — `-012` (95 600 CAD, alias « trading bridge 2k ») **devient dormant** : plus rien n'y trade
+  une fois la migration faite. Il n'est ni supprimé ni recyclé dans la foulée, parce que c'est le seul
+  endroit où l'historique réel du trader existe encore.
+
+### Vérification de viabilité du sizing sur 2 000 CAD
+
+Question légitime avant de fermer une position pour migrer : est-ce qu'un budget de 15 CAD produit
+encore une taille tradable ? Calcul sur la position réelle, avec la distance de stop de `2082` :
+
+| Étape | Valeur |
+|---|---|
+| Budget de risque (0,75 % de 2 000) | 15 CAD |
+| Distance de stop de 2082 | 0,679 JPY par unité |
+| Conversion JPY vers CAD (CAD/JPY ≈ 116) | 0,00585 CAD de risque par unité |
+| **Unités pour 15 CAD** | **≈ 2 560 unités** |
+| Plancher pratique d'un micro-lot | 1 000 unités |
+
+La taille reste donc **au-dessus du plancher d'un micro-lot**, avec une marge d'environ 2,5x. La
+migration est viable. Les taux utilisés sont approximatifs (GBP/CAD ≈ 1,80), donc le chiffre à retenir
+est l'ordre de grandeur, pas la décimale : le sizing tient sur 2 000 CAD, il ne produit pas de position
+microscopique.
+
 ## 5. Invariant de sécurité non négociable
 
 **Le runner doit REFUSER de démarrer si l'environnement déclaré et les identifiants ne concordent
