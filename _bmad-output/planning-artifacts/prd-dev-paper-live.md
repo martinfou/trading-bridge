@@ -226,6 +226,24 @@ microscopique.
   continuent d'y apparaître, leur source sera identifiable sans le bruit du bridge. C'est un argument
   supplémentaire pour migrer d'abord.
 
+- **D24** — **Plafond de risque global par compte**, au lieu de budgets indépendants par stratégie :
+  trois pour cent de la NAV en risque simultané (60 CAD sur 2 000), réparti entre les stratégies, avec
+  **refus d'entrée** quand le plafond est atteint. Sans cette règle, cinq stratégies à 15 CAD chacune
+  peuvent porter 75 CAD de risque en même temps sur un compte de 2 000 CAD, soit 3,75 %, et personne ne
+  verrait le total avant l'ouverture simultanée de cinq positions perdantes. C'est la première fois que
+  la taille d'une position dépend de l'état d'une AUTRE stratégie.
+
+  **Ce que ça impose à l'architecture, et c'est non trivial :** les stratégies tournent dans des
+  processus séparés, donc elles ne partagent aucune mémoire. Un plafond commun exige un **registre de
+  risque au niveau du compte**, consulté avant chaque entrée et mis à jour à chaque ouverture et
+  fermeture. Deux difficultés à traiter explicitement en Phase 3 :
+  - **atomicité** : deux stratégies qui entrent au même instant doivent voir la même valeur de risque
+    disponible, sinon le plafond est dépassé par une course ;
+  - **cohérence** : en cas de redémarrage, ce registre doit pouvoir se reconstruire depuis le courtier
+    (positions et ordres réels) et non depuis un fichier local, sinon un état perdu relâche le plafond
+    silencieusement. C'est le même piège que la perte d'état à chaque recréation (D9), appliqué à
+    l'échelle du compte.
+
 ## 5. Invariant de sécurité non négociable
 
 **Le runner doit REFUSER de démarrer si l'environnement déclaré et les identifiants ne concordent
