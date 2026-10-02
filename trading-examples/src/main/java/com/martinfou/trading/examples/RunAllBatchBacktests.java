@@ -3,6 +3,7 @@ package com.martinfou.trading.examples;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Strategy;
 import com.martinfou.trading.data.HistoricalDataCatalog;
@@ -103,7 +104,7 @@ public class RunAllBatchBacktests {
                 
                 try {
                     Strategy strategy = StrategyCatalog.create(strategyId, symbol);
-                    RunContext context = RunContext.forStrategy(strategyId, strategy, symbol, RunMode.BACKTEST, bars, CAPITAL, null);
+                    RunContext context = RunContext.forStrategy(null, strategyId, strategy, symbol, RunMode.BACKTEST, bars, CAPITAL, null, RealCostModel::costFor);
                     BacktestResult result = context.run();
                     
                     successfulRuns++;

@@ -4,6 +4,7 @@ import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.data.HistoricalDataLoader;
 import com.martinfou.trading.strategies.creative.GoldFridayWindowStrategy;
@@ -33,7 +34,7 @@ public class RunGoldFridayWindow {
     static final String GOLD = "XAU_USD";
 
     public static void main(String[] args) throws Exception {
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
 
         if (args.length > 0 && args[0].equals("--wf")) { runWalkForward(cost); return; }
         if (args.length > 0 && args[0].equals("--regime")) { runRegime(cost); return; }
@@ -75,7 +76,7 @@ public class RunGoldFridayWindow {
         System.out.println("\nDONE");
     }
 
-    private static void runOne(BacktestExecutionCost cost, String label,
+    private static void runOne(java.util.function.Function<String, BacktestExecutionCost> cost, String label,
                                com.martinfou.trading.core.Strategy strategy, List<Bar> bars) {
         BacktestResult r = RunContext.forStrategy(null, strategy.name(), strategy, GOLD,
             RunMode.BACKTEST, bars, CAPITAL, null, cost).run();
@@ -85,7 +86,7 @@ public class RunGoldFridayWindow {
     }
 
     /** Walk-forward IS 2006-2015 / OOS 2016-2025 sur les fenêtres clés. */
-    private static void runWalkForward(BacktestExecutionCost cost) throws Exception {
+    private static void runWalkForward(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String[] specs = {"2006-2015", "2016-2025"};
         int[][] windows = {{0, 21}, {0, 8}, {0, 16}, {16, 21}, {13, 21}};
         System.out.println("=== WALK-FORWARD XAU_USD fenêtres vendredi (IS 2006-2015 / OOS 2016-2025) ===");
@@ -107,7 +108,7 @@ public class RunGoldFridayWindow {
     }
 
     /** Régimes : bull 2006-12 / bear 2013-15 / bull2 2016-25. */
-    private static void runRegime(BacktestExecutionCost cost) throws Exception {
+    private static void runRegime(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String[] regimes = {"bull 2006-12", "bear 2013-15", "bull2 2016-25"};
         String[] specs = {"2006-2012", "2013-2015", "2016-2025"};
         int[][] windows = {{0, 21}, {0, 8}, {16, 21}};
@@ -130,7 +131,7 @@ public class RunGoldFridayWindow {
     }
 
     /** Contrôle EUR_USD : l'edge est-il instrument-spécifique (or) ou mécanique ? */
-    private static void runEurControl(BacktestExecutionCost cost) throws Exception {
+    private static void runEurControl(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         var eur = HistoricalDataLoader.loadFromArgs("EUR_USD", "EUR_USD", YEAR_SPEC).bars();
         System.out.println("=== CONTRÔLE EUR_USD — mêmes fenêtres vendredi ===");
         System.out.printf("%-14s %-6s %-6s %-6s %-7s %-12s%n",

@@ -4,6 +4,7 @@ import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.core.Trade;
@@ -57,7 +58,7 @@ public class RunFxMondayReversion {
     static final boolean[] ALL = {true, true, true, true, true};
 
     public static void main(String[] args) throws Exception {
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
         String mode = args.length > 0 ? args[0] : "--scan";
 
         System.out.println("==============================================================");
@@ -83,7 +84,7 @@ public class RunFxMondayReversion {
     }
 
     // ---------------------------------------------------------------- probe
-    private static void probe(BacktestExecutionCost cost) throws Exception {
+    private static void probe(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String sym = "GBP_USD";
         System.out.println("\n--- PROBE : mécanisme sur " + sym + " (2006) ---");
         var loaded = HistoricalDataLoader.loadFromArgs(sym, sym, "2006");
@@ -110,7 +111,7 @@ public class RunFxMondayReversion {
     }
 
     // ----------------------------------------------------------------- scan
-    private static void scan(BacktestExecutionCost cost) throws Exception {
+    private static void scan(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         System.out.println("\n--- SCAN 8 PAIRES : REVERSION 2 jambes (la config) | LONG seule | SHORT seule ---");
         System.out.printf("%-9s | %-31s | %-22s | %-22s%n", "", "REVERSION (2 jambes)", "LONG si W4<0", "SHORT si W4>0");
         System.out.printf("%-9s | %6s %5s %6s %6s %11s | %6s %6s %11s | %6s %6s %11s%n",
@@ -142,7 +143,7 @@ public class RunFxMondayReversion {
     }
 
     // ----------------------------------------------------------------- beta
-    private static void beta(BacktestExecutionCost cost) throws Exception {
+    private static void beta(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         System.out.println("\n=== CONTRÔLE BÊTA / SPÉCIFICITÉ DU JOUR ===");
         System.out.println("Même règle de réversion, appliquée sur chaque jour de la semaine.");
         System.out.println("Si lundi ≈ autres jours → ce n'est pas un effet du lundi mais une réversion générique.");
@@ -162,7 +163,7 @@ public class RunFxMondayReversion {
     }
 
     // ------------------------------------------------------------- momentum
-    private static void momentum(BacktestExecutionCost cost) throws Exception {
+    private static void momentum(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         System.out.println("\n=== CONTRÔLES DIRECTIONNELS (lundi) ===");
         System.out.println("REVERSION (la config) vs MOMENTUM (inverse) vs LONG permanent vs SHORT permanent.");
         System.out.printf("%-9s %-14s %6s %5s %6s %7s %11s %9s%n",
@@ -179,7 +180,7 @@ public class RunFxMondayReversion {
     }
 
     // ------------------------------------------------------------------- wf
-    private static void walkForward(BacktestExecutionCost cost) throws Exception {
+    private static void walkForward(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         System.out.println("\n=== WALK-FORWARD — REVERSION du lundi (IS 2006-2015 / OOS 2016-2026) ===");
         System.out.printf("%-9s %-16s %6s %5s %6s %7s %11s %9s%n",
             "PAIRE", "PÉRIODE", "PF", "WR%", "DD%", "TRADES", "NET$", "$/TRADE");
@@ -194,7 +195,7 @@ public class RunFxMondayReversion {
     }
 
     // --------------------------------------------------------------- regime
-    private static void regime(BacktestExecutionCost cost) throws Exception {
+    private static void regime(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         System.out.println("\n=== RÉGIMES — REVERSION du lundi ===");
         String[][] regs = {{"bull 2006-2012", "2006-2012"}, {"taper 2013-2015", "2013-2015"},
                            {"bull2 2016-2026", "2016-2026"}};
@@ -209,7 +210,7 @@ public class RunFxMondayReversion {
     }
 
     // ------------------------------------------------------------ magnitude
-    private static void magnitude(BacktestExecutionCost cost) throws Exception {
+    private static void magnitude(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         double[] thresholds = {0.0, 0.0025, 0.005, 0.0075, 0.010, 0.015};
         for (Policy pol : new Policy[]{Policy.REVERSION, Policy.REVERSION_LONG_ONLY}) {
             System.out.println("\n=== BALAYAGE DE MAGNITUDE (seuil |W4|) — " + pol + " ===");
@@ -232,7 +233,7 @@ public class RunFxMondayReversion {
     }
 
     // ------------------------------------------------------------------ lag
-    private static void lag(BacktestExecutionCost cost) throws Exception {
+    private static void lag(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         System.out.println("\n=== CONTRÔLE DE FALSIFICATION : signal périmé (semaines de décalage) ===");
         System.out.println("Si W4 de la semaine écoulée n'est pas spécial, les semaines périmées donnent autant.");
         System.out.printf("%-9s %-10s %6s %5s %6s %7s %11s %9s%n",
@@ -255,7 +256,7 @@ public class RunFxMondayReversion {
      * +1.7 bp pour « vendredi haussier ET semaine baissière ». Test moteur du raffinage
      * conceptuel : le lundi ne « révise » pas la semaine, il REBONDIT après une semaine risk-off.
      */
-    private static void f1Filter(BacktestExecutionCost cost) throws Exception {
+    private static void f1Filter(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         System.out.println("\n=== FILTRE F1 : rebond du lundi après une semaine RISK-OFF (ven baissier) ===");
         System.out.printf("%-9s | %-19s | %-19s | %-19s%n", "",
             "REVERSION nu (réf.)", "REV + F1<0 (2 jambes)", "REV + F1<0 (LONG seul)");
@@ -289,7 +290,7 @@ public class RunFxMondayReversion {
      * Robustesse de la MEILLEURE variante identifiée (F1&lt;0 + LONG seul) : walk-forward, régimes,
      * agrégat swap/prix. C'est LA configuration candidate — elle doit passer le split IS/OOS.
      */
-    private static void f1LongOnlyRobustness(BacktestExecutionCost cost) throws Exception {
+    private static void f1LongOnlyRobustness(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         System.out.println("\n=== ROBUSTESSE — F1<0 + LONG SEUL (config candidate) ===");
         System.out.println("\n-- A) Walk-forward IS 2006-2015 / OOS 2016-2026 --");
         System.out.printf("%-9s %-16s %6s %5s %6s %7s %11s %9s%n",
@@ -339,7 +340,7 @@ public class RunFxMondayReversion {
      * sont les seuils de magnitude (|W4| et |F1|). Aucune valeur ne doit dominer seule : on cherche
      * un PLATEAU, pas un pic (règle d'or du pipeline).
      */
-    private static void candidateSweep(BacktestExecutionCost cost) throws Exception {
+    private static void candidateSweep(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         double[] w4th = {0.0, 0.0025, 0.005, 0.0075, 0.010};
         System.out.println("\n=== PLATEAU — F1<0 + LONG seul, balayage du seuil |W4| ===");
         StringBuilder head = new StringBuilder(String.format("%-9s", "PAIRE"));
@@ -360,7 +361,7 @@ public class RunFxMondayReversion {
     }
 
     // --------------------------------------------------------------- basket
-    private static void basket(BacktestExecutionCost cost) throws Exception {
+    private static void basket(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         System.out.println("\n=== AGRÉGAT 8 PAIRES — swap isolé (piège de la taille de panier) ===");
         System.out.printf("%-9s %6s %5s %6s %7s %11s %10s %10s %10s %11s%n",
             "PAIRE", "PF", "WR%", "DD%", "TRADES", "NET$", "SWAP$", "SLIP$", "COMM$", "PRIX$*");
@@ -386,13 +387,13 @@ public class RunFxMondayReversion {
 
     // --------------------------------------------------------------- helper
     private static BacktestResult run(String symbol, Policy policy, boolean[] days, int lagWeeks,
-                                      double minAbsSignal, String yearSpec, BacktestExecutionCost cost) throws Exception {
+                                      double minAbsSignal, String yearSpec, java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         return run(symbol, policy, days, lagWeeks, minAbsSignal, false, yearSpec, cost);
     }
 
     private static BacktestResult run(String symbol, Policy policy, boolean[] days, int lagWeeks,
                                       double minAbsSignal, boolean requireFridayDown, String yearSpec,
-                                      BacktestExecutionCost cost) throws Exception {
+                                      java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         var loaded = HistoricalDataLoader.loadFromArgs(symbol, symbol, yearSpec);
         List<Bar> bars = loaded.bars();
         if (bars.isEmpty()) return null;

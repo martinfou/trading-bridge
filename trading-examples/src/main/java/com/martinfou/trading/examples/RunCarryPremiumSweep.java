@@ -3,6 +3,7 @@ package com.martinfou.trading.examples;
 import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.data.HistoricalDataLoader;
 import com.martinfou.trading.strategies.creative.CarryPremiumStrategy;
@@ -29,7 +30,7 @@ public class RunCarryPremiumSweep {
         System.out.println("== CarryPremium sweep EMA (avec coûts) ==");
         System.out.println("Symbol=" + symbol + " bars=" + bars.size() + " range=" + yearSpec);
 
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
         int[] emas = {160, 200, 240};
         for (int ema : emas) {
             var strategy = new CarryPremiumStrategy("CarryPremium_EMA" + ema, symbol, ema);
