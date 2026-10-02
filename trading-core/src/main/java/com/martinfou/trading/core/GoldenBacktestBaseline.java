@@ -28,7 +28,7 @@ public final class GoldenBacktestBaseline {
     /** Absolute tolerance on max drawdown percentage points. */
     public static final double MAX_DRAWDOWN_TOLERANCE_PCT = 0.01;
 
-    public static final String CAPTURED_AT = "2026-09-30";
+    public static final String CAPTURED_AT = "2026-10-02";
 
     public record Profile(
         int bars,
@@ -51,14 +51,22 @@ public final class GoldenBacktestBaseline {
     /**
      * Re-based 2026-09-30 when the fees/swaps realism model was merged: the previous values were
      * captured with optimistic costs. The engine now charges real commission, spread and swap, so
-     * these numbers are the honest ones (EUR_USD 2012 went from +4.72% to +0.61%). Recorded via
-     * {@code GoldenBaselineCapture}; see {@code docs/testing.md}.
+     * these numbers are the honest ones (EUR_USD 2012 went from +4.72% to +0.61%).
+     *
+     * <p>Re-captured again 2026-10-02, after the 2026-10-01 swap correction ({@code RealCostModel},
+     * swap accounting). The shift is measured, not assumed: {@code ProveGoldenCostShift} replays both
+     * windows and shows the trade set is <b>identical</b> (4 and 68 trades) — only the cost accounting
+     * moved. It is a swap-only shift: the legacy table over-charged the swap ~4×, and re-running with
+     * the corrected swap but the <b>legacy</b> execution cost reproduces these exact numbers
+     * (6.9921 / 30.2550). The measured half-spread of {@code RealCostModel} is therefore <b>not</b>
+     * part of what the golden guards: the default {@code RunContexts.backtest} path still passes
+     * {@code BacktestExecutionCost.DEFAULT}. Recorded via {@code GoldenBaselineCapture}.
      */
     public static final Profile CI_SUBSET = new Profile(
-        744, 4, 0.0045260714285707, 4.5260714285706870, 0.0160909676992726);
+        744, 4, 0.0069920714285707, 6.9920714285706875, 0.0149949882628025);
 
     public static final Profile EUR_USD_2012 = new Profile(
-        8760, 68, 0.0060930357142771, 6.0930357142770575, 0.0679411375084674);
+        8760, 68, 0.0302550357142771, 30.2550357142770700, 0.0645864074441832);
 
     private GoldenBacktestBaseline() {}
 
