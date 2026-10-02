@@ -4,6 +4,7 @@ import com.martinfou.trading.core.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 /**
@@ -207,6 +208,15 @@ public class BacktestEngine {
         log.info("Starting backtest: {} | Bars: {} | Capital: ${}",
             strategy.name(), bars.size(), String.format("%,.2f", initialCapital));
         strategy.reset();
+
+        // Seed the daily-Sharpe equity curve with the starting balance one calendar day
+        // before the first bar. dailySharpeRatio computes day-over-day returns from the
+        // last equity value of each market day; without this seed the first day's P&L has
+        // no prior close and is silently dropped from the return series.
+        if (!bars.isEmpty()) {
+            equityPoints.add(new PerformanceMetrics.EquityPoint(
+                bars.get(0).timestamp().minus(1, ChronoUnit.DAYS), initialCapital));
+        }
 
         // Parse all bars (spot FX: skip Saturday/Sunday UTC — market closed)
         boolean isMultiTimeframe = !strategyTimeframe.equalsIgnoreCase(dataTimeframe);
@@ -698,14 +708,16 @@ public class BacktestEngine {
         double ppy = getPeriodsPerYear();
 
         double sharpe = PerformanceMetrics.dailySharpeRatio(equityPoints);
-        double sortino = PerformanceMetrics.sortinoRatio(periodReturns, riskFreeRate, ppy);
+        // Sortino stays a per-bar measure (see PerformanceMetrics.sortinoRatio javadoc):
+        // it is NOT resampled to a daily step, so do not compare it with the daily Sharpe.
+        double perBarSortino = PerformanceMetrics.sortinoRatio(periodReturns, riskFreeRate, ppy);
         double profitFactor = PerformanceMetrics.profitFactor(tradePnlList);
         double calmar = PerformanceMetrics.calmarRatio(equityCurve);
 
         return new BacktestResult(
             strategy.name(), initialCapital, equity, totalPnl, totalReturnPct,
             totalTrades, winningTrades, losingTrades, winRate, maxDd,
-            avgTradePnl, sharpe, sortino, profitFactor, calmar,
+            avgTradePnl, sharpe, perBarSortino, profitFactor, calmar,
             totalCommission, totalSlippage, totalSwap,
             List.copyOf(equityCurve), List.copyOf(trades),
             bars.isEmpty() ? null : bars.getFirst().timestamp(),
