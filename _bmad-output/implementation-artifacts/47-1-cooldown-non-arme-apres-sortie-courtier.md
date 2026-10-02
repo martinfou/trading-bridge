@@ -3,7 +3,21 @@ baseline_commit: c6f3253120f11caa85a6d3a16e191140f3dedcdf
 ---
 # Story 47.1: Armer le cooldown quand la sortie vient du courtier
 
-Status: ready-for-dev
+Status: done
+
+## Revue indépendante (2026-10-02)
+
+| Relecteur | Verdict | Ce qu'il a trouvé |
+|---|---|---|
+| `agy` passe 1 — invariant-first (`gemini-3.8-flash-high`) | APPROVED | 2 MAJEURS : lecture du drapeau et écriture du compteur au périmètre de la classe concrète, donc une stratégie qui hérite n'est ni remise à plat ni armée |
+| `agy` passe 2 — adversariale (même modèle, prompt invariant + diff inliné) | **NEEDS_FIX** | 2 BLOCKERS (le même axe, dont la séquence complète : `inTrade` reste vrai à vie) + 3 MAJEURS (constante non statique, ordre des deux noms de compteur, stratégies à état `activeSide`) et 1 MINEUR (course d'une barre) |
+| Elliot (relecture senior indépendante, `deepseek-v4-pro`) | APPROVED | A re-mesuré lui-même la couverture : 38 classes `COOLDOWN_BARS`, 39 compteurs, aucun manquant |
+| `agy` passe 3 — confirmation sur le delta final | APPROVED | Constats 1 à 4 répondus ; reste ouvert le seul MINEUR de visibilité mémoire (résidu 7 ci-dessous) |
+
+Traitement des constats : les deux BLOCKERS portaient sur le périmètre des champs dont l'invariant dépend —
+`inTrade` et le compteur — et sont corrigés (lecture et écriture sur toute la hiérarchie). Le reste du
+constat (périmètre de `setFieldValueOpt` pour `symbol` et les six autres champs) est mesuré, volontairement
+non corrigé ici, et consigné au résidu 3.
 
 ## Story
 
@@ -109,9 +123,70 @@ En backtest, toute sortie passe par `closePosition()`, donc le cooldown est **to
    alors que l'ordre **a rempli** (transaction `227`, P&L −12.2505). Un NPE d'analyse de réponse fait donc passer une sortie réussie pour un échec, et c'est la reconciliation qui rattrape l'état. Story à part : parsing défensif du chemin de clôture (classe déjà connue : `41-1-resilience-du-parsing-json-et-gestion-des-exceptions-oanda.md`).
 2. **Le tag de stratégie ne survit pas jusqu'au trade.** Le `MARKET_ORDER` porte `clientExtensions.tag = vwpreversion_USDCHF`, mais le trade retourné par l'API a `clientExtensions: null` (vérifié sur le trade `230`). Toute attribution par transaction (application de bureau, cron de monitoring) voit donc un trade sans stratégie, alors que les ordres du chemin courtier (tags UUID) la portent. À traiter si l'attribution par trade doit être fiable.
 
-## Question ouverte (décision Martin)
+## Décision Martin (D38, 2026-10-02)
 
-Le correctif se déploie **en cours de fenêtre 1**. Deux options : la fenêtre 1 continue (correctif de bug, pas de changement de stratégie ni de sizing) ou la fenêtre 1 se termine au déploiement du correctif et une fenêtre 2 démarre (règle D34 : l'horloge repart à un déploiement). À trancher avant le déploiement, pas après.
+Le correctif se déploie **sans interrompre la fenêtre 1** : ni la stratégie, ni le sizing, ni l'instrument,
+ni la liste des services ne changent, seul un défaut de comportement est corrigé. L'horloge reste celle du
+2026-10-01 18:31 EDT (fin prévue 2026-10-31) et la date de déploiement du correctif est inscrite dans
+`docs/paper-window-log.md`, pour que la période avant/après reste lisible plutôt que mélangée.
+
+## Notes d'implémentation (2026-10-02)
+
+**Commit** : `81beb350` sur `feature/47-1-cooldown-after-broker-exit` (poussée). Non déployé.
+
+**Écart assumé par rapport à la Task 1.** La story prévoyait d'implanter le point d'entrée dans les trois
+stratégies déployées. L'implémentation le met dans le défaut de l'interface `Strategy`, ce qui satisfait
+AC2 plus strictement : une stratégie future qui déclare un cooldown en bénéficie sans que personne pense à
+lui, et aucune valeur n'est recopiée. Mesure qui a motivé ce choix : sur les 38 classes qui déclarent
+`COOLDOWN_BARS`, 38 nomment leur compteur `cooldownBars` et **une** le nomme `cooldownCounter`
+(`ATRExpansionMomentumStrategy`) — un point d'entrée par stratégie aurait laissé courir exactement cette
+classe d'oubli. Le défaut résout donc les deux noms, et `onExternalClose()` reste surchargeable pour un
+compteur nommé autrement ou un cooldown calculé.
+
+**Forme du correctif** : `syncPosition` lit `inTrade` **avant** d'écrire et n'appelle `onExternalClose()`
+que sur la transition vrai→faux (AC4). Le défaut lit la constante `COOLDOWN_BARS` de la stratégie en
+remontant la hiérarchie, ignore une constante absente ou nulle, et `setFieldValueOpt` retourne désormais
+s'il a écrit — c'est ce qui permet de distinguer « champ absent » de « champ écrit ».
+
+**Preuves** :
+
+| Preuve | Résultat |
+|---|---|
+| Nouveau `ExternalCloseCooldownTest` | 5 tests, dont la séquence vwpreversion complète (sortie courtier → 10 barres refusées → entrée) |
+| `LtRSI3MomentumStopTest.reentersAfterBrokerStopReconciliation` | Contrat changé : silencieux pendant les 3 barres de cooldown, entrée sur la 4e (avant : ré-entrée sur la 2e barre) |
+| Pouvoir du test | Worktree au commit parent, mêmes fichiers de test : **3 assertions sur 8 échouent**, dont `the bar right after a broker stop-out must NOT produce an entry (cooldown armed, bar 1 of 10)` à `expected: <true> but was: <false>` |
+| Suite du module | `trading-strategies -am` : **91 tests, 0 échec**, BUILD SUCCESS |
+| Contact courtier | `Fetching last` = 0 dans le log surefire ; compte `-014` **inchangé** (`lastTransactionID` 234 avant/après, balance 1957.0031) — et cela **avec 3 variables `OANDA_*` héritées du shell dans le JVM de test**, donc sous la condition la plus hostile |
+
+**Résidus à ne pas oublier** :
+
+1. **Le déploiement n'est pas fait.** La fenêtre tourne toujours sur le build du 2026-10-01, donc le correctif
+   n'est actif nulle part. Le gate pré-déploiement reste à passer.
+2. **AC6 (parité backtest) est un argument structurel, pas un rejeu.** Toute sortie backtest passe par
+   `closePosition()`, donc le cooldown y était déjà armé ; un rejeu complet sur barres figées n'a pas été fait.
+3. **Périmètre d'écriture de `setFieldValueOpt`, volontairement inchangé.** Les deux passes de revue ont
+   qualifié de BLOCKER le fait que `setFieldValueOpt` ne regarde que la classe concrète. Mesure : le drapeau
+   `inTrade` et le compteur sont maintenant traités sur toute la hiérarchie (c'est ce dont l'invariant a
+   besoin), mais **37 classes héritent leur champ `symbol`** d'une classe de base (`AbstractPropStrategy`,
+   `HarnessScriptedStrategy`, `NewsWeeklyStrategy`, `SeasonalityStrategy`) sans le redéclarer, donc
+   `reconcileInstrument` ne les atteint pas. Élargir cette écriture changerait l'instrument effective de 37
+   stratégies dans un commit sur les cooldowns : c'est un autre défaut, mesuré, qui mérite sa propre story.
+4. **Ambiguïté des deux noms de compteur : aucune instance.** Aucune classe ne déclare `cooldownBars` ET
+   `cooldownCounter` (mesuré) ; si cela arrivait, l'ordre de résolution choisirait arbitrairement et la classe
+   devrait surcharger `onExternalClose()` — c'est écrit dans son javadoc.
+5. **Une stratégie sans drapeau `inTrade` n'a rien à armer.** `AbstractPropStrategy` est la seule classe qui
+   surcharge `syncPosition` et elle ne déclare pas `COOLDOWN_BARS` (mesuré) : le cas « état suivi par
+   `activeSide` » n'a donc rien à armer aujourd'hui.
+6. **Course d'une barre sur la durée du cooldown.** Si la réconciliation d'une sortie intra-barre arrive
+   quelques secondes avant la clôture de cette même barre, c'est cette barre-là qui consomme la première unité
+   du cooldown, donc un cooldown plus court d'une barre que le backtest. Fenêtre de quelques secondes par
+   heure, conséquence d'une barre, aucune position en jeu : non corrigé ici, et le correctif demanderait que
+   la notification transporte l'horodatage de la sortie.
+7. **Visibilité mémoire.** Les écritures par réflexion depuis le fil de réconciliation n'ont pas de garantie
+   formelle de visibilité côté fil de stratégie. C'est une propriété pré-existante de la notification de plat
+   (l'écriture de `inTrade` du correctif C1 a exactement la même), pas quelque chose que ce commit ajoute ;
+   la corriger vraiment veut dire router la notification par la file de la stratégie, ce qui est une
+   conception, pas un correctif.
 
 ## References
 
