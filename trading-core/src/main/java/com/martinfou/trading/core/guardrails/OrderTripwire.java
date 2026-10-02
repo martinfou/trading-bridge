@@ -104,7 +104,9 @@ public final class OrderTripwire {
      * entry, so a directory whose <em>path</em> happens to contain a token (e.g.
      * {@code /home/me/surefire-docs/x.jar}) does NOT count.
      */
-    static boolean isTestRuntime(Map<String, String> env, String classPath) {
+    /** True when this JVM looks like a test runtime (surefire, failsafe, IDE, Gradle). Public so the
+     *  credential registry can use the SAME definition instead of inventing a second one. */
+    public static boolean isTestRuntime(Map<String, String> env, String classPath) {
         if (classPath != null) {
             for (String entry : classPath.split(java.io.File.pathSeparator)) {
                 String fileName = fileNameOf(entry);
@@ -378,7 +380,8 @@ public final class OrderTripwire {
      */
     private static volatile String cachedRuntimeClassPath;
 
-    static String runtimeClassPath() {
+    /** The merged runtime classpath, memoised (exposed for callers that need the same predicate). */
+    public static String runtimeClassPath() {
         String cp = cachedRuntimeClassPath;
         if (cp == null) {
             cp = buildRuntimeClassPath();

@@ -65,27 +65,17 @@ class BrokerAccountRegistryTest {
                 null,
                 null));
 
-        // Production behaviour, exercised by temporarily leaving test mode: an entry whose environment
-        // variables are absent yields NO credentials. Kept because it is the fail-closed path that
-        // matters outside tests; unreachable while the JVM is in test mode, which is the point.
-        String saved = System.getProperty(BrokerAccountRegistry.TEST_PROPERTY);
-        System.clearProperty(BrokerAccountRegistry.TEST_PROPERTY);
-        try {
-            assertFalse(registry.credentialsConfigured("missing-env"));
-            assertTrue(registry.credentials("missing-env").isEmpty());
-        } finally {
-            if (saved != null) {
-                System.setProperty(BrokerAccountRegistry.TEST_PROPERTY, saved);
-            }
-        }
+        // Unchanged by the test-mode fix, and that is deliberate: nothing resolvable means nothing
+        // returned, in every mode. Callers that detect "unconfigured" via isEmpty() are unaffected.
+        assertFalse(registry.credentialsConfigured("missing-env"));
+        assertTrue(registry.credentials("missing-env").isEmpty());
+        assertTrue(registry.credentials("missing-env", java.util.Map.of(), true).isEmpty());
     }
 
     @Test
-    void credentials_inTestMode_neverResolveARealAccountEvenIfTheEnvHasOne() {
-        // The 2026-10-01 incident: an exported .env.paper in the developer's shell was inherited by the
-        // forked test JVM, and the registry resolved that live account and token, so the test suite sent
-        // 12 real orders to the paper account. Whatever the environment says, test mode must yield the
-        // mock sentinels, and the host must not resolve, so no order can leave the JVM.
+    void credentials_inTestRuntime_neverResolveARealAccountEvenIfTheEnvHasOne() {
+        // The 2026-10-01 incident, pinned deterministically: the environment and the classpath are
+        // parameters, so this asserts the rule without depending on the shell that runs it.
         BrokerAccountRegistry registry = BrokerAccountRegistry.ofEntries(
             new BrokerAccountRegistry.AccountEntry(
                 "default",
@@ -100,14 +90,27 @@ class BrokerAccountRegistryTest {
                 null,
                 null));
 
-        assertTrue(System.getProperty(BrokerAccountRegistry.TEST_PROPERTY) != null,
-            "ce test n'a de sens qu'en mode test (propriete posee par surefire)");
-        BrokerCredentials creds = registry.credentials("default").orElseThrow();
-        assertEquals(BrokerAccountRegistry.MOCK_TOKEN, creds.apiToken());
-        assertEquals(BrokerAccountRegistry.MOCK_ACCOUNT_ID, creds.accountId());
-        assertEquals(BrokerAccountRegistry.MOCK_REST_URL, creds.restUrl());
-        assertFalse(creds.restUrl().contains("oanda.com"),
-            "test mode ne doit jamais pointer un domaine courtier");
+        java.util.Map<String, String> dirtyShell = java.util.Map.of(
+            BrokerCredentials.ENV_OANDA_TOKEN, "a-live-token-that-must-never-be-used",
+            BrokerCredentials.ENV_OANDA_ACCOUNT, "101-002-4729622-014");
+
+        // A production JVM DOES resolve those values: that is the behaviour being protected, so assert
+        // it rather than assume it. (testRuntime is passed explicitly because under surefire the real
+        // property is always set, so a test JVM cannot exercise the production branch about itself.)
+        assertEquals("101-002-4729622-014",
+            registry.credentials("default", dirtyShell, false).orElseThrow().accountId());
+
+        // A test JVM must not, whatever the environment says.
+        BrokerCredentials inTest = registry.credentials("default", dirtyShell, true).orElseThrow();
+        assertEquals(BrokerAccountRegistry.MOCK_TOKEN, inTest.apiToken());
+        assertEquals(BrokerAccountRegistry.MOCK_ACCOUNT_ID, inTest.accountId());
+        assertEquals(BrokerAccountRegistry.MOCK_REST_URL, inTest.restUrl());
+        assertFalse(inTest.restUrl().contains("oanda.com"), "test mode must not point at a broker");
+
+        // And an unconfigured account stays empty even in test mode: callers that detect
+        // "unconfigured" via isEmpty() are unaffected by this whole mechanism.
+        assertTrue(registry.credentials("default", java.util.Map.of(), true).isEmpty());
+        assertTrue(registry.credentials("missing-env", dirtyShell, true).isEmpty());
     }
 
     @Test
