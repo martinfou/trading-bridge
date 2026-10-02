@@ -281,6 +281,24 @@ Tester sur **4 paires** avec découpage :
 
 **Règle :** Si OOS1 ou OOS2 a PF < 1.0, la stratégie est **invalide** malgré un bon FULL.
 
+**Définition du Sharpe — décision de Martin, 2026-10-01.** Le Sharpe de la porte est un Sharpe
+**journalier**, calculé sur la courbe d'équité au pas quotidien :
+
+```
+Sharpe_journalier = moyenne(rendements journaliers) / écart-type(rendements journaliers) × √252
+```
+
+Un Sharpe par bougie H1 annualisé par √6240 gonfle le bruit et n'est pas comparable d'une granularité à
+l'autre. Le nombre actuel a déjà produit PF 1.41 avec Sharpe −3.87, et une perte de 25 000 $ avec
+Sharpe +0.24 : un critère qui ne peut ni passer ni échouer quoi que ce soit n'est pas un critère.
+**L'implémentation (`PerformanceMetrics`, lignes 62 et 80) calcule encore l'ancien nombre : tant qu'elle
+n'est pas corrigée, le critère Sharpe n'est pas exploitable et les verdicts se prennent sur PF, DD et la
+stabilité OOS.**
+
+La propriété qui prouve le correctif, et qu'aucun test ne peut écrire pour l'ancien nombre : **la même
+période mesurée en H1 et en H4 doit donner le même Sharpe journalier.** Une implémentation par bougie
+donne deux valeurs différentes pour la même stratégie.
+
 ### 4.4 Validation de position sizing
 
 ```bash
