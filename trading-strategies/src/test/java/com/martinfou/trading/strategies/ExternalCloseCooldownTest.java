@@ -98,6 +98,81 @@ class ExternalCloseCooldownTest {
             "a strategy that names its counter cooldownCounter must be armed too, not silently skipped");
     }
 
+    /** A counter declared on a BASE class, which the flat notification's field scope alone would miss. */
+    private static class InheritedCounterBase {
+        @SuppressWarnings("unused")
+        private static final int COOLDOWN_BARS = 7;
+        @SuppressWarnings("unused")
+        protected int cooldownBars = 0;
+
+        int baseCooldown() { return cooldownBars; }
+    }
+
+    private static final class InheritedCounterStrategy extends InheritedCounterBase implements Strategy {
+        @SuppressWarnings("unused")
+        private boolean inTrade = false;
+
+        @Override public String name() { return "cooldown-inherited"; }
+        @Override public void onBar(Bar bar) { }
+        @Override public void onTick(double bid, double ask, long volume) { }
+        @Override public List<Order> getPendingOrders() { return List.of(); }
+        @Override public void reset() { }
+    }
+
+    @Test
+    @DisplayName("a counter declared on a base class is still armed (the write walks the hierarchy)")
+    void externalCloseArmsInheritedCounter() {
+        InheritedCounterStrategy s = new InheritedCounterStrategy();
+        s.syncPosition(Order.Side.BUY, 1000.0, 1.0900, 1.1200);
+
+        s.syncPosition(null, 0.0, 0.0, 0.0);
+
+        assertEquals(7, s.baseCooldown(),
+            "a counter inherited from a base class must be armed, not left silently at zero");
+    }
+
+    /**
+     * The in-trade flag can be declared on a BASE class: the read and the write then both walk the
+     * hierarchy, so such a strategy is flattened AND armed. With a concrete-class-only pair it would stay
+     * latched in-trade forever and the guard would never fire — the trap the adversarial review pass named.
+     */
+    private static final class InheritedFlagSubclass extends InheritedFlagBase implements Strategy {
+        @SuppressWarnings("unused")
+        private static final int COOLDOWN_BARS = 5;
+        @SuppressWarnings("unused")
+        private int cooldownBars = 0;
+
+        @Override public String name() { return "flag-inherited-sub"; }
+        @Override public void onBar(Bar bar) { }
+        @Override public void onTick(double bid, double ask, long volume) { }
+        @Override public List<Order> getPendingOrders() { return List.of(); }
+        @Override public void reset() { }
+
+        int cooldown() { return cooldownBars; }
+    }
+
+    private static class InheritedFlagBase {
+        @SuppressWarnings("unused")
+        protected boolean inTrade = false;
+
+        boolean baseInTrade() { return inTrade; }
+    }
+
+    @Test
+    @DisplayName("a strategy whose in-trade flag is inherited is flattened AND armed")
+    void inheritedInTradeFlagIsClearedAndArmed() {
+        InheritedFlagSubclass s = new InheritedFlagSubclass();
+        s.syncPosition(Order.Side.BUY, 1000.0, 1.0900, 1.1200);
+        assertTrue(s.baseInTrade(), "precondition: the inherited flag says the strategy is in a position");
+
+        s.syncPosition(null, 0.0, 0.0, 0.0);
+
+        assertFalse(s.baseInTrade(),
+            "an inherited in-trade flag must still be cleared, or the strategy stays latched forever "
+                + "and never trades again while the cooldown guard stays silent");
+        assertEquals(5, s.cooldown(), "and the declared cooldown must be armed on the same transition");
+    }
+
     @Test
     @DisplayName("a broker-side exit arms the strategy's own declared cooldown")
     void externalCloseArmsDeclaredCooldown() {
