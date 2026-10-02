@@ -26,7 +26,7 @@ import java.util.List;
  * @param winRatePct        winning trades / total trades * 100
  * @param maxDrawdownPct    maximum peak-to-trough decline as percentage
  * @param avgTradePnl       arithmetic mean P&amp;L per trade
- * @param sharpeRatio       annualised Sharpe Ratio
+ * @param sharpeRatio       daily Sharpe Ratio (resampled from the equity curve)
  * @param sortinoRatio      annualised Sortino Ratio
  * @param profitFactor      gross profit / gross loss (decimal)
  * @param calmarRatio       annualised return / max drawdown
@@ -107,6 +107,17 @@ public record BacktestResult(
             }
         }
         return returns;
+    }
+
+    /**
+     * Legacy per-bar Sharpe Ratio — the pre-fix engine number, recomputed from the stored
+     * equity curve and {@link #periodsPerYear()}. Diagnostics / comparison only: the gate
+     * reads {@link #sharpeRatio()}, which is now the <em>daily</em> Sharpe (see
+     * {@link PerformanceMetrics#dailySharpeRatio(List)}). Uses the default risk-free rate.
+     */
+    public double perBarSharpeRatioLegacy() {
+        return PerformanceMetrics.perBarSharpeRatioLegacy(
+            periodReturns(), PerformanceMetrics.DEFAULT_RISK_FREE_RATE, periodsPerYear);
     }
 
     /**
