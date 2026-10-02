@@ -4,6 +4,7 @@ import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.data.HistoricalDataLoader;
 import com.martinfou.trading.strategies.creative.GoldTurtleDxyFilterStrategy;
@@ -45,7 +46,7 @@ public class RunGoldTurtleSpxFilter {
     static final int DEFAULT_SMA = 4800;   // ~200 jours de barres H1
 
     public static void main(String[] args) throws Exception {
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
         var xau = HistoricalDataLoader.loadFromArgs(GOLD, GOLD, YEAR_SPEC).bars();
         Map<Long, Double> spx = buildSpxOnXauGrid(xau);
 
@@ -81,7 +82,7 @@ public class RunGoldTurtleSpxFilter {
         System.out.println("\nDONE");
     }
 
-    private static void runSweep(BacktestExecutionCost cost, List<Bar> xau, Map<Long, Double> spx)
+    private static void runSweep(java.util.function.Function<String, BacktestExecutionCost> cost, List<Bar> xau, Map<Long, Double> spx)
             throws Exception {
         int[] periods = {1200, 2400, 3600, 4800, 7200, 9600, 12000};   // ~50→500 jours H1
         System.out.println("=== SWEEP GAUGE SPX XAU_USD (SMA période H1 × mode) ===");
@@ -101,7 +102,7 @@ public class RunGoldTurtleSpxFilter {
         System.out.println("\nDONE");
     }
 
-    private static void runWalkForward(BacktestExecutionCost cost, List<Bar> xau, Map<Long, Double> spx)
+    private static void runWalkForward(java.util.function.Function<String, BacktestExecutionCost> cost, List<Bar> xau, Map<Long, Double> spx)
             throws Exception {
         record Split(String label, String spec) { }
         Split[] splits = {new Split("IS 2006-2015", "2006-2015"), new Split("OOS 2016-2025", "2016-2025")};
@@ -126,7 +127,7 @@ public class RunGoldTurtleSpxFilter {
         System.out.println("\nDONE");
     }
 
-    private static void runRegime(BacktestExecutionCost cost, List<Bar> xau, Map<Long, Double> spx)
+    private static void runRegime(java.util.function.Function<String, BacktestExecutionCost> cost, List<Bar> xau, Map<Long, Double> spx)
             throws Exception {
         String[][] eras = {{"bull 2006-2012", "2006-2012"}, {"bear or 2013-2015", "2013-2015"},
                            {"bull2 2016-2025", "2016-2025"}};
@@ -173,7 +174,7 @@ public class RunGoldTurtleSpxFilter {
         return out;
     }
 
-    private static void runOne(BacktestExecutionCost cost, String label,
+    private static void runOne(java.util.function.Function<String, BacktestExecutionCost> cost, String label,
                                com.martinfou.trading.core.Strategy strat, String symbol, List<Bar> bars) {
         BacktestResult r = RunContext.forStrategy(null, label, strat, symbol,
             RunMode.BACKTEST, bars, CAPITAL, null, cost).run();

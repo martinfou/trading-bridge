@@ -4,6 +4,7 @@ import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.data.HistoricalDataLoader;
 import com.martinfou.trading.strategies.creative.BearishMonthsFadeStrategy;
@@ -33,7 +34,7 @@ public class RunBearishMonthsFade {
     static final String[] PAIRS = {"GBP_USD", "AUD_USD", "NZD_USD", "EUR_USD"};
 
     public static void main(String[] args) throws Exception {
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
 
         if (args.length > 0 && args[0].equals("--wf")) {
             runWalkForward(cost);
@@ -86,7 +87,7 @@ public class RunBearishMonthsFade {
     }
 
     /** Walk-forward : IS 2006-2015 (70%) / OOS 2016-2026 (30%). Paires: GBP, EUR. */
-    private static void runWalkForward(BacktestExecutionCost cost) throws Exception {
+    private static void runWalkForward(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String[] symbols = {"GBP_USD", "EUR_USD"};
         int[][] monthSets = {{5, 8, 11}, {5, 8}};
         String[] monthLabels = {"FAMILLE 5+8+11", "MAY+AUG"};
@@ -117,7 +118,7 @@ public class RunBearishMonthsFade {
     }
 
     /** Sépare le PnL prix du swap (artefact taux constants 2024-26). */
-    private static void runPriceVsSwap(BacktestExecutionCost cost) throws Exception {
+    private static void runPriceVsSwap(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String symbol = "GBP_USD";
         var loaded = HistoricalDataLoader.loadFromArgs(symbol, symbol, "2006-2026");
         List<Bar> bars = loaded.bars();
@@ -135,7 +136,7 @@ public class RunBearishMonthsFade {
     }
 
     /** Décompose la famille par fenêtre (May seul, Aug seul, Nov seul) + IS/OOS. */
-    private static void runDecompose(BacktestExecutionCost cost) throws Exception {
+    private static void runDecompose(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String symbol = "GBP_USD";
         int[][] windows = {{5}, {8}, {11}, {5, 8, 11}};
         String[] labels = {"MAY seul", "AUG seul", "NOV seul", "FAMILLE 5+8+11"};
@@ -157,7 +158,7 @@ public class RunBearishMonthsFade {
     }
 
     /** Décompose la famille par fenêtre avec split IS/OOS (2006-2015 / 2016-2026). */
-    private static void runWfDecompose(BacktestExecutionCost cost) throws Exception {
+    private static void runWfDecompose(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String symbol = "GBP_USD";
         int[][] windows = {{5}, {8}, {11}, {5, 8, 11}};
         String[] labels = {"MAY seul", "AUG seul", "NOV seul", "FAMILLE 5+8+11"};
@@ -181,7 +182,7 @@ public class RunBearishMonthsFade {
     }
 
     /** Sous-ensemble survivant MAY+AUG — multi-paires + IS/OOS. */
-    private static void runMayAug(BacktestExecutionCost cost) throws Exception {
+    private static void runMayAug(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String[] symbols = {"GBP_USD", "EUR_USD", "AUD_USD", "NZD_USD", "USD_JPY", "USD_CHF"};
         int[] mayAug = {5, 8};
 
@@ -203,7 +204,7 @@ public class RunBearishMonthsFade {
     }
 
     /** Régime de marché : bull (2006-2012), bear (2013-2015), bull2 (2016-2026). */
-    private static void runRegime(BacktestExecutionCost cost) throws Exception {
+    private static void runRegime(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String symbol = "GBP_USD";
         int[] mayAug = {5, 8};
         String[] regimes = {"2006-2012", "2013-2015", "2016-2026"};
@@ -225,7 +226,7 @@ public class RunBearishMonthsFade {
     }
 
     /** Sweep robustesse : décalage entrée/sortie ±5 jours (plateau vs pic). */
-    private static void runSweep(BacktestExecutionCost cost) throws Exception {
+    private static void runSweep(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String symbol = "GBP_USD";
         int[] mayAug = {5, 8};
         int[] offsets = {0, 3, 5, 7};

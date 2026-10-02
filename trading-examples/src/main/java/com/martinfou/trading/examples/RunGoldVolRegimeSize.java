@@ -4,6 +4,7 @@ import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.data.HistoricalDataLoader;
@@ -78,7 +79,7 @@ public class RunGoldVolRegimeSize {
     static double[] QUINTS = {0, 20, 40, 60, 80, 100};         // bornes Q1..Q5
 
     public static void main(String[] args) throws Exception {
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
         String mode = args.length > 0 ? args[0] : "--base";
 
         System.out.println("==============================================================");
@@ -147,7 +148,7 @@ public class RunGoldVolRegimeSize {
 
     // ============================================================ CALIBRATION
 
-    private static void baseMode(BacktestExecutionCost cost) throws Exception {
+    private static void baseMode(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         section("P0 CALIBRATION — OR 1u (réf. 43e non-régression : FRI 1.27 / 56.9 % / 5.18 % / 1041 / +$15 131.24 ; WED 1.11)");
         System.out.printf("%-9s %-9s %6s %6s %7s %7s %11s %10s %9s%n",
             "INSTR", "CONFIG", "PF", "WR%", "DD%", "TRADES", "NET$", "SWAP$", "$/TRADE");
@@ -162,7 +163,7 @@ public class RunGoldVolRegimeSize {
 
     // ============================================================ GATE
 
-    private static void gateMode(BacktestExecutionCost cost) throws Exception {
+    private static void gateMode(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         section("GATE OR — n'entrer que si le rang de la VEILLE ∈ [60,100] (haut) vs [0,40] (bas, contrôle contrapositif)");
         System.out.println("(43e : contrapositif POSITIF = gradient d'amplitude, PAS sélection. Ici gate sur une jambe LONGUE.)");
         System.out.printf("%-9s %-9s %-20s %6s %7s %11s %9s%n", "INSTR", "CONFIG", "VAR.", "PF", "TRADES", "NET$", "$/TRADE");
@@ -179,7 +180,7 @@ public class RunGoldVolRegimeSize {
 
     // ============================================================ OVERLAY
 
-    private static void overlayMode(BacktestExecutionCost cost) throws Exception {
+    private static void overlayMode(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         section("OVERLAY OR — taille 2u si rang ≥ 60 sinon 1u — vs FLAT à EXPOSITION ÉGALE (benchmark du 36e)");
         System.out.println("Si le modulateur est un amplificateur de prime de risque, le côté REFUGE (or, long) doit aussi gagner.");
         System.out.printf("%-9s %-9s %-26s %6s %6s %7s %11s %8s %9s%n",
@@ -203,7 +204,7 @@ public class RunGoldVolRegimeSize {
 
     // ============================================================ QUINTILES
 
-    private static void quintileMode(BacktestExecutionCost cost) throws Exception {
+    private static void quintileMode(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         section("GRADIENT — Q1..Q5 du rang de vol de la VEILLE (lecture de l'ORDRE, pas d'une cellule : pitfall du 41e)");
         System.out.println("Q1 = vol la plus BASSE … Q5 = vol la plus HAUTE. Une cellule isolée positive dans un balayage");
         System.out.println("non monotone est un test multiple, pas une découverte. Partition DÉJÀ disjointé => filtre pur.");
@@ -236,7 +237,7 @@ public class RunGoldVolRegimeSize {
 
     // ============================================================ SWEEP
 
-    private static void sweepMode(BacktestExecutionCost cost) throws Exception {
+    private static void sweepMode(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         section("ROBUSTESSE PARAMÉTRIQUE — balayage du seuil (plateau = robuste, pic = curve fitting)");
         for (String[] cfg : new String[][]{{"FRI", "FRI"}, {"WED", "WED"}}) {
             boolean[] d = daysOf(cfg[1]);
@@ -257,7 +258,7 @@ public class RunGoldVolRegimeSize {
 
     // ============================================================ WALK-FORWARD
 
-    private static void wfMode(BacktestExecutionCost cost) throws Exception {
+    private static void wfMode(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         section("WALK-FORWARD — IS 2006-2015 / OOS 2016-2025 (données XAU → 30 déc 2025)");
         System.out.printf("%-9s %-9s %-16s %-20s %6s %7s %11s%n",
             "INSTR", "CONFIG", "PÉRIODE", "VAR.", "PF", "TRADES", "NET$");
@@ -274,7 +275,7 @@ public class RunGoldVolRegimeSize {
 
     // ============================================================ RÉGIMES
 
-    private static void regimeMode(BacktestExecutionCost cost) throws Exception {
+    private static void regimeMode(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         section("RÉGIMES DE MARCHÉ — bull 2006-2012 / taper 2013-2015 / bull2 2016-2025 (FRI)");
         System.out.printf("%-14s %-20s %6s %7s %11s%n", "RÉGIME", "VAR.", "PF", "TRADES", "NET$");
         for (String[] rg : new String[][]{{"bull 2006-2012", "2006-2012"}, {"taper 2013-2015", "2013-2015"}, {"bull2 2016-2025", "2016-2025"}}) {
@@ -287,7 +288,7 @@ public class RunGoldVolRegimeSize {
 
     // ============================================================ CONTRÔLES
 
-    private static void controlMode(BacktestExecutionCost cost) throws Exception {
+    private static void controlMode(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         section("CONTRÔLE 1 — SPÉCIFICITÉ DU JOUR : le même gate/overlay appliqué à LUNDI-JEUDI doit échouer");
         System.out.printf("%-22s %6s %7s %11s %9s%n", "VAR. (Mon-Jeu, BUY or)", "PF", "TRADES", "NET$", "$/TRADE");
         row4("Mon-Jeu baseline 1u", run(GOLD, MON_THU, Order.Side.BUY, null, null, null, OZ, GOLD_YEARS, cost, false));
@@ -315,7 +316,7 @@ public class RunGoldVolRegimeSize {
 
     // ============================================================ EXPOSITION (contrôle décisif IS/OOS)
 
-    private static void exposureMode(BacktestExecutionCost cost) throws Exception {
+    private static void exposureMode(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         section("CONTRÔLE DÉCISIF — OVERLAY vs LEVIER UNIFORME À EXPOSITION ÉGALE, PAR PÉRIODE (IS / OOS / FULL)");
         System.out.println("PF invariant à la quantité ⇒ net(FLAT u) ≈ u × net(baseline 1u). L'overlay ne gagne QUE si");
         System.out.println("son net > le net du FLAT au même u. Un gain full-sample qui disparaît en OOS = artefact d'ère.");
@@ -450,7 +451,7 @@ public class RunGoldVolRegimeSize {
 
     private static BacktestResult run(String symbol, boolean[] days, Order.Side side, String kind,
                                       Double gateLo, Double gateHi, double qty, String yearSpec,
-                                      BacktestExecutionCost cost, boolean overlay) throws Exception {
+                                      java.util.function.Function<String, BacktestExecutionCost> cost, boolean overlay) throws Exception {
         String key = symbol + "|" + yearSpec;
         List<Bar> bars = barsCache.get(key);
         if (bars == null) {

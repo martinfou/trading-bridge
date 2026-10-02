@@ -32,6 +32,9 @@ import java.util.function.BiFunction;
  * OOS1 2019-2022, OOS2 2023-2025. Gate §4.3: PF ≥ 1.05, Sharpe ≥ 0.3, DD ≤ 35%;
  * OOS1/OOS2 PF < 1.0 ⇒ invalid.
  *
+ * Also prints a SWAP-SENSITIVITY sweep (×0/×1/×2) to BOUND the documented error of applying
+ * the 2026 financing snapshot to 2010-2025 history (no historical rate series exist).
+ *
  * Usage:
  *   java -cp "$CP" com.martinfou.trading.examples.RunCostModelReal
  */
@@ -67,6 +70,8 @@ public class RunCostModelReal {
     );
 
     enum SwapHypothesis { LEGACY, CORRECTED, ZERO }
+
+    static final double[] SWAP_FACTORS = {0.0, 1.0, 2.0};
 
     public static void main(String[] args) throws Exception {
         printModelAndProof();
@@ -114,6 +119,8 @@ public class RunCostModelReal {
             System.out.printf("  → part du coût: spread=%.0f%%  swap=%.0f%%  (coût total = %.0f%% du prix pur)%n",
                 pctSpread, pctSwap, pricePnl != 0 ? totalCost / Math.abs(pricePnl) * 100 : 0);
         }
+
+        printSwapSensitivity();
         System.out.println("\nDONE");
     }
 
@@ -126,6 +133,13 @@ public class RunCostModelReal {
     static BacktestExecutionCost AFTER(String symbol) {
         Double mid = RealCostModel.REFERENCE_MIDS.get(symbol);
         return RealCostModel.costFor(symbol, mid == null ? 1.0 : mid);
+    }
+
+    /** Swap-conversion mid: the period-average for gold, the 2026 reference mid for FX. */
+    static double swapMid(String symbol) {
+        if ("XAU_USD".equals(symbol)) return RealCostModel.GOLD_SWAP_MID;
+        Double mid = RealCostModel.REFERENCE_MIDS.get(symbol);
+        return mid == null ? 1.0 : mid;
     }
 
     /** Runs a strategy under an explicit cost profile + swap hypothesis. */
@@ -144,6 +158,50 @@ public class RunCostModelReal {
                 RunMode.BACKTEST, bars, CAPITAL, null, cost).run();
         } finally {
             SwapCalculator.clearRateOverride();
+        }
+    }
+
+    /** Runs a strategy with the corrected swap scaled by {@code factor} (0 = no swap, 2 = double). */
+    static BacktestResult runSwapScaled(Strat s, List<Bar> bars, double factor) throws Exception {
+        try {
+            if (factor == 1.0) {
+                SwapCalculator.clearRateOverride();
+            } else {
+                double l = SwapCalculator.getLongSwap(s.symbol());
+                double sh = SwapCalculator.getShortSwap(s.symbol());
+                SwapCalculator.setRateOverride(s.symbol(), l * factor, sh * factor);
+            }
+            Strategy strategy = s.factory().apply(s.key(), s.symbol());
+            return RunContext.forStrategy(null, s.key(), strategy, s.symbol(),
+                RunMode.BACKTEST, bars, CAPITAL, null, AFTER(s.symbol())).run();
+        } finally {
+            SwapCalculator.clearRateOverride();
+        }
+    }
+
+    // ------------------------------------------------------------------ swap sensitivity
+
+    /** Bounds the "2026 snapshot applied to history" error: does the gate verdict move under ×0/×1/×2? */
+    static void printSwapSensitivity() throws Exception {
+        System.out.println("\n\n############################################################");
+        System.out.println("# SENSIBILITÉ AU SWAP — bornage de l'instantané 2026 appliqué à l'historique");
+        System.out.println("# taux corrigés × {0, 1, 2} sur FULL/IS/OOS1/OOS2 (PF | net $)");
+        System.out.println("# Porte: FULL PF ≥ 1.05, OOS PF ≥ 1.0 (sinon invalide).");
+        System.out.println("############################################################");
+        for (Strat s : STRATS) {
+            List<Bar> full = load(s.symbol(), "2010-2025");
+            System.out.println("\n---- " + s.key() + " (" + s.symbol() + ") ----");
+            System.out.printf("%-7s | %-20s | %-20s | %-20s | %-20s%n",
+                "FACTEUR", "FULL", "IS", "OOS1", "OOS2");
+            for (double f : SWAP_FACTORS) {
+                StringBuilder row = new StringBuilder(String.format("×%-6.1f ", f));
+                for (Window w : WINDOWS) {
+                    List<Bar> bars = slice(full, w.startYear(), w.endYear());
+                    BacktestResult r = runSwapScaled(s, bars, f);
+                    row.append(String.format("| PF %-6.2f net %-9.2f ", r.profitFactor(), r.totalPnl()));
+                }
+                System.out.println(row);
+            }
         }
     }
 
@@ -170,8 +228,10 @@ public class RunCostModelReal {
     static void printModelAndProof() {
         System.out.println("================================================================");
         System.out.println("MODÈLE DE COÛTS AUTORITAIRE — RealCostModel (courtier OANDA practice, 2026-10-01)");
-        System.out.println("================================================================\n");
-        System.out.println("Commission: 0 (compte spread-only, aucune commission par trade)\n");
+        System.out.println("================================================================");
+        System.out.println("Commission: 0 (compte spread-only, aucune commission par trade)");
+        System.out.println("Repli spread: REFUS pour une paire non mesurée (aucun repli sûr).");
+        System.out.println("SWAP: instantané 2026 appliqué à l'historique (borné par le balayage ×0/×1/×2).\n");
 
         System.out.println("1) SPREAD — médiane bid/ask sur 500 bougies H1 price=BA (FEE-AUDIT.md §2).");
         System.out.println("   demi-spread par jambe (aller-retour = 1 spread complet):");
@@ -183,10 +243,10 @@ public class RunCostModelReal {
         System.out.println("\n2) SWAP — OANDA /v3/instruments financing (fraction annuelle) → pips/jour.");
         System.out.println("   Formule: swap[pips/jour] = taux_annuel × mid / (pipSize × 365)");
         System.out.println("   pipSize: JPY et métaux (XAU/XAG) = 0.01 ; autres FX = 0.0001");
+        System.out.println("   XAU_USD utilise le mid MOYEN 2010-2025 (" + RealCostModel.GOLD_SWAP_MID + "), pas le spot 4182.");
         for (Map.Entry<String, double[]> e : RealCostModel.FINANCING_ANNUAL.entrySet()) {
             String sym = e.getKey();
-            Double mid = RealCostModel.REFERENCE_MIDS.get(sym);
-            double p = mid == null ? 1.0 : mid;
+            double p = swapMid(sym);
             double l = RealCostModel.swapPipsPerDay(e.getValue()[0], p, sym);
             double s = RealCostModel.swapPipsPerDay(e.getValue()[1], p, sym);
             System.out.printf("     %-8s  long %+.4f/an → %+.2f pip/j   short %+.4f/an → %+.2f pip/j%n",
@@ -214,14 +274,15 @@ public class RunCostModelReal {
             gjNotional, gjJpyDay, usdJpy, gjJpyDay / usdJpy, USD_CAD, gjJpyDay / usdJpy * USD_CAD);
         System.out.println("      (en pips: pipValue = 0.01×100000/157.925 = 6.33 USD → +5.64/6.33 = +0.89 pip/jour)");
 
-        // c) or: XAU_USD
-        double auR = -0.0569, auP = 4182.07;
+        // c) or: XAU_USD — mid MOYEN de période pour le portage (pas le spot)
+        double auR = -0.0569, auP = RealCostModel.GOLD_SWAP_MID;
         double auNotional = 100 * auP;
         double auUsdDay = auR * auNotional / 365;
-        System.out.println("   c) XAU_USD (métal, quote USD, lot = 100 oz)");
-        System.out.printf("      notional = 100 × 4182.07 = %.0f USD%n", auNotional);
+        System.out.println("   c) XAU_USD (métal, quote USD, lot = 100 oz, mid MOYEN 2010-2025)");
+        System.out.printf("      notional = 100 × %.0f = %.0f USD (moyenne de période; au spot 4182 ce serait 2.5× plus)%n",
+            auP, auNotional);
         System.out.printf("      swap/jour = -0.0569 × %.0f / 365 = %.2f USD/jour → ×%.4f = %.2f CAD/jour%n",
             auNotional, auUsdDay, USD_CAD, auUsdDay * USD_CAD);
-        System.out.println("      (en pips: pipValue = 0.01×100 = 1 USD → -65.2/1 = -65.2 pip/jour ; l'ancienne table disait -2.0)");
+        System.out.println("      (en pips: pipValue = 0.01×100 = 1 USD → -25.9/1 = -25.9 pip/jour ; l'ancienne table disait -2.0)");
     }
 }

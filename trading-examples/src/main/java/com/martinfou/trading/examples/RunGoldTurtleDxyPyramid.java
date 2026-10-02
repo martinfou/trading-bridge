@@ -4,6 +4,7 @@ import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Strategy;
 import com.martinfou.trading.data.HistoricalDataLoader;
@@ -56,7 +57,7 @@ public class RunGoldTurtleDxyPyramid {
     static final double DXY_K = 50.14348112;
 
     public static void main(String[] args) throws Exception {
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
         Map<Long, Double> dxy = buildDxy();
 
         if (args.length > 0 && args[0].equals("--sweep"))  { runSweep(cost, dxy); return; }
@@ -98,7 +99,7 @@ public class RunGoldTurtleDxyPyramid {
     }
 
     /** Sweep maxUnits × step en mode OPPOSITE (XAU_USD). */
-    private static void runSweep(BacktestExecutionCost cost, Map<Long, Double> dxy) throws Exception {
+    private static void runSweep(java.util.function.Function<String, BacktestExecutionCost> cost, Map<Long, Double> dxy) throws Exception {
         var xau = HistoricalDataLoader.loadFromArgs(GOLD, GOLD, YEAR_SPEC).bars();
         int[] units = {1, 2, 3};
         double[] steps = {0.25, 0.5, 1.0};
@@ -120,7 +121,7 @@ public class RunGoldTurtleDxyPyramid {
     }
 
     /** Sweep période DXY × maxUnits en OPPOSITE (plateau paramétrique du filtre). */
-    private static void runDxySweep(BacktestExecutionCost cost, Map<Long, Double> dxy) throws Exception {
+    private static void runDxySweep(java.util.function.Function<String, BacktestExecutionCost> cost, Map<Long, Double> dxy) throws Exception {
         var xau = HistoricalDataLoader.loadFromArgs(GOLD, GOLD, YEAR_SPEC).bars();
         int[] periods = {400, 500, 600, 750};
         int[] units = {1, 2, 3};
@@ -142,7 +143,7 @@ public class RunGoldTurtleDxyPyramid {
     }
 
     /** Walk-forward IS 2006-2015 / OOS 2016-2025 : baseline vs OPPOSITE 1u/2u. */
-    private static void runWalkForward(BacktestExecutionCost cost, Map<Long, Double> dxy) throws Exception {
+    private static void runWalkForward(java.util.function.Function<String, BacktestExecutionCost> cost, Map<Long, Double> dxy) throws Exception {
         System.out.println("=== WALK-FORWARD XAU_USD (IS 2006-2015 / OOS 2016-2025) ===");
         System.out.printf("%-24s %-6s %-6s %-6s %-6s %-7s %-12s%n",
             "CONFIG", "PHASE", "PF", "WR%", "DD%", "TRADES", "NET$");
@@ -170,7 +171,7 @@ public class RunGoldTurtleDxyPyramid {
     }
 
     /** Régime de marché : bull / bear / bull2. */
-    private static void runRegime(BacktestExecutionCost cost, Map<Long, Double> dxy) throws Exception {
+    private static void runRegime(java.util.function.Function<String, BacktestExecutionCost> cost, Map<Long, Double> dxy) throws Exception {
         String[] regimes = {"bull 2006-12", "bear 2013-15", "bull2 2016-25"};
         String[] specs = {"2006-2012", "2013-2015", "2016-2025"};
         System.out.println("=== RÉGIME XAU_USD (OPPOSITE 1u vs 2u vs baseline) ===");
@@ -198,7 +199,7 @@ public class RunGoldTurtleDxyPyramid {
     }
 
     /** Contrôle EUR_USD : la même mécanique + filtre DXY ne doit PAS créer d'edge. */
-    private static void runEurControl(BacktestExecutionCost cost, Map<Long, Double> dxy) throws Exception {
+    private static void runEurControl(java.util.function.Function<String, BacktestExecutionCost> cost, Map<Long, Double> dxy) throws Exception {
         var eur = HistoricalDataLoader.loadFromArgs("EUR_USD", "EUR_USD", YEAR_SPEC).bars();
         System.out.println("=== CONTRÔLE EUR_USD (même mécanique, même filtre DXY) ===");
         System.out.printf("%-26s %-6s %-6s %-6s %-7s %-12s %-10s%n",
@@ -211,7 +212,7 @@ public class RunGoldTurtleDxyPyramid {
         System.out.println("\nDONE");
     }
 
-    private static void runOne(BacktestExecutionCost cost, String label, Strategy strategy,
+    private static void runOne(java.util.function.Function<String, BacktestExecutionCost> cost, String label, Strategy strategy,
                                String symbol, List<Bar> bars) {
         BacktestResult r = RunContext.forStrategy(null, strategy.name(), strategy, symbol,
             RunMode.BACKTEST, bars, CAPITAL, null, cost).run();

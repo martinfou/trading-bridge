@@ -4,6 +4,7 @@ import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.core.Trade;
@@ -61,7 +62,7 @@ public class RunIndexTurtleD1 {
     };
 
     public static void main(String[] args) throws Exception {
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
         String mode = args.length > 0 ? args[0] : "all";
 
         System.out.println("=====================================================================");
@@ -83,7 +84,7 @@ public class RunIndexTurtleD1 {
     // ------------------------------------------------------------------
     // 1. VALIDATION D'IMPLÉMENTATION
     // ------------------------------------------------------------------
-    static void validate(BacktestExecutionCost cost) throws Exception {
+    static void validate(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         System.out.println("\n### 1. VALIDATION D'IMPLÉMENTATION (XAU_USD H1, qty 10, 55/20)");
         System.out.println("    Référence GoldTurtleTrendStrategy : PF 1.17 / WR 41.5% / DD 9.35% / 1594 / +$17 705");
         System.out.printf("%-28s %-6s %-6s %-6s %-7s %-12s%n", "CONFIG", "PF", "WR%", "DD%", "TRADES", "NET$");
@@ -97,7 +98,7 @@ public class RunIndexTurtleD1 {
     // ------------------------------------------------------------------
     // 2. BASELINE INDICES + DÉCOMPOSITION + BENCHMARK
     // ------------------------------------------------------------------
-    static void mainRun(BacktestExecutionCost cost) throws Exception {
+    static void mainRun(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         System.out.println("\n### 2. BASELINE INDICES D1 — Donchian 55/20, quantité 5 ($5/point)");
         System.out.printf("%-22s %-6s %-6s %-6s %-7s %-12s %-8s %-10s %-10s%n",
             "INSTRUMENT", "PF", "WR%", "DD%", "TRADES", "NET$", "RET%", "LONG$", "SHORT$");
@@ -135,7 +136,7 @@ public class RunIndexTurtleD1 {
         }
     }
 
-    static void signatureRow(BacktestExecutionCost cost, String label,
+    static void signatureRow(java.util.function.Function<String, BacktestExecutionCost> cost, String label,
                              com.martinfou.trading.core.Strategy strat, String symbol, List<Bar> bars) {
         BacktestResult r = run(cost, strat, symbol, bars);
         double longPnl = 0, shortPnl = 0; int nl = 0, ns = 0;
@@ -150,7 +151,7 @@ public class RunIndexTurtleD1 {
     // ------------------------------------------------------------------
     // 3. SWEEP CANAUX (plateau vs pic)
     // ------------------------------------------------------------------
-    static void sweep(BacktestExecutionCost cost) throws Exception {
+    static void sweep(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         int[] entries = {40, 55, 70};
         int[] exits = {15, 20, 25};
         for (String[] ix : INDEXES) {
@@ -169,7 +170,7 @@ public class RunIndexTurtleD1 {
     // ------------------------------------------------------------------
     // 4. SWEEP QUANTITÉ (levier : PF invariant, DD/NET scalent ?)
     // ------------------------------------------------------------------
-    static void qtySweep(BacktestExecutionCost cost) throws Exception {
+    static void qtySweep(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         double[] qtys = {2.0, 5.0, 8.0};
         for (String[] ix : INDEXES) {
             List<Bar> bars = loadD1(ix[0], ix[1]);
@@ -188,7 +189,7 @@ public class RunIndexTurtleD1 {
     // ------------------------------------------------------------------
     // 5. WALK-FORWARD + CRISES
     // ------------------------------------------------------------------
-    static void walkForward(BacktestExecutionCost cost) throws Exception {
+    static void walkForward(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String[][] splits = {
             {"IS 2006-2015", "2006-01-01", "2015-12-31"},
             {"OOS 2016-2026", "2016-01-01", "2026-12-31"},
@@ -230,7 +231,7 @@ public class RunIndexTurtleD1 {
     // ------------------------------------------------------------------
     // 6. RÉGIMES
     // ------------------------------------------------------------------
-    static void regime(BacktestExecutionCost cost) throws Exception {
+    static void regime(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String[][] eras = {
             {"2006-2009 GFC", "2006-01-01", "2009-12-31"},
             {"2010-2019 bull", "2010-01-01", "2019-12-31"},
@@ -254,7 +255,7 @@ public class RunIndexTurtleD1 {
     // ------------------------------------------------------------------
     // HELPERS
     // ------------------------------------------------------------------
-    static BacktestResult run(BacktestExecutionCost cost, com.martinfou.trading.core.Strategy strat,
+    static BacktestResult run(java.util.function.Function<String, BacktestExecutionCost> cost, com.martinfou.trading.core.Strategy strat,
                               String symbol, List<Bar> bars) {
         return RunContext.forStrategy(null, strat.name(), strat, symbol,
             RunMode.BACKTEST, bars, CAPITAL, null, cost).run();

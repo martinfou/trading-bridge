@@ -3,6 +3,7 @@ package com.martinfou.trading.examples;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.LotSizing;
 import com.martinfou.trading.data.HistoricalDataLoader;
@@ -78,8 +79,8 @@ public class RunLtRSI3Momentum {
                 var strategy = new LtRSI3Momentum("LtRSI3Momentum", testRun.symbol);
                 double capital = LotSizing.DEFAULT_STARTING_CAPITAL;
 
-                RunContext context = RunContext.forStrategy(strategy, testRun.symbol,
-                    RunMode.BACKTEST, bars, capital);
+                RunContext context = RunContext.forStrategy(null, null, strategy, testRun.symbol,
+                    RunMode.BACKTEST, bars, capital, null, RealCostModel::costFor);
 
                 BacktestResult result = context.run();
                 result.printSummary();

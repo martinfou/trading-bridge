@@ -3,6 +3,7 @@ package com.martinfou.trading.examples;
 import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.data.HistoricalDataLoader;
 
@@ -27,7 +28,7 @@ public class RunHmmSweep {
         List<Bar> bars = loaded.bars();
         System.out.printf("%n=== HMM sweep %s (%d bars) — coûts $0.07 + 0.01%% ===%n%n", symbol, bars.size());
 
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
 
         double[] probMins = {0.55, 0.40, 0.30, 0.20, 0.15};
         double[] sideThreshs = {0.001, 0.0005, 0.002};
