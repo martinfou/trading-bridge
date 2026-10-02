@@ -871,40 +871,46 @@ class RunManagerTest {
     }
 
     /**
-     * Story 48.2, defect 1 — a broker failure during {@code stop()} must never leave the run
-     * RUNNING in the store. The broker is injected into {@code activeBrokers} so
-     * {@code cancelAllAtBroker} (the liquidate path) hits it, and it throws an {@link Error}
-     * rather than a {@code RuntimeException}: {@code cancelAllAtBroker} already swallows
-     * {@code Exception}, so only a non-{@code Exception} throwable escapes and can currently skip
-     * the terminal persistence — which is precisely the durability defect this test pins.
+     * Story 48.2, defect 1 — the genuinely reachable liquidation failure. A broker whose
+     * {@code flattenAllPositions()} reports success but which KEEPS returning open positions
+     * ({@code getPositions()} non-empty) means liquidation really failed: positions remain at the
+     * broker. {@code stop()} must then persist a FAILED status with a durable trace — an explicit
+     * {@code errorMessage} and a {@code liquidation_failed} flag in the persisted payload — so no
+     * tool querying the store ever sees a COMPLETED run with orphan positions.
+     *
+     * <p>On the pre-fix code this test FAILS: {@code flattenAtBroker} only logged "CRITICAL:
+     * N position(s) remain" and {@code stop()} persisted COMPLETED regardless, leaving no trace.
      */
     @Test
-    void stop_runningRun_withBrokerFailure_persistsTerminalStatus(
+    void stop_runningRun_whenPositionsRemainAfterFlatten_persistsFailedWithLiquidationTrace(
             @org.junit.jupiter.api.io.TempDir java.nio.file.Path tempDir) throws Exception {
-        EventStoreConfig config = EventStoreConfig.withDbPath(tempDir.resolve("stop_broker_failure.db"));
+        EventStoreConfig config = EventStoreConfig.withDbPath(tempDir.resolve("stop_flatten_failed.db"));
         try (SqliteEventStore eventStore = new SqliteEventStore(config);
              RunManager manager = new RunManager(eventStore)) {
 
             RunConfigSnapshot snapshot = new RunConfigSnapshot(
                 "LondonOpenRangeBreakout", "EUR_USD", "PAPER", "sample", 100, null, 1000.0, null, null, "PAPER_OANDA"
             );
-            RunRecord record = manager.restoreRun("run-broker-failure", snapshot);
+            RunRecord record = manager.restoreRun("run-flatten-failed", snapshot);
             record.markRunning();
             manager.runRecordStore().save(record); // DB row is now RUNNING
 
-            installActiveBroker(manager, record.runId(), throwingBroker());
+            installActiveBroker(manager, record.runId(), nonFlatteningBroker());
 
-            try {
-                manager.stop(record.runId(), true);
-            } catch (Error expected) {
-                // The broker Error may still propagate out of stop(); the terminal status must
-                // nonetheless have been persisted before the broker was ever contacted.
-            }
+            manager.stop(record.runId(), true);
 
             RunRecord persisted = manager.runRecordStore().get(record.runId()).orElseThrow();
-            assertTrue(persisted.isTerminal(),
-                "stop() must persist a terminal status even when the broker cancel throws; persisted status was "
-                    + persisted.status());
+            assertEquals(RunRecord.Status.FAILED, persisted.status(),
+                "liquidation failure must persist FAILED, not COMPLETED");
+            assertTrue(persisted.errorMessage().isPresent(),
+                "a durable errorMessage is required on liquidation failure");
+            assertTrue(persisted.errorMessage().get().contains("liquidation failed"),
+                "errorMessage must carry the liquidation failure detail, was: "
+                    + persisted.errorMessage().orElse(""));
+            assertTrue(persisted.endedPayload().isPresent(),
+                "a durable payload is required on liquidation failure");
+            assertEquals(Boolean.TRUE, persisted.endedPayload().get().get("liquidation_failed"),
+                "payload must flag liquidation_failed=true");
         }
     }
 
@@ -916,10 +922,11 @@ class RunManagerTest {
      */
     @Test
     void completion_persistsTerminalState_beforePublishingToMemory() throws Exception {
-        try (RuntimeStores.Bundle stores = RuntimeStores.inMemoryWithBroadcast();
-             RunManager manager = new RunManager(stores.eventStore())) {
+        try (RuntimeStores.Bundle stores = RuntimeStores.inMemoryWithBroadcast()) {
 
             java.util.concurrent.atomic.AtomicReference<RunRecord.Status> memStatusAtTerminalSave =
+                new java.util.concurrent.atomic.AtomicReference<>();
+            java.util.concurrent.atomic.AtomicReference<RunManager> managerRef =
                 new java.util.concurrent.atomic.AtomicReference<>();
 
             RunRecordStore observingStore = new RunRecordStore() {
@@ -928,8 +935,11 @@ class RunManagerTest {
                 @Override
                 public void save(RunRecord record) {
                     if (record.status() == RunRecord.Status.COMPLETED) {
+                        RunManager manager = managerRef.get();
                         memStatusAtTerminalSave.set(
-                            manager.getRun(record.runId()).map(RunRecord::status).orElse(null));
+                            manager == null
+                                ? null
+                                : manager.getRun(record.runId()).map(RunRecord::status).orElse(null));
                     }
                     delegate.save(record);
                 }
@@ -939,21 +949,24 @@ class RunManagerTest {
                 @Override public void delete(String runId) { delegate.delete(runId); }
                 @Override public void close() { delegate.close(); }
             };
-            manager.setRunRecordStore(observingStore);
 
-            String runId = manager.startRun(new RunManager.StartRunRequest(
-                "LondonOpenRangeBreakout",
-                "EUR_USD",
-                "BACKTEST",
-                new BarSourceResolver.BarsSource("sample", 100, null),
-                1000.0,
-                null, null, null, null));
+            try (RunManager manager = new RunManager(stores.eventStore(), observingStore)) {
+                managerRef.set(manager);
 
-            RunRecord completed = waitForCompletion(manager, runId);
-            assertEquals(RunRecord.Status.COMPLETED, completed.status());
+                String runId = manager.startRun(new RunManager.StartRunRequest(
+                    "LondonOpenRangeBreakout",
+                    "EUR_USD",
+                    "BACKTEST",
+                    new BarSourceResolver.BarsSource("sample", 100, null),
+                    1000.0,
+                    null, null, null, null));
 
-            assertEquals(RunRecord.Status.RUNNING, memStatusAtTerminalSave.get(),
-                "the terminal state must be persisted before it is published to memory");
+                RunRecord completed = waitForCompletion(manager, runId);
+                assertEquals(RunRecord.Status.COMPLETED, completed.status());
+
+                assertEquals(RunRecord.Status.RUNNING, memStatusAtTerminalSave.get(),
+                    "the terminal state must be persisted before it is published to memory");
+            }
         }
     }
 
@@ -966,19 +979,28 @@ class RunManagerTest {
         brokers.put(runId, broker);
     }
 
-    /** A broker whose {@code cancelAllOrders()} throws an {@link Error}, simulating a hard broker failure. */
-    private static Broker throwingBroker() {
+    /**
+     * A broker whose {@code flattenAllPositions()} reports success (returns 1) but which KEEPS
+     * returning an open position afterwards, simulating a broker that accepts the flatten request
+     * yet still holds the position — the failure {@code flattenAtBroker} detects by re-reading
+     * {@code getPositions()}.
+     */
+    private static Broker nonFlatteningBroker() {
         return (Broker) java.lang.reflect.Proxy.newProxyInstance(
             Broker.class.getClassLoader(),
             new Class<?>[] { Broker.class },
-            (proxy, method, args) -> {
-                if (method.getName().equals("cancelAllOrders")) {
-                    throw new Error("broker unavailable during cancelAllOrders");
+            (proxy, method, args) -> switch (method.getName()) {
+                case "flattenAllPositions" -> 1;
+                case "getPositions" -> java.util.List.of(
+                    new com.martinfou.trading.core.Position(
+                        "EUR_USD", com.martinfou.trading.core.Order.Side.BUY, 1000.0, 1.0850));
+                case "cancelAllOrders" -> 0;
+                default -> {
+                    Class<?> rt = method.getReturnType();
+                    if (rt == boolean.class) yield false;
+                    if (rt == int.class) yield 0;
+                    yield null;
                 }
-                Class<?> rt = method.getReturnType();
-                if (rt == boolean.class) return false;
-                if (rt == int.class) return 0;
-                return null;
             });
     }
 }

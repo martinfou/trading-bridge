@@ -33,6 +33,10 @@ public record RunState(
         return new RunState(newStatus, startedAt, newCompletedAt, newErrorMessage, endedPayload, lastEventAt, restartCount, lastRestartAt);
     }
 
+    public RunState withEndedPayload(Map<String, Object> newPayload) {
+        return new RunState(status, startedAt, completedAt, errorMessage, newPayload, lastEventAt, restartCount, lastRestartAt);
+    }
+
     public RunState withEventAt(Instant newEventAt) {
         return new RunState(status, startedAt, completedAt, errorMessage, endedPayload, newEventAt, restartCount, lastRestartAt);
     }
