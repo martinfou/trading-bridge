@@ -149,3 +149,26 @@ un DD ≤ 6.55 %. Rejeu reproduit par l'orchestrateur lui-même, cellule par cel
 
 Les deux premiers points forment une histoire BMad (spec, story, revue Elliot + les deux passes agy,
 déploiement), pas une entrée de configuration.
+
+## 2026-10-02, 19h00 EDT : panne OANDA, la fenêtre est en pause forcée
+
+Constat mesuré, pas supposé :
+
+- `api-fxpractice.oanda.com/v3/accounts` **sans jeton** répond 401 : le service est joignable et
+  l'authentification s'exécute. Mais **toute requête authentifiée de compte renvoie 503 Service Unavailable
+  en environ 70 ms**, mesuré sur **deux comptes distincts** (-014 papier et -013 dev). Ce n'est donc ni notre
+  clé, ni notre compte, ni un blocage d'IP : c'est le service practice qui est dégradé.
+- La page d'état d'OANDA annonce une **maintenance non planifiée** touchant son système d'authentification
+  (capture transmise par Martin le 2026-10-02).
+- **Conséquence sur la fenêtre :** les runners ne récupèrent plus de nouvelle barre. Dernier cycle traité à
+  **21h00 UTC** (barre de 16h00 EDT), soit deux cycles horaires manqués au moment du constat. Le moniteur
+  continue de s'écrire, donc le runner est vivant mais aveugle : il ne prend plus aucune décision.
+- **Aucune position ouverte** au moment de la panne (consecbar 2 entrées / 2 sorties, vwpreversion
+  3 entrées / 3 sorties). Rien ne traîne sans surveillance : la fenêtre est en pause, pas en danger.
+- Le dashboard web affichait tous ses tuiles à `$—` : c'est son état de repli prévu quand OANDA ne répond
+  pas, pas un bug du hub. Ne pas chercher un défaut côté hermes-web si l'affichage se vide encore.
+- **Le déploiement du correctif de durabilité des runs (48.2) est bloqué par cette panne** : le gate de
+  pré-déploiement ouvre sur un appel OANDA en lecture, qui échoue en 503, et le script de déploiement
+  vérifie ensuite l'état du compte chez le courtier. On ne déploie pas avant le retour de practice.
+- La CI de ce dépôt, elle, n'appelle pas OANDA (tests unitaires seulement) : elle reste exploitable pendant
+  la panne, ce qui a permis de corriger ses échecs sous Java 21 dans la même soirée.
