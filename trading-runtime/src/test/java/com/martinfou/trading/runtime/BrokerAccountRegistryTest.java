@@ -1,8 +1,14 @@
 package com.martinfou.trading.runtime;
 
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import com.martinfou.trading.broker.BrokerCredentials;
 import com.martinfou.trading.core.guardrails.OrderTripwire;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -11,6 +17,46 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BrokerAccountRegistryTest {
+
+    /**
+     * System properties this class manipulates. Kept as a list so the snapshot below cannot fall behind the
+     * body: every earlier leak in this class was one property that somebody forgot to restore.
+     *
+     * <p>{@code IBKR_ACCOUNT_ID} was the second one — set to simulate an environment variable while only the
+     * keys found in the real environment were restored in the local {@code finally}, so the value survived
+     * for the rest of the JVM fork exactly like the test-runtime property did.</p>
+     */
+    private static final List<String> TOUCHED_PROPERTIES =
+        List.of(OrderTripwire.TEST_PROPERTY, "IBKR_ACCOUNT_ID");
+
+    private final Map<String, String> propertiesBefore = new HashMap<>();
+
+    @BeforeEach
+    void captureSystemProperties() {
+        for (String key : TOUCHED_PROPERTIES) {
+            propertiesBefore.put(key, System.getProperty(key));
+        }
+    }
+
+    /**
+     * Puts every property this class touches back exactly as it found it. An earlier version cleared the
+     * test-runtime property in the "IDE run" assertion and left it cleared for the rest of the JVM: every
+     * later test class in the same fork resolved accounts in PRODUCTION mode and ControlSummaryServiceTest
+     * failed with "Unknown broker account: null" (measured 2026-10-02: green alone, red in the module-wide
+     * run, at the pre-change commit too). Restoring from a list means a test method added tomorrow cannot
+     * re-introduce the leak silently.
+     */
+    @AfterEach
+    void restoreSystemProperties() {
+        TOUCHED_PROPERTIES.forEach(key -> {
+            String value = propertiesBefore.get(key);
+            if (value != null) {
+                System.setProperty(key, value);
+            } else {
+                System.clearProperty(key);
+            }
+        });
+    }
 
     @Test
     void listMasked_neverExposesToken() {
