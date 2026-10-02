@@ -315,6 +315,10 @@ class HttpOandaRestClientTest {
         assertNotNull(result);
         assertFalse(result.success());
         assertNotNull(result.errorMessage());
+        // Un ordre refusé doit expliquer POURQUOI: certaines JVM (JDK 21) ne posent aucun message sur
+        // la ConnectException, et c'est ce que la CI sous Java 21 attrape quand le client ne se protège
+        // pas. Un message vide serait tout aussi inexploitable qu'un message nul.
+        assertFalse(result.errorMessage().isBlank(), "un ordre refusé doit expliquer pourquoi");
     }
 
     @Test
