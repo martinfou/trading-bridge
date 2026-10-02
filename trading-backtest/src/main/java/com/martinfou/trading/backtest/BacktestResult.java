@@ -27,7 +27,8 @@ import java.util.List;
  * @param maxDrawdownPct    maximum peak-to-trough decline as percentage
  * @param avgTradePnl       arithmetic mean P&amp;L per trade
  * @param sharpeRatio       daily Sharpe Ratio (resampled from the equity curve)
- * @param sortinoRatio      annualised Sortino Ratio
+ * @param sortinoRatio      annualised Sortino Ratio — <b>per-bar</b> (bar-frequency),
+ *                          NOT the daily step; do not compare with {@code sharpeRatio}
  * @param profitFactor      gross profit / gross loss (decimal)
  * @param calmarRatio       annualised return / max drawdown
  * @param totalCommission   total commission paid
