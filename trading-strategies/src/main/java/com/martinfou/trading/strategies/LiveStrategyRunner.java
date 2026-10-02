@@ -2149,6 +2149,12 @@ public class LiveStrategyRunner implements Runnable {
      * makes when no position remains. Reflective and safe: a strategy that already reset itself via
      * {@code exitPosition()} simply re-affirms a flat state. Must be called AFTER a tracked trade is
      * removed, never before, or it would flatten a still-open position.
+     *
+     * <p>Story 47.1: that same call now also ARMS the strategy's own cooldown ({@code Strategy#onExternalClose}),
+     * because an exit the strategy did not decide used to skip the one rule its backtest always applied —
+     * measured on the window when {@code vwpreversion} re-entered on the bar right after a broker stop-out.
+     * It fires only on the {@code inTrade} true→false transition, so confirming an exit the strategy already
+     * took cannot reset a cooldown that is running.
      */
     private void syncStrategyFlatIfNoOpenPosition(String oandaSymbol) {
         if (oandaSymbol == null) return;
