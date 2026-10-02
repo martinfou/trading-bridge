@@ -1,5 +1,5 @@
 ---
-baseline_commit: c6f325318f0bd0b9d1f5ada59d7bcb5de3ff7c1e
+baseline_commit: c6f3253120f11caa85a6d3a16e191140f3dedcdf
 ---
 # Story 47.1: Armer le cooldown quand la sortie vient du courtier
 
