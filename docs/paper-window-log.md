@@ -72,4 +72,45 @@ synthétiques, donc OANDA l'a rejeté. Avec un stop plausible, ces 12 ordres se 
 
 C'est la raison du fil-piège, et c'est aussi la raison pour laquelle le `lastTransactionID` de
 départ est noté ici : c'est le seul chiffre qui permet de dire, sans confiance aveugle, si quelque
-chose a envoyé un ordre qui n'aurait pas dû.
+quelque chose a envoyé un ordre qui n'aurait pas dû.
+
+---
+
+## Fenêtre 2 — décidée le 2026-10-01, pas encore démarrée
+
+**Décision de Martin (2026-10-01, ~00:15 EDT)** : après rejeu du shortlist sous le vrai modèle de coûts,
+la fenêtre doit observer **« Gold vendredi long × DXY opposé »** (XAU_USD), et l'horloge de 30 jours
+redémarre à son déploiement (règle D34).
+
+Pourquoi ce candidat : au rejeu aux **deux niveaux de spread** (médiane mesurée et médiane × 1,5), il
+tient **toutes** les fenêtres à PF ≥ 1.17 **même au niveau conservateur**, avec un net positif partout et
+un DD ≤ 6.55 %. Rejeu reproduit par l'orchestrateur lui-même, cellule par cellule
+(`research/shortlist-real-costs`, commit `29fdbfbb`) :
+
+| Fenêtre | PF méd. | Net$ méd. | PF ×1,5 | Net$ ×1,5 | Trades |
+|---|---|---|---|---|---|
+| FULL | 1.28 | +4 022 | 1.23 | +2 774 | 471 |
+| IS | 1.23 | +756 | 1.17 | +88 | 252 |
+| OOS1 | 1.40 | +1 398 | 1.34 | +1 072 | 123 |
+| OOS2 | 1.28 | +1 869 | 1.25 | +1 614 | 96 |
+
+### Ce qui bloque encore ce déploiement (constaté, pas supposé)
+
+1. **L'indice dollar n'existe pas dans le chemin live.** Les trois candidats survivants en dépendent :
+   `GoldWeekdayDxyStrategy(name, symbol, Map<Long,Double> dxy)`. Le DXY est **synthétisé en code** depuis
+   cinq paires (EUR_USD 0.576, USD_JPY 0.136, GBP_USD 0.119, USD_CAD 0.091, USD_CHF 0.036, facteur
+   `K = 50.14348112`), toutes servies par OANDA — donc reproductible fidèlement en live, mais il faut un
+   fournisseur et un chemin d'injection : `LiveStrategyRunner` ne tire **qu'un seul instrument**
+   (`priceClient.getCandles(oandaSymbol, granularity, …)`) et rien dans `config/` ne mentionne DXY. La
+   stratégie lit le DXY de la barre **strictement antérieure** : le flux live ne doit servir que des
+   barres fermées, sinon on introduit un look-ahead que le backtest n'avait pas.
+2. **Le stop protecteur ne doit pas changer la stratégie.** La garde du moteur refuse toute entrée sans
+   stop (D30), or une stratégie de session vendredi sort sur le **temps**, pas sur un stop. Le stop ATR
+   attaché doit donc être **prouvé non liant** en mesurant la pire excursion adverse du backtest, avec un
+   rejeu qui confirme que les chiffres ne bougent pas. Attacher un stop sans cette preuve remplacerait
+   silencieusement la stratégie validée par une autre.
+3. **Les verdicts du shortlist sont provisoires** jusqu'au rejeu au sizing imposé par D37 (1 % de risque
+   par transaction, capital identique).
+
+Les deux premiers points forment une histoire BMad (spec, story, revue Elliot + les deux passes agy,
+déploiement), pas une entrée de configuration.

@@ -332,7 +332,15 @@ fenêtre** (la colonne `NET_A$` du rejeu), ou laisser le PF seul décider.
    et `compmomentum` OOS1 de +0.59 à −4.61. Économiquement c'est défendable (un portefeuille majoritairement
    en liquidités gagne le sans-risque), mais la porte juge alors « bats la liquidité » autant que « as-tu un
    edge ». Deux options : garder la soustraction (sens strict, plus dur) ou la mettre à 0 pour l'évaluation
-   de porte. À trancher par Martin.
+   de porte.
+   **TRANCHÉ par Martin (2026-10-01) — D37 : on GARDE la soustraction ET on fixe le sizing.** Tous les
+   backtests de porte se font désormais à **1 % de risque par transaction, capital identique** (10 000 $).
+   Le rf devient alors une charge constante au lieu d'un artefact de sous-dimensionnement, et deux Sharpes
+   ne se comparent que dans ces conditions. Corollaire : **les verdicts du shortlist sont provisoires**
+   jusqu'à leur rejeu à ce sizing, et un backtest ne se compare à la fenêtre paper que s'il tourne au
+   sizing de la fenêtre. C'est exactement la comparabilité backtest ↔ paper qui manquait depuis le début.
+   Le dénominateur du sizing est la **distance au stop** : sans stop, pas de taille (D30), donc chaque
+   stratégie doit avoir un stop — c'est le même mécanisme qui la protège chez le courtier.
 
 ### 4.3.2 Résidus connus du modèle de coûts
 
