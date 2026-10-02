@@ -333,6 +333,38 @@ fenêtre** (la colonne `NET_A$` du rejeu), ou laisser le PF seul décider.
   (`usdPerQuoteUnit` sur une devise de cotation inconnue, `costFor` sur un symbole absent de
   `REFERENCE_MIDS`).
 
+### 4.3.3 Résidus connus du Sharpe journalier (2026-10-01)
+
+Le Sharpe de la porte est désormais un **Sharpe journalier** calculé sur la courbe d'équité, regroupé par
+**jour de marché FX** (clôture 17:00 `America/New_York`, DST-safe), annualisé par **√252**, **taux sans
+risque soustrait** (`DEFAULT_RISK_FREE_RATE = 0.025`). La propriété qui le distingue de l'ancien nombre :
+la même équité échantillonnée en H1 et en H4 donne le **même** Sharpe (mesuré : `4.434117` dans les deux
+cas), alors que l'ancien calcul par bougie donnait 16.52 (H1) contre 30.87 (H4) pour la même stratégie.
+
+- **Le Sharpe dépend maintenant du rapport capital / taille de position, et c'est le point le plus
+  dangereux.** Comme le taux sans risque est soustrait, une stratégie backtestée petite (10 000 $ de
+  capital, positions de 1 000 unités → volatilité journalière implicite ~0,02 %, soit ~2 $/jour) est
+  jugée contre un rf qui est **du même ordre que sa moyenne**. Mesuré : `consecbar` FULL passe de −1.39 à
+  **−9.21** par la seule soustraction du rf ; `ltrsi3` (vol implicite 15,7 %) ne bouge pas. Conséquence
+  pratique : **on ne compare deux Sharpes que s'ils ont été calculés au même capital et au même sizing.**
+  Exiger de battre le sans-risque est le sens voulu de la métrique ; ce n'est pas un bogue, mais un chiffre
+  brut ne se lit pas sans son sizing.
+- `sortinoRatio` reste **par bougie**, et est maintenant **documenté comme tel** au lieu d'être aligné :
+  l'alignement toucherait la persistance, le runtime, la TUI et les rapports (~15 fichiers) ainsi que la
+  comparaison baseline/live du `DriftEngine`, et la porte n'utilise pas le Sortino. Ne pas comparer les
+  deux nombres entre eux.
+- `DriftEngine` compare encore un Sharpe de backtest (désormais journalier) à `SharpeRatio.of(actualTrades)`
+  (par transaction) : incohérence **préexistante**, non résolue.
+- `dailySharpeRatio` utilise la constante 2.5 % et non le `riskFreeRate` configurable de l'engine
+  (`withRiskFreeRate`, utilisé seulement par le Sortino per-bar) : cohérence à trancher un jour.
+- `PERIODS_PER_YEAR = 252` est juste pour FX et métaux, **faux pour un marché 24/7** (crypto : 365) :
+  documenté dans le code, volontairement non paramétré.
+- `std == 0` avec moyenne positive renvoie `+Infinity` (une variance nulle avec rendement positif EST un
+  Sharpe infini) ; la façon dont ce nombre traverse JSON, SQLite et les comparaisons est **sous revue**.
+- Les chiffres Sharpe du rejeu des cinq stratégies ont été produits avec l'ancien modèle de coûts
+  (`BacktestExecutionCost.DEFAULT`) : la colonne PF de ce rejeu est la version « avant coûts réels » et doit
+  être relue depuis la branche `RealCostModel`, jamais recopiée telle quelle.
+
 ### 4.4 Validation de position sizing
 
 ```bash
