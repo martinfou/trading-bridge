@@ -45,6 +45,8 @@ public class BacktestEngine {
     private int totalTrades, winningTrades, losingTrades;
     private final List<Trade> trades = new ArrayList<>();
     private final List<Double> equityCurve = new ArrayList<>();
+    /** Timestamped equity curve (one point per trading bar) for the daily Sharpe resample. */
+    private final List<PerformanceMetrics.EquityPoint> equityPoints = new ArrayList<>();
     /**
      * Hedging-enabled position store. Each symbol can hold multiple independent
      * positions (one per side, plus additional entries). Use {@link Order#isCloseOnly()}
@@ -260,6 +262,7 @@ public class BacktestEngine {
 
             // Track equity curve (once per bar, after processing)
             equityCurve.add(equity);
+            equityPoints.add(new PerformanceMetrics.EquityPoint(bar.timestamp(), equity));
             if (equity > peakEquity) peakEquity = equity;
 
             previousBar = bar;
@@ -694,7 +697,7 @@ public class BacktestEngine {
         List<Double> tradePnlList = trades.stream().map(Trade::pnl).toList();
         double ppy = getPeriodsPerYear();
 
-        double sharpe = PerformanceMetrics.sharpeRatio(periodReturns, riskFreeRate, ppy);
+        double sharpe = PerformanceMetrics.dailySharpeRatio(equityPoints);
         double sortino = PerformanceMetrics.sortinoRatio(periodReturns, riskFreeRate, ppy);
         double profitFactor = PerformanceMetrics.profitFactor(tradePnlList);
         double calmar = PerformanceMetrics.calmarRatio(equityCurve);

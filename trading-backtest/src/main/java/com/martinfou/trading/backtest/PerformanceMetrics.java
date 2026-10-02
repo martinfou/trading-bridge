@@ -3,8 +3,12 @@ package com.martinfou.trading.backtest;
 import com.martinfou.trading.core.Bar;
 
 import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 
 /**
@@ -85,6 +89,86 @@ public final class PerformanceMetrics {
      */
     public static double sharpeRatio(List<Double> periodReturns) {
         return sharpeRatio(periodReturns, DEFAULT_RISK_FREE_RATE);
+    }
+
+    /**
+     * A single point of a per-bar equity curve: the equity value at a bar's
+     * timestamp. Used by {@link #dailySharpeRatio(List)} to resample to daily closes.
+     *
+     * @param timestamp the bar's timestamp (UTC instants are expected)
+     * @param equity    the equity value after that bar
+     */
+    public record EquityPoint(Instant timestamp, double equity) {
+        public EquityPoint {
+            if (timestamp == null) throw new NullPointerException("timestamp");
+        }
+    }
+
+    /**
+     * Daily Sharpe Ratio computed from a per-bar equity curve.
+     *
+     * <p>This is the gate-facing Sharpe (docs/lt-strategy-playbook.md §4.3): the
+     * equity curve is resampled to a <em>daily</em> close (the last equity value of
+     * each UTC calendar day), consecutive day-over-day returns are computed, and the
+     * result is {@code mean / stddev × √252}. The annualisation factor is always
+     * {@value #PERIODS_PER_YEAR} — independent of the bar granularity — so an H1 and an
+     * H4 sampling of the same underlying equity yield the same value.</p>
+     *
+     * <p>Edge cases:</p>
+     * <ul>
+     *   <li>Fewer than 2 distinct days → {@code 0.0};</li>
+     *   <li>Zero standard deviation (flat equity) → {@code 0.0} (never NaN/Infinity);</li>
+     *   <li>A day with bars but no trades still counts as a day whose return is 0;</li>
+     *   <li>Bars whose previous close is zero are skipped to avoid a division by zero.</li>
+     * </ul>
+     *
+     * @param equityCurve per-bar equity points (one value per bar, with the bar timestamp)
+     * @return daily Sharpe Ratio, or 0.0 when undefined
+     */
+    public static double dailySharpeRatio(List<EquityPoint> equityCurve) {
+        if (equityCurve == null) return 0.0;
+
+        // Group by UTC calendar day; the last value of a day is its close.
+        LinkedHashMap<LocalDate, Double> dailyCloses = new LinkedHashMap<>();
+        for (EquityPoint point : equityCurve) {
+            if (point == null) continue;
+            LocalDate day = point.timestamp().atZone(ZoneOffset.UTC).toLocalDate();
+            dailyCloses.put(day, point.equity());
+        }
+        if (dailyCloses.size() < 2) return 0.0;
+
+        List<Double> closes = new ArrayList<>(dailyCloses.values());
+        List<Double> dailyReturns = new ArrayList<>(closes.size() - 1);
+        for (int i = 1; i < closes.size(); i++) {
+            double prev = closes.get(i - 1);
+            if (prev == 0.0) continue; // guard against division by zero
+            dailyReturns.add((closes.get(i) - prev) / prev);
+        }
+        if (dailyReturns.size() < 2) return 0.0;
+
+        double mean = mean(dailyReturns);
+        double std = standardDeviation(dailyReturns);
+        if (std == 0.0 || Double.isNaN(std)) return 0.0;
+
+        double sharpe = (mean / std) * Math.sqrt(PERIODS_PER_YEAR);
+        return Double.isFinite(sharpe) ? sharpe : 0.0;
+    }
+
+    /**
+     * Legacy per-bar Sharpe Ratio, kept for diagnostics/comparison only.
+     *
+     * <p>This is the pre-fix engine Sharpe: period returns are annualised by the
+     * detected {@code periodsPerYear} (e.g. √6240 for H1 forex), which makes the number
+     * granularity-dependent and unfit for the gate. It is <em>not</em> the gate Sharpe;
+     * use {@link #dailySharpeRatio(List)} for the gate (§4.3).</p>
+     *
+     * @param periodReturns   per-bar returns (decimal)
+     * @param riskFreeRate    annual risk-free rate as decimal
+     * @param periodsPerYear  bars-per-year annualisation factor
+     * @return legacy per-bar Sharpe, or 0.0 if undefined
+     */
+    public static double perBarSharpeRatioLegacy(List<Double> periodReturns, double riskFreeRate, double periodsPerYear) {
+        return sharpeRatio(periodReturns, riskFreeRate, periodsPerYear);
     }
 
     // ---------------------------------------------------------------
