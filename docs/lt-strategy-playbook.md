@@ -299,6 +299,18 @@ La propriété qui prouve le correctif, et qu'aucun test ne peut écrire pour l'
 période mesurée en H1 et en H4 doit donner le même Sharpe journalier.** Une implémentation par bougie
 donne deux valeurs différentes pour la même stratégie.
 
+**Observation sur le PF, mesurée le 2026-10-01, à trancher.** `PerformanceMetrics.profitFactor` travaille
+sur une **liste de P&L par transaction**. Conséquence : le PF **voit le spread** (il est dans le P&L de
+la transaction) mais **ne voit pas le swap** (le financement est porté par la courbe d'équité). C'est
+démontré deux fois : le PF est passé de 0.97 à 0.80 quand le modèle de spread a changé, et il est resté
+**identique** sous swap ×0, ×1 et ×2 sur toutes les fenêtres.
+
+Donc une stratégie qui garde ses positions longtemps peut **franchir la porte en PF tout en perdant sur le
+financement**. Sur les stratégies haute fréquence actuelles (spread = 90 à 100 % du coût) ça ne change
+rien, mais sur du portage (or, saisonnalité, tout ce qui tient des jours) ça décide du verdict.
+Question ouverte, décision de Martin : exiger en plus un **net après tous coûts positifs sur chaque
+fenêtre** (la colonne `NET_A$` du rejeu), ou laisser le PF seul décider.
+
 ### 4.4 Validation de position sizing
 
 ```bash
