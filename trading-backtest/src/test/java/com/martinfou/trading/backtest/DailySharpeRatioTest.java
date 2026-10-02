@@ -147,6 +147,24 @@ class DailySharpeRatioTest {
         return r;
     }
 
+    /**
+     * Hand-computed daily Sharpe anchoring the first market-day close on {@code capital}:
+     * returns are {@code (closes[0] − capital) / capital} then consecutive close-to-close.
+     */
+    static double handDailySharpe(double capital, List<Double> closes) {
+        List<Double> returns = new ArrayList<>(closes.size());
+        double prev = capital;
+        for (double c : closes) {
+            if (prev != 0.0) returns.add((c - prev) / prev);
+            prev = c;
+        }
+        double rfDaily = PerformanceMetrics.DEFAULT_RISK_FREE_RATE / PerformanceMetrics.PERIODS_PER_YEAR;
+        double mean = PerformanceMetrics.mean(returns) - rfDaily;
+        double std = PerformanceMetrics.standardDeviation(returns);
+        if (std == 0.0) return 0.0;
+        return (mean / std) * Math.sqrt(PerformanceMetrics.PERIODS_PER_YEAR);
+    }
+
     // ------------------------------------------------------------------ tests
 
     @Test
@@ -231,37 +249,49 @@ class DailySharpeRatioTest {
     }
 
     @Test
-    void firstDayGainIsCapturedWhenInitialBalanceIsSeeded() {
+    void barsAreStampedAtPeriodStartSo16BarClosesDayAnd17BarOpensNext() {
+        // Dukascopy bi5 / OANDA bars are stamped at the START of their period: the bar stamped
+        // 16:00 NY spans 16:00–17:00 and is the LAST bar of the market day (its close is the
+        // 17:00 rollover); the bar stamped 17:00 NY spans 17:00–18:00 and OPENS the next market
+        // day. A close-stamped convention would be the exact opposite, which is why the review's
+        // "Friday 17:00 → Saturday" concern does not apply to this data's timestamping.
+        // Winter (EST = UTC-5): 16:00 NY = 21:00 UTC, 17:00 NY = 22:00 UTC. 2010-01-08 is Friday.
+        assertEquals(LocalDate.of(2010, 1, 8),
+            PerformanceMetrics.marketDay(Instant.parse("2010-01-08T21:00:00Z")), "Friday 16:00 NY closes Friday's market day");
+        assertEquals(LocalDate.of(2010, 1, 9),
+            PerformanceMetrics.marketDay(Instant.parse("2010-01-08T22:00:00Z")), "Friday 17:00 NY opens the next (Saturday) market day");
+    }
+
+    @Test
+    void firstDayGainIsCapturedFromInitialCapital() {
         // All the P&L is earned on day 0 (10k → 11k); every later day is flat at 11k.
         List<Double> daily = new ArrayList<>();
         daily.add(11_000.0);
         for (int i = 1; i < 30; i++) daily.add(11_000.0);
 
-        // Without a starting-balance point the first day has no prior close, its +10 % is
-        // dropped, and the remaining returns are all 0 → Sharpe 0.0 (the bug).
-        double withoutSeed = PerformanceMetrics.dailySharpeRatio(dailyPoints(daily));
-        System.out.printf("[FIRST-DAY-NO-SEED]  daily Sharpe=%.6f%n", withoutSeed);
-        assertEquals(0.0, withoutSeed, 1e-12);
+        // The single-arg overload treats the first point as the starting balance, so a curve
+        // that already begins at 11k has no prior close and the +10 % is dropped → 0.0.
+        double withoutAnchor = PerformanceMetrics.dailySharpeRatio(dailyPoints(daily));
+        System.out.printf("[FIRST-DAY-NO-ANCHOR] daily Sharpe=%.6f%n", withoutAnchor);
+        assertEquals(0.0, withoutAnchor, 1e-12);
 
-        // With the starting balance seeded one day earlier (as BacktestEngine now does),
-        // the first return is +10 % → a clearly positive Sharpe.
-        List<PerformanceMetrics.EquityPoint> pts = new ArrayList<>();
-        pts.add(new PerformanceMetrics.EquityPoint(
-            DAY0.minus(1, ChronoUnit.DAYS).plus(20, ChronoUnit.HOURS), 10_000.0));
-        pts.addAll(dailyPoints(daily));
-        double withSeed = PerformanceMetrics.dailySharpeRatio(pts);
-        System.out.printf("[FIRST-DAY-SEEDED]   daily Sharpe=%.6f%n", withSeed);
-        assertTrue(withSeed > 0.0, "the first day's gain must be captured when the balance is seeded, got " + withSeed);
+        // The capital-anchored overload computes the first return directly from 10k capital
+        // → +10 %, giving a clearly positive Sharpe. This replaces the old synthetic seed.
+        double viaCapital = PerformanceMetrics.dailySharpeRatio(dailyPoints(daily), 10_000.0);
+        System.out.printf("[FIRST-DAY-VIA-CAPITAL] daily Sharpe=%.6f%n", viaCapital);
+        assertTrue(viaCapital > 0.0, "the first day's gain must be captured via initialCapital, got " + viaCapital);
     }
 
     @Test
-    void constantPositiveDailyReturnYieldsInfiniteSharpe() {
+    void constantPositiveDailyReturnIsUnmeasurableAndReturnsZero() {
         // Doubling every day → every daily return is exactly +100 %, std dev == 0, mean > 0.
-        // A zero-variance positive return IS an infinite Sharpe (the ≥0.3 gate must not reject it).
+        // A zero-variance series is unmeasurable: return 0.0 (which fails the ≥0.3 gate),
+        // never +Infinity — a non-finite value would survive to JSON/SQLite persistence and
+        // pass any numeric gate. (flatEquityReturnsZero covers the mean == 0 case.)
         double s = PerformanceMetrics.dailySharpeRatio(dailyPoints(doublingSeries(8)));
-        System.out.printf("[CONSTANT-POSITIVE] daily Sharpe=%s%n", s);
-        assertEquals(Double.POSITIVE_INFINITY, s);
-        // (The mean <= 0 → 0.0 branch — including mean == 0 — is covered by flatEquityReturnsZero.)
+        System.out.printf("[CONSTANT-POSITIVE] daily Sharpe=%.6f%n", s);
+        assertEquals(0.0, s, 1e-12);
+        assertTrue(Double.isFinite(s), "a zero-variance series must not return a non-finite Sharpe");
     }
 
     @Test
@@ -285,5 +315,55 @@ class DailySharpeRatioTest {
         double noRf = (PerformanceMetrics.mean(raw)
             / PerformanceMetrics.standardDeviation(raw)) * Math.sqrt(PerformanceMetrics.PERIODS_PER_YEAR);
         assertTrue(noRf > sharpe, "subtracting the risk-free rate must lower the Sharpe: " + noRf + " vs " + sharpe);
+    }
+
+    // ------------------------------------------------------------------ bootstrap (initialCapital anchor)
+
+    @Test
+    void capitalAnchorCreatesNoWeekendDayWhenFirstBarIsMonday() {
+        // DAY0 is a Monday. The removed engine seed was firstBar − 1 day = Sunday, which
+        // marketDay() would have filed as a phantom Sunday close. The initialCapital overload
+        // does no timestamp arithmetic, so the daily series is exactly Mon..Fri anchored on the
+        // capital — no weekend market day is ever fabricated.
+        List<Double> closes = List.of(10_100.0, 10_200.0, 10_150.0, 10_250.0, 10_300.0); // Mon..Fri
+        double actual = PerformanceMetrics.dailySharpeRatio(dailyPoints(closes), 10_000.0);
+        System.out.printf("[MONDAY-FIRST] daily Sharpe=%.6f%n", actual);
+        assertEquals(handDailySharpe(10_000.0, closes), actual, 1e-9);
+    }
+
+    @Test
+    void dstAutumnFallBackDoesNotDropFirstDayGain() {
+        // US fall-back 2021-11-07 is a 25-hour Sunday. The removed seed (firstBar − 24h) could
+        // land inside that same 25-hour day and be overwritten, dropping the first day's P&L.
+        // The initialCapital overload has no timestamp arithmetic, so the first day's gain is
+        // always (firstClose − capital)/capital regardless of DST.
+        Instant mon = Instant.parse("2021-11-08T15:00:00Z"); // Monday, just after the fall-back
+        List<PerformanceMetrics.EquityPoint> pts = List.of(
+            new PerformanceMetrics.EquityPoint(mon, 10_500.0),                         // Monday close: +5 %
+            new PerformanceMetrics.EquityPoint(mon.plus(1, ChronoUnit.DAYS), 10_600.0), // Tuesday
+            new PerformanceMetrics.EquityPoint(mon.plus(2, ChronoUnit.DAYS), 10_400.0)); // Wednesday
+        double actual = PerformanceMetrics.dailySharpeRatio(pts, 10_000.0);
+        System.out.printf("[DST-AUTUMN] daily Sharpe=%.6f%n", actual);
+        assertEquals(handDailySharpe(10_000.0, List.of(10_500.0, 10_600.0, 10_400.0)), actual, 1e-9);
+    }
+
+    @Test
+    void firstDayWithoutTransactionYieldsGenuineZeroReturn() {
+        // Day 0 closes flat at the capital (no transaction). The capital anchor yields exactly
+        // (10000 − 10000)/10000 = 0 for the first day — a genuine flat return, neither dropped
+        // nor padded with an invented extra day.
+        List<Double> closes = List.of(10_000.0, 10_500.0, 11_000.0);
+        double actual = PerformanceMetrics.dailySharpeRatio(dailyPoints(closes), 10_000.0);
+        System.out.printf("[FLAT-FIRST-DAY] daily Sharpe=%.6f%n", actual);
+        assertEquals(handDailySharpe(10_000.0, closes), actual, 1e-9);
+    }
+
+    @Test
+    void capitalOverloadRejectsDegenerateInputsAndNeverReturnsNonFinite() {
+        assertEquals(0.0, PerformanceMetrics.dailySharpeRatio(null, 10_000.0), 1e-12);
+        assertEquals(0.0, PerformanceMetrics.dailySharpeRatio(dailyPoints(List.of(10_500.0)), 0.0), 1e-12);
+        assertEquals(0.0, PerformanceMetrics.dailySharpeRatio(dailyPoints(List.of(10_500.0)), -1.0), 1e-12);
+        // A single flat day at the capital has one return (0) — fewer than 2 → 0.0, still finite.
+        assertEquals(0.0, PerformanceMetrics.dailySharpeRatio(dailyPoints(List.of(10_000.0)), 10_000.0), 1e-12);
     }
 }
