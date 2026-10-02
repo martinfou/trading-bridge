@@ -2,6 +2,7 @@ package com.martinfou.trading.backtest;
 
 import com.martinfou.trading.core.Bar;
 
+import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -195,8 +196,17 @@ public final class PerformanceMetrics {
         return sharpeFromDailyCloses(closes);
     }
 
-    /** Resamples a per-bar equity curve to one close per FX market day (last value wins). */
-    private static List<Double> resampleDailyCloses(List<EquityPoint> equityCurve) {
+    /**
+     * Resamples a per-bar equity curve to one close per FX market day (last value wins).
+     *
+     * <p>Bars that fall <em>outside</em> the FX market week — the closed window from Friday
+     * 17:00 New York to Sunday 17:00 New York — are dropped before grouping. Dukascopy/OANDA
+     * H1 exports carry a flat report bar stamped Friday 17:00 NY (22:00 UTC in winter) that
+     * {@link #marketDay(Instant)} would otherwise file under <em>Saturday</em>, injecting a
+     * phantom zero-return market day into every week of the series (≈780 days over 2010-2025),
+     * which dilutes the mean and shrinks the standard deviation. See {@link #isFxWeekend(Instant)}.</p>
+     */
+    static List<Double> resampleDailyCloses(List<EquityPoint> equityCurve) {
         List<EquityPoint> sorted = new ArrayList<>(equityCurve.size());
         for (EquityPoint p : equityCurve) {
             if (p != null) sorted.add(p);
@@ -204,6 +214,7 @@ public final class PerformanceMetrics {
         sorted.sort(Comparator.comparing(EquityPoint::timestamp));
         LinkedHashMap<LocalDate, Double> dailyCloses = new LinkedHashMap<>();
         for (EquityPoint p : sorted) {
+            if (isFxWeekend(p.timestamp())) continue; // bars outside the FX market week
             dailyCloses.put(marketDay(p.timestamp()), p.equity());
         }
         return new ArrayList<>(dailyCloses.values());
@@ -262,6 +273,28 @@ public final class PerformanceMetrics {
         return ny.toLocalTime().isBefore(MARKET_DAY_CLOSE)
             ? ny.toLocalDate()
             : ny.toLocalDate().plusDays(1);
+    }
+
+    /**
+     * Whether an instant falls in the FX weekend — the closed window from Friday 17:00 New
+     * York (inclusive) to Sunday 17:00 New York (exclusive).
+     *
+     * <p>Spot FX is closed across this window, so any bar stamped inside it is a carry/report
+     * bar, not a trading bar. Because bars are timestamped at the <em>start</em> of their
+     * period, the first such bar is stamped Friday 17:00 NY (it spans 17:00–18:00, after the
+     * close) and the window ends at Sunday 17:00 NY (whose bar spans 17:00–18:00 and opens the
+     * Monday market day, so it is <em>not</em> weekend). DST-safe — the New York wall clock
+     * decides, not a fixed UTC offset.</p>
+     *
+     * @param timestamp the instant to classify
+     * @return {@code true} if the instant is outside the FX market week
+     */
+    static boolean isFxWeekend(Instant timestamp) {
+        ZonedDateTime ny = timestamp.atZone(MARKET_DAY_ZONE);
+        DayOfWeek dow = ny.getDayOfWeek();
+        return (dow == DayOfWeek.FRIDAY && !ny.toLocalTime().isBefore(MARKET_DAY_CLOSE))
+            || dow == DayOfWeek.SATURDAY
+            || (dow == DayOfWeek.SUNDAY && ny.toLocalTime().isBefore(MARKET_DAY_CLOSE));
     }
 
     /**

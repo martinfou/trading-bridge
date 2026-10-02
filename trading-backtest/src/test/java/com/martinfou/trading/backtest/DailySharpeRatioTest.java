@@ -263,6 +263,55 @@ class DailySharpeRatioTest {
     }
 
     @Test
+    void fridayReportBarDoesNotCreatePhantomSaturdayMarketDay() {
+        // A Friday 17:00 NY report bar (stamped 22:00 UTC in winter EST) is a flat carry bar:
+        // vol == 0 (open == close), equity unchanged. Without the weekend-window filter,
+        // marketDay() files it under SATURDAY, injecting a phantom zero-return market day every
+        // week. The filter must drop it so the series keeps only real market days.
+        Instant mon  = Instant.parse("2024-12-30T21:00:00Z"); // Monday 16:00 NY
+        Instant tue  = Instant.parse("2024-12-31T21:00:00Z");
+        Instant wed  = Instant.parse("2025-01-01T21:00:00Z");
+        Instant thu  = Instant.parse("2025-01-02T21:00:00Z");
+        Instant fri  = Instant.parse("2025-01-03T21:00:00Z"); // Friday 16:00 NY — real close
+        Instant friReport = Instant.parse("2025-01-03T22:00:00Z"); // Friday 17:00 NY — flat report bar
+        Instant mon2 = Instant.parse("2025-01-06T21:00:00Z"); // next Monday
+
+        // The report bar WOULD be filed under Saturday — this is the bug the filter removes.
+        assertEquals(LocalDate.of(2025, 1, 4), PerformanceMetrics.marketDay(friReport),
+            "Friday 17:00 NY must map to Saturday's market day (the phantom the filter drops)");
+
+        List<PerformanceMetrics.EquityPoint> withReport = List.of(
+            new PerformanceMetrics.EquityPoint(mon, 10_100.0),
+            new PerformanceMetrics.EquityPoint(tue, 10_200.0),
+            new PerformanceMetrics.EquityPoint(wed, 10_150.0),
+            new PerformanceMetrics.EquityPoint(thu, 10_250.0),
+            new PerformanceMetrics.EquityPoint(fri, 10_300.0),
+            new PerformanceMetrics.EquityPoint(friReport, 10_300.0), // vol=0: flat close, no return
+            new PerformanceMetrics.EquityPoint(mon2, 10_400.0));
+
+        List<PerformanceMetrics.EquityPoint> withoutReport = List.of(
+            new PerformanceMetrics.EquityPoint(mon, 10_100.0),
+            new PerformanceMetrics.EquityPoint(tue, 10_200.0),
+            new PerformanceMetrics.EquityPoint(wed, 10_150.0),
+            new PerformanceMetrics.EquityPoint(thu, 10_250.0),
+            new PerformanceMetrics.EquityPoint(fri, 10_300.0),
+            new PerformanceMetrics.EquityPoint(mon2, 10_400.0));
+
+        // Six retained market days (Mon..Fri + next Mon) — never a phantom Saturday.
+        assertEquals(6, PerformanceMetrics.resampleDailyCloses(withReport).size(),
+            "the Friday report bar must not create a 7th (Saturday) market day");
+        assertEquals(List.of(10_100.0, 10_200.0, 10_150.0, 10_250.0, 10_300.0, 10_400.0),
+            PerformanceMetrics.resampleDailyCloses(withReport));
+
+        // The report bar is fully neutral: the daily Sharpe with and without it is identical.
+        double withSharpe = PerformanceMetrics.dailySharpeRatio(withReport, 10_000.0);
+        double withoutSharpe = PerformanceMetrics.dailySharpeRatio(withoutReport, 10_000.0);
+        System.out.printf("[PHANTOM-SATURDAY] with report bar=%.9f  without=%.9f%n", withSharpe, withoutSharpe);
+        assertEquals(withoutSharpe, withSharpe, 1e-12,
+            "a flat Friday report bar must not change the daily Sharpe at all");
+    }
+
+    @Test
     void firstDayGainIsCapturedFromInitialCapital() {
         // All the P&L is earned on day 0 (10k → 11k); every later day is flat at 11k.
         List<Double> daily = new ArrayList<>();
@@ -284,11 +333,13 @@ class DailySharpeRatioTest {
 
     @Test
     void constantPositiveDailyReturnIsUnmeasurableAndReturnsZero() {
-        // Doubling every day → every daily return is exactly +100 %, std dev == 0, mean > 0.
-        // A zero-variance series is unmeasurable: return 0.0 (which fails the ≥0.3 gate),
-        // never +Infinity — a non-finite value would survive to JSON/SQLite persistence and
-        // pass any numeric gate. (flatEquityReturnsZero covers the mean == 0 case.)
-        double s = PerformanceMetrics.dailySharpeRatio(dailyPoints(doublingSeries(8)));
+        // Doubling every (business) day → every daily return is exactly +100 %, std dev == 0,
+        // mean > 0. A zero-variance series is unmeasurable: return 0.0 (which fails the ≥0.3
+        // gate), never +Infinity — a non-finite value would survive to JSON/SQLite persistence
+        // and pass any numeric gate. (flatEquityReturnsZero covers the mean == 0 case.)
+        // Five points (Mon–Fri) span no weekend, so the weekend-drop does not collapse the
+        // Fri→Mon span into one +700 % return and the series stays constant at +100 %/day.
+        double s = PerformanceMetrics.dailySharpeRatio(dailyPoints(doublingSeries(5)));
         System.out.printf("[CONSTANT-POSITIVE] daily Sharpe=%.6f%n", s);
         assertEquals(0.0, s, 1e-12);
         assertTrue(Double.isFinite(s), "a zero-variance series must not return a non-finite Sharpe");
@@ -297,13 +348,17 @@ class DailySharpeRatioTest {
     @Test
     void riskFreeRateIsSubtractedFromDailyReturns() {
         List<Double> daily = increasingSeries(60);
-        double sharpe = PerformanceMetrics.dailySharpeRatio(dailyPoints(daily));
+        List<PerformanceMetrics.EquityPoint> pts = dailyPoints(daily);
+        double sharpe = PerformanceMetrics.dailySharpeRatio(pts);
 
-        // Hand-recompute the same way: raw close-to-close returns, then mean − rfDaily over
-        // the raw std dev (std is unchanged by subtracting a constant).
+        // Hand-recompute from the SAME resampled daily closes the metric uses (weekend bars are
+        // now dropped, so the raw `daily` list — which spans 60 calendar days — is no longer the
+        // resampled series). Raw close-to-close returns, then mean − rfDaily over the raw std dev
+        // (std is unchanged by subtracting a constant).
+        List<Double> closes = PerformanceMetrics.resampleDailyCloses(pts);
         List<Double> raw = new ArrayList<>();
-        for (int i = 1; i < daily.size(); i++) {
-            raw.add((daily.get(i) - daily.get(i - 1)) / daily.get(i - 1));
+        for (int i = 1; i < closes.size(); i++) {
+            raw.add((closes.get(i) - closes.get(i - 1)) / closes.get(i - 1));
         }
         double rfDaily = PerformanceMetrics.DEFAULT_RISK_FREE_RATE / PerformanceMetrics.PERIODS_PER_YEAR;
         double expected = ((PerformanceMetrics.mean(raw) - rfDaily)
