@@ -39,6 +39,9 @@ public final class OrderTripwire {
     /** Environment variable that authorises order dispatch. */
     public static final String ENV_ALLOW_ORDERS = "TB_ALLOW_ORDERS";
 
+    /** The system property that marks a JVM as a test runtime (set by the surefire configurations). */
+    public static final String TEST_PROPERTY = "trading.bridge.test";
+
     /** Guardrails policy document referenced by the refusal message. */
     public static final String GUARDRAILS_DOC = "docs/TRADING-GUARDRAILS.md";
 
@@ -107,6 +110,13 @@ public final class OrderTripwire {
     /** True when this JVM looks like a test runtime (surefire, failsafe, IDE, Gradle). Public so the
      *  credential registry can use the SAME definition instead of inventing a second one. */
     public static boolean isTestRuntime(Map<String, String> env, String classPath) {
+        // The surefire property is checked HERE, so every caller (the tripwire's own decision, its test
+        // door, and the credential registry) shares one answer to "am I a test runtime?". Before this,
+        // the property lived only in the credential registry, which meant a JVM marked by the property
+        // but carrying no test runner on its classpath could still have orders authorised by the flag.
+        if (System.getProperty(TEST_PROPERTY) != null) {
+            return true;
+        }
         if (classPath != null) {
             for (String entry : classPath.split(java.io.File.pathSeparator)) {
                 String fileName = fileNameOf(entry);
@@ -379,6 +389,11 @@ public final class OrderTripwire {
      * directly.
      */
     private static volatile String cachedRuntimeClassPath;
+
+    /** The canonical predicate against the real environment and classpath of this JVM. */
+    public static boolean isTestRuntimeNow() {
+        return isTestRuntime(System.getenv(), runtimeClassPath());
+    }
 
     /** The merged runtime classpath, memoised (exposed for callers that need the same predicate). */
     public static String runtimeClassPath() {

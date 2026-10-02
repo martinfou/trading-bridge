@@ -2,6 +2,7 @@ package com.martinfou.trading.runtime;
 
 import org.junit.jupiter.api.Test;
 import com.martinfou.trading.broker.BrokerCredentials;
+import com.martinfou.trading.core.guardrails.OrderTripwire;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -73,7 +74,7 @@ class BrokerAccountRegistryTest {
         // returned, in every mode. Callers that detect "unconfigured" via isEmpty() are unaffected.
         assertFalse(registry.credentialsConfigured("missing-env"));
         assertTrue(registry.credentials("missing-env").isEmpty());
-        assertTrue(registry.credentials("missing-env", java.util.Map.of(), true).isEmpty());
+        assertTrue(registry.credentials("missing-env", java.util.Map.of(), "/home/x/surefire-booter.jar").isEmpty());
     }
 
     @Test
@@ -98,23 +99,39 @@ class BrokerAccountRegistryTest {
             BrokerCredentials.ENV_OANDA_TOKEN, "a-live-token-that-must-never-be-used",
             BrokerCredentials.ENV_OANDA_ACCOUNT, "101-002-4729622-014");
 
-        // A production JVM DOES resolve those values: that is the behaviour being protected, so assert
-        // it rather than assume it. (testRuntime is passed explicitly because under surefire the real
-        // property is always set, so a test JVM cannot exercise the production branch about itself.)
-        assertEquals("101-002-4729622-014",
-            registry.credentials("default", dirtyShell, false).orElseThrow().accountId());
+        // A production JVM DOES resolve those values: assert it rather than assume it. The surefire
+        // property is cleared for this one assertion, the same way ControlPlaneServerTest does it,
+        // because under surefire the property is always set and a test JVM cannot exercise the
+        // production branch about itself.
+        String saved = System.getProperty(OrderTripwire.TEST_PROPERTY);
+        System.clearProperty(OrderTripwire.TEST_PROPERTY);
+        try {
+            assertEquals("101-002-4729622-014",
+                registry.credentials("default", dirtyShell, "/opt/app/libs/trading-runtime.jar")
+                    .orElseThrow().accountId());
+        } finally {
+            if (saved != null) {
+                System.setProperty(OrderTripwire.TEST_PROPERTY, saved);
+            }
+        }
 
         // A test JVM must not, whatever the environment says.
-        BrokerCredentials inTest = registry.credentials("default", dirtyShell, true).orElseThrow();
+        BrokerCredentials inTest = registry.credentials("default", dirtyShell, "/home/x/surefire-booter.jar")
+            .orElseThrow();
         assertEquals(BrokerAccountRegistry.MOCK_TOKEN, inTest.apiToken());
         assertEquals(BrokerAccountRegistry.MOCK_ACCOUNT_ID, inTest.accountId());
         assertEquals(BrokerAccountRegistry.MOCK_REST_URL, inTest.restUrl());
         assertFalse(inTest.restUrl().contains("oanda.com"), "test mode must not point at a broker");
 
-        // And an unconfigured account stays empty even in test mode: callers that detect
+        // And an unconfigured account stays empty even in a test runtime: callers that detect
         // "unconfigured" via isEmpty() are unaffected by this whole mechanism.
-        assertTrue(registry.credentials("default", java.util.Map.of(), true).isEmpty());
-        assertTrue(registry.credentials("missing-env", dirtyShell, true).isEmpty());
+        assertTrue(registry.credentials("default", java.util.Map.of(), "/home/x/surefire-booter.jar").isEmpty());
+        assertTrue(registry.credentials("missing-env", dirtyShell, "/home/x/surefire-booter.jar").isEmpty());
+
+        // An IDE run is a test runtime too: idea_rt, with the property cleared, must still substitute.
+        System.clearProperty(OrderTripwire.TEST_PROPERTY);
+        assertNotEquals("101-002-4729622-014",
+            registry.credentials("default", dirtyShell, "/Applications/idea_rt.jar").orElseThrow().accountId());
     }
 
     @Test
