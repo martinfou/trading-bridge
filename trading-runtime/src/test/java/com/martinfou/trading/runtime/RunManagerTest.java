@@ -671,6 +671,36 @@ class RunManagerTest {
         return false;
     }
 
+    /**
+     * Waits for the PERSISTED status, not the in-memory one. {@code RunManager.run()} marks the record
+     * COMPLETED one call before {@code notifyTransition} saves it, so reading the DB row at the instant the
+     * in-memory status flips is a race: measured 2026-10-02, the gate failed twice with
+     * {@code expected: <COMPLETED> but was: <RUNNING>}. This still times out (and so still fails) if the
+     * terminal status is never persisted, which is the property the test guards.
+     */
+    private static RunRecord waitForPersistedStatus(
+            RunManager manager, String runId, RunRecord.Status expected) throws InterruptedException {
+        for (int i = 0; i < 200; i++) {
+            RunRecord persisted = manager.runRecordStore().get(runId).orElse(null);
+            if (persisted != null) {
+                if (persisted.status() == expected) {
+                    return persisted;
+                }
+                if (persisted.isTerminal()) {
+                    // Include the persisted cause when there is one: without it, a FAILED run only tells
+                    // the CI reader that the status was wrong, not why the run failed.
+                    String detail = persisted.errorMessage()
+                        .map(err -> " (cause: " + err + ")")
+                        .orElse("");
+                    throw new AssertionError("run " + runId + " reached persisted status "
+                        + persisted.status() + " but expected " + expected + detail);
+                }
+            }
+            Thread.sleep(25);
+        }
+        throw new AssertionError("timeout waiting for persisted status " + expected + " on run " + runId);
+    }
+
     @Test
     void testRunRecordDBPersistence(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tempDir) throws Exception {
         EventStoreConfig config = EventStoreConfig.withDbPath(tempDir.resolve("test_persistence.db"));
@@ -689,10 +719,11 @@ class RunManagerTest {
                 null
             ));
 
-            waitForCompletion(manager, runId);
-
             // Assert that the run was saved in SQLite run record store
-            RunRecord record = manager.runRecordStore().get(runId).orElseThrow();
+            // A single bounded wait on the PERSISTED status. Waiting on the in-memory record first is
+            // redundant: it is marked COMPLETED one call before the save, so that wait returns too early
+            // and the DB read that followed was the race (see waitForPersistedStatus).
+            RunRecord record = waitForPersistedStatus(manager, runId, RunRecord.Status.COMPLETED);
             assertEquals(runId, record.runId());
             assertEquals("LondonOpenRangeBreakout", record.strategyId());
             assertEquals(RunRecord.Status.COMPLETED, record.status());
