@@ -1,0 +1,432 @@
+=== RunSeasonalAdageAudit | 2026-10-02T11:08:56Z ===
+=====================================================================
+48e — ADAGES SAISONNIERS : audit de la 2e bibliothèque + mesure propre
+2 octobre 2026 | FX 8 paires + XAU + 3 indices D1 | barres RÉELLES (high>low)
+=====================================================================
+
+=== A) INTÉGRITÉ DE SeasonalityAnalyzer (trading-data) ===
+Source : computeProfile() — l'agrégation mensuelle fait
+  if (currTime.getMonth() != prevTime.getMonth()) monthlyReturns.add(ret)
+  où ret = (curr.close - prev.close)/prev.close d'UNE SEULE barre H1
+  (celle de la bascule de mois en America/New_York), sur les barres CONTINUES.
+
+
+--- EUR/USD --- (693600 barres brutes lues par l'analyseur, 6168 jours réels via HistoricalDataLoader)
+annoncé : best=DECEMBER (+1.011%) | worst=MAY (-0.772%) | avg/yr -0.36% | totalYears=20
+A1) HORODATAGE BRUT : 1,136,073,600,000 → 1,779,231,600,000  (unités : millisecondes epoch)
+    décodage CORRECT (BarStore, /1 000) : 2006-01-01T00:00:00Z → 2026-05-19T23:00:00Z
+    décodage BUG (/1 000 000) : 1970-01-14T03:34:33Z → 1970-01-21T14:13:51Z  ⇒ 693600 barres dans un intervalle de 10719 minutes
+    (avant correctif : totalYears=1, best=worst=JANUARY, tous les hit rates à 0, dayOfWeek = un seul jour, hourOfDay = 2 heures)
+A2) SOURCE : pas de 60 s = 524159, pas de 3600 s = 169420 ⇒ le fichier fusionné MÉLANGE M1 et H1 ;
+    barres plates (high <= low, carry) = 205713 / 693600 = 29.7 %
+A3) APRÈS CORRECTIF : 12/12 mois renseignés (avant : 1 mois vide), hit max 65 %, totalYears=20 (avant : 1)
+    dayOfWeekReturns : SUNDAY +0.0002  WEDNESDAY +0.0001  THURSDAY +0.0001  | ... | MONDAY +0.0000  SATURDAY +0.0000  FRIDAY -0.0003  
+    hourOfDayReturns : 02 +0.0018  01 +0.0014  13 +0.0013  | ... | 10 -0.0013  00 -0.0020  11 -0.0022  
+MOIS       annoncé %    hit annoncé  | VRAI %       hit vrai  
+janv       -0.689       45           | -0.77        42.1      
+févr       -0.408       38           | -0.41        38.1      
+mars       0.565        57           | 0.57         57.1      
+avr        0.942        57           | 0.94         57.1      
+mai        -0.772       38           | -0.84        33.3      
+juin       0.492        60           | 0.31         57.9      
+juil       0.241        55           | 0.42         57.9      
+août       -0.233       45           | -0.37        42.1      
+sept       -0.288       45           | -0.32        42.1      
+oct        -0.482       50           | -0.42        52.6      
+nov        -0.184       55           | -0.22        52.6      
+déc        1.011        65           | 1.00         63.2      
+→ amplitude moyenne des 12 mois : bibliothèque 0.526% vs mesure propre 0.549%  ⇒ écart ×1.04
+→ best/worst : annoncé DECEMBER/MAY vs VRAI DECEMBER (+1.00%) / MAY (-0.84%)
+
+--- USD/CAD --- (693600 barres brutes lues par l'analyseur, 6167 jours réels via HistoricalDataLoader)
+annoncé : best=OCTOBER (+0.812%) | worst=APRIL (-1.471%) | avg/yr +1.26% | totalYears=20
+A1) HORODATAGE BRUT : 1,136,073,600,000 → 1,779,231,600,000  (unités : millisecondes epoch)
+    décodage CORRECT (BarStore, /1 000) : 2006-01-01T00:00:00Z → 2026-05-19T23:00:00Z
+    décodage BUG (/1 000 000) : 1970-01-14T03:34:33Z → 1970-01-21T14:13:51Z  ⇒ 693600 barres dans un intervalle de 10719 minutes
+    (avant correctif : totalYears=1, best=worst=JANUARY, tous les hit rates à 0, dayOfWeek = un seul jour, hourOfDay = 2 heures)
+A2) SOURCE : pas de 60 s = 524159, pas de 3600 s = 169420 ⇒ le fichier fusionné MÉLANGE M1 et H1 ;
+    barres plates (high <= low, carry) = 205781 / 693600 = 29.7 %
+A3) APRÈS CORRECTIF : 12/12 mois renseignés (avant : 1 mois vide), hit max 70 %, totalYears=20 (avant : 1)
+    dayOfWeekReturns : SUNDAY +0.0026  TUESDAY +0.0000  THURSDAY +0.0000  | ... | SATURDAY +0.0000  MONDAY -0.0000  WEDNESDAY -0.0001  
+    hourOfDayReturns : 00 +0.0019  22 +0.0019  14 +0.0012  | ... | 02 -0.0013  01 -0.0014  20 -0.0025  
+MOIS       annoncé %    hit annoncé  | VRAI %       hit vrai  
+janv       0.606        65           | 0.67         68.4      
+févr       0.178        43           | 0.18         42.9      
+mars       0.106        43           | 0.11         42.9      
+avr        -1.471       29           | -1.47        28.6      
+mai        -0.021       48           | 0.05         52.4      
+juin       0.181        50           | 0.24         52.6      
+juil       -0.383       50           | -0.50        47.4      
+août       0.518        60           | 0.59         63.2      
+sept       0.351        55           | 0.30         52.6      
+oct        0.812        65           | 0.82         63.2      
+nov        0.663        70           | 0.71         73.7      
+déc        -0.139       55           | -0.04        57.9      
+→ amplitude moyenne des 12 mois : bibliothèque 0.452% vs mesure propre 0.474%  ⇒ écart ×1.05
+→ best/worst : annoncé OCTOBER/APRIL vs VRAI OCTOBER (+0.82%) / APRIL (-1.47%)
+
+--- XAU/USD --- (174725 barres brutes lues par l'analyseur, 6215 jours réels via HistoricalDataLoader)
+annoncé : best=JANUARY (+3.502%) | worst=JUNE (-0.465%) | avg/yr +12.29% | totalYears=19
+A1) HORODATAGE BRUT : 1,136,073,600,000 → 1,767,135,600,000  (unités : millisecondes epoch)
+    décodage CORRECT (BarStore, /1 000) : 2006-01-01T00:00:00Z → 2025-12-30T23:00:00Z
+    décodage BUG (/1 000 000) : 1970-01-14T03:34:33Z → 1970-01-21T10:52:15Z  ⇒ 174725 barres dans un intervalle de 10518 minutes
+    (avant correctif : totalYears=1, best=worst=JANUARY, tous les hit rates à 0, dayOfWeek = un seul jour, hourOfDay = 2 heures)
+A2) SOURCE : pas de 60 s = 0, pas de 3600 s = 174705 ⇒ le fichier fusionné MÉLANGE M1 et H1 ;
+    barres plates (high <= low, carry) = 54334 / 174725 = 31.1 %
+A3) APRÈS CORRECTIF : 12/12 mois renseignés (avant : 1 mois vide), hit max 74 %, totalYears=19 (avant : 1)
+    dayOfWeekReturns : SUNDAY +0.0326  FRIDAY +0.0046  WEDNESDAY +0.0025  | ... | TUESDAY +0.0009  SATURDAY +0.0000  MONDAY -0.0016  
+    hourOfDayReturns : 22 +0.0267  23 +0.0242  02 +0.0104  | ... | 13 -0.0065  20 -0.0087  21 -0.0128  
+MOIS       annoncé %    hit annoncé  | VRAI %       hit vrai  
+janv       3.502        74           | 3.50         73.7      
+févr       1.006        55           | 1.01         55.0      
+mars       0.661        45           | 0.66         45.0      
+avr        1.768        65           | 1.77         65.0      
+mai        -0.134       45           | -0.13        45.0      
+juin       -0.465       40           | -0.47        40.0      
+juil       1.444        65           | 1.44         65.0      
+août       1.665        60           | 1.66         60.0      
+sept       -0.139       40           | -0.14        40.0      
+oct        0.877        60           | 0.88         60.0      
+nov        0.854        50           | 0.85         50.0      
+déc        0.716        60           | 0.72         60.0      
+→ amplitude moyenne des 12 mois : bibliothèque 1.103% vs mesure propre 1.103%  ⇒ écart ×1.00
+→ best/worst : annoncé JANUARY/JUNE vs VRAI JANUARY (+3.50%) / JUNE (-0.47%)
+
+=== B) MATRICE MENSUELLE PROPRE (fin de mois → fin de mois, barres réelles) ===
+IS = 2006-2015 | OOS = 2016-2026 | ctrl = hold non conditionné de MÊME longueur (dérive)
+bp = points de base (1 bp = 0.01 %) — seuil de survie FX A/R ≈ 2.1 bp (39e)
+
+--- EUR_USD   2006-01-01 → 2026-05-19 ---
+MOIS    n       mean%   mean bp hit%     t       IS%      OOS%    
+janv    19      -0.77   -77.2   42.1    -1.02   -1.74    0.10    
+févr    21      -0.41   -40.8   38.1    -1.14   -0.07    -0.71   
+mars    21      0.57    56.5    57.1    1.05    0.65     0.49    
+avr     21      0.94    94.2    57.1    1.74    1.54     0.40    
+mai     21      -0.84   -83.8   33.3    -1.21   -1.60    -0.14   
+juin    19      0.31    31.4    57.9    0.96    0.63     -0.04   
+juil    19      0.42    41.6    57.9    0.71    0.24     0.61    
+août    19      -0.37   -36.8   42.1    -0.84   -0.60    -0.11   
+sept    19      -0.32   -32.4   42.1    -0.43   0.25     -0.96   
+oct     19      -0.42   -41.9   52.6    -0.64   -0.19    -0.67   
+nov     19      -0.22   -22.3   52.6    -0.32   -0.78    0.39    
+déc     19      1.00    99.9    63.2    1.29    1.07     0.92    
+  meilleur mois : déc +1.00% | ctrl 21 j +0.02% | au-dessus de la dérive
+
+--- GBP_USD   2006-01-01 → 2026-05-19 ---
+MOIS    n       mean%   mean bp hit%     t       IS%      OOS%    
+janv    19      0.38    37.7    52.6    0.73    -0.05    0.76    
+févr    21      -0.72   -71.8   38.1    -1.54   -0.55    -0.87   
+mars    21      -0.20   -19.8   52.4    -0.48   -0.57    0.14    
+avr     21      1.42    142.3   85.7    3.04    2.30     0.62    
+mai     21      -0.54   -53.6   23.8    -0.80   -0.43    -0.63   
+juin    19      -0.10   -10.1   63.2    -0.16   0.98     -1.31   
+juil    19      0.66    66.5    57.9    1.34    0.81     0.50    
+août    19      -1.03   -102.8  31.6    -1.72   -1.30    -0.73   
+sept    19      -0.52   -52.3   42.1    -0.88   -0.29    -0.78   
+oct     19      -0.05   -5.1    57.9    -0.06   0.16     -0.29   
+nov     19      0.02    2.0     36.8    0.03    -1.15    1.32    
+déc     19      -0.56   -56.2   36.8    -1.33   -1.33    0.30    
+  meilleur mois : avr +1.42% | ctrl 21 j -0.06% | au-dessus de la dérive
+
+--- USD_JPY   2006-01-01 → 2026-05-19 ---
+MOIS    n       mean%   mean bp hit%     t       IS%      OOS%    
+janv    19      -0.44   -44.5   36.8    -0.70   -0.52    -0.38   
+févr    21      0.45    44.6    47.6    0.60    1.04     -0.10   
+mars    20      0.63    63.1    60.0    1.35    1.16     0.10    
+avr     20      -0.25   -25.1   40.0    -0.40   -0.24    -0.26   
+mai     20      0.34    34.1    55.0    0.71    0.14     0.55    
+juin    18      0.19    18.5    66.7    0.34    -0.08    0.52    
+juil    19      -1.35   -135.0  31.6    -2.76   -1.12    -1.60   
+août    19      -0.12   -12.1   52.6    -0.27   -0.47    0.27    
+sept    19      0.42    41.9    52.6    0.83    -0.20    1.11    
+oct     19      0.57    57.2    63.2    0.90    -0.43    1.69    
+nov     19      0.24    24.2    42.1    0.27    0.67     -0.23   
+déc     19      0.10    10.1    52.6    0.13    0.72     -0.59   
+  meilleur mois : mars +0.63% | ctrl 21 j +0.14% | au-dessus de la dérive
+
+--- AUD_USD   2006-01-01 → 2026-05-19 ---
+MOIS    n       mean%   mean bp hit%     t       IS%      OOS%    
+janv    17      -0.54   -54.2   41.2    -0.61   -1.48    0.52    
+févr    20      0.04    3.6     60.0    0.07    0.92     -0.85   
+mars    20      0.70    69.6    55.0    0.93    0.88     0.51    
+avr     20      1.14    113.7   60.0    1.68    2.78     -0.50   
+mai     20      -1.11   -111.4  40.0    -1.17   -1.74    -0.49   
+juin    17      0.54    53.6    70.6    0.91    0.40     0.73    
+juil    18      0.75    74.7    61.1    1.01    0.93     0.51    
+août    19      -1.39   -138.6  21.1    -2.24   -2.07    -0.62   
+sept    19      -0.40   -40.1   47.4    -0.36   0.02     -0.87   
+oct     18      0.36    36.0    66.7    0.30    1.14     -0.62   
+nov     18      -0.87   -86.7   38.9    -1.14   -1.68    0.15    
+déc     18      0.27    27.2    44.4    0.37    0.39     0.12    
+  meilleur mois : avr +1.14% | ctrl 21 j +0.03% | au-dessus de la dérive
+
+--- USD_CAD   2006-01-01 → 2026-05-19 ---
+MOIS    n       mean%   mean bp hit%     t       IS%      OOS%    
+janv    19      0.67    66.9    68.4    1.00    2.03     -0.56   
+févr    21      0.18    17.8    42.9    0.39    -0.32    0.63    
+mars    21      0.11    10.6    42.9    0.22    0.15     0.06    
+avr     21      -1.47   -147.1  28.6    -2.86   -2.53    -0.51   
+mai     21      0.05    5.3     52.4    0.08    -0.03    0.13    
+juin    19      0.24    24.1    52.6    0.43    1.00     -0.60   
+juil    19      -0.50   -50.0   47.4    -0.86   -0.63    -0.36   
+août    19      0.59    59.0    63.2    1.28    0.89     0.25    
+sept    19      0.30    29.8    52.6    0.44    -0.09    0.73    
+oct     19      0.82    82.3    63.2    0.90    0.67     1.00    
+nov     19      0.71    71.3    73.7    1.51    1.44     -0.10   
+déc     19      -0.04   -4.3    57.9    -0.10   0.15     -0.26   
+  meilleur mois : oct +0.82% | ctrl 21 j +0.08% | au-dessus de la dérive
+
+--- NZD_USD   2006-01-01 → 2026-05-19 ---
+MOIS    n       mean%   mean bp hit%     t       IS%      OOS%    
+janv    18      -0.85   -84.7   44.4    -0.79   -1.79    0.09    
+févr    20      -0.11   -11.1   40.0    -0.21   0.21     -0.44   
+mars    20      0.34    33.6    60.0    0.38    0.88     -0.21   
+avr     21      0.82    81.9    57.1    1.23    2.06     -0.31   
+mai     20      -0.76   -76.1   35.0    -0.73   -1.60    0.08    
+juin    18      0.23    23.2    55.6    0.28    0.31     0.13    
+juil    18      0.63    63.3    61.1    0.90    0.91     0.29    
+août    17      -1.54   -154.0  29.4    -1.69   -1.86    -1.08   
+sept    17      0.47    46.8    64.7    0.40    0.80     -0.00   
+oct     18      -0.24   -24.2   38.9    -0.22   0.57     -1.26   
+nov     19      0.05    5.2     42.1    0.06    -1.71    2.01    
+déc     19      1.39    138.6   78.9    2.23    2.11     0.59    
+  meilleur mois : déc +1.39% | ctrl 21 j +0.00% | au-dessus de la dérive
+
+--- USD_CHF   2006-01-01 → 2026-05-19 ---
+MOIS    n       mean%   mean bp hit%     t       IS%      OOS%    
+janv    19      0.32    31.8    57.9    0.39    0.46     0.19    
+févr    20      0.31    31.3    60.0    0.64    -0.06    0.69    
+mars    20      -0.30   -30.3   35.0    -0.60   -0.73    0.12    
+avr     21      -0.57   -57.4   42.9    -0.80   -1.12    -0.08   
+mai     21      0.44    43.8    52.4    0.65    1.25     -0.30   
+juin    19      -0.97   -97.3   21.1    -2.22   -1.34    -0.57   
+juil    19      -0.62   -62.0   42.1    -1.06   -0.26    -1.03   
+août    19      0.10    10.3    52.6    0.23    0.30     -0.12   
+sept    19      0.90    90.5    63.2    1.10    0.79     1.03    
+oct     18      0.31    31.0    44.4    0.72    -0.04    0.75    
+nov     18      0.35    34.8    50.0    0.56    0.69     -0.09   
+déc     19      -1.60   -160.2  31.6    -1.83   -1.81    -1.37   
+  meilleur mois : sept +0.90% | ctrl 21 j -0.14% | au-dessus de la dérive
+
+--- GBP_JPY   2006-01-01 → 2026-05-19 ---
+MOIS    n       mean%   mean bp hit%     t       IS%      OOS%    
+janv    20      -0.05   -4.9    60.0    -0.07   -0.54    0.36    
+févr    21      -0.27   -26.6   42.9    -0.29   0.48     -0.94   
+mars    21      0.65    64.9    61.9    1.20    0.58     0.71    
+avr     21      1.47    146.9   81.0    2.90    2.04     0.95    
+mai     21      -0.26   -25.6   52.4    -0.34   -0.32    -0.20   
+juin    20      0.46    46.4    80.0    0.53    0.90     0.03    
+juil    20      -0.64   -64.0   40.0    -1.35   -0.34    -0.94   
+août    20      -1.11   -111.4  30.0    -1.74   -1.77    -0.46   
+sept    20      -0.09   -9.5    55.0    -0.14   -0.49    0.30    
+oct     20      0.59    59.1    70.0    0.57    -0.21    1.39    
+nov     20      0.33    32.6    60.0    0.34    -0.48    1.13    
+déc     20      -0.32   -32.2   55.0    -0.37   -0.59    -0.06   
+  meilleur mois : avr +1.47% | ctrl 21 j +0.07% | au-dessus de la dérive
+
+--- XAU_USD   2006-01-01 → 2025-12-30 ---
+MOIS    n       mean%   mean bp hit%     t       IS%      OOS%    
+janv    19      3.50    350.2   73.7    3.57    3.96     3.09    
+févr    20      1.01    100.6   55.0    0.97    1.24     0.78    
+mars    20      0.66    66.1    45.0    0.72    -1.14    2.47    
+avr     20      1.77    176.8   65.0    1.69    1.39     2.14    
+mai     20      -0.13   -13.4   45.0    -0.14   -0.61    0.34    
+juin    20      -0.47   -46.5   40.0    -0.43   -1.05    0.12    
+juil    20      1.44    144.4   65.0    1.51    0.78     2.11    
+août    20      1.66    166.5   60.0    1.58    2.36     0.97    
+sept    20      -0.14   -13.9   40.0    -0.10   0.16     -0.44   
+oct     20      0.88    87.7    60.0    0.75    0.19     1.56    
+nov     20      0.85    85.4    50.0    0.64    1.98     -0.27   
+déc     20      0.72    71.6    60.0    0.69    -0.82    2.25    
+  meilleur mois : janv +3.50% | ctrl 21 j +0.80% | au-dessus de la dérive
+
+--- S&P500_MES   2006-01-03 → 2026-08-21 ---
+MOIS    n       mean%   mean bp hit%     t       IS%      OOS%    
+janv    20      0.06    5.6     55.0    0.05    -1.39    1.24    
+févr    21      -0.04   -4.1    47.6    -0.04   0.58     -0.60   
+mars    21      0.93    93.4    61.9    0.91    2.09     -0.12   
+avr     21      2.21    221.1   81.0    2.11    2.61     1.85    
+mai     21      0.78    77.9    76.2    0.91    -0.31    1.77    
+juin    21      0.16    15.9    52.4    0.17    -1.62    1.78    
+juil    21      2.27    227.1   76.2    3.19    1.52     2.96    
+août    21      0.26    25.9    66.7    0.34    -0.53    0.97    
+sept    20      -0.46   -46.3   55.0    -0.43   0.24     -1.16   
+oct     20      0.93    92.9    60.0    0.67    1.31     0.54    
+nov     20      2.15    214.7   70.0    2.31    0.17     4.13    
+déc     20      0.61    61.5    70.0    0.78    0.98     0.25    
+  meilleur mois : juil +2.27% | ctrl 21 j +0.84% | au-dessus de la dérive
+
+--- Nasdaq_MNQ   2006-01-03 → 2026-08-21 ---
+MOIS    n       mean%   mean bp hit%     t       IS%      OOS%    
+janv    20      0.71    70.9    65.0    0.52    -1.12    2.21    
+févr    21      0.18    18.0    42.9    0.20    1.17     -0.72   
+mars    21      1.62    162.0   66.7    1.45    2.63     0.70    
+avr     21      2.70    269.8   71.4    1.87    3.22     2.23    
+mai     21      1.89    189.0   66.7    1.55    -0.12    3.72    
+juin    21      0.84    83.5    61.9    0.73    -1.21    2.70    
+juil    21      2.89    288.7   81.0    2.95    2.55     3.19    
+août    21      1.01    100.7   66.7    1.05    0.22     1.72    
+sept    20      -0.08   -8.4    50.0    -0.06   1.22     -1.39   
+oct     20      1.47    147.2   60.0    0.98    2.21     0.73    
+nov     20      1.77    176.8   70.0    1.52    -0.21    3.75    
+déc     20      0.51    50.9    60.0    0.57    0.84     0.18    
+  meilleur mois : juil +2.89% | ctrl 21 j +1.31% | au-dessus de la dérive
+
+--- Russell_M2K   2017-07-10 → 2026-08-21 ---
+MOIS    n       mean%   mean bp hit%     t       IS%      OOS%    
+janv    9       1.95    195.0   66.7    0.86    0.00     1.95    
+févr    9       -0.29   -28.9   55.6    -0.16   0.00     -0.29   
+mars    9       -3.55   -355.4  44.4    -1.36   0.00     -3.55   
+avr     9       1.01    101.3   55.6    0.38    0.00     1.01    
+mai     9       1.91    190.9   77.8    1.23    0.00     1.91    
+juin    9       2.51    251.3   77.8    1.50    0.00     2.51    
+juil    9       2.80    279.8   77.8    1.64    0.00     2.80    
+août    10      0.50    50.3    50.0    0.36    0.00     0.50    
+sept    9       -1.20   -120.2  44.4    -0.74   0.00     -1.20   
+oct     9       0.20    20.5    66.7    0.10    0.00     0.20    
+nov     9       4.91    490.5   88.9    2.20    0.00     4.91    
+déc     9       -0.07   -7.2    44.4    -0.03   0.00     -0.07   
+  meilleur mois : nov +4.91% | ctrl 21 j +0.91% | au-dessus de la dérive
+
+=== C) LES 6 FENÊTRES ADAGES (contrôle de dérive + spécificité ±1 mois) ===
+
+--- Sell in May — long nov→avr ---
+ACTIF       n      mean%    mean bp  hit%    t       All%    IS/OOS    ctrl%   
+EUR_USD     20     1.07     107.5    65.0    0.76    1.07    +0.63/+1.51 0.07     🔬 SURVIT
+GBP_USD     20     0.21     20.7     55.0    0.16    0.21    -1.80/+2.22 -0.50    ❌
+USD_JPY     20     1.99     198.9    60.0    1.11    1.99    +2.11/+1.87 1.02     🔬 SURVIT
+AUD_USD     19     2.08     207.8    57.9    1.60    2.08    +2.63/+1.47 0.19     🔬 SURVIT
+USD_CAD     20     0.07     7.0      45.0    0.07    0.07    -0.02/+0.16 0.66     ❌
+NZD_USD     20     1.36     136.0    75.0    1.26    1.36    +2.67/+0.05 0.14     🔬 SURVIT
+USD_CHF     20     -1.91    -191.0   35.0    -1.69   -1.91   -2.44/-1.38 -1.03    ❌
+GBP_JPY     20     1.87     186.8    60.0    0.97    1.87    +0.30/+3.43 0.50     🔬 SURVIT
+XAU_USD     19     7.75     774.6    73.7    3.35    7.75    +6.69/+8.92 5.36     🔬 SURVIT
+S&P500_MES  20     6.21     620.9    70.0    2.72    6.21    +5.56/+6.85 4.87     🔬 SURVIT
+Nasdaq_MNQ  20     7.88     788.2    80.0    3.18    7.88    +6.55/+9.22 7.88     🔬 SURVIT
+Russell_M2K 9      4.05     404.8    55.6    0.56    4.05    +0.00/+4.05 4.83     ❌
+  spécificité (moyenne %, +/−1 mois) : -1m: +1.867% (t 3.04)   +0m: +2.635% (t 4.47)   +1m: +2.083% (t 3.65)   
+
+--- May→oct (jambe courte) ---
+ACTIF       n      mean%    mean bp  hit%    t       All%    IS/OOS    ctrl%   
+EUR_USD     19     0.77     77.4     57.9    0.52    0.77    +0.71/+0.85 -0.07    🔬 SURVIT
+GBP_USD     19     1.41     141.1    52.6    0.87    1.41    +0.17/+2.79 0.50     🔬 SURVIT
+USD_JPY     19     0.42     42.4     52.6    0.30    0.42    +3.00/-2.44 -1.03    ❌
+AUD_USD     18     1.81     180.9    61.1    0.73    1.81    +1.15/+2.63 -0.19    🔬 SURVIT
+USD_CAD     19     -1.42    -142.2   26.3    -0.79   -1.42   -2.32/-0.42 -0.66    ❌
+NZD_USD     19     1.14     114.0    47.4    0.49    1.14    +0.68/+1.65 -0.14    🔬 SURVIT
+USD_CHF     18     0.42     41.9     50.0    0.34    0.42    -0.18/+1.16 1.04     ❌
+GBP_JPY     20     1.62     162.0    40.0    0.90    1.62    +3.20/+0.04 -0.50    🔬 SURVIT
+XAU_USD     20     -4.07    -406.6   40.0    -1.65   -4.07   -2.94/-5.19 -5.54    ❌
+S&P500_MES  20     -3.95    -394.6   30.0    -1.49   -3.95   -0.47/-7.42 -5.08    ❌
+Nasdaq_MNQ  20     -8.16    -815.5   20.0    -2.58   -8.16   -4.63/-11.68 -8.22    ❌
+Russell_M2K 8      -6.53    -653.4   50.0    -1.45   -6.53   +0.00/-6.53 -4.94    ❌
+  spécificité (moyenne %, +/−1 mois) : -1m: -1.773% (t -2.54)   +0m: -1.182% (t -1.78)   +1m: -1.704% (t -2.48)   
+
+--- Santa Claus — déc24→jan3 ---
+ACTIF       n      mean%    mean bp  hit%    t       All%    IS/OOS    ctrl%   
+EUR_USD     20     0.18     17.7     40.0    0.54    0.18    -0.09/+0.44 0.01     ❌
+GBP_USD     20     0.02     1.6      45.0    0.09    0.02    -0.26/+0.29 -0.03    ❌
+USD_JPY     20     0.22     22.1     60.0    0.41    0.22    +0.03/+0.41 0.07     🔬 SURVIT
+AUD_USD     20     1.32     132.4    80.0    2.95    1.32    +1.26/+1.39 0.02     🔬 SURVIT
+USD_CAD     20     -0.30    -29.5    40.0    -1.45   -0.30   -0.04/-0.55 0.04     ❌
+NZD_USD     20     0.66     65.8     65.0    2.31    0.66    +1.25/+0.06 0.00     🔬 SURVIT
+USD_CHF     20     -0.39    -39.5    55.0    -1.00   -0.39   -0.09/-0.70 -0.06    ❌
+GBP_JPY     20     -0.22    -22.2    50.0    -0.59   -0.22   -0.25/-0.19 0.03     ❌
+XAU_USD     19     1.57     157.4    73.7    3.69    1.57    +1.52/+1.63 0.24     🔬 SURVIT
+S&P500_MES  20     0.42     42.4     50.0    0.83    0.42    +0.49/+0.36 0.24     🔬 SURVIT
+Nasdaq_MNQ  20     0.32     31.8     50.0    0.59    0.32    +0.55/+0.09 0.38     ⚪ non dist.
+Russell_M2K 9      -0.12    -12.1    44.4    -0.14   -0.12   +0.00/-0.12 0.31     ❌
+  spécificité (moyenne %, +/−1 mois) : -1m: +0.347% (t 2.57)   +0m: +0.322% (t 2.58)   +1m: +0.121% (t 1.09)   
+
+--- January Effect — janv seul ---
+ACTIF       n      mean%    mean bp  hit%    t       All%    IS/OOS    ctrl%   
+EUR_USD     21     -0.29    -29.5    52.4    -0.51   -0.29   -0.88/+0.23 0.02     ❌
+GBP_USD     21     0.27     27.0     42.9    0.53    0.27    -0.33/+0.81 -0.07    ❌
+USD_JPY     21     -0.48    -47.6    33.3    -0.93   -0.48   -0.54/-0.42 0.16     ❌
+AUD_USD     20     0.55     55.0     55.0    0.69    0.55    -0.74/+1.84 0.04     ❌
+USD_CAD     21     0.47     46.5     61.9    0.89    0.47    +1.43/-0.41 0.09     ❌
+NZD_USD     20     -0.30    -30.3    55.0    -0.33   -0.30   -1.17/+0.56 0.00     ❌
+USD_CHF     21     -0.12    -12.4    57.1    -0.17   -0.12   -0.17/-0.08 -0.16    ❌
+GBP_JPY     21     -0.22    -22.1    57.1    -0.36   -0.22   -0.88/+0.38 0.08     ❌
+XAU_USD     20     2.99     298.9    70.0    2.97    2.99    +3.80/+2.18 0.92     🔬 SURVIT
+S&P500_MES  20     0.32     32.5     60.0    0.31    0.32    -0.95/+1.37 0.76     ❌
+Nasdaq_MNQ  20     0.84     84.3     70.0    0.57    0.84    -0.93/+2.30 1.19     ❌
+Russell_M2K 9      2.41     240.9    66.7    1.05    2.41    +0.00/+2.41 0.87     ❌
+  spécificité (moyenne %, +/−1 mois) : -1m: +0.224% (t 0.89)   +0m: +0.433% (t 1.67)   +1m: -0.095% (t -0.45)   
+
+--- September Slump — sept (short) ---
+ACTIF       n      mean%    mean bp  hit%    t       All%    IS/OOS    ctrl%   
+EUR_USD     19     -0.01    -0.5     57.9    -0.01   -0.01   -0.77/+0.85 -0.02    ❌
+GBP_USD     19     0.41     40.6     52.6    0.63    0.41    -0.17/+1.05 0.07     ❌
+USD_JPY     19     -0.28    -27.5    52.6    -0.58   -0.28   +0.18/-0.78 -0.16    ❌
+AUD_USD     19     0.13     13.5     52.6    0.13    0.13    -0.42/+0.75 -0.04    ❌
+USD_CAD     19     0.02     1.9      52.6    0.03    0.02    +0.48/-0.49 -0.09    ❌
+NZD_USD     18     -0.52    -52.4    55.6    -0.52   -0.52   -1.12/+0.22 -0.00    ❌
+USD_CHF     19     -0.52    -51.6    47.4    -0.58   -0.52   -0.38/-0.67 0.16     ❌
+GBP_JPY     20     0.11     11.4     50.0    0.17    0.11    +0.02/+0.21 -0.08    🔬 SURVIT
+XAU_USD     20     0.02     1.7      60.0    0.01    0.02    -0.52/+0.55 -0.92    ❌
+S&P500_MES  20     -0.03    -2.9     45.0    -0.03   -0.03   -1.08/+1.03 -0.76    ❌
+Nasdaq_MNQ  20     -0.43    -43.0    45.0    -0.36   -0.43   -2.21/+1.35 -1.19    ❌
+Russell_M2K 9      1.00     99.9     55.6    0.72    1.00    +0.00/+1.00 -0.82    ❌
+  spécificité (moyenne %, +/−1 mois) : -1m: +0.122% (t 0.56)   +0m: -0.052% (t -0.20)   +1m: -0.447% (t -1.39)   
+
+--- Saison USD_CAD — sept→déc (46e) ---
+ACTIF       n      mean%    mean bp  hit%    t       All%    IS/OOS    ctrl%   
+EUR_USD     19     -0.20    -20.4    57.9    -0.18   -0.20   +0.02/-0.45 0.09     ❌
+GBP_USD     19     -1.20    -119.8   42.1    -0.90   -1.20   -2.33/+0.06 -0.29    ❌
+USD_JPY     19     1.74     174.1    57.9    1.07    1.74    +1.26/+2.28 0.69     🔬 SURVIT
+AUD_USD     18     -0.97    -96.8    44.4    -0.55   -0.97   -0.72/-1.28 0.18     ❌
+USD_CAD     19     1.92     191.9    68.4    1.66    1.92    +2.13/+1.68 0.40     🔬 SURVIT
+NZD_USD     19     0.70     70.5     63.2    0.41    0.70    +1.01/+0.36 0.07     🔬 SURVIT
+USD_CHF     19     0.03     2.6      42.1    0.02    0.03    +0.03/+0.02 -0.72    🔬 SURVIT
+GBP_JPY     20     0.88     88.0     50.0    0.42    0.88    -0.82/+2.58 0.34     ❌
+XAU_USD     19     1.15     114.6    47.4    0.49    1.15    +1.92/+0.29 3.71     ⚪ non dist.
+S&P500_MES  20     3.45     344.7    80.0    1.44    3.45    +3.20/+3.70 3.18     🔬 SURVIT
+Nasdaq_MNQ  20     4.24     423.5    80.0    1.39    4.24    +4.92/+3.55 5.13     ⚪ non dist.
+Russell_M2K 9      3.97     397.5    66.7    0.88    3.97    +0.00/+3.97 3.42     ❌
+  spécificité (moyenne %, +/−1 mois) : -1m: +0.930% (t 1.63)   +0m: +1.219% (t 2.09)   +1m: +1.758% (t 3.22)   
+
+--- SURVIVANTS ---
+  • Sell in May — long nov→avr @ EUR_USD
+  • Sell in May — long nov→avr @ USD_JPY
+  • Sell in May — long nov→avr @ AUD_USD
+  • Sell in May — long nov→avr @ NZD_USD
+  • Sell in May — long nov→avr @ GBP_JPY
+  • Sell in May — long nov→avr @ XAU_USD
+  • Sell in May — long nov→avr @ S&P500_MES
+  • Sell in May — long nov→avr @ Nasdaq_MNQ
+  • May→oct (jambe courte) @ EUR_USD
+  • May→oct (jambe courte) @ GBP_USD
+  • May→oct (jambe courte) @ AUD_USD
+  • May→oct (jambe courte) @ NZD_USD
+  • May→oct (jambe courte) @ GBP_JPY
+  • Santa Claus — déc24→jan3 @ USD_JPY
+  • Santa Claus — déc24→jan3 @ AUD_USD
+  • Santa Claus — déc24→jan3 @ NZD_USD
+  • Santa Claus — déc24→jan3 @ XAU_USD
+  • Santa Claus — déc24→jan3 @ S&P500_MES
+  • January Effect — janv seul @ XAU_USD
+  • September Slump — sept (short) @ GBP_JPY
+  • Saison USD_CAD — sept→déc (46e) @ USD_JPY
+  • Saison USD_CAD — sept→déc (46e) @ USD_CAD
+  • Saison USD_CAD — sept→déc (46e) @ NZD_USD
+  • Saison USD_CAD — sept→déc (46e) @ USD_CHF
+  • Saison USD_CAD — sept→déc (46e) @ S&P500_MES
+
+=== D) SELL IN MAY EN SPREAD APPARIÉ (nov→avr long − mai→oct long, même année) ===
+Un spread > 0 = la fenêtre hiver-printemps bat la fenêtre été-automne, dérive annulée.
+ACTIF        n     spread%   t       hit%    IS%      OOS%       verdict 
+EUR_USD      19    1.66      0.84    63.2    1.34     2.00       ⚪ tilt faible
+GBP_USD      19    1.54      0.76    63.2    -1.63    5.07       ❌ pas de tilt
+USD_JPY      19    2.00      0.85    57.9    5.11     -1.46      ❌ pas de tilt
+AUD_USD      17    2.86      0.96    52.9    3.78     1.53       ⚪ tilt faible
+USD_CAD      19    -1.25     -0.60   47.4    -2.34    -0.02      ❌ pas de tilt
+NZD_USD      19    2.57      1.09    68.4    3.35     1.71       ⚪ tilt faible
+USD_CHF      18    -0.81     -0.56   44.4    -2.62    1.46       ❌ pas de tilt
+GBP_JPY      20    3.49      1.42    60.0    3.51     3.47       ⚪ tilt faible
+XAU_USD      19    4.65      1.39    57.9    3.74     5.65       ⚪ tilt faible
+S&P500_MES   20    2.26      0.76    55.0    5.09     -0.56      ❌ pas de tilt
+Nasdaq_MNQ   20    -0.27     -0.07   55.0    1.92     -2.46      ❌ pas de tilt
+Russell_M2K  8     -2.54     -0.34   37.5    0.00     -2.54      ❌ pas de tilt
+
+DONE
