@@ -3,6 +3,7 @@ package com.martinfou.trading.examples;
 import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.data.HistoricalDataLoader;
 import com.martinfou.trading.strategies.creative.SeasonalEmaPullbackContinuation;
@@ -29,7 +30,7 @@ public class RunSeasonalEmaPullback {
         System.out.printf("%n=== %s (%d bars) — avec coûts $0.07 + 0.01%% slippage ===%n%n",
             symbol, bars.size());
 
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
 
         System.out.println("--- BASELINE: EmaPullbackContinuation ---");
         var base = new EmaPullbackContinuationStrategy(symbol);

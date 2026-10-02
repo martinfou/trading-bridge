@@ -4,6 +4,7 @@ import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.data.HistoricalDataLoader;
@@ -58,7 +59,7 @@ public class RunFxFridayFade {
     static final boolean[] MON_THU = {true, true, true, true, false};
 
     public static void main(String[] args) throws Exception {
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
         String mode = args.length > 0 ? args[0] : "--scan";
 
         System.out.println("==================================================");
@@ -79,7 +80,7 @@ public class RunFxFridayFade {
 
     // ---------------------------------------------------------------- scan
 
-    private static void scan(BacktestExecutionCost cost) throws Exception {
+    private static void scan(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         System.out.println("\n--- SCAN : SELL vendredi (session complète UTC) vs miroir LONG vendredi ---");
         System.out.printf("%-9s | %-38s | %-38s%n", "", "SELL FRI (la config)", "LONG FRI (miroir = contrôle)");
         System.out.printf("%-9s | %6s %5s %6s %6s %11s | %6s %6s %11s%n",
@@ -126,7 +127,7 @@ public class RunFxFridayFade {
     // ------------------------------------------------------------ validate
 
     /** Non-régression : la famille or doit être intacte après le patch. */
-    private static void validateGoldRegression(BacktestExecutionCost cost) throws Exception {
+    private static void validateGoldRegression(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         System.out.println("\n--- NON-RÉGRESSION OR : XAU_USD long vendredi, 10 oz, 2006-2025 ---");
         BacktestResult r = run("XAU_USD", FRI, Order.Side.BUY, GOLD_QTY, "2006-2025", cost);
         System.out.printf("  XAU_USD FRI long : PF=%.2f WR=%.1f%% DD=%.2f%% trades=%d net=$%.2f (référence 1.27/56.9/5.18/1041/+$15 131)%n",
@@ -142,7 +143,7 @@ public class RunFxFridayFade {
 
     // ------------------------------------------------------------ controls
 
-    private static void betaControl(BacktestExecutionCost cost) throws Exception {
+    private static void betaControl(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         System.out.println("\n=== CONTRÔLE BÊTA (anti-artefact des effets JOUR) ===");
         System.out.println("Si SELL-FRI ≈ SELL-ALLDAYS, l'effet jour n'est qu'une bêta d'exposition short.");
         System.out.printf("%-9s %-16s %6s %6s %6s %7s %11s %9s%n",
@@ -155,14 +156,14 @@ public class RunFxFridayFade {
         }
     }
 
-    private static void rec(String sym, String label, boolean[] days, BacktestExecutionCost cost) throws Exception {
+    private static void rec(String sym, String label, boolean[] days, java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         BacktestResult r = run(sym, days, Order.Side.SELL, QTY, YEAR_SPEC, cost);
         System.out.printf("%-9s %-16s %6.2f %5.0f%% %5.2f%% %7d %11.2f %9.2f%n",
             sym, label, r.profitFactor(), r.winRatePct(), r.maxDrawdownPct(), r.totalTrades(),
             r.totalPnl(), r.totalTrades() == 0 ? 0 : r.totalPnl() / r.totalTrades());
     }
 
-    private static void walkForward(BacktestExecutionCost cost) throws Exception {
+    private static void walkForward(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         System.out.println("\n=== WALK-FORWARD — SELL vendredi (IS 2006-2015 / OOS 2016-2026) ===");
         System.out.printf("%-9s %-16s %6s %6s %6s %7s %11s%n",
             "PAIRE", "PÉRIODE", "PF", "WR%", "DD%", "TRADES", "NET$");
@@ -175,7 +176,7 @@ public class RunFxFridayFade {
         }
     }
 
-    private static void regime(BacktestExecutionCost cost) throws Exception {
+    private static void regime(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         System.out.println("\n=== RÉGIMES — SELL vendredi ===");
         String[][] regs = {{"bull 2006-2012", "2006-2012"}, {"taper 2013-2015", "2013-2015"},
                            {"bull2 2016-2026", "2016-2026"}};
@@ -189,7 +190,7 @@ public class RunFxFridayFade {
         }
     }
 
-    private static void daySweep(BacktestExecutionCost cost) throws Exception {
+    private static void daySweep(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         System.out.println("\n=== BALAYAGE JOUR PAR JOUR (SELL, exposition 1 session/semaine) ===");
         String[] labels = {"MON", "TUE", "WED", "THU", "FRI"};
         System.out.printf("%-9s %-6s %6s %6s %6s %7s %11s %9s%n",
@@ -210,7 +211,7 @@ public class RunFxFridayFade {
     // --------------------------------------------------------------- helper
 
     private static BacktestResult run(String symbol, boolean[] days, Order.Side dir, double qty,
-                                      String yearSpec, BacktestExecutionCost cost) throws Exception {
+                                      String yearSpec, java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         var loaded = HistoricalDataLoader.loadFromArgs(symbol, symbol, yearSpec);
         List<Bar> bars = loaded.bars();
         if (bars.isEmpty()) return null;

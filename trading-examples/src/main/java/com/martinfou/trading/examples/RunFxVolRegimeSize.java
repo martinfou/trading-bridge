@@ -4,6 +4,7 @@ import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.data.HistoricalDataLoader;
@@ -64,7 +65,7 @@ public class RunFxVolRegimeSize {
     static final Map<String, TreeMap<LocalDate, Double>> rankMean = new LinkedHashMap<>();
 
     public static void main(String[] args) throws Exception {
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
         String mode = args.length > 0 ? args[0] : "--base";
 
         System.out.println("==============================================================");
@@ -137,7 +138,7 @@ public class RunFxVolRegimeSize {
 
     // ============================================================ CALIBRATION
 
-    private static void baseMode(BacktestExecutionCost cost) throws Exception {
+    private static void baseMode(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         section("CALIBRATION — SELL FRI 1u, 8 paires (référence 37e : GBP_JPY 1.18 / GBP_USD 1.13 / EUR 1.00 / CAD 0.80)");
         System.out.printf("%-9s %6s %5s %6s %7s %11s %10s %9s%n",
             "PAIRE", "PF", "WR%", "DD%", "TRADES", "NET$", "SWAP$", "$/TRADE");
@@ -152,7 +153,7 @@ public class RunFxVolRegimeSize {
 
     // ============================================================ GATE
 
-    private static void gateMode(BacktestExecutionCost cost) throws Exception {
+    private static void gateMode(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         section("GATE — n'entrer que si le rang de la veille ∈ [60,100] (haut) vs [0,40] (bas, contrôle contrapositif)");
         System.out.println("Un gate n'est PAS un filtre : il RE-TIME toutes les entrées suivantes (leçon du 15 sept).");
         System.out.printf("%-9s %-22s %6s %7s %11s %9s %10s%n",
@@ -176,7 +177,7 @@ public class RunFxVolRegimeSize {
 
     // ============================================================ OVERLAY
 
-    private static void overlayMode(BacktestExecutionCost cost) throws Exception {
+    private static void overlayMode(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         section("OVERLAY — taille 2u si rang ≥ 60, sinon 1u — vs FLAT à EXPOSITION ÉGALE (benchmark obligatoire)");
         System.out.println("FLAT-u = quantité uniforme = moyenne pondérée des unités de l'overlay (comptée sur les vendredis réels).");
         System.out.printf("%-9s %-26s %6s %6s %7s %11s %11s %9s%n",
@@ -203,7 +204,7 @@ public class RunFxVolRegimeSize {
 
     // ============================================================ SWEEP
 
-    private static void sweepMode(BacktestExecutionCost cost) throws Exception {
+    private static void sweepMode(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         section("ROBUSTESSE PARAMÉTRIQUE — balayage du seuil de gate (plateau = robuste, pic = curve fitting)");
         System.out.printf("%-12s %-22s %6s %7s %11s %9s%n", "SEUIL", "VAR.", "PFagg", "TRADES", "NET$", "$/TRADE");
         for (double[] th : new double[][]{{50, 100}, {60, 100}, {70, 100}, {80, 100}, {60, 90}}) {
@@ -217,7 +218,7 @@ public class RunFxVolRegimeSize {
 
     // ============================================================ WALK-FORWARD
 
-    private static void wfMode(BacktestExecutionCost cost) throws Exception {
+    private static void wfMode(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         section("WALK-FORWARD — IS 2006-2015 / OOS 2016-2026");
         System.out.printf("%-9s %-22s %-16s %6s %7s %11s%n", "PAIRE", "VAR.", "PÉRIODE", "PF", "TRADES", "NET$");
         for (String sym : new String[]{"GBP_JPY", "GBP_USD", "AUD_USD", "EUR_USD", "USD_CAD"}) {
@@ -232,7 +233,7 @@ public class RunFxVolRegimeSize {
 
     // ============================================================ RÉGIMES
 
-    private static void regimeMode(BacktestExecutionCost cost) throws Exception {
+    private static void regimeMode(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         section("RÉGIMES DE MARCHÉ — bull 2006-2012 / taper 2013-2015 / bull2 2016-2026");
         System.out.printf("%-9s %-16s %-22s %6s %7s %11s%n", "PAIRE", "RÉGIME", "VAR.", "PF", "TRADES", "NET$");
         for (String sym : new String[]{"GBP_JPY", "GBP_USD"}) {
@@ -246,7 +247,7 @@ public class RunFxVolRegimeSize {
 
     // ============================================================ CONTRÔLES
 
-    private static void controlMode(BacktestExecutionCost cost) throws Exception {
+    private static void controlMode(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         section("CONTRÔLE 1 — SPÉCIFICITÉ DU JOUR : le gate vol appliqué à LUNDI-JEUDI doit échouer");
         System.out.println("(42e : le mardi répliquait 75 % du Δ du vendredi → test décisif)");
         System.out.printf("%-9s %-24s %6s %7s %11s%n", "PAIRE", "VAR.", "PFagg", "TRADES", "NET$");
@@ -306,17 +307,17 @@ public class RunFxVolRegimeSize {
 
     /** Agrégat panier sur une variante (gate haute par défaut). */
     private static void pool(String label, boolean[] days, String kind, Double gateLo, double qty,
-                             BacktestExecutionCost cost) throws Exception {
+                             java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         pool(label, days, kind, gateLo, qty, cost, 100.0, false);
     }
 
     private static void pool(String label, boolean[] days, String kind, Double gateLo, double qty,
-                             BacktestExecutionCost cost, double gateHi) throws Exception {
+                             java.util.function.Function<String, BacktestExecutionCost> cost, double gateHi) throws Exception {
         pool(label, days, kind, gateLo, qty, cost, gateHi, false);
     }
 
     private static void pool(String label, boolean[] days, String kind, Double gateLo, double qty,
-                             BacktestExecutionCost cost, double gateHi, boolean lowOnly) throws Exception {
+                             java.util.function.Function<String, BacktestExecutionCost> cost, double gateHi, boolean lowOnly) throws Exception {
         double lo = lowOnly ? 0.0 : (gateLo == null ? 0.0 : gateLo);
         double hi = lowOnly ? gateHi : (gateLo == null ? 100.0 : 100.0);
         List<Double> pnls = new ArrayList<>();
@@ -335,7 +336,7 @@ public class RunFxVolRegimeSize {
     }
 
     private static void pool2(String label, String kind, double threshold, double qty,
-                              BacktestExecutionCost cost) throws Exception {
+                              java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         List<Double> pnls = new ArrayList<>();
         double net = 0; int trades = 0; double uSum = 0;
         for (String sym : BASKET) {
@@ -376,12 +377,12 @@ public class RunFxVolRegimeSize {
     // ------------------------------------------------------------- exécution
 
     private static BacktestResult run(String symbol, boolean[] days, String kind, Double gateLo, Double gateHi,
-                                      double qty, String yearSpec, BacktestExecutionCost cost) throws Exception {
+                                      double qty, String yearSpec, java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         return run(symbol, days, kind, gateLo, gateHi, qty, yearSpec, cost, false);
     }
 
     private static BacktestResult run(String symbol, boolean[] days, String kind, Double gateLo, Double gateHi,
-                                      double qty, String yearSpec, BacktestExecutionCost cost,
+                                      double qty, String yearSpec, java.util.function.Function<String, BacktestExecutionCost> cost,
                                       boolean overlay) throws Exception {
         String key = symbol + "|" + yearSpec;
         List<Bar> bars = barsCache.get(key);

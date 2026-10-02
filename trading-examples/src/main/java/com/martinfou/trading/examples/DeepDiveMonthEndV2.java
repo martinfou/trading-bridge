@@ -3,6 +3,7 @@ package com.martinfou.trading.examples;
 import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.data.HistoricalDataLoader;
 
@@ -34,7 +35,7 @@ public class DeepDiveMonthEndV2 {
         System.out.println("== DeepDive MonthEnd V2 (full-window entry) ==");
         System.out.println("Symbol=" + symbol + " bars=" + bars.size() + " range=" + yearSpec);
 
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
         var strategy = new TurnOfMonthFlowWindowStrategy("MonthEndV2", symbol);
         var ctx = RunContext.forStrategy(
             null, "MonthEndV2", strategy, symbol,

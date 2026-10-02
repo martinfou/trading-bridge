@@ -18,6 +18,7 @@ import com.martinfou.trading.backtest.wfa.WfaConfig;
 import com.martinfou.trading.backtest.wfa.WfaEngine;
 import com.martinfou.trading.backtest.wfa.WfaReport;
 import com.martinfou.trading.backtest.wfa.WfaFoldResult;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
@@ -85,7 +86,7 @@ public class RunBacktest {
     /** Shared backtest execution for legacy RunPropBacktest --all. */
     public static BacktestResult runStrategy(Strategy strategy, List<Bar> bars, double capital) {
         String symbol = bars.isEmpty() ? "" : bars.getFirst().symbol();
-        return RunContext.forStrategy(strategy, symbol, RunMode.BACKTEST, bars, capital).run();
+        return RunContext.forStrategy(null, null, strategy, symbol, RunMode.BACKTEST, bars, capital, null, RealCostModel::costFor).run();
     }
 
     public static List<Bar> generateSampleBars(String symbol, int count) {
@@ -119,7 +120,7 @@ public class RunBacktest {
         var bars = generateSampleBars(symbol, 500);
         var strategy = new SmaCrossoverStrategy("SMA 20/50", symbol, 20, 50);
         RunMode mode = flags.paperMode() ? RunMode.PAPER : RunMode.BACKTEST;
-        var context = RunContext.forStrategy(strategy, symbol, mode, bars, 10_000);
+        var context = RunContext.forStrategy(null, null, strategy, symbol, mode, bars, 10_000, null, RealCostModel::costFor);
         if (flags.jsonOutput()) {
             runWithJsonOutput(context);
         } else {

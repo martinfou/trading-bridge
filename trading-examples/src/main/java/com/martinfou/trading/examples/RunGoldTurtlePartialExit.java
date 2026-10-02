@@ -4,6 +4,7 @@ import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.data.HistoricalDataLoader;
 import com.martinfou.trading.strategies.creative.GoldTurtlePartialExitStrategy;
@@ -34,7 +35,7 @@ public class RunGoldTurtlePartialExit {
     static final double QTY = 10;
 
     public static void main(String[] args) throws Exception {
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
 
         if (args.length > 0 && args[0].equals("--wf"))    { runWalkForward(cost); return; }
         if (args.length > 0 && args[0].equals("--regime")){ runRegime(cost); return; }
@@ -82,7 +83,7 @@ public class RunGoldTurtlePartialExit {
     }
 
     /** Walk-forward XAU 2u et 4u S2 : IS 2006-2015 / OOS 2016-2025. */
-    private static void runWalkForward(BacktestExecutionCost cost) throws Exception {
+    private static void runWalkForward(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String symbol = "XAU_USD";
         var isLoaded = HistoricalDataLoader.loadFromArgs(symbol, symbol, "2006-2015");
         var oosLoaded = HistoricalDataLoader.loadFromArgs(symbol, symbol, "2016-2025");
@@ -109,7 +110,7 @@ public class RunGoldTurtlePartialExit {
     }
 
     /** Régime : bull 2006-2012 / bear 2013-2015 / bull2 2016-2025 — XAU 4u S2. */
-    private static void runRegime(BacktestExecutionCost cost) throws Exception {
+    private static void runRegime(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String symbol = "XAU_USD";
         String[] regimes = {"2006-2012", "2013-2015", "2016-2025"};
 

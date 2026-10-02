@@ -1,6 +1,7 @@
 package com.martinfou.trading.intelligence.pipeline;
 
 import com.martinfou.trading.backtest.BacktestResult;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
 import com.martinfou.trading.core.Bar;
@@ -402,9 +403,10 @@ public class LtPipelineOrchestrator {
                 return null;
             }
 
-            // Uses RunContext's non-zero DEFAULT cost model (US-39.1) — real
-            // commission+slippage instead of the old implicit zero-cost artifact.
-            RunContext context = RunContext.forStrategy(strategy, oandaSymbol, RunMode.BACKTEST, bars, CAPITAL);
+            // Real per-symbol cost (0 commission + measured half-spread), resolved from the
+            // instrument's symbol — replaces the deprecated DEFAULT ($0.07 + 0.00005) model.
+            RunContext context = RunContext.forStrategy(
+                null, null, strategy, oandaSymbol, RunMode.BACKTEST, bars, CAPITAL, null, RealCostModel::costFor);
             BacktestResult br = context.run();
 
             return new PairResult(pair, br.profitFactor(), br.sharpeRatio(),

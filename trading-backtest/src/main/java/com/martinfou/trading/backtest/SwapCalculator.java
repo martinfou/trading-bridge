@@ -30,6 +30,12 @@ public class SwapCalculator {
         // The previous table (2024-2026 "approximate interbank") had three wrong signs and
         // was ~32× too small on gold — see FEE-AUDIT.md §4. Keys are underscore-normalized;
         // ratesFor() tolerates underscore-less lookups.
+        //
+        // LIMITATION (documented, not fixed): these rates are a 2026-10-01 SNAPSHOT applied as
+        // constants across the whole backtest window. There are no historical financing series,
+        // so carry history is not real — e.g. AUD_USD longs earned in 2010-2014 but the 2026 rate
+        // charges them. Bound the error with the swap-sensitivity sweep (×0/×1/×2) in
+        // RunCostModelReal; do not read a swap-dominant verdict as validated.
         SWAP_RATES.put("EUR_USD",  new double[]{-0.76,  0.14});   // EUR < USD
         SWAP_RATES.put("GBP_USD",  new double[]{-0.45, -0.29});   // both negative (GBP, USD > 0)
         SWAP_RATES.put("USD_JPY",  new double[]{ 0.78, -1.65});   // USD >> JPY
@@ -42,7 +48,7 @@ public class SwapCalculator {
         SWAP_RATES.put("AUD_JPY",  new double[]{ 0.73, -1.35});   // AUD >> JPY (carry)
         SWAP_RATES.put("NZD_JPY",  new double[]{ 0.13, -0.65});   // NZD > JPY
         SWAP_RATES.put("EUR_JPY",  new double[]{ 0.16, -1.15});   // EUR > JPY
-        SWAP_RATES.put("XAU_USD",  new double[]{-65.2,  37.0});   // gold: financing ≈ −5.7 %/yr long
+        SWAP_RATES.put("XAU_USD",  new double[]{-25.9,  14.7});   // gold: financing ≈ −5.7 %/yr long, at 2010-2025 avg mid 1664 (NOT today's 4182)
     }
 
     private static final ZoneId NY = ZoneId.of("America/New_York");
@@ -145,14 +151,20 @@ public class SwapCalculator {
         boolean useYearly = yearlyOverride != null && samePair(overrideSymbol, symbol);
         if (rates == null && !useYearly) return 0.0;
 
-        // Convert from standard lot pip rate to actual position
-        // For EUR/USD 1k units: 1 pip = $0.10. So -0.76 pips = -$0.076/day
+        // Convert from standard lot pip rate to actual position.
+        // The pip value is denominated in the instrument's QUOTE currency; convert it to USD.
+        //   - JPY-quoted pairs (USD_JPY, GBP_JPY, EUR_JPY, …): pip value in JPY → ÷ USD_JPY.
+        //   - Other non-USD quotes (USD_CAD→CAD, USD_CHF→CHF, EUR_GBP→GBP): the raw quote-currency
+        //     amount used to be treated as USD (overstated ~1.42× on CAD, ~1.20× on CHF, ~1.32× on GBP);
+        //     now converted via RealCostModel.usdPerQuoteUnit (broker mids).
         double pipSize = RealCostModel.pipSize(symbol);
-        // For JPY-quoted pairs the pip value is in JPY; convert to USD (e.g. ÷150).
-        // Without this, GBP_JPY/EUR_JPY/USD_JPY swaps are overstated ~150x.
-        double pipValueInUSD = symbol.contains("JPY")
-            ? quantity * pipSize / (usdJpyRate > 0 ? usdJpyRate : com.martinfou.trading.core.ForexPnL.DEFAULT_USD_JPY)
-            : quantity * pipSize;
+        double pipValueInUSD;
+        if (symbol != null && symbol.toUpperCase().contains("JPY")) {
+            double rate = usdJpyRate > 0 ? usdJpyRate : com.martinfou.trading.core.ForexPnL.DEFAULT_USD_JPY;
+            pipValueInUSD = quantity * pipSize / rate;
+        } else {
+            pipValueInUSD = quantity * pipSize * RealCostModel.usdPerQuoteUnit(symbol);
+        }
 
         // Swaps VARIABLES dans le temps : un taux par année, accumulé jour par jour
         // (le taux appliqué est celui de l'année du rollover, pas de la date d'entrée).
