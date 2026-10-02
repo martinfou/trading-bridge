@@ -42,13 +42,29 @@ de la ligne ci-dessous.
 | 2026-10-01 | consecbar | GBP_JPY | −15.02 |
 | 2026-10-01 | vwpreversion | GBP_JPY | −11.72 |
 | 2026-10-01 | ltrsi3 | EUR_USD | +9.95 |
-| | | **Total exclu** | **−16.79** |
+| 2026-10-01 13:26 → 13:48 | suite de tests (tags UUID) | EUR_USD | −1.81 |
+| | | **Total exclu** | **−18.60** |
 
-L'écart entre ce total et la baisse du NAV depuis 2000 (18.61) est du financement.
+Ce total explique la baisse du NAV depuis 2000 (**18.6078**) à 0.01 près : il n'y a **pas** de financement.
+La ligne de la suite de tests est une correction apportée le 2026-10-02 : ces 8 fills réels étaient
+jusqu'ici absorbés dans l'écart attribué au financement (voir l'incident ci-dessous).
 
 ### Transactions DANS la fenêtre
 
-_(aucune pour l'instant)_
+| Heure (EDT) | Stratégie | Instrument | Sens | P&L |
+|---|---|---|---|---|
+| 2026-10-01 22:00 | consecbar | GBP_JPY | BUY | −12.25 |
+| 2026-10-02 03:00 | vwpreversion | USD_CHF | BUY | −12.14 (stop courtier) |
+| 2026-10-02 04:00 | vwpreversion | USD_CHF | BUY | ouvert (SL 0.82521) |
+
+Total réalisé dans la fenêtre : **−24.39 CAD**. NAV au 2026-10-02 08:56 UTC : **1961.70** (balance
+1957.00, position ouverte +4.69).
+
+La séquence `vwpreversion` est le premier écart backtest-vers-live documenté de cette fenêtre : la
+première entrée est sortie par le stop du courtier à 03:57:37, et la seconde est prise **3 minutes plus
+tard, sur la barre suivante, dans le même sens**. Le cooldown de 10 barres de la stratégie n'a pas été
+armé, parce qu'il n'est armé que par la sortie locale de la stratégie, jamais par une sortie subie.
+Story ouverte : `_bmad-output/implementation-artifacts/47-1-cooldown-non-arme-apres-sortie-courtier.md`.
 
 ---
 
@@ -73,6 +89,14 @@ synthétiques, donc OANDA l'a rejeté. Avec un stop plausible, ces 12 ordres se 
 C'est la raison du fil-piège, et c'est aussi la raison pour laquelle le `lastTransactionID` de
 départ est noté ici : c'est le seul chiffre qui permet de dire, sans confiance aveugle, si quelque
 quelque chose a envoyé un ordre qui n'aurait pas dû.
+
+**Correction du 2026-10-02 — la fuite a touché le compte deux fois ce jour-là, pas une.** Les 12 ordres
+du paragraphe ci-dessus (tickets 195-217) sont bien restés sans fill parce que le stop attaché venait de
+barres synthétiques. Mais la même signature d'ordres (tag UUID, EUR_USD, `units=-1000`, par salves) a
+**rempli 8 fois** plus tôt dans la journée, entre 17:26 et 17:48 UTC : chaque position a été refermée
+dans la seconde, à −0.14/-0.26, pour un total de **−1.81** (trades 29, 48, 62, 76, 90, 104, 118, 132).
+Ce n'est donc pas la chance qui a protégé le compte, c'est le format du stop : là où le stop était
+plausible, l'ordre s'est rempli. Le total exclu de la fenêtre les inclut maintenant.
 
 ---
 
