@@ -163,7 +163,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     private final com.martinfou.trading.backtest.persistence.SqliteTradeAlignmentStore alignmentStore;
     private final com.martinfou.trading.backtest.persistence.SqliteTradeStore tradeStore;
-    private RunRecordStore runRecordStore;
+    private final RunRecordStore runRecordStore;
     private final Map<String, List<com.martinfou.trading.core.Order>> btOrdersByRun = new ConcurrentHashMap<>();
     private final Map<String, List<com.martinfou.trading.core.Order>> liveOrdersByRun = new ConcurrentHashMap<>();
     private final Map<String, Integer> consecutiveTimeDrifts = new ConcurrentHashMap<>();
@@ -181,6 +181,16 @@ public class RunManager implements RunLifecycle, AutoCloseable {
     public RunManager(EventStore eventStore, DeploymentStore deploymentStore) {
         this(eventStore, BrokerFactory.fromRegistry(BrokerAccountRegistry.loadDefault()), true,
             new KillSwitchRegistry(), Optional.of(deploymentStore), BrokerAccountRegistry.loadDefault(), null, null);
+    }
+
+    /**
+     * Test hook — inject the run-record store so a test can decorate {@link RunRecordStore#save}
+     * and observe the exact order of persistence versus in-memory publication (the persist-before-publish
+     * invariant of Story 48.2). Package-private; production callers never invoke it.
+     */
+    RunManager(EventStore eventStore, RunRecordStore runRecordStore) {
+        this(eventStore, BrokerFactory.fromRegistry(BrokerAccountRegistry.loadDefault()), true,
+            new KillSwitchRegistry(), Optional.empty(), BrokerAccountRegistry.loadDefault(), null, null, runRecordStore);
     }
 
     /** Test hook — inject broker without OANDA environment credentials. */
@@ -244,6 +254,21 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         LiveCandlesFetcher liveCandlesFetcher,
         Runnable startupLockHook
     ) {
+        this(eventStore, brokerFactory, requireOandaCredentials, killSwitchRegistry,
+            deploymentStore, brokerAccountRegistry, liveCandlesFetcher, startupLockHook, null);
+    }
+
+    private RunManager(
+        EventStore eventStore,
+        BrokerFactory brokerFactory,
+        boolean requireOandaCredentials,
+        KillSwitchRegistry killSwitchRegistry,
+        Optional<DeploymentStore> deploymentStore,
+        BrokerAccountRegistry brokerAccountRegistry,
+        LiveCandlesFetcher liveCandlesFetcher,
+        Runnable startupLockHook,
+        RunRecordStore runRecordStore
+    ) {
         if (eventStore == null) {
             throw new IllegalArgumentException("eventStore must not be null");
         }
@@ -262,7 +287,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         this.startupLockHook = startupLockHook != null ? startupLockHook : () -> { };
         this.alignmentStore = createAlignmentStore(eventStore);
         this.tradeStore = createTradeStore(eventStore);
-        this.runRecordStore = createRunRecordStore(eventStore);
+        this.runRecordStore = runRecordStore != null ? runRecordStore : createRunRecordStore(eventStore);
     }
 
     private com.martinfou.trading.backtest.persistence.SqliteTradeAlignmentStore createAlignmentStore(EventStore eventStore) {
@@ -556,35 +581,22 @@ public class RunManager implements RunLifecycle, AutoCloseable {
                 yield record;
             }
             case RUNNING -> {
-                // Persist + publish the terminal state FIRST, before any broker call, so a broker
-                // failure (defect 1) can no longer leave the run RUNNING in the store, and the
-                // write strictly precedes publication (defect 2).
-                RunState staged = record.stagedCompleted(Map.of("message", "stopped by operator"));
-                persistThenNotify(record, staged, before, RunTransition.STOP);
-                // Broker cleanup is best-effort and runs AFTER the run is durably terminal.
-                try {
-                    if (liquidate) {
-                        cancelAllAtBroker(runId);
-                    }
-                    AutoCloseable exec = activeExecutors.get(runId);
-                    if (exec != null) {
-                        if (liquidate && exec instanceof OandaStreamingExecutor poe) {
-                            // OANDA streaming: liquidateAndStop() performs per-run position
-                            // disambiguation, flattens, and stops the executor.
-                            poe.liquidateAndStop();
-                        } else {
-                            if (liquidate) {
-                                flattenAtBroker(runId);
-                            }
-                            exec.close();
-                        }
-                    } else if (liquidate) {
-                        // Synchronous broker executor (BrokerRunExecutor) — no streaming handle.
-                        flattenAtBroker(runId);
-                    }
-                } catch (Exception e) {
-                    log.error("Failed to stop executor for run {}", runId, e);
+                // Correction 1: liquidate FIRST (best-effort, capturing the outcome), then persist
+                // and publish the terminal state unconditionally. A run that stays COMPLETED in the
+                // store while positions remain open at the broker becomes an unmonitored orphan
+                // position; a run that stays RUNNING in the store during liquidation is the lesser
+                // evil because the runner re-synchronizes the position at restart.
+                Liquidation liquidation = liquidate(runId, liquidate);
+                RunState staged;
+                if (liquidation.ok()) {
+                    staged = record.stagedCompleted(Map.of("message", "stopped by operator"));
+                } else {
+                    // Correction 2: a durable trace, not just a log. Persist FAILED with an explicit
+                    // errorMessage and a liquidation_failed flag + detail in the persisted payload.
+                    staged = record.stagedFailed("liquidation failed: " + liquidation.detail())
+                        .withEndedPayload(Map.of("liquidation_failed", true, "detail", liquidation.detail()));
                 }
+                persistThenNotify(record, staged, before, RunTransition.STOP);
                 yield record;
             }
             case PAUSED -> {
@@ -608,38 +620,97 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         }
     }
 
+    /**
+     * Outcome of a best-effort broker liquidation step. {@code ok} is {@code true} when the step
+     * completed cleanly; {@code detail} is non-null exactly when {@code ok} is {@code false},
+     * carrying a human-readable description of what went wrong.
+     */
+    private record Liquidation(boolean ok, String detail) {
+        static Liquidation clean() {
+            return new Liquidation(true, null);
+        }
+
+        static Liquidation failed(String detail) {
+            return new Liquidation(false, detail == null ? "unknown liquidation failure" : detail);
+        }
+    }
+
+    /**
+     * Best-effort broker liquidation for a RUNNING run being stopped: cancel working orders, then
+     * flatten positions and stop the executor, capturing the outcome so the caller can persist a
+     * durable trace instead of only logging. Never throws; every failure is folded into the
+     * returned {@link Liquidation}.
+     */
+    private Liquidation liquidate(String runId, boolean liquidate) {
+        Liquidation cancel = liquidate ? cancelAllAtBroker(runId) : Liquidation.clean();
+        Liquidation flatten = Liquidation.clean();
+        try {
+            AutoCloseable exec = activeExecutors.get(runId);
+            if (exec != null) {
+                if (liquidate && exec instanceof OandaStreamingExecutor poe) {
+                    // OANDA streaming: liquidateAndStop() performs per-run position
+                    // disambiguation, flattens, and stops the executor.
+                    poe.liquidateAndStop();
+                } else {
+                    if (liquidate) {
+                        flatten = flattenAtBroker(runId);
+                    }
+                    exec.close();
+                }
+            } else if (liquidate) {
+                // Synchronous broker executor (BrokerRunExecutor) — no streaming handle.
+                flatten = flattenAtBroker(runId);
+            }
+        } catch (Exception e) {
+            log.error("Failed to stop executor for run {}", runId, e);
+            return Liquidation.failed("failed to stop executor: " + e.getMessage());
+        }
+        if (!cancel.ok()) {
+            return cancel;
+        }
+        if (!flatten.ok()) {
+            return flatten;
+        }
+        return Liquidation.clean();
+    }
+
     /** Cancels working (unfilled) orders at the broker for a run, as part of the kill switch. */
-    private void cancelAllAtBroker(String runId) {
+    private Liquidation cancelAllAtBroker(String runId) {
         Broker broker = activeBrokers.get(runId);
         if (broker == null) {
             log.warn("Kill switch: no active broker for run {}; cannot cancel working orders at broker.", runId);
-            return;
+            return Liquidation.failed("no active broker for run " + runId);
         }
         try {
             int cancelled = broker.cancelAllOrders();
             log.info("Kill switch: cancelled {} working orders for run {}", cancelled, runId);
+            return Liquidation.clean();
         } catch (Exception e) {
             log.error("Kill switch: failed to cancel working orders for run {}", runId, e);
+            return Liquidation.failed("failed to cancel working orders: " + e.getMessage());
         }
     }
 
     /** Flattens open positions at the broker for a run and verifies the account is flat. */
-    private void flattenAtBroker(String runId) {
+    private Liquidation flattenAtBroker(String runId) {
         Broker broker = activeBrokers.get(runId);
         if (broker == null) {
             log.warn("Kill switch: no active broker for run {}; cannot flatten positions at broker.", runId);
-            return;
+            return Liquidation.failed("no active broker for run " + runId);
         }
         try {
             int flattened = broker.flattenAllPositions();
             log.info("Kill switch: flattened {} positions for run {}", flattened, runId);
             List<com.martinfou.trading.core.Position> remaining = broker.getPositions();
             if (!remaining.isEmpty()) {
-                log.error("CRITICAL: {} position(s) remain at broker after flatten for run {}. Manual intervention required.",
-                    remaining.size(), runId);
+                String detail = remaining.size() + " position(s) remain at broker after flatten for run " + runId;
+                log.error("CRITICAL: {}. Manual intervention required.", detail);
+                return Liquidation.failed(detail);
             }
+            return Liquidation.clean();
         } catch (Exception e) {
             log.error("Kill switch: failed to flatten positions for run {}", runId, e);
+            return Liquidation.failed("failed to flatten positions: " + e.getMessage());
         }
     }
 
@@ -848,18 +919,6 @@ public class RunManager implements RunLifecycle, AutoCloseable {
 
     public RunRecordStore runRecordStore() {
         return runRecordStore;
-    }
-
-    /**
-     * Test seam — replace the run-record store so a test can decorate {@link RunRecordStore#save}
-     * and observe the exact order of persistence versus in-memory publication (the persist-before-publish
-     * invariant of Story 48.2). Package-private; production callers never invoke it.
-     */
-    void setRunRecordStore(RunRecordStore store) {
-        if (store == null) {
-            throw new IllegalArgumentException("store must not be null");
-        }
-        this.runRecordStore = store;
     }
 
     public List<com.martinfou.trading.core.Trade> getTrades(String runId) {
@@ -1089,16 +1148,21 @@ public class RunManager implements RunLifecycle, AutoCloseable {
      * TARGET state is written to the {@link RunRecordStore} BEFORE it becomes visible in memory, so
      * no reader of the in-memory map can observe a terminal run as still-active, and a crash between
      * the two steps leaves the store (not memory) as the authority. Listeners are notified only after
-     * the state is both durable and published. If the write fails, the state is NOT published and the
-     * listeners are NOT notified: the transition never became durable, so it must not be observable.
+     * the state is both durable and published.
+     *
+     * <p>If the store write itself fails (disk/sync error), the live process still publishes the
+     * terminal state and notifies the listeners: the material reality of the stop must prevail over a
+     * failed disk synchronization. The invariant is preserved — we always ATTEMPT to persist before
+     * publishing — but on a disk failure the coherence of the live process wins. Otherwise the run
+     * thread would end while the record stays RUNNING in memory (a ghost run in {@code /api/runs}),
+     * and {@code ControlPlaneServer} listeners would never be called, leaving orphan subscriptions.
      */
     private void persistThenNotify(RunRecord record, RunState staged, RunRecord before, RunTransition cause) {
         try {
             runRecordStore.save(record.withState(staged));
         } catch (Exception e) {
-            log.error("Failed to persist run record {} on transition {}; terminal state not published.",
+            log.error("Failed to persist run record {} on transition {}; publishing terminal state anyway.",
                 record.runId(), cause, e);
-            return;
         }
         record.publish(staged);
         for (RunTransitionListener listener : listeners) {
