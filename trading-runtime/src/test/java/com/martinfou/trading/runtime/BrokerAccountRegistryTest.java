@@ -5,6 +5,7 @@ import com.martinfou.trading.broker.BrokerCredentials;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -30,11 +31,14 @@ class BrokerAccountRegistryTest {
         assertEquals("firm-a", view.id());
         assertEquals("OANDA", view.provider());
         assertFalse(view.accountIdMasked().contains("token"));
-        // In test mode the registry resolves the mock account, so the mask reflects that value.
-        // What must hold in every mode is the shape: a mask, never the account itself.
-        assertTrue(view.accountIdMasked().matches("\\*{4}[A-Za-z0-9]{0,4}"),
-            "le masque doit etre **** ou ****llll, jamais le compte : " + view.accountIdMasked());
-        assertFalse(view.accountIdMasked().contains("firm-a"));
+        // In test mode the registry resolves the mock account, so the mask reflects THAT value. What
+        // must hold in every mode, and what this now asserts, is that the mask never exposes an account:
+        // the shape caps disclosure at four trailing characters, and the raw account is never shown.
+        String masked = view.accountIdMasked();
+        assertTrue(masked.matches("\\*{4}[A-Za-z0-9]{0,4}"),
+            "le masque doit etre **** ou ****llll, jamais le compte : " + masked);
+        assertNotEquals(BrokerAccountRegistry.MOCK_ACCOUNT_ID, masked, "le compte brut ne doit jamais sortir");
+        assertFalse(masked.contains("firm-a"), "ni l'identifiant d'entree");
     }
 
     @Test
