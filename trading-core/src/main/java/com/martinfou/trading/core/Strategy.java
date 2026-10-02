@@ -52,9 +52,13 @@ public interface Strategy {
 
     default void syncPosition(Order.Side side, double quantity, double sl, double tp) {
         try {
-            boolean wasInTrade = readBooleanFieldOpt("inTrade");
+            boolean wasInTrade = readInTrade();
             boolean inTrade = (side != null && quantity > 0);
-            setFieldValueOpt("inTrade", inTrade);
+            // The in-trade flag goes through the hierarchy-aware pair, so a strategy that inherits its
+            // flag is flattened too; the read and the write share one scope on purpose (see readInTrade).
+            // The other six fields keep the original concrete-class scope: widening THOSE would change
+            // instrument reconciliation and stop/target handling, which is not what this change is about.
+            writeBooleanOpt(fieldInHierarchy("inTrade"), inTrade);
             setFieldValueOpt("positionSide", side);
             setFieldValueOpt("tradeDirection", side);
             setFieldValueOpt("positionUnits", quantity);
@@ -101,22 +105,54 @@ public interface Strategy {
     default void onExternalClose() {
         Integer declared = declaredCooldownBars();
         if (declared == null) return;
-        for (String counter : java.util.List.of("cooldownBars", "cooldownCounter")) {
-            if (setFieldValueOpt(counter, declared)) return;
+        // The counter can be declared on a base class, so resolve the FIELD across the hierarchy here.
+        // setFieldValueOpt deliberately keeps its narrower scope: it also writes inTrade and symbol, and
+        // widening those two is a behaviour change this change must not smuggle in (see readBooleanFieldOpt).
+        java.lang.reflect.Field counter = fieldInHierarchy("cooldownBars");
+        if (counter == null) counter = fieldInHierarchy("cooldownCounter");
+        if (counter == null) return;
+        writeIntOpt(counter, declared);
+    }
+
+    /** The declared field of that name on this class or any superclass, or {@code null} when absent. */
+    private java.lang.reflect.Field fieldInHierarchy(String fieldName) {
+        for (Class<?> c = this.getClass(); c != null; c = c.getSuperclass()) {
+            try {
+                java.lang.reflect.Field field = c.getDeclaredField(fieldName);
+                field.setAccessible(true);
+                return field;
+            } catch (NoSuchFieldException e) {
+                // Not on this class: keep walking up.
+            }
+        }
+        return null;
+    }
+
+    /** Writes an {@code int}-backed field, reporting whether it landed; a non-int field is a silent no-op. */
+    private boolean writeIntOpt(java.lang.reflect.Field field, int value) {
+        try {
+            field.setInt(this, value);
+            return true;
+        } catch (Exception e) {
+            return false;
         }
     }
 
     /**
      * Reads the strategy's own {@code COOLDOWN_BARS} constant, walking up the hierarchy so an inherited
      * constant is found. Returns {@code null} when the class declares none (or declares a non-positive
-     * one): "no cooldown" and "cooldown of zero bars" both mean nothing to arm.
+     * one): "no cooldown" and "cooldown of zero bars" both mean nothing to arm. Read tolerantly on
+     * purpose: {@code field.get(this)} also works for a static constant, and a {@code Number} box
+     * ({@code Integer}, {@code long}) is accepted instead of assuming a primitive {@code int}.
      */
     private Integer declaredCooldownBars() {
         for (Class<?> c = this.getClass(); c != null; c = c.getSuperclass()) {
             try {
                 java.lang.reflect.Field field = c.getDeclaredField("COOLDOWN_BARS");
                 field.setAccessible(true);
-                int value = field.getInt(null);
+                Object raw = field.get(this);
+                if (!(raw instanceof Number number)) return null;
+                int value = number.intValue();
                 return value > 0 ? value : null;
             } catch (NoSuchFieldException e) {
                 // Not on this class: a strategy may inherit the constant from a base class.
@@ -128,17 +164,32 @@ public interface Strategy {
     }
 
     /**
-     * Reads a boolean field of the concrete class, or {@code false} when the strategy has none — the
-     * same scope as {@link #setFieldValueOpt}, so a strategy whose state lives elsewhere (e.g.
-     * {@code activeSide}) is neither read nor written here and keeps its own override.
+     * Reads the strategy's in-trade flag, wherever it is declared — this class or a base class — or
+     * {@code false} when the strategy keeps no flag under that name.
+     *
+     * <p>The scope is the whole hierarchy, and {@link #syncPosition} writes the flag through the same
+     * scope: {@code false} here therefore means "the strategy did not believe it was in a position", and
+     * the arming guard fires exactly when this call flipped that flag to false. Read and write must move
+     * together — a narrower write would leave a strategy latched in-trade forever while the guard stayed
+     * silent, and a narrower read would arm nothing for a strategy that IS flattened.
      */
-    private boolean readBooleanFieldOpt(String fieldName) {
+    private boolean readInTrade() {
+        java.lang.reflect.Field field = fieldInHierarchy("inTrade");
+        if (field == null) return false;
         try {
-            java.lang.reflect.Field field = this.getClass().getDeclaredField(fieldName);
-            field.setAccessible(true);
             return field.getBoolean(this);
         } catch (Exception e) {
             return false;
+        }
+    }
+
+    /** Writes a boolean field, doing nothing when the field is absent or is not a {@code boolean}. */
+    private void writeBooleanOpt(java.lang.reflect.Field field, boolean value) {
+        if (field == null || field.getType() != boolean.class) return;
+        try {
+            field.setBoolean(this, value);
+        } catch (Exception e) {
+            // A boolean field this instance refuses to write: leave it alone rather than half-apply.
         }
     }
 
@@ -158,17 +209,11 @@ public interface Strategy {
         setFieldValueOpt("symbol", oandaSymbol);
     }
 
-    /**
-     * Reflection write used by {@link #syncPosition}, {@link #reconcileInstrument} and
-     * {@link #onExternalClose}. Returns {@code true} only when a field with that name exists and was
-     * written, so a caller that must distinguish "written" from "the strategy has no such field" (the
-     * cooldown arming) can do so; callers that do not care simply ignore it.
-     */
-    private boolean setFieldValueOpt(String fieldName, Object value) {
+    private void setFieldValueOpt(String fieldName, Object value) {
         try {
             java.lang.reflect.Field field = this.getClass().getDeclaredField(fieldName);
             field.setAccessible(true);
-            if (value == null && field.getType().isPrimitive()) return false;
+            if (value == null && field.getType().isPrimitive()) return;
             if (field.getType() == double.class && value instanceof Number) {
                 field.setDouble(this, ((Number)value).doubleValue());
             } else if (field.getType() == int.class && value instanceof Number) {
@@ -178,10 +223,8 @@ public interface Strategy {
             } else {
                 field.set(this, value);
             }
-            return true;
         } catch (Exception e) {
-            // Field doesn't exist (or is not settable on this strategy): nothing was written
-            return false;
+            // Ignore if field doesn't exist
         }
     }
 }
