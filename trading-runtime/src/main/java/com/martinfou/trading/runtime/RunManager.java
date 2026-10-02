@@ -163,7 +163,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     private final com.martinfou.trading.backtest.persistence.SqliteTradeAlignmentStore alignmentStore;
     private final com.martinfou.trading.backtest.persistence.SqliteTradeStore tradeStore;
-    private final RunRecordStore runRecordStore;
+    private RunRecordStore runRecordStore;
     private final Map<String, List<com.martinfou.trading.core.Order>> btOrdersByRun = new ConcurrentHashMap<>();
     private final Map<String, List<com.martinfou.trading.core.Order>> liveOrdersByRun = new ConcurrentHashMap<>();
     private final Map<String, Integer> consecutiveTimeDrifts = new ConcurrentHashMap<>();
@@ -551,18 +551,23 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         RunRecord before = record;
         return switch (record.status()) {
             case CREATED -> {
-                record.markFailed("stopped before start");
-                notifyTransition(before, record, RunTransition.STOP);
+                RunState staged = record.stagedFailed("stopped before start");
+                persistThenNotify(record, staged, before, RunTransition.STOP);
                 yield record;
             }
             case RUNNING -> {
-                record.markCompleted(Map.of("message", "stopped by operator"));
-                if (liquidate) {
-                    cancelAllAtBroker(runId);
-                }
-                AutoCloseable exec = activeExecutors.get(runId);
-                if (exec != null) {
-                    try {
+                // Persist + publish the terminal state FIRST, before any broker call, so a broker
+                // failure (defect 1) can no longer leave the run RUNNING in the store, and the
+                // write strictly precedes publication (defect 2).
+                RunState staged = record.stagedCompleted(Map.of("message", "stopped by operator"));
+                persistThenNotify(record, staged, before, RunTransition.STOP);
+                // Broker cleanup is best-effort and runs AFTER the run is durably terminal.
+                try {
+                    if (liquidate) {
+                        cancelAllAtBroker(runId);
+                    }
+                    AutoCloseable exec = activeExecutors.get(runId);
+                    if (exec != null) {
                         if (liquidate && exec instanceof OandaStreamingExecutor poe) {
                             // OANDA streaming: liquidateAndStop() performs per-run position
                             // disambiguation, flattens, and stops the executor.
@@ -573,19 +578,18 @@ public class RunManager implements RunLifecycle, AutoCloseable {
                             }
                             exec.close();
                         }
-                    } catch (Exception e) {
-                        log.error("Failed to stop executor for run {}", runId, e);
+                    } else if (liquidate) {
+                        // Synchronous broker executor (BrokerRunExecutor) — no streaming handle.
+                        flattenAtBroker(runId);
                     }
-                } else if (liquidate) {
-                    // Synchronous broker executor (BrokerRunExecutor) — no streaming handle.
-                    flattenAtBroker(runId);
+                } catch (Exception e) {
+                    log.error("Failed to stop executor for run {}", runId, e);
                 }
-                notifyTransition(before, record, RunTransition.STOP);
                 yield record;
             }
             case PAUSED -> {
-                record.markFailed("stopped while paused");
-                notifyTransition(before, record, RunTransition.STOP);
+                RunState staged = record.stagedFailed("stopped while paused");
+                persistThenNotify(record, staged, before, RunTransition.STOP);
                 yield record;
             }
             // Already terminal — stopping again is a no-op; return the record silently.
@@ -846,6 +850,18 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         return runRecordStore;
     }
 
+    /**
+     * Test seam — replace the run-record store so a test can decorate {@link RunRecordStore#save}
+     * and observe the exact order of persistence versus in-memory publication (the persist-before-publish
+     * invariant of Story 48.2). Package-private; production callers never invoke it.
+     */
+    void setRunRecordStore(RunRecordStore store) {
+        if (store == null) {
+            throw new IllegalArgumentException("store must not be null");
+        }
+        this.runRecordStore = store;
+    }
+
     public List<com.martinfou.trading.core.Trade> getTrades(String runId) {
         Optional<RunRecord> recordOpt = getRun(runId);
         if (recordOpt.isPresent()) {
@@ -1013,27 +1029,34 @@ public class RunManager implements RunLifecycle, AutoCloseable {
             if (oandaStreamError != null) {
                 // Error-driven stop from OandaStreamingExecutor: drive FAILED through RunManager's
                 // state machine so all transition listeners are properly notified.
-                record.noteEventAt(latestEventTimestamp(runId).orElse(Instant.now()));
+                Instant eventAt = latestEventTimestamp(runId).orElse(Instant.now());
                 if (record.status() == RunRecord.Status.RUNNING || record.status() == RunRecord.Status.PAUSED) {
-                    record.markFailed(oandaStreamError);
+                    RunState staged = record.stagedFailed(oandaStreamError).withEventAt(eventAt);
+                    persistThenNotify(record, staged, before, RunTransition.FAIL);
+                } else {
+                    // Already terminal: only refresh the event timestamp and persist as-is.
+                    record.noteEventAt(eventAt);
+                    notifyTransition(before, record, RunTransition.FAIL);
                 }
-                notifyTransition(before, record, RunTransition.FAIL);
             } else if (record.status() == RunRecord.Status.RUNNING) {
-                record.noteEventAt(latestEventTimestamp(runId).orElse(Instant.now()));
-                record.markCompleted(BacktestResultPayload.toEndedPayload(result));
-                notifyTransition(before, record, RunTransition.COMPLETE);
+                RunState staged = record.stagedCompleted(BacktestResultPayload.toEndedPayload(result))
+                    .withEventAt(latestEventTimestamp(runId).orElse(Instant.now()));
+                persistThenNotify(record, staged, before, RunTransition.COMPLETE);
             } else if (record.status() == RunRecord.Status.PAUSED) {
                 record.noteEventAt(latestEventTimestamp(runId).orElse(Instant.now()));
             }
         } catch (RuntimeException e) {
             log.error("Run {} failed with runtime exception", runId, e);
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            if (hasTerminalEvent(runId, RunEventType.ERROR)) {
-                latestEventTimestamp(runId).ifPresent(record::noteEventAt);
-            }
+            Instant eventAt = hasTerminalEvent(runId, RunEventType.ERROR)
+                ? latestEventTimestamp(runId).orElse(null)
+                : null;
             if (record.status() == RunRecord.Status.RUNNING || record.status() == RunRecord.Status.PAUSED) {
-                record.markFailed(msg);
-                notifyTransition(before, record, RunTransition.FAIL);
+                RunState staged = record.stagedFailed(msg);
+                if (eventAt != null) {
+                    staged = staged.withEventAt(eventAt);
+                }
+                persistThenNotify(record, staged, before, RunTransition.FAIL);
             }
             }
         } finally {
@@ -1058,6 +1081,28 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         }
         for (RunTransitionListener listener : listeners) {
             listener.onTransition(before, after, cause);
+        }
+    }
+
+    /**
+     * Terminal transition with the persist-before-publish invariant (Story 48.2, defect 2): the
+     * TARGET state is written to the {@link RunRecordStore} BEFORE it becomes visible in memory, so
+     * no reader of the in-memory map can observe a terminal run as still-active, and a crash between
+     * the two steps leaves the store (not memory) as the authority. Listeners are notified only after
+     * the state is both durable and published. If the write fails, the state is NOT published and the
+     * listeners are NOT notified: the transition never became durable, so it must not be observable.
+     */
+    private void persistThenNotify(RunRecord record, RunState staged, RunRecord before, RunTransition cause) {
+        try {
+            runRecordStore.save(record.withState(staged));
+        } catch (Exception e) {
+            log.error("Failed to persist run record {} on transition {}; terminal state not published.",
+                record.runId(), cause, e);
+            return;
+        }
+        record.publish(staged);
+        for (RunTransitionListener listener : listeners) {
+            listener.onTransition(before, record, cause);
         }
     }
 

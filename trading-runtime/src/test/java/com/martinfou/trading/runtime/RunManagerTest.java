@@ -1,6 +1,7 @@
 package com.martinfou.trading.runtime;
 
 import com.martinfou.trading.backtest.events.RunEventType;
+import com.martinfou.trading.broker.Broker;
 import com.martinfou.trading.broker.FakeBroker;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
@@ -867,5 +868,117 @@ class RunManagerTest {
             manager.releaseStreamingClient(creds2, client2);
             manager.releaseStreamingClient(credsOther, clientOther);
         }
+    }
+
+    /**
+     * Story 48.2, defect 1 — a broker failure during {@code stop()} must never leave the run
+     * RUNNING in the store. The broker is injected into {@code activeBrokers} so
+     * {@code cancelAllAtBroker} (the liquidate path) hits it, and it throws an {@link Error}
+     * rather than a {@code RuntimeException}: {@code cancelAllAtBroker} already swallows
+     * {@code Exception}, so only a non-{@code Exception} throwable escapes and can currently skip
+     * the terminal persistence — which is precisely the durability defect this test pins.
+     */
+    @Test
+    void stop_runningRun_withBrokerFailure_persistsTerminalStatus(
+            @org.junit.jupiter.api.io.TempDir java.nio.file.Path tempDir) throws Exception {
+        EventStoreConfig config = EventStoreConfig.withDbPath(tempDir.resolve("stop_broker_failure.db"));
+        try (SqliteEventStore eventStore = new SqliteEventStore(config);
+             RunManager manager = new RunManager(eventStore)) {
+
+            RunConfigSnapshot snapshot = new RunConfigSnapshot(
+                "LondonOpenRangeBreakout", "EUR_USD", "PAPER", "sample", 100, null, 1000.0, null, null, "PAPER_OANDA"
+            );
+            RunRecord record = manager.restoreRun("run-broker-failure", snapshot);
+            record.markRunning();
+            manager.runRecordStore().save(record); // DB row is now RUNNING
+
+            installActiveBroker(manager, record.runId(), throwingBroker());
+
+            try {
+                manager.stop(record.runId(), true);
+            } catch (Error expected) {
+                // The broker Error may still propagate out of stop(); the terminal status must
+                // nonetheless have been persisted before the broker was ever contacted.
+            }
+
+            RunRecord persisted = manager.runRecordStore().get(record.runId()).orElseThrow();
+            assertTrue(persisted.isTerminal(),
+                "stop() must persist a terminal status even when the broker cancel throws; persisted status was "
+                    + persisted.status());
+        }
+    }
+
+    /**
+     * Story 48.2, defect 2 — the terminal state must be persisted BEFORE it is published to memory.
+     * A decorating store captures, at the instant of the COMPLETE save, the status of the SAME run as
+     * seen through {@code manager.getRun(runId)} (i.e. the in-memory record). The invariant requires
+     * that status to still be RUNNING at that instant: publication happens only after the write.
+     */
+    @Test
+    void completion_persistsTerminalState_beforePublishingToMemory() throws Exception {
+        try (RuntimeStores.Bundle stores = RuntimeStores.inMemoryWithBroadcast();
+             RunManager manager = new RunManager(stores.eventStore())) {
+
+            java.util.concurrent.atomic.AtomicReference<RunRecord.Status> memStatusAtTerminalSave =
+                new java.util.concurrent.atomic.AtomicReference<>();
+
+            RunRecordStore observingStore = new RunRecordStore() {
+                private final RunRecordStore delegate = new InMemoryRunRecordStore();
+
+                @Override
+                public void save(RunRecord record) {
+                    if (record.status() == RunRecord.Status.COMPLETED) {
+                        memStatusAtTerminalSave.set(
+                            manager.getRun(record.runId()).map(RunRecord::status).orElse(null));
+                    }
+                    delegate.save(record);
+                }
+
+                @Override public java.util.Optional<RunRecord> get(String runId) { return delegate.get(runId); }
+                @Override public java.util.List<RunRecord> listAll() { return delegate.listAll(); }
+                @Override public void delete(String runId) { delegate.delete(runId); }
+                @Override public void close() { delegate.close(); }
+            };
+            manager.setRunRecordStore(observingStore);
+
+            String runId = manager.startRun(new RunManager.StartRunRequest(
+                "LondonOpenRangeBreakout",
+                "EUR_USD",
+                "BACKTEST",
+                new BarSourceResolver.BarsSource("sample", 100, null),
+                1000.0,
+                null, null, null, null));
+
+            RunRecord completed = waitForCompletion(manager, runId);
+            assertEquals(RunRecord.Status.COMPLETED, completed.status());
+
+            assertEquals(RunRecord.Status.RUNNING, memStatusAtTerminalSave.get(),
+                "the terminal state must be persisted before it is published to memory");
+        }
+    }
+
+    /** Injects a broker for {@code runId} into the manager's {@code activeBrokers} map. */
+    private static void installActiveBroker(RunManager manager, String runId, Broker broker) throws Exception {
+        java.lang.reflect.Field field = RunManager.class.getDeclaredField("activeBrokers");
+        field.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Broker> brokers = (java.util.Map<String, Broker>) field.get(manager);
+        brokers.put(runId, broker);
+    }
+
+    /** A broker whose {@code cancelAllOrders()} throws an {@link Error}, simulating a hard broker failure. */
+    private static Broker throwingBroker() {
+        return (Broker) java.lang.reflect.Proxy.newProxyInstance(
+            Broker.class.getClassLoader(),
+            new Class<?>[] { Broker.class },
+            (proxy, method, args) -> {
+                if (method.getName().equals("cancelAllOrders")) {
+                    throw new Error("broker unavailable during cancelAllOrders");
+                }
+                Class<?> rt = method.getReturnType();
+                if (rt == boolean.class) return false;
+                if (rt == int.class) return 0;
+                return null;
+            });
     }
 }
