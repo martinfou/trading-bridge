@@ -20,8 +20,14 @@ cd "$(dirname "$0")/.."
 COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.dev.yml --project-name tb-dev)
 
 env_value() {  # env_value <file> <KEY>
+  # Strip an inline comment, CR, surrounding whitespace and quotes. Without this, a stray trailing
+  # space in .env.dev would make the dev account LOOK different from the paper account and the guard
+  # below would wave through a container pointed at the observation window's account. The guard is
+  # only as good as its parsing.
   [ -f "$1" ] || return 0
-  grep -E "^$2=" "$1" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'"
+  grep -E "^$2=" "$1" 2>/dev/null | head -1 | cut -d= -f2- \
+    | sed -e 's/[[:space:]]*#.*$//' -e 's/\r$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+    | tr -d '"' | tr -d "'"
 }
 
 dev_account=$(env_value .env.dev OANDA_ACCOUNT_ID)

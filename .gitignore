@@ -116,7 +116,6 @@ deployments/
 # Walk-Forward Analysis reports
 data/reports/wfa/
 
-
 # Dev lane state (never the window's)
 data-dev/
 logs-dev/
