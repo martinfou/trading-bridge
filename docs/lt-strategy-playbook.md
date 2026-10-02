@@ -311,6 +311,28 @@ rien, mais sur du portage (or, saisonnalité, tout ce qui tient des jours) ça d
 Question ouverte, décision de Martin : exiger en plus un **net après tous coûts positifs sur chaque
 fenêtre** (la colonne `NET_A$` du rejeu), ou laisser le PF seul décider.
 
+### 4.3.1 Questions ouvertes pour Martin (2026-10-01)
+
+1. **Le spread du backtest doit-il rester la médiane mesurée, ou un percentile conservateur ?** Une
+   passe de revue a fait valoir que la médiane sous-estime la friction sur la moitié des fills, et
+   surtout autour du rollover de 17 h EST et des nouvelles. Un candidat validé à la médiane peut échouer
+   en réel. Le rejeu du shortlist sera donc fait **aux deux niveaux** (médiane et médiane × 1,5) pour que
+   la question se tranche sur des chiffres au lieu d'une opinion : un candidat qui ne passe qu'à la
+   médiane est fragile et doit être étiqueté comme tel.
+2. **Le net après tous coûts doit-il être une condition de passage** (voir l'observation PF ci-dessus) ?
+3. **Que doit observer la fenêtre paper de 30 jours**, maintenant qu'aucune des cinq stratégies
+   déployées ne survit aux coûts réels ?
+
+### 4.3.2 Résidus connus du modèle de coûts
+
+- Les taux de financement sont un **instantané 2026** appliqué à 2010-2025 : les séries historiques
+  n'existent pas dans le dépôt. L'impact est **borné par mesure** (PF invariant sous swap ×0/×1/×2).
+- Les spreads de sept paires ne sont **pas mesurés** : le modèle refuse désormais de les estimer.
+- `BatchStrategyRunner` (3 sites, `OANDA_SPREAD`) n'est pas migré vers le modèle unifié.
+- Deux recherches retombent encore sur une valeur par défaut au lieu de refuser
+  (`usdPerQuoteUnit` sur une devise de cotation inconnue, `costFor` sur un symbole absent de
+  `REFERENCE_MIDS`).
+
 ### 4.4 Validation de position sizing
 
 ```bash
