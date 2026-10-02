@@ -274,9 +274,29 @@ public class HttpOandaRestClient implements OandaRestClient {
             double price = Double.parseDouble(fill.get("price").asText());
             return OandaMarketOrderResult.success(orderId, tradeId, price);
         } catch (Exception e) {
-            log.warn("OANDA market order failed: {}", e.getMessage());
-            return OandaMarketOrderResult.failure(0, e.getMessage());
+            String detail = describeFailure(e);
+            log.warn("OANDA market order failed: {}", detail);
+            return OandaMarketOrderResult.failure(0, detail);
         }
+    }
+
+    /**
+     * Décrit un échec de transport sans jamais renvoyer null. Certaines JVM (JDK 21) ne posent AUCUN
+     * message sur la ConnectException d'une connexion refusée, alors que le JDK 26 écrit « Connection
+     * refused » : un ordre refusé avec un message nul est inexploitable dans un log comme dans une
+     * alerte, et le test de non-connexion de la CI le vérifie explicitement. Repli sur la cause la plus
+     * profonde qui porte un message, puis sur le nom de la classe.
+     */
+    static String describeFailure(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null && !message.isBlank()) {
+                return message;
+            }
+            current = current.getCause();
+        }
+        return error.getClass().getSimpleName();
     }
 
     /** Builds the MARKET order body map (extracted so the shape is testable without sending). */
@@ -345,8 +365,9 @@ public class HttpOandaRestClient implements OandaRestClient {
             }
             return new OandaMarketOrderResult(response.statusCode(), orderId, tradeId, fillPriceObj, null);
         } catch (Exception e) {
-            log.warn("OANDA order placement failed: {}", e.getMessage());
-            return OandaMarketOrderResult.failure(0, e.getMessage());
+            String detail = describeFailure(e);
+            log.warn("OANDA order placement failed: {}", detail);
+            return OandaMarketOrderResult.failure(0, detail);
         }
     }
 
