@@ -3,6 +3,7 @@ package com.martinfou.trading.runtime;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.martinfou.trading.broker.Broker;
+import com.martinfou.trading.core.guardrails.OrderTripwire;
 import com.martinfou.trading.broker.BrokerCredentials;
 import com.martinfou.trading.data.ibkr.IbkrConnectionConfig;
 
@@ -31,9 +32,11 @@ public final class BrokerAccountRegistry {
     public static final String MOCK_TOKEN = "mock-token";
     public static final String MOCK_ACCOUNT_ID = "mock-account";
     /**
-     * Loopback, port 1, and the word "mock" in the path: resolves instantly, refuses instantly,
-     * cannot reach a broker, and stays recognisable by ControlPlaneServer's {@code contains("mock")}
-     * check. A non-resolving host would have made every test wait for a DNS timeout.
+     * Deliberately NOT a reachable URL: the unsupported {@code mock} scheme makes the HTTP client fail
+     * immediately and, crucially, NOT as an IOException the retry classifier would retry. A connection
+     * refusal on loopback measured 99s for RunManagerTest because connect failures are retryable with
+     * backoff; this shape measures 3.9s. It stays recognisable by ControlPlaneServer's
+     * {@code contains("mock")} check.
      */
     public static final String MOCK_REST_URL = "mock://localhost/oanda";
 
@@ -275,37 +278,50 @@ public final class BrokerAccountRegistry {
     }
 
     public Optional<BrokerCredentials> credentials(String accountId) {
+        boolean testRuntime = System.getProperty(TEST_PROPERTY) != null
+            || OrderTripwire.isTestRuntime(System.getenv(), OrderTripwire.runtimeClassPath());
+        return credentials(accountId, System.getenv(), testRuntime);
+    }
+
+    /**
+     * The deterministic core: the environment and the test-runtime flag are parameters, so the rule can
+     * be tested without depending on the ambient shell. The flag is computed by {@link #credentials(String)}
+     * from the surefire property and {@link OrderTripwire#isTestRuntime}, because a test JVM cannot prove
+     * the production branch about itself: under surefire the property is always set. Two things it must guarantee:
+     *
+     * <ol>
+     *   <li>an account with no resolvable credential stays {@code empty}, so callers that branch on
+     *       {@code isEmpty()} to detect "unconfigured" keep working exactly as before;</li>
+     *   <li>when this JVM is a test runtime, the environment is NOT allowed to hand it a live
+     *       credential. On 2026-10-01 an exported .env.paper in the developer shell leaked into the
+     *       forked test JVM and the suite sent 12 real orders to the paper account.</li>
+     * </ol>
+     */
+    Optional<BrokerCredentials> credentials(String accountId, Map<String, String> env, boolean testRuntime) {
         String id = resolveId(accountId);
         AccountEntry entry = accountsById.get(id);
         if (entry == null || entry.isIbkr()) {
             return Optional.empty();
         }
-        if (System.getProperty(TEST_PROPERTY) != null) {
-            // Test mode must NEVER inherit a live credential from the environment.
-            //
-            // On 2026-10-01 the test suite sent 12 real orders to the paper account. The mechanism was
-            // this method, not a missing guard: the surefire property below already put the JVM in test
-            // mode and loadDefault() already returned the synthetic account, but that account carried
-            // null token/accountId and merely NAMED the environment variables, so the real values were
-            // read from the environment. An exported .env.paper in the developer's shell was inherited
-            // by the forked test JVM, and the tests resolved the live paper account and token.
-            //
-            // These sentinels cannot be overridden by any environment variable and the host does not
-            // resolve, so test mode fails closed. MOCK_TOKEN and a "mock" URL are already recognised as
-            // non-live by ControlPlaneServer.
-            return Optional.of(new BrokerCredentials(entry.provider(), MOCK_ACCOUNT_ID, MOCK_TOKEN,
-                    MOCK_REST_URL));
-        }
         String token = entry.token() != null && !entry.token().isBlank()
             ? entry.token()
-            : firstNonBlank(System.getenv(entry.tokenEnv()), System.getenv(BrokerCredentials.ENV_OANDA_API_KEY));
+            : firstNonBlank(env.get(entry.tokenEnv()), env.get(BrokerCredentials.ENV_OANDA_API_KEY));
         String account = entry.accountId() != null && !entry.accountId().isBlank()
             ? entry.accountId()
-            : System.getenv(entry.accountIdEnv());
+            : env.get(entry.accountIdEnv());
+        // Fail closed first: nothing resolvable means nothing returned, exactly as before this change.
         if (token == null || account == null) {
             return Optional.empty();
         }
-        String restUrl = System.getenv(entry.restUrlEnv());
+        // Only NOW, when the environment WOULD have supplied a live credential, does test mode
+        // substitute sentinels. Detection is the order tripwire's predicate (surefire, failsafe, IDE,
+        // Gradle, SUREFIRE_* env) plus the surefire property, so an IDE run cannot slip through by not
+        // being surefire. The sentinels cannot be overridden by any environment variable.
+        if (testRuntime) {
+            return Optional.of(new BrokerCredentials(entry.provider(), MOCK_ACCOUNT_ID, MOCK_TOKEN,
+                    MOCK_REST_URL));
+        }
+        String restUrl = env.get(entry.restUrlEnv());
         if (restUrl == null || restUrl.isBlank()) {
             restUrl = entry.defaultRestUrl();
         }
