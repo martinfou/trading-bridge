@@ -19,6 +19,17 @@ transaction dont le numéro est supérieur appartient à la fenêtre, et rien d'
 | Ordres en attente | 0 |
 | Fin prévue | 2026-10-31 |
 
+**Décision D38 (Martin, 2026-10-02) — la fenêtre 1 continue à travers le correctif du cooldown.**
+Le correctif de la story `47-1-cooldown-non-arme-apres-sortie-courtier.md` se déploie **sans interrompre la
+fenêtre** : ni la stratégie, ni le sizing, ni l'instrument, ni la liste des services ne changent, seul un
+défaut de comportement est corrigé. L'horloge reste celle du 2026-10-01 18:31 EDT, fin prévue 2026-10-31,
+et la date de déploiement du correctif est inscrite ci-dessous pour que la période avant/après reste
+lisible plutôt que mélangée.
+
+| Correctif | Déployé le |
+|---|---|
+| 47.1 — cooldown non armé sur sortie courtier | _(à remplir au déploiement)_ |
+
 Services en marche et instrument effectivement utilisé (lu dans les journaux de démarrage, pas
 dans la config) :
 
