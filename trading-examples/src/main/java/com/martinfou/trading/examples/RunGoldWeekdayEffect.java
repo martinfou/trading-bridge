@@ -4,6 +4,7 @@ import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.data.HistoricalDataLoader;
 import com.martinfou.trading.strategies.creative.GoldWeekdayEffectStrategy;
@@ -30,7 +31,7 @@ public class RunGoldWeekdayEffect {
     static final double CAPITAL = 50_000;
 
     public static void main(String[] args) throws Exception {
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
 
         if (args.length > 0 && args[0].equals("--wf")) { runWalkForward(cost); return; }
         if (args.length > 0 && args[0].equals("--regime")) { runRegime(cost); return; }
@@ -69,7 +70,7 @@ public class RunGoldWeekdayEffect {
     }
 
     /** Contrôle bêta : long or TOUS les jours (5 sessions/semaine) = proxy bêta pur. */
-    private static void runBetaControl(BacktestExecutionCost cost) throws Exception {
+    private static void runBetaControl(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         System.out.println("=== CONTRÔLE BÊTA XAU_USD — long or tous les jours (5 sessions) ===");
         // tous les jours = strategy avec tous les jours ouvrés comme cibles
         // → équivalent "long or 24/5" : le PF de ce contrôle est la BÊTA.
@@ -100,7 +101,7 @@ public class RunGoldWeekdayEffect {
         return days;
     }
 
-    private static void runWalkForward(BacktestExecutionCost cost) throws Exception {
+    private static void runWalkForward(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         System.out.println("=== WALK-FORWARD XAU_USD — FRI seul (IS 2006-2015 / OOS 2016-2025) ===");
         String[] phases = {"IS 2006-2015", "OOS 2016-2025"};
         String[] specs = {"2006-2015", "2016-2025"};
@@ -117,7 +118,7 @@ public class RunGoldWeekdayEffect {
         System.out.println("\nDONE");
     }
 
-    private static void runRegime(BacktestExecutionCost cost) throws Exception {
+    private static void runRegime(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         System.out.println("=== RÉGIME XAU_USD — FRI seul vs ALLDAYS (proxy bêta) ===");
         String[] regimes = {"2006-2012", "2013-2015", "2016-2025"};
         String[][] configs = {

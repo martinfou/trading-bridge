@@ -3,6 +3,7 @@ package com.martinfou.trading.examples;
 import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.data.HistoricalDataLoader;
 import com.martinfou.trading.strategies.creative.AugustRiskFadeStrategy;
@@ -25,7 +26,7 @@ public class RunAugustRiskFade {
         String yearSpec = args.length > 1 ? args[1] : "2006-2026";
         double capital = 50_000;
 
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
 
         for (String symbol : symbols) {
             var loaded = HistoricalDataLoader.loadFromArgs(symbol, symbol, yearSpec);

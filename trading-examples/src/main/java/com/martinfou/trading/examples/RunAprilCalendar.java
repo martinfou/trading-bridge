@@ -4,6 +4,7 @@ import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.data.HistoricalDataLoader;
@@ -39,7 +40,7 @@ public class RunAprilCalendar {
     static final String[] PAIRS = {"GBP_USD", "EUR_USD", "AUD_USD", "NZD_USD", "USD_JPY", "USD_CHF"};
 
     public static void main(String[] args) throws Exception {
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
 
         if (args.length > 0) {
             switch (args[0]) {
@@ -56,7 +57,7 @@ public class RunAprilCalendar {
     }
 
     /** Mode 1 : AVRIL BUY seul, multi-paires. */
-    private static void runApril(BacktestExecutionCost cost) throws Exception {
+    private static void runApril(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         System.out.println("==================================================");
         System.out.println("SEASONAL CALENDAR — AVRIL BUY seul (miroir haussier), H1");
         System.out.println("Coûts: commission $0.07 + slippage 0.01% | Capital: $" + CAPITAL);
@@ -71,7 +72,7 @@ public class RunAprilCalendar {
     }
 
     /** Mode 2 : calendrier long/short complet BUY Apr + SELL May+Aug. */
-    private static void runCalendar(BacktestExecutionCost cost) throws Exception {
+    private static void runCalendar(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         System.out.println("==================================================");
         System.out.println("SEASONAL CALENDAR — COMPLET BUY Apr + SELL May+Aug, H1");
         System.out.println("Coûts: commission $0.07 + slippage 0.01% | Capital: $" + CAPITAL);
@@ -86,7 +87,7 @@ public class RunAprilCalendar {
     }
 
     /** Mode 3 : walk-forward IS 2006-2015 / OOS 2016-2026. */
-    private static void runWalkForward(BacktestExecutionCost cost) throws Exception {
+    private static void runWalkForward(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String[] symbols = {"GBP_USD", "EUR_USD"};
         int[][][] configs = new int[][][]{
             {SeasonalCalendarStrategy.DEFAULT_WINDOW_MONTHS},
@@ -121,7 +122,7 @@ public class RunAprilCalendar {
     }
 
     /** Mode 4 : régime de marché sur GBP (bull/bear/bull2). */
-    private static void runRegime(BacktestExecutionCost cost) throws Exception {
+    private static void runRegime(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String symbol = "GBP_USD";
         String[] regimes = {"2006-2012", "2013-2015", "2016-2026"};
         System.out.println("=== RÉGIME GBP_USD (bull 2006-12 / bear 2013-15 / bull2 2016-26) ===");
@@ -153,7 +154,7 @@ public class RunAprilCalendar {
     }
 
     /** Mode 5 : sweep robustesse offsets {0,3,5,7} (plateau vs pic). */
-    private static void runSweep(BacktestExecutionCost cost) throws Exception {
+    private static void runSweep(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String symbol = "GBP_USD";
         int[] offsets = {0, 3, 5, 7};
         System.out.println("=== SWEEP ROBUSTESSE GBP_USD AVRIL BUY (entrée 1+o / sortie fin-o) ===");
@@ -177,7 +178,7 @@ public class RunAprilCalendar {
     }
 
     /** Mode 6 : PnL prix vs swap (artefact taux constants 2024-26). */
-    private static void runPriceVsSwap(BacktestExecutionCost cost) throws Exception {
+    private static void runPriceVsSwap(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String symbol = "GBP_USD";
         var loaded = HistoricalDataLoader.loadFromArgs(symbol, symbol, "2006-2026");
         List<Bar> bars = loaded.bars();
@@ -195,7 +196,7 @@ public class RunAprilCalendar {
     }
 
     /** Mode 7 : validation d'implémentation — reproduire BearishMonthsFade MAY+AUG. */
-    private static void runVerify(BacktestExecutionCost cost) throws Exception {
+    private static void runVerify(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String[] symbols = {"GBP_USD", "EUR_USD"};
         int[] mayAug = {5, 8};
         Order.Side[] sellSides = {Order.Side.SELL, Order.Side.SELL};
@@ -207,7 +208,7 @@ public class RunAprilCalendar {
         System.out.println("\nDONE");
     }
 
-    private static void runOne(BacktestExecutionCost cost, String symbol, String years,
+    private static void runOne(java.util.function.Function<String, BacktestExecutionCost> cost, String symbol, String years,
                                int[] months, Order.Side[] sides, String label) throws Exception {
         var loaded = HistoricalDataLoader.loadFromArgs(symbol, symbol, years);
         List<Bar> bars = loaded.bars();

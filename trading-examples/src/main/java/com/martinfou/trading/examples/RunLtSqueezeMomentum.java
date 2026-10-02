@@ -2,6 +2,7 @@ package com.martinfou.trading.examples;
 
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.LotSizing;
 import com.martinfou.trading.data.HistoricalDataLoader;
@@ -52,7 +53,7 @@ public class RunLtSqueezeMomentum {
 
         String name = "LtSqueezeMomentum_" + symbol.replace("_", "") + "_" + yearSpec.replace("-", "");
         var strategy = new LtSqueezeMomentum(name, symbol);
-        var context = RunContext.forStrategy(strategy, symbol, com.martinfou.trading.backtest.RunMode.BACKTEST, bars, CAPITAL);
+        var context = RunContext.forStrategy(null, null, strategy, symbol, com.martinfou.trading.backtest.RunMode.BACKTEST, bars, CAPITAL, null, RealCostModel::costFor);
         BacktestResult result = context.run();
         result.printSummary();
         System.out.println();

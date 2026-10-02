@@ -20,11 +20,16 @@ public record BacktestExecutionCost(
         new BacktestExecutionCost(0.0, 0.0, 0.0, 0.0, 0.0);
 
     /**
-     * Realistic default cost model (US-39.1): $0.07 flat commission per trade
-     * plus 0.5 pip (0.00005) fixed slippage per leg. Keeps published backtests
-     * honest instead of zero-cost artifacts; override with {@link #ZERO} for
-     * sensitivity runs.
+     * Legacy default cost model — ABANDONED for OANDA practice accounts.
+     *
+     * <p>$0.07 flat commission per trade plus 0.00005 fixed price-delta per leg.
+     * The $0.07 commission does not exist on these spread-only accounts, and the
+     * 0.00005 price-delta is a ~100× understatement of the real spread on JPY-quoted
+     * pairs and ~10,000× on gold (FEE-AUDIT.md §1). Use {@link RealCostModel#costFor}
+     * instead; this constant is kept only so existing call sites are visibly wrong
+     * rather than silently changed.
      */
+    @Deprecated
     public static final BacktestExecutionCost DEFAULT =
         new BacktestExecutionCost(0.07, 0.0, 0.0, 0.00005, 0.0);
 

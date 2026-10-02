@@ -4,6 +4,7 @@ import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.data.HistoricalDataLoader;
@@ -45,7 +46,7 @@ public class RunGoldJanuarySeasonal {
     static final double FX_QTY = 10_000;   // 10K units — standard fenêtres FX
 
     public static void main(String[] args) throws Exception {
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
 
         if (args.length > 0 && args[0].equals("--wf")) { runWalkForward(cost); return; }
         if (args.length > 0 && args[0].equals("--sweep")) { runSweep(cost); return; }
@@ -90,7 +91,7 @@ public class RunGoldJanuarySeasonal {
     }
 
     /** Walk-forward XAU Jan1-31 : IS 2006-2015 / OOS 2016-2025. */
-    private static void runWalkForward(BacktestExecutionCost cost) throws Exception {
+    private static void runWalkForward(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String symbol = "XAU_USD";
         var isLoaded = HistoricalDataLoader.loadFromArgs(symbol, symbol, "2006-2015");
         var oosLoaded = HistoricalDataLoader.loadFromArgs(symbol, symbol, "2016-2025");
@@ -114,7 +115,7 @@ public class RunGoldJanuarySeasonal {
     }
 
     /** Sweep robustesse : bordures autour de Jan 1→Jan 31 (XAU). Plateau attendu. */
-    private static void runSweep(BacktestExecutionCost cost) throws Exception {
+    private static void runSweep(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String symbol = "XAU_USD";
         var loaded = HistoricalDataLoader.loadFromArgs(symbol, symbol, "2006-2025");
         List<Bar> bars = loaded.bars();

@@ -141,7 +141,7 @@ public class BacktestEngine {
         return this;
     }
 
-    /** Fixed slippage in USD per filled trade. */
+    /** Fixed slippage as a PRICE delta applied per filled trade (see BacktestEngine.applySlippage). */
     public BacktestEngine withSlippageFixed(double slippageFixed) {
         this.slippageFixed = slippageFixed;
         return this;

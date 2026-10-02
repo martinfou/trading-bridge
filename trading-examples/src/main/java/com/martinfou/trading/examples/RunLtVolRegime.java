@@ -3,6 +3,7 @@ package com.martinfou.trading.examples;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.LotSizing;
 import com.martinfou.trading.data.HistoricalDataLoader;
@@ -69,7 +70,7 @@ public class RunLtVolRegime {
             return;
         }
         var strategy = new LtVolRegime("LtVolRegime", symbol);
-        var result = RunContext.forStrategy(strategy, symbol, RunMode.BACKTEST, bars, capital).run();
+        var result = RunContext.forStrategy(null, null, strategy, symbol, RunMode.BACKTEST, bars, capital, null, RealCostModel::costFor).run();
         result.printSummary();
         System.out.println();
     }
