@@ -321,7 +321,18 @@ fenêtre** (la colonne `NET_A$` du rejeu), ou laisser le PF seul décider.
    médiane est fragile et doit être étiqueté comme tel.
 2. **Le net après tous coûts doit-il être une condition de passage** (voir l'observation PF ci-dessus) ?
 3. **Que doit observer la fenêtre paper de 30 jours**, maintenant qu'aucune des cinq stratégies
-   déployées ne survit aux coûts réels ?
+   déployées ne survit aux coûts réels ? *(Note du 2026-10-01 au soir : le rejeu du shortlist sous le vrai
+   modèle de coûts donne **trois candidats or** qui passent la porte, le plus propre étant « Gold vendredi
+   long × DXY opposé » — toutes fenêtres ≥ 1.17 même à spread ×1,5, net positif partout. La question
+   devient donc : déployer ce candidat et redémarrer l'horloge de 30 jours, ou garder les cinq actuelles ?)*
+4. **Le Sharpe de la porte doit-il soustraire le taux sans risque ?** Depuis le correctif, il le soustrait
+   (`DEFAULT_RISK_FREE_RATE = 0.025`). Conséquence mesurée : sur une stratégie backtestée petite (10k de
+   capital, positions de 1000 unités, volatilité journalière implicite 0.02 %), le rf est du même ordre que
+   la moyenne et **domine le chiffre** — `consecbar` FULL passe de −1.39 à −9.21 par la seule soustraction,
+   et `compmomentum` OOS1 de +0.59 à −4.61. Économiquement c'est défendable (un portefeuille majoritairement
+   en liquidités gagne le sans-risque), mais la porte juge alors « bats la liquidité » autant que « as-tu un
+   edge ». Deux options : garder la soustraction (sens strict, plus dur) ou la mettre à 0 pour l'évaluation
+   de porte. À trancher par Martin.
 
 ### 4.3.2 Résidus connus du modèle de coûts
 
