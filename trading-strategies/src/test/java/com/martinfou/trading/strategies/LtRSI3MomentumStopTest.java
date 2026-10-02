@@ -141,11 +141,11 @@ class LtRSI3MomentumStopTest {
     }
 
     // ========================================================================
-    // C1 (reprise) — after the runner reconciles a broker-SL close, re-enter on the next signal
+    // C1 (reprise) + 47.1 — after the runner reconciles a broker-SL close, the cooldown comes first
     // ========================================================================
 
     @Test
-    @DisplayName("after a broker-SL close is reconciled (syncPosition null), the strategy re-enters and emits no close for the dead position")
+    @DisplayName("after a broker-SL close is reconciled (syncPosition null), the cooldown is spent before the strategy re-enters")
     void reentersAfterBrokerStopReconciliation() {
         List<Bar> bars = uptrend(210);
         LtRSI3Momentum s = primed(bars);
@@ -160,17 +160,25 @@ class LtRSI3MomentumStopTest {
         assertTrue(s.getPendingOrders().isEmpty(),
             "reconciliation must NOT emit a close order for an already-closed position (C1)");
 
-        // Feed a fresh bullish signal on the NEXT day so the daily trade cap resets.
+        // Story 47.1: that exit came from the venue, so the strategy's own cooldown (3 bars) is armed.
+        // Fresh bullish signals on the NEXT day (so the daily cap resets) must stay silent for 3 bars.
         Instant lastT = bars.get(209).timestamp();
-        double lastClose = bars.get(209).close();
-        Instant nextDay = lastT.plusSeconds(24 * 3600L);
-        double c1 = lastClose + 0.001;
-        s.onBar(bar(nextDay, c1 - 0.001, c1 + 0.0005, c1 - 0.0015, c1));
-        s.onBar(bar(nextDay.plusSeconds(3600L), c1, c1 + 0.0015, c1 - 0.0015, c1 + 0.001));
+        double c = bars.get(209).close() + 0.001;
+        Instant t = lastT.plusSeconds(24 * 3600L);
+        for (int i = 0; i < 3; i++) {
+            s.onBar(bar(t, c, c + 0.0015, c - 0.0015, c + 0.001));
+            assertTrue(s.getPendingOrders().isEmpty(),
+                "no re-entry during the cooldown (bar " + (i + 1) + " of 3) after a broker-side stop");
+            t = t.plusSeconds(3600L);
+            c += 0.001;
+        }
+
+        // Cooldown spent: the strategy is not a zombie, it enters again on the next valid signal.
+        s.onBar(bar(t, c, c + 0.0015, c - 0.0015, c + 0.001));
 
         List<Order> orders = s.getPendingOrders();
         assertEquals(1, orders.size(),
-            "the strategy re-enters after the broker SL close is reconciled (no zombie)");
+            "the strategy re-enters once its own cooldown is spent (no zombie)");
         Order re = orders.get(0);
         assertEquals(Order.Side.BUY, re.side());
         assertFalse(re.isCloseOnly(), "the new order is an entry, not a close for the dead position");
