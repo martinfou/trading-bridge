@@ -145,8 +145,14 @@ class ControlSummaryServiceTest {
             @Override public com.martinfou.trading.broker.AccountState getAccountState() { return new com.martinfou.trading.broker.AccountState(100000, 100000, "USD"); }
             @Override public void addEventListener(java.util.function.Consumer<com.martinfou.trading.broker.BrokerEvent> l) {}
         };
+        // The broker-factory constructor (second test hook) sets requireOandaCredentials=false, so
+        // register() skips the environment credential check. A plain new RunManager(store) would run
+        // validateBrokerCredentials -> requireConfigured("default") and throw "Broker account default
+        // credentials not configured in environment" on any machine without OANDA_* env vars (the CI),
+        // while passing on a developer shell where .env.paper has leaked them. This test is about the
+        // empty-positions summary, not about credential resolution, so it must not read the ambient env.
         try (EventStore store = EventStores.inMemory();
-             RunManager manager = new RunManager(store)) {
+             RunManager manager = new RunManager(store, config -> mockBroker)) {
 
             manager.brokerAccountRegistry().registerMockBroker("default", mockBroker);
 

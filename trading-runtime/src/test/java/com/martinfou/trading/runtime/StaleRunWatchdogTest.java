@@ -47,19 +47,33 @@ class StaleRunWatchdogTest {
             
             assertEquals(RunRecord.Status.COMPLETED, record.status(), "Expected old run to be COMPLETED");
             
-            List<RunRecord> activeRuns = runManager.list(null);
-            assertTrue(activeRuns.size() > 1, "Expected new run to be registered");
+            // register() is synchronous inside checkStaleRuns(), but poll with a bounded wait so the
+            // test stays correct if the restart ever becomes asynchronous. The observable condition is
+            // the appearance of a run whose id differs from the stale one.
+            RunRecord newRun = awaitNewRun(runManager, runId);
             
-            RunRecord newRun = activeRuns.stream()
-                .filter(r -> !r.runId().equals("old-run-id"))
-                .findFirst()
-                .orElse(null);
-            
-            assertNotNull(newRun, "Expected new run to exist");
+            assertNotNull(newRun, "Expected new run to be registered after the restart");
             assertEquals("LondonOpenRangeBreakout", newRun.strategyId());
             assertEquals("EUR_USD", newRun.symbol());
-            assertTrue(newRun.status() == RunRecord.Status.RUNNING || newRun.status() == RunRecord.Status.CREATED);
+            // A successful restart marks the new run RUNNING before the backtest is submitted on a worker
+            // thread. A 500-bar backtest can already have COMPLETED by the time we observe it, so both are
+            // valid outcomes; CREATED means start() silently failed and FAILED means the backtest crashed,
+            // either of which this assertion must still catch.
+            assertTrue(newRun.status() == RunRecord.Status.RUNNING || newRun.status() == RunRecord.Status.COMPLETED,
+                "Expected new run to be RUNNING or COMPLETED, but was " + newRun.status());
         }
+    }
+
+    private static RunRecord awaitNewRun(RunManager runManager, String staleRunId) throws InterruptedException {
+        for (int i = 0; i < 200; i++) {
+            for (RunRecord r : runManager.list(null)) {
+                if (!r.runId().equals(staleRunId)) {
+                    return r;
+                }
+            }
+            Thread.sleep(10);
+        }
+        return null;
     }
 
     @Test

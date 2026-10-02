@@ -749,8 +749,14 @@ class RunManagerTest {
         }
 
         // 2. Simulate control plane restart and verify restoreActiveRuns restarts it
+        // A LIVE_OANDA run restarted here must be able to resolve a broker, or executeRun() marks it
+        // FAILED ("LIVE_OANDA requires credentials...") and this test races that async failure. Injecting
+        // the FakeBroker factory (the same hermetic hook as startRun_liveOanda_routesOrdersThroughBrokerOnWorker)
+        // makes the restart env-independent: no OANDA_* env vars are read, and the run ends RUNNING or
+        // COMPLETED, never FAILED.
         try (SqliteEventStore eventStore = new SqliteEventStore(config);
-             RunManager manager = new RunManager(eventStore, HERMETIC_FETCHER, null)) {
+             RunManager manager = new RunManager(
+                 eventStore, cfg -> new FakeBroker(cfg.capital() != null ? cfg.capital() : 100_000.0), HERMETIC_FETCHER, null)) {
             
             // Verify runs map is empty initially
             assertTrue(manager.list(null).isEmpty());
