@@ -26,7 +26,7 @@ public final class BrokerAccountRegistry {
     public static final String DEFAULT_ID = "default";
 
     /** The system property that puts a JVM in test mode (set by the surefire configs). */
-    public static final String TEST_PROPERTY = "trading.bridge.test";
+    public static final String TEST_PROPERTY = OrderTripwire.TEST_PROPERTY;
 
     /** Test-mode credential sentinels: hard-coded so no environment variable can substitute a real one. */
     public static final String MOCK_TOKEN = "mock-token";
@@ -278,16 +278,15 @@ public final class BrokerAccountRegistry {
     }
 
     public Optional<BrokerCredentials> credentials(String accountId) {
-        boolean testRuntime = System.getProperty(TEST_PROPERTY) != null
-            || OrderTripwire.isTestRuntime(System.getenv(), OrderTripwire.runtimeClassPath());
-        return credentials(accountId, System.getenv(), testRuntime);
+        return credentials(accountId, System.getenv(), OrderTripwire.runtimeClassPath());
     }
 
     /**
-     * The deterministic core: the environment and the test-runtime flag are parameters, so the rule can
-     * be tested without depending on the ambient shell. The flag is computed by {@link #credentials(String)}
-     * from the surefire property and {@link OrderTripwire#isTestRuntime}, because a test JVM cannot prove
-     * the production branch about itself: under surefire the property is always set. Two things it must guarantee:
+     * The deterministic core: the environment and the classpath are parameters, so the rule can be tested
+     * without depending on the ambient shell. There is deliberately NO flag parameter: a caller must not
+     * be able to declare itself production. The test runtime is decided by the tripwire's predicate, which
+     * is the single definition in the codebase. A test that needs the production branch clears the surefire
+     * property for the assertion, the same way ControlPlaneServerTest already does. Two things it must guarantee:
      *
      * <ol>
      *   <li>an account with no resolvable credential stays {@code empty}, so callers that branch on
@@ -297,7 +296,7 @@ public final class BrokerAccountRegistry {
      *       forked test JVM and the suite sent 12 real orders to the paper account.</li>
      * </ol>
      */
-    Optional<BrokerCredentials> credentials(String accountId, Map<String, String> env, boolean testRuntime) {
+    Optional<BrokerCredentials> credentials(String accountId, Map<String, String> env, String classPath) {
         String id = resolveId(accountId);
         AccountEntry entry = accountsById.get(id);
         if (entry == null || entry.isIbkr()) {
@@ -317,7 +316,7 @@ public final class BrokerAccountRegistry {
         // substitute sentinels. Detection is the order tripwire's predicate (surefire, failsafe, IDE,
         // Gradle, SUREFIRE_* env) plus the surefire property, so an IDE run cannot slip through by not
         // being surefire. The sentinels cannot be overridden by any environment variable.
-        if (testRuntime) {
+        if (OrderTripwire.isTestRuntime(env, classPath)) {
             return Optional.of(new BrokerCredentials(entry.provider(), MOCK_ACCOUNT_ID, MOCK_TOKEN,
                     MOCK_REST_URL));
         }
