@@ -172,3 +172,31 @@ Constat mesuré, pas supposé :
   vérifie ensuite l'état du compte chez le courtier. On ne déploie pas avant le retour de practice.
 - La CI de ce dépôt, elle, n'appelle pas OANDA (tests unitaires seulement) : elle reste exploitable pendant
   la panne, ce qui a permis de corriger ses échecs sous Java 21 dans la même soirée.
+
+## 2026-10-03, 11h00 EDT : practice est revenu, le blocage est levé (mesuré)
+
+Le service practice répond de nouveau. Mesures faites le 2026-10-03 à 15h01 UTC, depuis ce poste :
+
+- `GET /v3/accounts` avec le jeton papier : **HTTP 200** en 409 ms, et
+  `GET /v3/accounts/101-002-4729622-014/summary` : **HTTP 200** en 55 ms. Même résultat sur le compte
+  dev `-013` (HTTP 200). Le 503 authentifié décrit le 2026-10-02 n'est plus reproductible, sur aucun des
+  deux comptes.
+- Les bougies sont servies : `XAU_USD`, `GBP_JPY`, `USD_CHF` et `EUR_USD` en H1 répondent 200 en moins de
+  80 ms. La dernière bougie complète est `2026-10-02T20:00Z` (vendredi) : c'est l'état normal d'un marché
+  fermé un samedi, pas une séquelle de la panne.
+- **Layer 3 du gate de pré-déploiement** (`scripts/smoke-oanda-readonly.py`) : **exit 0**, compte `-014`
+  joignable, balance 1940.0742 / NAV 1940.0742, 0 position ouverte. C'est exactement le contrôle qui
+  échouait en 503 la veille : le blocker de déploiement est levé.
+
+Conséquences, et ce qui n'est pas décidé ici :
+
+- Le déploiement du correctif de durabilité **48.2** n'est plus bloqué par OANDA. Il n'est pas fait pour
+  autant : la story est encore **`draft` (propose-only)** dans master, son implémentation vit sur la branche
+  `fix/run-48-2-durability` (commits `3fb4e0a4`, `a24810c7`) et n'est **pas fusionnée**. La décision de
+  Martin reste requise avant tout déploiement.
+- La fenêtre 1 reste **vivante** mais **aveugle** tant que le marché est fermé. Le processus
+  `LiveStrategyRunner` (PID 12 dans `trading-live`, relancé le 2026-10-02 à 23h25 UTC) est toujours en
+  boucle principale : sa dernière barre traitée est `2026-10-02T20:00Z` (vendredi 16h00 EDT), la dernière
+  du vendredi, et ses erreurs de bougie se sont **arrêtées** à 12h40 UTC le 2026-10-03 (les 504 de practice
+  ne se reproduisent plus). Elle reprendra d'elle-même à l'ouverture de la session, dimanche 21h00 UTC.
+  Aucune position ouverte : rien ne traîne sans surveillance.
