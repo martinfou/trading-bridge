@@ -220,7 +220,7 @@ Conséquences, et ce qui n'est pas décidé ici :
 
 ## 2026-10-09, 06:07 EDT : 48.2 et les garde-fous de déploiement sont déployés (la fenêtre 1 continue)
 
-**Décision de Martin (2026-10-09)** : déployer maintenant, en fusionnant les deux branches sur `master`
+**Décision D39 (Martin, 2026-10-09)** : déployer maintenant, en fusionnant les deux branches sur `master`
 et en déployant le papier **avec l'état préservé**. Ceci ferme explicitement l'ouverture laissée par la
 note du 2026-10-03 (« la décision de Martin reste requise avant tout déploiement »). Ni la stratégie, ni
 le sizing, ni l'instrument, ni la liste des services ne changent : **le rythme de la fenêtre reste celui
@@ -246,6 +246,9 @@ du 2026-10-01 18:31 EDT, fin prévue 2026-10-31**, même règle que D38 pour le 
 - **Aucun ordre envoyé par le déploiement** : `lastTransactionID` **280** avant comme après, balance
   inchangée à **1944.4867**, `openTradeCount` 1 (trade 279, SL 1.12341). C'est la preuve que le
   déploiement n'a pas touché l'argent.
+- **Après ce déploiement, `master` continue d'avancer sans changer l'image** : les commits suivants ne
+  touchent que de la documentation et un `.gitignore`. L'artefact qui tourne correspond au code de `c4973635` ;
+  le vérifier par la classe, pas par le numéro de commit (voir le point précédent).
 - **L'image déployée est bien celle-ci** : `LiveStrategyRunner.class` compilée le 2026-10-09 10:03 UTC
   (et non celle du 2026-10-02), et `RunManager.class` contient `liquidation_failed`, la clé de charge
   utile introduite par 48.2.
