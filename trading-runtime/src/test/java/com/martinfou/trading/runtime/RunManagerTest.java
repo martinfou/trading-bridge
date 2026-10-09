@@ -1,6 +1,7 @@
 package com.martinfou.trading.runtime;
 
 import com.martinfou.trading.backtest.events.RunEventType;
+import com.martinfou.trading.broker.Broker;
 import com.martinfou.trading.broker.FakeBroker;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
@@ -867,5 +868,139 @@ class RunManagerTest {
             manager.releaseStreamingClient(creds2, client2);
             manager.releaseStreamingClient(credsOther, clientOther);
         }
+    }
+
+    /**
+     * Story 48.2, defect 1 — the genuinely reachable liquidation failure. A broker whose
+     * {@code flattenAllPositions()} reports success but which KEEPS returning open positions
+     * ({@code getPositions()} non-empty) means liquidation really failed: positions remain at the
+     * broker. {@code stop()} must then persist a FAILED status with a durable trace — an explicit
+     * {@code errorMessage} and a {@code liquidation_failed} flag in the persisted payload — so no
+     * tool querying the store ever sees a COMPLETED run with orphan positions.
+     *
+     * <p>On the pre-fix code this test FAILS: {@code flattenAtBroker} only logged "CRITICAL:
+     * N position(s) remain" and {@code stop()} persisted COMPLETED regardless, leaving no trace.
+     */
+    @Test
+    void stop_runningRun_whenPositionsRemainAfterFlatten_persistsFailedWithLiquidationTrace(
+            @org.junit.jupiter.api.io.TempDir java.nio.file.Path tempDir) throws Exception {
+        EventStoreConfig config = EventStoreConfig.withDbPath(tempDir.resolve("stop_flatten_failed.db"));
+        try (SqliteEventStore eventStore = new SqliteEventStore(config);
+             RunManager manager = new RunManager(eventStore)) {
+
+            RunConfigSnapshot snapshot = new RunConfigSnapshot(
+                "LondonOpenRangeBreakout", "EUR_USD", "PAPER", "sample", 100, null, 1000.0, null, null, "PAPER_OANDA"
+            );
+            RunRecord record = manager.restoreRun("run-flatten-failed", snapshot);
+            record.markRunning();
+            manager.runRecordStore().save(record); // DB row is now RUNNING
+
+            installActiveBroker(manager, record.runId(), nonFlatteningBroker());
+
+            manager.stop(record.runId(), true);
+
+            RunRecord persisted = manager.runRecordStore().get(record.runId()).orElseThrow();
+            assertEquals(RunRecord.Status.FAILED, persisted.status(),
+                "liquidation failure must persist FAILED, not COMPLETED");
+            assertTrue(persisted.errorMessage().isPresent(),
+                "a durable errorMessage is required on liquidation failure");
+            assertTrue(persisted.errorMessage().get().contains("liquidation failed"),
+                "errorMessage must carry the liquidation failure detail, was: "
+                    + persisted.errorMessage().orElse(""));
+            assertTrue(persisted.endedPayload().isPresent(),
+                "a durable payload is required on liquidation failure");
+            assertEquals(Boolean.TRUE, persisted.endedPayload().get().get("liquidation_failed"),
+                "payload must flag liquidation_failed=true");
+        }
+    }
+
+    /**
+     * Story 48.2, defect 2 — the terminal state must be persisted BEFORE it is published to memory.
+     * A decorating store captures, at the instant of the COMPLETE save, the status of the SAME run as
+     * seen through {@code manager.getRun(runId)} (i.e. the in-memory record). The invariant requires
+     * that status to still be RUNNING at that instant: publication happens only after the write.
+     */
+    @Test
+    void completion_persistsTerminalState_beforePublishingToMemory() throws Exception {
+        try (RuntimeStores.Bundle stores = RuntimeStores.inMemoryWithBroadcast()) {
+
+            java.util.concurrent.atomic.AtomicReference<RunRecord.Status> memStatusAtTerminalSave =
+                new java.util.concurrent.atomic.AtomicReference<>();
+            java.util.concurrent.atomic.AtomicReference<RunManager> managerRef =
+                new java.util.concurrent.atomic.AtomicReference<>();
+
+            RunRecordStore observingStore = new RunRecordStore() {
+                private final RunRecordStore delegate = new InMemoryRunRecordStore();
+
+                @Override
+                public void save(RunRecord record) {
+                    if (record.status() == RunRecord.Status.COMPLETED) {
+                        RunManager manager = managerRef.get();
+                        memStatusAtTerminalSave.set(
+                            manager == null
+                                ? null
+                                : manager.getRun(record.runId()).map(RunRecord::status).orElse(null));
+                    }
+                    delegate.save(record);
+                }
+
+                @Override public java.util.Optional<RunRecord> get(String runId) { return delegate.get(runId); }
+                @Override public java.util.List<RunRecord> listAll() { return delegate.listAll(); }
+                @Override public void delete(String runId) { delegate.delete(runId); }
+                @Override public void close() { delegate.close(); }
+            };
+
+            try (RunManager manager = new RunManager(stores.eventStore(), observingStore)) {
+                managerRef.set(manager);
+
+                String runId = manager.startRun(new RunManager.StartRunRequest(
+                    "LondonOpenRangeBreakout",
+                    "EUR_USD",
+                    "BACKTEST",
+                    new BarSourceResolver.BarsSource("sample", 100, null),
+                    1000.0,
+                    null, null, null, null));
+
+                RunRecord completed = waitForCompletion(manager, runId);
+                assertEquals(RunRecord.Status.COMPLETED, completed.status());
+
+                assertEquals(RunRecord.Status.RUNNING, memStatusAtTerminalSave.get(),
+                    "the terminal state must be persisted before it is published to memory");
+            }
+        }
+    }
+
+    /** Injects a broker for {@code runId} into the manager's {@code activeBrokers} map. */
+    private static void installActiveBroker(RunManager manager, String runId, Broker broker) throws Exception {
+        java.lang.reflect.Field field = RunManager.class.getDeclaredField("activeBrokers");
+        field.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Broker> brokers = (java.util.Map<String, Broker>) field.get(manager);
+        brokers.put(runId, broker);
+    }
+
+    /**
+     * A broker whose {@code flattenAllPositions()} reports success (returns 1) but which KEEPS
+     * returning an open position afterwards, simulating a broker that accepts the flatten request
+     * yet still holds the position — the failure {@code flattenAtBroker} detects by re-reading
+     * {@code getPositions()}.
+     */
+    private static Broker nonFlatteningBroker() {
+        return (Broker) java.lang.reflect.Proxy.newProxyInstance(
+            Broker.class.getClassLoader(),
+            new Class<?>[] { Broker.class },
+            (proxy, method, args) -> switch (method.getName()) {
+                case "flattenAllPositions" -> 1;
+                case "getPositions" -> java.util.List.of(
+                    new com.martinfou.trading.core.Position(
+                        "EUR_USD", com.martinfou.trading.core.Order.Side.BUY, 1000.0, 1.0850));
+                case "cancelAllOrders" -> 0;
+                default -> {
+                    Class<?> rt = method.getReturnType();
+                    if (rt == boolean.class) yield false;
+                    if (rt == int.class) yield 0;
+                    yield null;
+                }
+            });
     }
 }

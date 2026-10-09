@@ -184,4 +184,50 @@ public final class RunRecord {
         return current == Status.COMPLETED || current == Status.FAILED
             || current == Status.ARCHIVED || current == Status.RETIRED;
     }
+
+    // ── Staging API (Story 48.2 — persist-before-publish) ──────────────────────────────────
+    //
+    // These compute the TARGET state of a transition WITHOUT installing it, so the caller can
+    // persist that state to the store BEFORE publishing it to memory. The invariant being
+    // protected: a terminal status must never be visible in memory before it is durable in the
+    // store, otherwise a reader (or a crash between the two steps) can observe a run that is
+    // terminal in memory but still RUNNING in the database.
+
+    /**
+     * The state {@link #markCompleted(Map)} would install, computed without installing it. The
+     * caller must persist this state (via {@link #withState(RunState)}) and only then
+     * {@link #publish(RunState)} it.
+     */
+    RunState stagedCompleted(Map<String, Object> payload) {
+        return state.get().withCompletedAtAndPayload(Status.COMPLETED, Instant.now(), payload);
+    }
+
+    /**
+     * The state {@link #markFailed(String)} would install, computed without installing it. The
+     * caller must persist it before {@link #publish(RunState) publishing} it.
+     */
+    RunState stagedFailed(String message) {
+        return state.get().withCompletedAtAndError(Status.FAILED, Instant.now(), message);
+    }
+
+    /**
+     * A new {@link RunRecord} sharing this record's identity (runId, strategyId, symbol, mode,
+     * config snapshot and hash) but carrying {@code target} as its state. Persist this view to the
+     * store BEFORE publishing {@code target}, so the store never lags behind memory.
+     */
+    RunRecord withState(RunState target) {
+        return new RunRecord(
+            runId, strategyId, symbol, mode,
+            target.startedAt(), configSnapshot, configHash,
+            target.status(), target.completedAt(), target.errorMessage(), target.endedPayload(),
+            target.lastEventAt(), target.restartCount(), target.lastRestartAt());
+    }
+
+    /**
+     * Publishes a staged state to memory. Must be called only AFTER the same state has been
+     * persisted via {@link #withState(RunState)}, preserving the persist-before-publish invariant.
+     */
+    void publish(RunState target) {
+        state.set(target);
+    }
 }
