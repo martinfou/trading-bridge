@@ -1,0 +1,126 @@
+========================================================================
+LE « PORTEUR REFUGE » DU 50e SURVIT-IL A LA GRILLE PARTAGEE ?
+Vendredi 9 oct 2026 (53e) · DEEP DIVE · jambes de devises sous A (pipeline) vs B (aligne)
+========================================================================
+[data] GBP_JPY   126883 barres réelles ·  6361 jours · 2006-01-01 → 2026-05-19
+[data] GBP_USD   123007 barres réelles ·  6167 jours · 2006-01-01 → 2026-05-19
+[data] AUD_USD   118057 barres réelles ·  5956 jours · 2006-01-01 → 2026-05-19
+[data] NZD_USD   119925 barres réelles ·  6009 jours · 2006-01-01 → 2026-05-19
+[data] USD_CHF   122018 barres réelles ·  6118 jours · 2006-01-01 → 2026-05-19
+[data] EUR_USD   123012 barres réelles ·  6168 jours · 2006-01-01 → 2026-05-19
+[data] USD_JPY   121931 barres réelles ·  6114 jours · 2006-01-01 → 2026-05-19
+[data] USD_CAD   123006 barres réelles ·  6167 jours · 2006-01-01 → 2026-05-19
+[aligné] grille partagée 8 paires : 5719 jours · heures 23:00 → 23:00 UTC
+[grille] heure de grille, tous jours : 07:00=1  12:00=1  14:00=2  15:00=76  16:00=20  17:00=1  18:00=1  19:00=1  20:00=555  21:00=301  22:00=6  23:00=4754  
+[grille] MONDAY    n= 954  12:00=1 21:00=1 22:00=1 23:00=951 
+[grille] TUESDAY   n= 955  18:00=1 22:00=1 23:00=953 
+[grille] WEDNESDAY n= 954  14:00=1 22:00=1 23:00=952 
+[grille] THURSDAY  n= 954  16:00=1 17:00=1 22:00=2 23:00=950 
+[grille] FRIDAY    n= 953  07:00=1 14:00=1 15:00=76 16:00=19 19:00=1 20:00=555 21:00=300 
+[grille] SATURDAY  n=   0  
+[grille] SUNDAY    n= 949  22:00=1 23:00=948 
+
+========================================================================
+P0) CALIBRATION — profil VENDREDI des 8 paires (retour de SESSION, clôtures UTC)
+========================================================================
+Réf 50e (construction A) : GBP_JPY -5.6113 · GBP_USD -5.3390 · AUD -5.0796 · NZD -3.4304 · USD_CHF -3.6173
+PAIRE       A: VEN bp       n    médiane    hit<0%       t     B: VEN bp       n   médiane       t
+GBP_JPY       -5.9081    1059    -3.0993       52%   -2.50       -4.7374     953   -1.4579   -1.87
+GBP_USD       -5.5206    1027    -2.6854       53%   -2.94       -5.1199     953   -2.5698   -2.69
+AUD_USD       -5.3802     992    -2.7497       51%   -2.19       -4.1264     953   -2.2562   -1.67
+NZD_USD       -3.7110     999    -2.3778       51%   -1.57       -3.4511     953   -2.1969   -1.44
+USD_CHF       -3.7827    1019    -3.6096       53%   -2.10       -2.9367     953   -2.8925   -1.57
+EUR_USD       -3.2255    1027    -1.0727       51%   -1.85       -3.5364     953   -1.5694   -1.93
+USD_JPY       -1.8822    1019    -2.2274       53%   -0.90       -1.1557     953   -1.1397   -0.54
+USD_CAD       +0.3966    1027    +0.9029       49%   +0.23       +0.1411     953   +0.8675   +0.08
+
+Lecture : sous A la clôture de chaque paire est sa DERNIÈRE barre réelle ; sous B c'est la
+dernière heure COMMUNE aux 8 paires. Si le profil se déplace, la table du 50e mesurait l'heure.
+
+========================================================================
+FLOOR) RÉSIDU DES MOINDRES CARRÉS — A vs B, et les dates « sales »
+========================================================================
+[A] 5718 dates · 45744 résidus · résidu RMS 2.8172 bp · résidu max 287.10 bp · résidus > 100 bp : 6
+[B] 5718 dates · 45744 résidus · résidu RMS 0.4771 bp · résidu max 8.54 bp · résidus > 100 bp : 0
+
+Dates présentes en B mais ABSENTES en A (un jour sauté dans au moins une paire) : 0
+
+========================================================================
+LEGS) PROFIL VENDREDI DES 7 JAMBES — A (pipeline) vs B (grille partagée)
+========================================================================
+5718 dates communes · fade SELL(X/Y) = leg(Y) - leg(X) · jambe > 0 = devise qui s'apprécie vs USD le vendredi
+CCY   |  A: VEN bp      n   hit<0%       t |  B: VEN bp      n   hit<0%       t
+GBP   |    -4.3503    953      53%   -2.28 |    -4.6072    953      53%   -2.42
+AUD   |    -4.5579    953      51%   -1.86 |    -4.1264    953      51%   -1.67
+EUR   |    -3.1645    953      51%   -1.73 |    -3.5364    953      51%   -1.93
+NZD   |    -3.6360    953      51%   -1.49 |    -3.4511    953      51%   -1.44
+CAD   |    -0.5327    953      51%   -0.30 |    -0.1411    953      51%   -0.08
+JPY   |    +0.8727    953      49%   +0.41 |    +0.6430    953      49%   +0.30
+CHF   |    +3.4147    953      48%   +1.81 |    +2.9367    953      48%   +1.57
+
+========================================================================
+LEGS2) MON-JEU (contrôle) ET STABILITÉ — jambes sous B
+========================================================================
+CCY       Mon-Jeu       t    IS 06-15  OOS 16-26      06-09      10-14 15-19/20-26
+GBP       +0.4483   +0.48     -3.2008    -6.2890      -1.34      -2.26      -9.44/-4.74
+AUD       +0.5239   +0.42     -2.3442    -6.2577      -2.41      +1.39      -6.81/-8.95
+EUR       +0.6353   +0.70     -3.3072    -3.8104      -4.58      -0.17      -4.41/-5.45
+NZD       -0.1200   -0.09     -0.3744    -7.1304      -1.17      +3.92      -7.97/-8.82
+CAD       +0.0912   +0.10     -2.0199    +2.1056      +4.79      -3.20      -1.28/+0.17
+JPY       -0.5031   -0.49     +0.3290    +1.0185      -1.94      +2.14      +5.56/-4.38
+CHF       +1.3296   +1.22     +1.4313    +4.7369      -1.27      +2.76      +4.78/+4.88
+
+========================================================================
+FACTOR) PANIER RISQUE (AUD+GBP+NZD+EUR) - PANIER REFUGE (CHF+JPY) — A vs B
+========================================================================
+[A] VENDREDI  -6.0709 bp (t -3.32, n 953, médiane -4.6698, hit fade 45%) · Mon-Jeu +0.1300 (t +0.13)
+     IS 06-15  -3.4661 → OOS 16-26  -9.1859 · décennies   -1.31   -1.85  -12.33   -8.08
+[B] VENDREDI  -5.7201 bp (t -3.13, n 953, médiane -4.6093, hit fade 45%) · Mon-Jeu -0.0414 (t -0.04)
+     IS 06-15  -3.1868 → OOS 16-26  -8.7496 · décennies   -0.77   -1.73  -12.33   -7.24
+
+========================================================================
+HOURS) CONTRÔLE HEURE FIXE — jambes mesurées à 20:00 UTC, tous les jours
+========================================================================
+CCY        VEN bp       n         t    (rappel B)    t(B)
+AUD       -4.9265     855     -1.81       -4.1264   -1.67
+GBP       -4.3882     855     -2.03       -4.6072   -2.42
+CAD       -3.7391     855     -2.09       -0.1411   -0.08
+NZD       -3.6610     855     -1.39       -3.4511   -1.44
+EUR       -3.5454     855     -1.73       -3.5364   -1.93
+JPY       -2.3820     855     -0.96       +0.6430   +0.30
+CHF       +1.4075     855     +0.68       +2.9367   +1.57
+
+Lecture : si le profil de jambes est stable entre B (grille) et H (heure fixe), le mécanisme
+n'est pas une banque d'heures ; s'il bascule, la table du 50e mesurait l'HEURE de lecture.
+
+========================================================================
+CROSS) LES 12 CROSSES DU 50e — LAQUELLE DES DEUX CONSTRUCTIONS EST LE TAUX ?
+========================================================================
+règle CORRECTE : jambe droite USD_YYY ⇒ PRODUIT (X/USD x USD/YYY) ; jambe droite YYY_USD ⇒ QUOTIENT.
+règle 52e      : QUOTIENT dans tous les cas.
+CROSS       réf 50e | A: correct       t | B: correct       t |    B: 52e | B: jambes
+GBP_CHF     +9.0754 |   +9.2396   +5.21 |   +8.0566   +4.44 |   +2.1832 |   +7.5439
+EUR_CHF     +6.9309 |   +7.0015   +6.05 |   +6.4730   +5.39 |   +0.5997 |   +6.4730
+AUD_CHF     +8.2675 |   +8.6001   +3.57 |   +7.0631   +2.89 |   +1.1898 |   +7.0631
+GBP_JPY     +7.0300 |   +7.5561   +3.06 |   +6.2756   +2.48 |   +3.9642 |   +5.2502
+AUD_JPY     +6.9982 |   +6.5129   +2.09 |   +5.2822   +1.66 |   +2.9707 |   +4.7694
+EUR_JPY     +4.6064 |   +4.9951   +2.23 |   +4.6921   +2.04 |   +2.3807 |   +4.1793
+GBP_CAD     +4.9379 |   +5.1240   +2.70 |   +4.9788   +2.50 |   +5.2610 |   +4.4661
+AUD_CAD     +4.6278 |   +4.6187   +2.50 |   +3.9853   +2.13 |   +4.2676 |   +3.9853
+EUR_CAD     +2.6655 |   +2.8289   +1.59 |   +3.3952   +1.79 |   +3.6775 |   +3.3952
+GBP_EUR     +2.1787 |   +2.2951   +1.52 |   +1.5835   +1.02 |   +1.5835 |   +1.0708
+AUD_NZD     +0.8624 |   +0.9426   +0.73 |   +0.6753   +0.50 |   +0.6753 |   +0.6753
+NZD_CAD     +3.4181 |   +3.5988   +1.89 |   +3.3100   +1.70 |   +3.5923 |   +3.3100
+
+Lecture : si la colonne « B: correct » colle à « B: jambes » et que « B: 52e » en diffère de
+~2 x leg(jambe droite), c'est la CONSTRUCTION du 52e qui est fausse, pas le refuge qui meurt.
+
+========================================================================
+VERDICT — à lire dans la note Joplin du 9 oct
+========================================================================
+1. la table de jambes du 50e se déplace-t-elle entre A et B ?
+2. la jambe refuge (CHF) reste-t-elle la première jambe positive ?
+3. le facteur risque/refuge survit-il au changement de grille ?
+4. le profil est-il stable à heure FIXE (contrôle HOURS) ?
+
+DONE
