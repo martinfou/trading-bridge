@@ -28,7 +28,8 @@ lisible plutôt que mélangée.
 
 | Correctif | Déployé le |
 |---|---|
-| 47.1 — cooldown non armé sur sortie courtier | _(à remplir au déploiement)_ |
+| 47.1 − cooldown non armé sur sortie courtier | **2026-10-02 09:26 EDT**. Preuves : image créée à 13:26:09 UTC, `LiveStrategyRunner.class` compilée à 13:15:42 UTC, runners repris à 13:26:25 UTC (commit `81beb350`, 07:26 EDT) |
+| 48.2 + garde-fous de déploiement | **2026-10-09 06:07 EDT**. Voir la section du 2026-10-09 en fin de fichier |
 
 Services en marche et instrument effectivement utilisé (lu dans les journaux de démarrage, pas
 dans la config) :
@@ -62,14 +63,30 @@ jusqu'ici absorbés dans l'écart attribué au financement (voir l'incident ci-d
 
 ### Transactions DANS la fenêtre
 
-| Heure (EDT) | Stratégie | Instrument | Sens | P&L |
+Mise à jour **2026-10-09 09:30 UTC** : la table couvre maintenant **toutes** les transactions de la
+fenêtre (`id > 218`), pas seulement les trois premières. Le `lastTransactionID` de départ reste la
+frontière : tout ce qui porte un numéro supérieur à 218 est ici, et rien d'autre.
+
+| Heure d'entrée (EDT) | Stratégie | Instrument | Sens | P&L |
 |---|---|---|---|---|
 | 2026-10-01 22:00 | consecbar | GBP_JPY | BUY | −12.25 |
 | 2026-10-02 03:00 | vwpreversion | USD_CHF | BUY | −12.14 (stop courtier) |
-| 2026-10-02 04:00 | vwpreversion | USD_CHF | BUY | ouvert (SL 0.82521) |
+| 2026-10-02 04:00 | vwpreversion | USD_CHF | BUY | −13.17 (stop courtier) |
+| 2026-10-02 06:00 | ltrsi3 | EUR_USD | SELL | −3.76 |
+| 2026-10-04 19:00 | consecbar | GBP_JPY | SELL | +20.02 |
+| 2026-10-05 08:00 | ltrsi3 | EUR_USD | SELL | −0.79 |
+| 2026-10-07 04:00 | vwpreversion | USD_CHF | SELL | −9.14 (stop courtier) |
+| 2026-10-07 09:00 | ltrsi3 | EUR_USD | SELL | −2.74 |
+| 2026-10-08 01:00 | ltrsi3 | EUR_USD | SELL | +6.40 |
+| 2026-10-08 14:00 | vwpreversion | USD_CHF | BUY | −9.34 (sortie sur signal) |
+| 2026-10-09 05:00 | ltrsi3 | EUR_USD | SELL | **ouverte** (stop 1.12341) |
 
-Total réalisé dans la fenêtre : **−24.39 CAD**. NAV au 2026-10-02 08:56 UTC : **1961.70** (balance
-1957.00, position ouverte +4.69).
+Total réalisé dans la fenêtre : **−36.91 CAD** (vwpreversion **−43.78** sur 4 sorties,
+ltrsi3 **−0.90** sur 4 sorties, consecbar **+7.77** sur 2 sorties ; `monthweekphase` et
+`compmomentum` n'ont pas encore tradé. NAV au 2026-10-09 09:30 UTC : **1944.06** (balance 1944.49,
+1 position ouverte à −0.43). Le NAV de départ (1981.39) moins ce total donne exactement la balance :
+aucun financement. Point de passage précédent, conservé : NAV **1961.70** au 2026-10-02 08:56 UTC,
+total alors de **−24.39**.
 
 La séquence `vwpreversion` est le premier écart backtest-vers-live documenté de cette fenêtre : la
 première entrée est sortie par le stop du courtier à 03:57:37, et la seconde est prise **3 minutes plus
@@ -200,3 +217,53 @@ Conséquences, et ce qui n'est pas décidé ici :
   du vendredi, et ses erreurs de bougie se sont **arrêtées** à 12h40 UTC le 2026-10-03 (les 504 de practice
   ne se reproduisent plus). Elle reprendra d'elle-même à l'ouverture de la session, dimanche 21h00 UTC.
   Aucune position ouverte : rien ne traîne sans surveillance.
+
+## 2026-10-09, 06:07 EDT : 48.2 et les garde-fous de déploiement sont déployés (la fenêtre 1 continue)
+
+**Décision de Martin (2026-10-09)** : déployer maintenant, en fusionnant les deux branches sur `master`
+et en déployant le papier **avec l'état préservé**. Ceci ferme explicitement l'ouverture laissée par la
+note du 2026-10-03 (« la décision de Martin reste requise avant tout déploiement »). Ni la stratégie, ni
+le sizing, ni l'instrument, ni la liste des services ne changent : **le rythme de la fenêtre reste celui
+du 2026-10-01 18:31 EDT, fin prévue 2026-10-31**, même règle que D38 pour le correctif 47.1.
+
+- **Fusion sur `master`** : `f363c6da` (48.2 : `RunManager`, `RunRecord`, `RunState`, `RunManagerTest`)
+  puis `c4973635` (`scripts/deploy-paper.sh`), fusionnées en `--no-ff` depuis un worktree jetable, puis
+  poussées sur `origin/master` (vérifié : `git rev-list --count origin/master..master` = 0, et les trois
+  commits revus `3fb4e0a4`, `a24810c7`, `8d233bdb` sont ancêtres de `origin/master`).
+- **Revue indépendante** : deux passes, verdicts NEEDS_FIX des deux côtés, tous les constats traités
+  (1 BLOCKER, 2 MAJOR, 1 MINOR sur le Java ; 3 constats sur le script). Détail : story 48.2.
+- **Preuve avant déploiement** : suite complète **verte sous Java 21** (la seule JVM de la matrice CI),
+  **12/12 modules**, 3 min 20 ; puis le gate du script (build, suite sous Java 26, `docker compose config`,
+  smoke OANDA en lecture) : **`✅ GATE PASSED`**.
+- **Déploiement** : `scripts/deploy-paper.sh --apply`. L'état des 5 stratégies a été copié hors de chaque
+  conteneur, restauré pendant que le nouveau conteneur était **à l'arrêt**, puis le conteneur a démarré.
+  Vérification : **`✓ deployment verified (broker 1 = runners 1 sur 4 service(s) vivant(s))`**.
+- **Ce que la fenêtre a conservé** (relevé après redémarrage, identique à l'avant) : consecbar 4 entrées /
+  3 sorties / −7.25 ; vwpreversion 5 / 5 / −55.51 ; ltrsi3 6 / 5 / +9.06 **avec la position
+  279 reprise** (`inTrade: true`, statut `CONFIRMED`) ; `monthweekphase` et `compmomentum` intacts à 0.
+  Le curseur de barres a été maintenu à la fin du warm-up et les ordres que le warm-up avait mis en file
+  ont été jetés (14 pour consecbar, 8 pour vwpreversion) : aucun rejeu historique n'a tradé.
+- **Aucun ordre envoyé par le déploiement** : `lastTransactionID` **280** avant comme après, balance
+  inchangée à **1944.4867**, `openTradeCount` 1 (trade 279, SL 1.12341). C'est la preuve que le
+  déploiement n'a pas touché l'argent.
+- **L'image déployée est bien celle-ci** : `LiveStrategyRunner.class` compilée le 2026-10-09 10:03 UTC
+  (et non celle du 2026-10-02), et `RunManager.class` contient `liquidation_failed`, la clé de charge
+  utile introduite par 48.2.
+
+### Un signal a été perdu le 2026-10-08 à la bascule de 17h00 ET (consecbar, GBP_JPY)
+
+La transaction `MARKET_ORDER` du 2026-10-08 21:00:24 UTC (tag `consecbar_GBP_JPY`) a été annulée par le
+courtier avec le motif `MARKET_HALTED`. Le journal du runner donne la cause réelle, qui n'est pas un
+marché fermé pour la journée :
+
+```
+21:00:24.269 ═══════ ENTRY GBP_JPY BUY 0.05 lots @ N/A (stop on fill: 208.632) ═══════
+21:00:24.270 ❌ TRADE EXECUTION FAILED: GBP_JPY BUY @ 208.959 — For input string: "N/A"
+```
+
+Le prix courant est revenu **`N/A`** : la bascule quotidienne d'OANDA à 17h00 ET suspend brièvement la
+cotation, et la barre qui a déclenché le signal est justement celle qui tombe sur cette minute. L'entrée
+s'est terminée sur une `NumberFormatException` au lieu d'être sautée proprement. **Aucun risque encouru** :
+rien n'a rempli, `openTradeCount` n'a pas bougé, aucune position n'est restée sans surveillance. Un signal
+est simplement perdu, et le message d'erreur ne dit pas pourquoi. À corriger dans la famille « une entrée
+sans prix doit être sautée, pas planter ».
