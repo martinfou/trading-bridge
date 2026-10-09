@@ -1,6 +1,6 @@
 # Story 48.1 — Sondes de calibration backtest contre paper
 
-- **Status : draft** (propose-only : le périmètre attend un mot de Martin, voir « Question ouverte »)
+- **Status : ready-for-dev** (périmètre confirmé par Martin le 2026-10-02 : les 3 sondes + le comparateur)
 - **Date :** 2026-10-02
 - **Propriétaire :** Martin
 - **baseline_commit :** 4a6e8bb7
