@@ -75,6 +75,12 @@ AGENTS.md
 # kept last 5 by the script; never meant for version control)
 data/runtime/pruned-run-ids-*.txt
 
+# Daily reconciliation report - rewritten in place by DailyReconciliationService
+# on every run (timestamp + db size change each time), so tracking it in git
+# produced a permanent dirty worktree and swept a stale runtime snapshot into
+# unrelated merges. It is a runtime output, not a deliverable (story 36-4).
+data/runtime/reconciliation-report.json
+
 # Database
 *.db
 *.sqlite
