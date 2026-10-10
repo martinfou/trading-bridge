@@ -1,0 +1,138 @@
+================================================================
+MODÈLE DE COÛTS AUTORITAIRE — RealCostModel (courtier OANDA practice, 2026-10-01)
+================================================================
+Commission: 0 (compte spread-only, aucune commission par trade)
+Repli spread: REFUS pour une paire non mesurée (aucun repli sûr).
+SWAP: instantané 2026 appliqué à l'historique (borné par le balayage ×0/×1/×2).
+
+1) SPREAD — médiane bid/ask sur 500 bougies H1 price=BA (FEE-AUDIT.md §2).
+   demi-spread par jambe (aller-retour = 1 spread complet):
+     AUD_USD   demi-spread 6.50000e-05 (unités de prix) par jambe
+     XAU_USD   demi-spread 0.265000 (unités de prix) par jambe
+     EUR_USD   demi-spread 8.00000e-05 (unités de prix) par jambe
+     GBP_JPY   demi-spread 0.0170000 (unités de prix) par jambe
+     USD_JPY   demi-spread 0.00800000 (unités de prix) par jambe
+     USD_CHF   demi-spread 7.50000e-05 (unités de prix) par jambe
+
+2) SWAP — OANDA /v3/instruments financing (fraction annuelle) → pips/jour.
+   Formule: swap[pips/jour] = taux_annuel × mid / (pipSize × 365)
+   pipSize: JPY et métaux (XAU/XAG) = 0.01 ; autres FX = 0.0001
+   XAU_USD utilise le mid MOYEN 2010-2025 (1664.0), pas le spot 4182.
+     EUR_USD   long -0.0248/an → -0.76 pip/j   short +0.0045/an → +0.14 pip/j
+     NZD_JPY   long +0.0052/an → +0.13 pip/j   short -0.0268/an → -0.65 pip/j
+     AUD_JPY   long +0.0242/an → +0.73 pip/j   short -0.0449/an → -1.35 pip/j
+     USD_CAD   long +0.0067/an → +0.26 pip/j   short -0.0284/an → -1.11 pip/j
+     GBP_USD   long -0.0124/an → -0.45 pip/j   short -0.0080/an → -0.29 pip/j
+     XAU_USD   long -0.0569/an → -25.94 pip/j   short +0.0323/an → +14.73 pip/j
+     NZD_USD   long -0.0227/an → -0.35 pip/j   short +0.0014/an → +0.02 pip/j
+     AUD_USD   long -0.0040/an → -0.08 pip/j   short -0.0166/an → -0.32 pip/j
+     USD_JPY   long +0.0180/an → +0.78 pip/j   short -0.0382/an → -1.65 pip/j
+     USD_CHF   long +0.0316/an → +0.72 pip/j   short -0.0528/an → -1.20 pip/j
+     EUR_JPY   long +0.0033/an → +0.16 pip/j   short -0.0237/an → -1.15 pip/j
+     EUR_GBP   long -0.0229/an → -0.53 pip/j   short +0.0019/an → +0.04 pip/j
+     GBP_JPY   long +0.0156/an → +0.89 pip/j   short -0.0363/an → -2.07 pip/j
+
+3) CONVERSION PAS À PAS (devise du compte = CAD, USD_CAD = 1.4223):
+   a) EUR_USD (non-JPY, quote USD)
+      notional = 100 000 × 1.12456 = 112456 USD
+      swap/jour = -0.0248 × 112456 / 365 = -7.64 USD/jour → ×1.4223 = -10.87 CAD/jour
+      (en pips: pipValue = 0.0001×100000 = 10 USD → -7.64/10 = -0.76 pip/jour)
+   b) GBP_JPY (quote JPY)
+      notional = 100 000 × 208.433 = 20843300 JPY
+      swap/jour = 0.0156 × 20843300 / 365 = 890.84 JPY/jour → ÷157.925 = 5.64 USD → ×1.4223 = 8.02 CAD/jour
+      (en pips: pipValue = 0.01×100000/157.925 = 6.33 USD → +5.64/6.33 = +0.89 pip/jour)
+   c) XAU_USD (métal, quote USD, lot = 100 oz, mid MOYEN 2010-2025)
+      notional = 100 × 1664 = 166400 USD (moyenne de période; au spot 4182 ce serait 2.5× plus)
+      swap/jour = -0.0569 × 166400 / 365 = -25.94 USD/jour → ×1.4223 = -36.89 CAD/jour
+      (en pips: pipValue = 0.01×100 = 1 USD → -25.9/1 = -25.9 pip/jour ; l'ancienne table disait -2.0)
+
+
+############################################################
+# RE-BASELINE — 5 stratégies déployées, avant/après coûts réels
+# avant = DEFAULT (comm $0.07 + slip 0.00005) + swap legacy
+# après = RealCostModel (comm 0 + demi-spread mesuré) + swap corrigé
+############################################################
+
+================ consecbar (GBP_JPY) — bars 2010-2025: 139872 ================
+WINDOW | PF_B   SH_B    DD_B%   TR_B    NET_B$      SWAP_B$     || PF_A   SH_A    DD_A%   TR_A    NET_A$      SWAP_A$    
+FULL   | 0.97   -8.47   8.02    3650    -759.87     -148.67     || 0.80   -8.50   8.78    3650    -840.56     -63.38     
+IS     | 0.97   -8.32   4.41    2028    -413.47     -81.79      || 0.80   -8.35   4.81    2028    -456.47     -35.70     
+OOS1   | 1.01   -9.37   1.88    908     -166.61     -46.70      || 0.81   -9.35   1.93    908     -171.12     -11.79     
+OOS2   | 0.92   -8.71   2.14    713     -177.53     -20.18      || 0.76   -8.88   2.45    713     -210.65     -15.89     
+  ATTRIBUTION (FULL): prix pur=-98.61 | coût spread=678.57 | coût swap=63.38 | total=741.95 | net après=-840.56 | net avant=-759.87
+  → part du coût: spread=91%  swap=9%  (coût total = 752% du prix pur)
+
+================ vwpreversion (USD_CHF) — bars 2010-2025: 133032 ================
+WINDOW | PF_B   SH_B    DD_B%   TR_B    NET_B$      SWAP_B$     || PF_A   SH_A    DD_A%   TR_A    NET_A$      SWAP_A$    
+FULL   | 0.00   0.00    0.00    0       0.00        0.00        || 0.00   0.00    0.00    0       0.00        0.00       
+IS     | 0.00   0.00    0.00    0       0.00        0.00        || 0.00   0.00    0.00    0       0.00        0.00       
+OOS1   | 0.00   0.00    0.00    0       0.00        0.00        || 0.00   0.00    0.00    0       0.00        0.00       
+OOS2   | 0.00   0.00    0.00    0       0.00        0.00        || 0.00   0.00    0.00    0       0.00        0.00       
+  ATTRIBUTION (FULL): prix pur=0.00 | coût spread=0.00 | coût swap=0.00 | total=0.00 | net après=0.00 | net avant=0.00
+  → part du coût: spread=0%  swap=0%  (coût total = 0% du prix pur)
+
+================ monthweekphase (USD_JPY) — bars 2010-2025: 132960 ================
+WINDOW | PF_B   SH_B    DD_B%   TR_B    NET_B$      SWAP_B$     || PF_A   SH_A    DD_A%   TR_A    NET_A$      SWAP_A$    
+FULL   | 0.93   -10.83  1.50    419     -116.56     -18.63      || 0.87   -11.01  1.55    419     -124.82     -6.64      
+IS     | 0.95   -10.99  0.59    248     -46.94      -0.02       || 0.88   -11.24  0.73    248     -62.82      -1.78      
+OOS1   | 1.47   -6.74   0.91    107     68.99       1.87        || 1.36   -7.25   0.81    107     61.46       -1.32      
+OOS2   | 0.73   -9.79   1.04    62      -50.22      1.02        || 0.69   -9.89   1.04    62      -53.14      -0.32      
+  ATTRIBUTION (FULL): prix pur=-59.24 | coût spread=58.93 | coût swap=6.64 | total=65.57 | net après=-124.82 | net avant=-116.56
+  → part du coût: spread=90%  swap=10%  (coût total = 111% du prix pur)
+
+================ compmomentum (USD_JPY) — bars 2010-2025: 132960 ================
+WINDOW | PF_B   SH_B    DD_B%   TR_B    NET_B$      SWAP_B$     || PF_A   SH_A    DD_A%   TR_A    NET_A$      SWAP_A$    
+FULL   | 1.05   -3.26   5.26    757     -144.72     -225.96     || 1.02   -3.41   4.66    757     -9.23       -61.34     
+IS     | 0.86   -3.64   5.26    446     -444.34     -170.27     || 0.84   -3.86   4.66    446     -340.43     -44.14     
+OOS1   | 1.41   -3.87   0.83    133     131.44      -23.55      || 1.36   -3.98   0.76    133     144.08      -7.23      
+OOS2   | 1.34   -2.00   0.72    173     145.69      -31.39      || 1.30   -2.00   0.67    173     164.21      -9.73      
+  ATTRIBUTION (FULL): prix pur=143.73 | coût spread=91.61 | coût swap=61.34 | total=152.96 | net après=-9.23 | net avant=-144.72
+  → part du coût: spread=60%  swap=40%  (coût total = 106% du prix pur)
+
+================ ltrsi3 (EUR_USD) — bars 2010-2025: 134448 ================
+WINDOW | PF_B   SH_B    DD_B%   TR_B    NET_B$      SWAP_B$     || PF_A   SH_A    DD_A%   TR_A    NET_A$      SWAP_A$    
+FULL   | 0.84   0.24    249.62  4631    -25426.77   -357.71     || 0.76   0.38    381.56  4631    -38901.95   -87.44     
+IS     | 0.88   0.31    127.41  2701    -10911.85   -160.34     || 0.81   0.47    187.71  2701    -17716.61   -37.28     
+OOS1   | 0.72   -0.08   119.44  1195    -11843.97   -141.95     || 0.64   0.16    160.48  1195    -15949.01   -35.54     
+OOS2   | 0.88   -0.91   40.11   716     -2877.73    -43.90      || 0.79   -1.57   60.09   716     -5404.66    -12.12     
+  ATTRIBUTION (FULL): prix pur=-4568.36 | coût spread=34246.15 | coût swap=87.44 | total=34333.59 | net après=-38901.95 | net avant=-25426.77
+  → part du coût: spread=100%  swap=0%  (coût total = 752% du prix pur)
+
+
+############################################################
+# SENSIBILITÉ AU SWAP — bornage de l'instantané 2026 appliqué à l'historique
+# taux corrigés × {0, 1, 2} sur FULL/IS/OOS1/OOS2 (PF | net $)
+# Porte: FULL PF ≥ 1.05, OOS PF ≥ 1.0 (sinon invalide).
+############################################################
+
+---- consecbar (GBP_JPY) ----
+FACTEUR | FULL                 | IS                   | OOS1                 | OOS2                
+×0.0    | PF 0.80   net -777.18   | PF 0.80   net -420.78   | PF 0.81   net -159.33   | PF 0.76   net -194.76   
+×1.0    | PF 0.80   net -840.56   | PF 0.80   net -456.47   | PF 0.81   net -171.12   | PF 0.76   net -210.65   
+×2.0    | PF 0.80   net -903.94   | PF 0.80   net -492.17   | PF 0.81   net -182.91   | PF 0.76   net -226.54   
+
+---- vwpreversion (USD_CHF) ----
+FACTEUR | FULL                 | IS                   | OOS1                 | OOS2                
+×0.0    | PF 0.00   net 0.00      | PF 0.00   net 0.00      | PF 0.00   net 0.00      | PF 0.00   net 0.00      
+×1.0    | PF 0.00   net 0.00      | PF 0.00   net 0.00      | PF 0.00   net 0.00      | PF 0.00   net 0.00      
+×2.0    | PF 0.00   net 0.00      | PF 0.00   net 0.00      | PF 0.00   net 0.00      | PF 0.00   net 0.00      
+
+---- monthweekphase (USD_JPY) ----
+FACTEUR | FULL                 | IS                   | OOS1                 | OOS2                
+×0.0    | PF 0.87   net -118.18   | PF 0.88   net -61.04    | PF 1.36   net 62.78     | PF 0.69   net -52.82    
+×1.0    | PF 0.87   net -124.82   | PF 0.88   net -62.82    | PF 1.36   net 61.46     | PF 0.69   net -53.14    
+×2.0    | PF 0.87   net -131.46   | PF 0.88   net -64.59    | PF 1.36   net 60.14     | PF 0.69   net -53.46    
+
+---- compmomentum (USD_JPY) ----
+FACTEUR | FULL                 | IS                   | OOS1                 | OOS2                
+×0.0    | PF 1.02   net 52.12     | PF 0.84   net -296.29   | PF 1.36   net 151.31    | PF 1.30   net 173.95    
+×1.0    | PF 1.02   net -9.23     | PF 0.84   net -340.43   | PF 1.36   net 144.08    | PF 1.30   net 164.21    
+×2.0    | PF 1.02   net -70.57    | PF 0.84   net -384.57   | PF 1.36   net 136.85    | PF 1.30   net 154.48    
+
+---- ltrsi3 (EUR_USD) ----
+FACTEUR | FULL                 | IS                   | OOS1                 | OOS2                
+×0.0    | PF 0.76   net -38814.51 | PF 0.81   net -17679.34 | PF 0.64   net -15913.48 | PF 0.79   net -5392.54  
+×1.0    | PF 0.76   net -38901.95 | PF 0.81   net -17716.61 | PF 0.64   net -15949.01 | PF 0.79   net -5404.66  
+×2.0    | PF 0.76   net -38989.39 | PF 0.81   net -17753.89 | PF 0.64   net -15984.55 | PF 0.79   net -5416.79  
+
+DONE
