@@ -78,3 +78,78 @@ cet ordre :
 2. **Allouer au resultat, pour la fenetre 2** : financer ce qu'un rapport etablit, au sizing valide, et
    reduire a une taille temoin ce qui ne l'est pas. C'est la decision de Martin, pas une consequence
    automatique de cet audit.
+
+---
+
+## Re-baseline MESUREE apres cet audit (2026-10-10)
+
+`RunCostModelReal` (`trading-examples`), qui rejoue les cinq strategies **deployees** sur l'instrument de
+leur conteneur, avec le modele de couts autoritaire `RealCostModel` (commission 0 + demi-spread mesure par
+jambe + swap corrige) sur les fenetres de `docs/lt-strategy-playbook.md` (FULL 2010-2025, IS 2010-2018,
+OOS1 2019-2022, OOS2 2023-2025). Porte du depot : PF >= 1.05, Sharpe >= 0.3, DD <= 35 %, et **OOS1/OOS2
+PF < 1.0 = invalide**. Sortie brute : `~/.hermes/cache/scratch/cmr.out` (stdout et stderr separes, 138
+lignes, `RUNNER_RC=0`).
+
+| Strategie | Trades | PF FULL | PF IS | PF OOS1 | PF OOS2 | Sharpe FULL | Net FULL | Verdict porte |
+|---|---|---|---|---|---|---|---|---|
+| consecbar (GBP_JPY) | 3650 | **0,80** | 0,80 | 0,81 | **0,76** | -8,50 | -840,56 | **ECHEC sur les 4 fenetres** |
+| ltrsi3 (EUR_USD) | 4631 | **0,76** | 0,81 | **0,64** | **0,79** | +0,38 | -38 901,95 | **ECHEC sur les 4 fenetres** |
+| monthweekphase (USD_JPY) | 419 | **0,87** | 0,88 | 1,36 | **0,69** | -11,01 | -124,82 | **OOS2 < 1,0 donc invalide** |
+| compmomentum (USD_JPY) | 757 | **1,02** | **0,84** | 1,36 | 1,30 | -3,41 | -9,23 | **FULL et IS sous 1,0** : dependant de regime, non valide |
+| vwpreversion (USD_CHF) | **0** | 0,00 | 0,00 | 0,00 | 0,00 | 0,00 | 0,00 | **non jugeable sur ces donnees** |
+
+**Aucune des cinq ne passe la porte.** Les fenetres hors echantillon ne sauvent que compmomentum, dont le
+FULL et le IS sont sous 1,0 : c'est exactement le cas que la doctrine decrit comme « dependant de regime,
+pas valide », a dire tel quel plutot qu'a moyenner.
+
+### vwpreversion : la cause du zero est trouvee, et ce n'est pas la strategie
+
+`VWPReversionStrategy` n'entre que si un pic de volume est present : `VOLUME_SPIKE_THRESHOLD = 1.3` et
+`volumeRatio = avgVolume > 0 ? bar.volume() / avgVolume : 1.0` (lignes 15, 53-54, puis le test
+`volumeRatio > VOLUME_SPIKE_THRESHOLD` aux lignes 73 et 80). Or `data/historical/USD_CHF_H1.csv` porte
+**volume = 0 sur chaque ligne** (verifie : entete `timestamp,open,high,low,close,volume` et toutes les
+valeurs a 0), comme `EUR_USD_H1.csv` et `USD_JPY_H1.csv`. Avec un volume moyen nul, le ratio vaut
+**exactement 1.0**, qui n'est jamais > 1,3 : la strategie **ne peut pas entrer**, et le backtest rapporte
+zero trade au lieu de « pas d'edge ». C'est le piege de donnees documente du depot
+(`references/cost-model-and-gates.md`, « A volume-gated strategy cannot be judged on the repo's CSVs »).
+
+Consequences a retenir :
+- les 38 runs stockes de `vwpreversion` sur USD_CHF (0 trade) ne disent **rien** de la strategie : ils
+  disent que le jeu de donnees local n'a pas de volume. Le dossier n'est pas mauvais, il est **vide**.
+- `GBP_JPY_H1.csv`, lui, porte un **vrai volume** (15849, 10953, ...) et `ConsecutiveBarExhaustionStrategy`
+  n'utilise pas le volume : les resultats de consecbar ci-dessus sont donc exploitables.
+- pour juger vwpreversion il faut **recuperer des bougies H1 AVEC volume** (OANDA `price=M`, qui porte un
+  champ volume) avant de relancer le harnais. Tant que ce n'est pas fait, ses 0,6 % de risque ne reposent
+  sur rien de mesurable dans ce depot.
+
+### Ce que la re-baseline dit du modele de couts, pas seulement des strategies
+
+1. **Le modele reel degrade chaque strategie qui trade.** PF FULL passage : consecbar 0,97 -> 0,80,
+   monthweekphase 0,93 -> 0,87, ltrsi3 0,84 -> 0,76, compmomentum 1,05 -> 1,02. Les chiffres stockes dans
+   `live-config.json` **ne reproduisent pas** ; c'est la prediction de la doctrine (« re-run the gate rather
+   than quoting the stored number ») et c'est maintenant mesure.
+2. **Le spread domine, exactement comme la calibration l'annoncait** : 91 % du cout pour consecbar, 100 %
+   pour ltrsi3, 90 % pour monthweekphase, 60 % pour compmomentum. Pour consecbar et ltrsi3, le cout total
+   vaut **752 %** du P&L brut de prix : la strategie paie 7,5 fois son edge brut en couts.
+3. **Frequence contre seuil de survie** (regle du depot : 200+ trades/an exige PF > 1,30) : ltrsi3 trade
+   4631 fois sur 15 ans (~309/an) avec PF 0,76 ; consecbar 243/an avec PF 0,80 ; compmomentum 50/an avec
+   PF 1,02 la ou il faudrait > 1,15 ; monthweekphase 28/an tombe dans la zone ou les couts sont mineurs, et
+   il perd quand meme (PF 0,87), donc son probleme est le signal.
+4. **Le verdict ne bouge pas sous l'incertitude du swap** : le balayage x0 / x1 / x2 laisse les PF
+   identiques a l'affichage (0,80 / 0,87 / 1,02 / 0,76). L'erreur du snapshot de taux est donc **bornee** et
+   n'explique pas les echecs.
+
+### Ce que cela change pour la decision
+
+- Le constat n'est plus « le risque n'est pas adosse a une preuve », c'est **« aucune des cinq strategies
+  deployees ne passe la porte du depot sur l'instrument qu'elle trade »**. La porte etait dans le depot
+  depuis le debut ; elle n'avait jamais ete rouverte sur le set deploye.
+- Les 2,3 % de risque par transaction sont donc repartis sur cinq candidats qui echouent, dont 1,35 point
+  sur les deux plus mauvais dossiers (consecbar, vwpreversion) et 0,9 point sur ltrsi3 qui perd 38 902 CAD
+  en 15 ans au sizing fixe.
+- Recommandation, sans toucher a la fenetre en cours : considerer la fenetre 2 comme un **redemarrage de
+  l'allocation**, en n'y finançant qu'un candidat qui passe la porte au sizing de la fenetre, et en
+  remettant a une taille temoin ce qui ne la passe pas. Avant cela, deux prealables mesurables :
+  (a) recuperer des donnees H1 avec volume pour juger vwpreversion, (b) decider si les quatre autres sont
+  abandonnees ou repassees au crible (`--wfa`) avec une recherche de parametres, en sachant que le cout de
+  spread, lui, ne baissera pas.
