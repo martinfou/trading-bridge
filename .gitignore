@@ -75,6 +75,9 @@ AGENTS.md
 *.sqlite
 
 # Historical market data — downloaded, not committed
+# Le lien symbolique lui-meme (data/historical -> chemin absolu hors depot)
+# ne doit jamais entrer dans l'historique : ignorer le chemin, pas juste son contenu.
+data/historical
 data/historical/*
 data/runtime/*.db
 data/runtime/*.db-shm
