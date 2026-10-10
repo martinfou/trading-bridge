@@ -1,0 +1,32 @@
+==============================================================================
+54e (hors serie, samedi) — LE FADE SUR LES VRAIES BARRES DES CROSSES REFUGE
+Source : OANDA practice H1 bid (cle du conteneur live, compte -014)
+Reference a confronter : 53e colonne A (reconstruction algebrique par produit des 2 jambes)
+==============================================================================
+  FULL 2002-2026         n_FRI= 1110 | FADE  +7.8832 bp (t +4.81, med  +5.6455) | Mon-Jeu +0.2592 (t +0.27)
+  2006-2026 (pipeline)   n_FRI= 1058 | FADE  +8.4766 bp (t +4.97, med  +6.1441) | Mon-Jeu +0.3283 (t +0.32)
+  IS 2006-2015           n_FRI=  519 | FADE  +6.3650 bp (t +2.52, med  +4.6003) | Mon-Jeu +0.9115 (t +0.53)
+  OOS 2016-2026          n_FRI=  539 | FADE +10.5098 bp (t +4.58, med  +7.4068) | Mon-Jeu -0.2333 (t -0.21)
+  decennies : 2006s  +1.698 (t +0.40, n 208) | 2010s  +5.999 (t +1.51, n 208) | 2015s +17.700 (t +3.96, n 207) | 2020s  +8.340 (t +3.55, n 352)
+  REFERENCE 53e (colonne A, reconstruction) = +9.2396 bp | MESURE REELLE = +8.4766 bp (t +4.97) | ECART = -0.7630 bp
+  COUT (cross = 2 jambes, 4.28 bp A/R) : net +4.1966 bp/evenement | 1058 vendredis
+  FICHIERS : /home/martinfou/projects/trading-bridge/data/historical/dukascopy/gbpchf-h1-bid-oanda-2002-05-07-2026-10-09.csv | /home/martinfou/projects/trading-bridge/data/historical/bars/GBP_CHF_H1.bars | bougies=138789 (2002-05-07 -> 2026-10-09)
+
+  FULL 2002-2026         n_FRI= 1110 | FADE  +4.7421 bp (t +4.43, med  +3.6995) | Mon-Jeu +0.4365 (t +0.59)
+  2006-2026 (pipeline)   n_FRI= 1058 | FADE  +5.0537 bp (t +4.52, med  +3.9307) | Mon-Jeu +0.4666 (t +0.60)
+  IS 2006-2015           n_FRI=  519 | FADE  +5.1454 bp (t +2.78, med  +3.8895) | Mon-Jeu +0.7225 (t +0.51)
+  OOS 2016-2026          n_FRI=  539 | FADE  +4.9655 bp (t +3.86, med  +4.0916) | Mon-Jeu +0.2202 (t +0.33)
+  decennies : 2006s  +4.370 (t +1.74, n 208) | 2010s  +2.221 (t +0.62, n 208) | 2015s  +7.854 (t +3.28, n 207) | 2020s  +4.670 (t +2.99, n 352)
+  REFERENCE 53e (colonne A, reconstruction) = +7.0015 bp | MESURE REELLE = +5.0537 bp (t +4.52) | ECART = -1.9478 bp
+  COUT (cross = 2 jambes, 4.28 bp A/R) : net +0.7737 bp/evenement | 1058 vendredis
+  FICHIERS : /home/martinfou/projects/trading-bridge/data/historical/dukascopy/eurchf-h1-bid-oanda-2002-05-06-2026-10-09.csv | /home/martinfou/projects/trading-bridge/data/historical/bars/EUR_CHF_H1.bars | bougies=138764 (2002-05-06 -> 2026-10-09)
+
+  FULL 2002-2026         n_FRI= 1110 | FADE  +9.8251 bp (t +4.58, med  +5.9250) | Mon-Jeu -0.0105 (t -0.01)
+  2006-2026 (pipeline)   n_FRI= 1058 | FADE +10.7313 bp (t +4.82, med  +6.6558) | Mon-Jeu +0.0625 (t +0.05)
+  IS 2006-2015           n_FRI=  519 | FADE  +8.4842 bp (t +2.26, med  +3.1447) | Mon-Jeu +0.5452 (t +0.26)
+  OOS 2016-2026          n_FRI=  539 | FADE +12.8950 bp (t +5.22, med  +9.4657) | Mon-Jeu -0.4023 (t -0.32)
+  decennies : 2006s  +5.974 (t +0.83, n 208) | 2010s  +5.546 (t +1.10, n 208) | 2015s +17.694 (t +4.04, n 207) | 2020s +13.376 (t +4.30, n 352)
+  REFERENCE 53e (colonne A, reconstruction) = +8.6001 bp | MESURE REELLE = +10.7313 bp (t +4.82) | ECART = +2.1312 bp
+  COUT (cross = 2 jambes, 4.28 bp A/R) : net +6.4513 bp/evenement | 1058 vendredis
+  FICHIERS : /home/martinfou/projects/trading-bridge/data/historical/dukascopy/audchf-h1-bid-oanda-2004-05-31-2026-10-09.csv | /home/martinfou/projects/trading-bridge/data/historical/bars/AUD_CHF_H1.bars | bougies=138303 (2004-05-31 -> 2026-10-09)
+
