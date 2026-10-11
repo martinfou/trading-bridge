@@ -34,6 +34,8 @@ public final class NewsWeeklyStrategyCatalog {
     }
 
     public static String defaultSymbol(String key) {
+        if (key.contains("AUD_JPY")) return "AUD_JPY";
+        if (key.contains("GBP_CHF")) return "GBP_CHF";
         if (key.contains("AUD_USD")) return "AUD_USD";
         if (key.contains("NZD_USD")) return "NZD_USD";
         if (key.contains("EUR_USD")) return "EUR_USD";

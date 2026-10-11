@@ -271,10 +271,10 @@ public abstract class NewsWeeklyStrategy implements Strategy {
     // ====== Static helpers ======
 
     protected static double pipValue(String sym) {
-        return switch (sym) {
-            case "USD_JPY" -> 0.01;
-            default -> 0.0001;
-        };
+        // Any JPY-QUOTED pair prices a pip at 0.01, not 0.0001. Only USD_JPY was special-cased
+        // before, so GBP_JPY / AUD_JPY fell through to the EUR/USD pip: the stop distance and the
+        // risk-based quantity were both off by a factor of 100.
+        return sym != null && sym.endsWith("_JPY") ? 0.01 : 0.0001;
     }
 
     protected static Instant nyEvent(int year, int month, int day, int hour, int minute) {
