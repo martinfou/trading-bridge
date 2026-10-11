@@ -131,9 +131,19 @@ puisse pas être réintroduite.
 
 #### Résidus assumés (2026-10-01)
 
-- **Plafond de risque par compte (D24, 3 % de NAV simultanée)** : toujours pas implémenté. La somme des
-  `computedRiskPct` déployés est **2,3 %**, sous le plafond, et doit le rester à chaque édition de
-  `live-config.json`.
+- **Plafond de risque par compte (D24, porté à 4 % par D42)** : toujours pas implémenté dans le code. La
+  somme des `computedRiskPct` déployés est **4,0 %** depuis le 2026-10-11 (2,4 % pour les six stratégies
+  de la fenêtre + 1,6 % pour la lane news hebdomadaire), sous le plafond, et doit le rester à chaque
+  édition de `live-config.json`. Le plafond redevient **3 %** quand la lane news est retirée : c'est la
+  même édition qui doit retirer ses quatre clés de la liste `DEPLOYED` du test et son plafond.
+
+  **Décision D42 (Martin, 2026-10-11)** : le plafond par compte passe de 3 % (D24) à 4 % de NAV
+  simultanée, le temps de la lane news du 12 au 16 octobre 2026. Motif : la semaine news demande 1,6 %
+  au sizing de son playbook (0,5 + 0,3 + 0,3 + 0,5), ce qui porterait la somme à 4,0 %. Les alternatives
+  (lane séparée, risque réduit dans l'enveloppe restante, seulement le fade) ont été présentées et
+  écartées par Martin, qui a choisi de financer la semaine au sizing du playbook sur `-014`. Ce qui n'a
+  **pas** été décidé : le plafond reste à 3 % hors lane news, et rien de ceci n'autorise une stratégie
+  de la fenêtre à dépasser son `computedRiskPct`.
 - **Retry d'ordre** : le client OANDA ne réessaie que les échecs de connexion, donc une fermeture du
   serveur **pendant** l'envoi n'est pas réessayée. Or réessayer un POST d'ordre peut doubler une position :
   c'est une décision de trading, pas de code, et elle attend sa propre conversation.

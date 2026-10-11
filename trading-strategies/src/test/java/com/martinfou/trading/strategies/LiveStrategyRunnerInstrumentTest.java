@@ -168,13 +168,30 @@ class LiveStrategyRunnerInstrumentTest {
     private static final List<String> DEPLOYED = List.of(
         "vwpreversion", "consecbar", "compmomentum", "monthweekphase", "ltrsi3", "nfpweek");
 
+    /**
+     * The weekly news lane: one week only, four strategies, three services (one per instrument).
+     * They trade real (practice) orders, so they count against the account ceiling while they are
+     * deployed, and removing them at the end of the week is what puts the ceiling back to 3%.
+     */
+    private static final List<String> NEWS_WEEK = List.of(
+        "newsoct12cpi", "newsoct12ppi", "newsoct12chinacpi", "newsoct12fade");
+
+    private static final double ACCOUNT_RISK_CAP_PCT = 4.0;
+
+    /** Everything that runs in a container this week: the window plus the weekly news lane. */
+    private static List<String> everyDeployed() {
+        java.util.List<String> all = new java.util.ArrayList<>(DEPLOYED);
+        all.addAll(NEWS_WEEK);
+        return all;
+    }
+
     @Test
     @DisplayName("live-config.json declares every deployed strategy with an instrument and a risk")
     void liveConfigDeclaresEveryDeployedStrategy() throws IOException {
         JsonNode root = MAPPER.readTree(Files.readString(locateLiveConfig()));
         JsonNode strategies = root.get("strategies");
 
-        for (String key : DEPLOYED) {
+        for (String key : everyDeployed()) {
             JsonNode entry = strategies.get(key);
             assertTrue(entry != null && !entry.isNull(), "missing strategies." + key);
             assertTrue(entry.hasNonNull("instrument"), key + " has no instrument");
@@ -186,16 +203,19 @@ class LiveStrategyRunnerInstrumentTest {
     }
 
     @Test
-    @DisplayName("the sum of computedRiskPct over deployed strategies stays under the 3% account cap")
+    @DisplayName("the sum of computedRiskPct over deployed strategies stays under the 4% account cap (D42)")
     void deployedRiskSumStaysUnderCap() throws IOException {
         JsonNode strategies = MAPPER.readTree(Files.readString(locateLiveConfig())).get("strategies");
 
         double sum = 0.0;
-        for (String key : DEPLOYED) {
+        for (String key : everyDeployed()) {
             sum += strategies.get(key).get("computedRiskPct").asDouble();
         }
 
-        assertTrue(sum <= 3.0, "deployed risk sum " + sum + "% exceeds the 3% account cap (pending D24)");
+        assertTrue(sum <= ACCOUNT_RISK_CAP_PCT,
+            "deployed risk sum " + sum + "% exceeds the " + ACCOUNT_RISK_CAP_PCT
+                + "% account cap (D24, raised to 4% by D42 for the news lane; it returns to 3% when the "
+                + "news week is removed)");
     }
 
     private static Path locateLiveConfig() {
