@@ -56,6 +56,11 @@ import java.util.List;
  *       week-end is refused for lack of a tracked position (logged). Deploy before the first event of
  *       the week, and after any mid-week restart check the monitor for ENTERED strategies with no
  *       matching broker trade.</li>
+ *   <li><b>The temporal close stays queued after it fires.</b> The EXPIRED phase is a deliberate no-op
+ *       (clearing there could drop the close if two bars ever arrive in one tick, and dropping an
+ *       exit leaves a position open — worse than noise). The runner refuses the repeat with an error
+ *       log once the account is flat, so an expired week logs that error every tick until its
+ *       services are removed. That is noise, not a position.</li>
  * </ul>
  */
 public abstract class NewsWeeklyStrategy implements Strategy {
@@ -130,13 +135,19 @@ public abstract class NewsWeeklyStrategy implements Strategy {
         this.trailingStopPips = trailingStopPips;
         this.bidirectional = bidirectional;
 
-        // Calculate quantity from risk budget
-        if (stopLossPips > 0) {
-            double raw = (capital * riskPct) / (stopLossPips * pipValue(symbol));
-            this.quantity = roundUnits(raw);
-        } else {
-            this.quantity = LotSizing.lotsToUnits(0.01);
+        // Mandatory protective stop. Not a style choice: the live entry guard refuses any entry whose
+        // order carries no stop, and without a stop distance there is no risk denominator to size
+        // from. A stopless strategy used to be authorable here and would then be refused (or sized
+        // from the 1,000-unit micro-lot) at runtime; failing at construction moves that from a
+        // deploy-time surprise to a build-time error.
+        if (stopLossPips <= 0) {
+            throw new IllegalArgumentException("NewsWeeklyStrategy '" + name
+                + "' requires stopLossPips > 0 (a stopless entry is refused by the live path and has "
+                + "no risk denominator). Received: " + stopLossPips);
         }
+
+        double raw = (capital * riskPct) / (stopLossPips * pipValue(symbol));
+        this.quantity = roundUnits(raw);
     }
 
     /** Round to nearest 100 units (keeps positions practical). */
@@ -230,7 +241,11 @@ public abstract class NewsWeeklyStrategy implements Strategy {
                     }
                 }
 
-                // Trailing stop
+                // Trailing stop. Note for whoever writes the first trailing news strategy: doEntry
+                // attaches the initial stop to the ENTRY order (stop-on-fill at the venue) AND this
+                // branch re-emits a close-only STOP every bar, so the venue would hold two stops that
+                // drift apart as this one trails. No deployed news strategy uses trailingStopPips > 0;
+                // review that combination before the first one does.
                 if (trailingStopPips > 0) {
                     double newStop;
                     if (entrySide == Order.Side.SELL) {
