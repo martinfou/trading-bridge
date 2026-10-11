@@ -49,8 +49,10 @@ services:
       dockerfile: Dockerfile
     container_name: trading-nfp-week
     restart: "no"
+    # Was the dashboard's .env, which carries the dormant -012 account: any container created
+    # from it dies on a 401 before its first bar. Every other paper service uses .env.paper.
     env_file:
-      - /home/martinfou/projects/trading-dashboard/.env
+      - ./.env.paper
     environment:
       - OANDA_ENV=practice
       - LOG_LEVEL=INFO
@@ -164,8 +166,10 @@ services:
       dockerfile: Dockerfile
     container_name: trading-news-oct12-eur
     restart: "no"
+    # The repo's own paper file, NOT the dashboard's: that one carries the dormant -012
+    # account, and a container created from it dies on a 401 before it sees a single bar.
     env_file:
-      - /home/martinfou/projects/trading-dashboard/.env
+      - ./.env.paper
     environment:
       - OANDA_ENV=practice
       - LOG_LEVEL=INFO
@@ -191,8 +195,9 @@ services:
       dockerfile: Dockerfile
     container_name: trading-news-oct12-aj
     restart: "no"
+    # See news-oct12-eur: the repo's .env.paper carries the -014 paper account.
     env_file:
-      - /home/martinfou/projects/trading-dashboard/.env
+      - ./.env.paper
     environment:
       - OANDA_ENV=practice
       - LOG_LEVEL=INFO
@@ -218,8 +223,9 @@ services:
       dockerfile: Dockerfile
     container_name: trading-news-oct12-gc
     restart: "no"
+    # See news-oct12-eur: the repo's .env.paper carries the -014 paper account.
     env_file:
-      - /home/martinfou/projects/trading-dashboard/.env
+      - ./.env.paper
     environment:
       - OANDA_ENV=practice
       - LOG_LEVEL=INFO
