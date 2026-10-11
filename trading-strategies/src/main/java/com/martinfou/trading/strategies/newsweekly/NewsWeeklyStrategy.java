@@ -31,6 +31,16 @@ import java.util.List;
  * <h3>Position sizing</h3>
  * quantity = nearest 100 units to {@code (capital × riskPct) / (stopLossPips × pipValue)}.
  * Default capital: $1,000.
+ *
+ * <p><b>That quantity is INTENT, and it is only arithmetically right when the pair is quoted in the
+ * account's own currency.</b> For a cross (AUD/JPY, GBP/CHF) the risk budget is denominated in USD
+ * while the stop distance is denominated in the quote currency, so the division needs the
+ * quote→account factor to be exact. The class cannot fetch one; the live runner does, and re-derives
+ * every unit from the NAV and the risk % through
+ * {@code RiskSizing.unitsForRisk(..., quoteToAccountFactor, ...)} with the factor taken from the
+ * broker's homeConversions (LiveStrategyRunner.quoteToAccountFactor). Live sizing is therefore
+ * authoritative — do not read this class's quantity as the live position size. A backtest that sizes
+ * from the strategy's own quantity will under-size a JPY cross by the factor.
  */
 public abstract class NewsWeeklyStrategy implements Strategy {
 
@@ -41,6 +51,13 @@ public abstract class NewsWeeklyStrategy implements Strategy {
     protected final String symbol;
     protected final double quantity;
     protected final List<Order> pending = new ArrayList<>();
+    /**
+     * Bar log kept for the {@code Strategy#getHistory()} reflection contract (it reads a field named
+     * {@code history} on the concrete class); this base class never reads it for decisions. It stays
+     * deliberately: removing it silently turns {@code getHistory()} into {@code Optional.empty()} for
+     * every news strategy. Growth is bounded in practice — the runner warms up ~200 bars and one
+     * week adds ~120 — so the unbounded-in-theory list is not a leak on this path.
+     */
     protected final List<Bar> history = new ArrayList<>();
 
     private final Instant eventStart;
@@ -52,7 +69,6 @@ public abstract class NewsWeeklyStrategy implements Strategy {
 
     private Phase phase = Phase.WAITING;
     private Order.Side entrySide;
-    private double entryPrice;
     private double stopPrice;
     private double extremePrice;
 
@@ -136,7 +152,6 @@ public abstract class NewsWeeklyStrategy implements Strategy {
         pending.clear();
         history.clear();
         phase = Phase.WAITING;
-        entryPrice = 0;
         stopPrice = 0;
         extremePrice = 0;
         if (bidirectional) entrySide = null;
@@ -155,6 +170,14 @@ public abstract class NewsWeeklyStrategy implements Strategy {
 
             // — Enter or analyze — //
             case WAITING:
+                // Inert outside the strategy's own week. Without this, a late start (or the runner's
+                // warm-up replay beginning after the event) enters on a bar the market has already
+                // left behind, and the strategy then believes it holds a position the broker never
+                // received. The week-end is the hard ceiling, checked before the event floor.
+                if (bar.timestamp().compareTo(weekEnd) >= 0) {
+                    phase = Phase.EXPIRED;
+                    break;
+                }
                 if (bar.timestamp().isBefore(eventStart)) break;
 
                 if (bidirectional) {
@@ -182,15 +205,20 @@ public abstract class NewsWeeklyStrategy implements Strategy {
                     break;
                 }
 
-                // Fixed SL: the stop and the target rode the entry order (see doEntry), so the venue
-                // holds them and the engine exits on them. What stays here is the in-process check,
-                // which turns a crossed stop into an explicit close instead of waiting for the venue.
+                // Fixed SL: the stop rode the entry order (see doEntry), so the venue holds it and
+                // the engine exits on it. What stays here is the in-process check, which turns a
+                // crossed stop into an explicit close instead of waiting for the venue.
                 if (trailingStopPips == 0) {
                     boolean hit = entrySide == Order.Side.SELL
                         ? bar.high() >= stopPrice
                         : bar.low() <= stopPrice;
+                    // The entry order is DISPATCHED and must be consumed here. Nothing consumes it
+                    // otherwise: getPendingOrders() hands out an immutable copy and no engine calls
+                    // back to acknowledge a fill, so leaving it queued re-submits a fresh
+                    // risk-sized entry on EVERY bar — a position per hour for as long as the stop
+                    // and the week-end hold. Clearing is not an optimisation.
+                    pending.clear();
                     if (hit) {
-                        pending.clear();
                         pending.add(closeOrder(entrySide));
                         phase = Phase.EXPIRED;
                     }
@@ -222,7 +250,6 @@ public abstract class NewsWeeklyStrategy implements Strategy {
     // ====== Entry helper ======
 
     private void doEntry(Order.Side side, double price, double pipVal) {
-        entryPrice = price;
         extremePrice = price;
 
         double tp = 0;
@@ -237,14 +264,17 @@ public abstract class NewsWeeklyStrategy implements Strategy {
                 : price - takeProfitPips * pipVal;
         }
 
-        // The stop and the target ride the ENTRY order, never a separate close-only order:
+        // The stop rides the ENTRY order, never a separate close-only order:
         //  - live, LiveStrategyRunner refuses any entry whose order carries no stop
-        //    (rejectEntryWithoutStop), and the order's stopLoss/takeProfit become the venue's
-        //    stop/limit on fill;
+        //    (rejectEntryWithoutStop) and passes order.stopLoss() to the venue as a stop-on-fill
+        //    (LiveStrategyRunner.executeTrade -> placeMarketOrder), which the runner also tracks
+        //    locally in its own ActiveTrade. The take profit is deliberately NOT sent to the venue:
+        //    the target lives in the runner's local monitor (it is lost if the runner goes down).
         //  - backtest, BacktestEngine stores the order's stopLoss/takeProfit on the position and
         //    exits on them.
         // Emitting a second close-only STOP for the same size used to double-protect the position
         // at the broker and to spam "Unsupported order type: LIMIT" on every bar for the target.
+        // The order below is consumed by the ENTERED branch on the next bar: see onBar().
         Order entry = new Order(symbol, side, Order.Type.MARKET, quantity, 0);
         if (stopLossPips > 0) entry = entry.withStopLoss(stopPrice);
         if (tp > 0) entry = entry.withTakeProfit(tp);

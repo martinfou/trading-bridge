@@ -717,7 +717,7 @@ public class LiveStrategyRunner implements Runnable {
         System.out.println("  all → launch every strategy concurrently\n");
     }
 
-    private static Map<String, Class<? extends Strategy>> getStrategyMap() {
+    static Map<String, Class<? extends Strategy>> getStrategyMap() {
         Map<String, Class<? extends Strategy>> map = new LinkedHashMap<>();
         try {
             map.put("2_14_147", Class.forName("com.martinfou.trading.strategies.sqimported.Strategy_2_14_147_Adapted")
