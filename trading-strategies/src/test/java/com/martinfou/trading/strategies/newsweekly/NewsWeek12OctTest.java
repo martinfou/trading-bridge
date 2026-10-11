@@ -74,13 +74,15 @@ class NewsWeek12OctTest {
     }
 
     @Test
-    void noDuplicateCloseOnlyStopOrLimitIsEmittedOnceInTrade() {
+    void theEntryOrderIsConsumedAfterDispatch_soItIsNotResubmittedEveryBar() {
         var strategy = new NewsWeek12Oct_CpiPpi.CpiEurUsd();
         strategy.onBar(nyBar("EUR_USD", 2026, 10, 14, 9, 0, 1.1000, 1.1035, 1.0995, 1.1030));
+        assertEquals(1, strategy.getPendingOrders().size(), "the entry is queued for dispatch");
+
         strategy.onBar(nyBar("EUR_USD", 2026, 10, 14, 10, 0, 1.1030, 1.1050, 1.1035, 1.1045));
-        assertTrue(strategy.getPendingOrders().stream().noneMatch(Order::isCloseOnly),
-            "the venue and the engine already hold the stop and the target from the entry order; a "
-                + "second close-only STOP double-protected the position at the broker");
+        assertTrue(strategy.getPendingOrders().isEmpty(),
+            "nothing consumes the entry order but the strategy itself: leaving it queued "
+                + "re-submits a fresh risk-sized entry on every bar (position stacking)");
     }
 
     // ===== Setup 1 — US CPI, bidirectional =====
@@ -175,5 +177,19 @@ class NewsWeek12OctTest {
         assertTrue(flat.stream().allMatch(Order::isCloseOnly),
             "the weekend hold is closed at the Monday grid");
         assertEquals(Order.Side.BUY, flat.get(0).side());
+    }
+
+    // ===== inert outside its own week =====
+
+    @Test
+    void aLateStartDoesNotEnterOnABarTheMarketHasLeftBehind() {
+        var strategy = new NewsWeek12Oct_CpiPpi.CpiEurUsd();
+
+        strategy.onBar(nyBar("EUR_USD", 2026, 10, 19, 10, 0, 1.1000, 1.1035, 1.0995, 1.1030));
+        assertTrue(strategy.getPendingOrders().isEmpty(),
+            "the first bar this strategy sees is already after its week: it must go inert, not enter");
+
+        strategy.onBar(nyBar("EUR_USD", 2026, 10, 20, 10, 0, 1.1000, 1.1035, 1.0995, 1.1030));
+        assertTrue(strategy.getPendingOrders().isEmpty(), "and it stays inert");
     }
 }

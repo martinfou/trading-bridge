@@ -39,7 +39,9 @@ public class NewsWeek12Oct_FridayFade {
         public FridayFadeGbpChf() {
             super("FridayFadeGbpChf", "GBP_CHF",
                 nyEvent(2026, 10, 16, 16, 0),       // Friday close grid, 20:00 UTC
-                weekEndAfter(2026, 10, 16),         // flat at the Monday grid
+                weekEndAfter(2026, 10, 16),         // Sunday 2026-10-18 00:00 UTC
+                // The week-end is closed by the first H1 bar at or after that instant, i.e. the
+                // Sunday 21:00 UTC reopen: the Monday grid, in FX terms.
                 150,  // SL 150 — emergency backstop only, the exit is temporal
                 0,    // TP 0 — no target
                 Order.Side.SELL,

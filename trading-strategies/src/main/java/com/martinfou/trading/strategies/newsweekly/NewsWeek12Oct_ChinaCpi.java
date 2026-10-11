@@ -29,8 +29,10 @@ public class NewsWeek12Oct_ChinaCpi {
      *   <li>Risk 0.3% — $150 on the playbook's $50,000 account.</li>
      * </ul>
      *
-     * <p>Sizing note: 0.3% of the engine's $1,000 nominal capital over a 50-pip stop on a JPY cross
-     * gives 6 units, so the 100-unit floor sets the size, not the risk budget.
+     * <p>Sizing note: this class's own quantity is INTENT ONLY. The live runner re-derives the
+     * units from the account NAV and the strategy's risk %, so 0.3% of the $1,000 nominal capital
+     * (6 units over a 50-pip stop) is not what the broker receives. What matters to the live order
+     * is the stop DISTANCE, and that is the part the JPY pip fix gets right.
      */
     public static class ChinaCpiAudJpy extends NewsWeeklyStrategy {
         public ChinaCpiAudJpy() {
