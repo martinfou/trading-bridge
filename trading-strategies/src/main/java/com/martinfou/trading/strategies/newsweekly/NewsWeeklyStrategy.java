@@ -41,6 +41,22 @@ import java.util.List;
  * broker's homeConversions (LiveStrategyRunner.quoteToAccountFactor). Live sizing is therefore
  * authoritative — do not read this class's quantity as the live position size. A backtest that sizes
  * from the strategy's own quantity will under-size a JPY cross by the factor.
+ *
+ * <h3>Known limitations on the live path</h3>
+ * Both were measured by independent review; neither loses money, and both are documented rather than
+ * papered over.
+ * <ul>
+ *   <li><b>The entry is consumed on the NEXT bar</b>, because nothing else acknowledges a fill (see
+ *       onBar). If the runner ever feeds two of this strategy's bars before dispatching pending
+ *       orders — a stall of more than one bar, or a restart at the cursor edge — the entry can be
+ *       cleared before it was sent and the setup is missed. Missing a trade, never doubling one.</li>
+ *   <li><b>A restart between the event and the week-end</b> replays the event bar during the warm-up:
+ *       the entry is emitted and then consumed inside the replay, so the strategy finishes the replay
+ *       ENTERED while the broker is flat. No order reaches the venue, and the close it emits at the
+ *       week-end is refused for lack of a tracked position (logged). Deploy before the first event of
+ *       the week, and after any mid-week restart check the monitor for ENTERED strategies with no
+ *       matching broker trade.</li>
+ * </ul>
  */
 public abstract class NewsWeeklyStrategy implements Strategy {
 
@@ -51,14 +67,6 @@ public abstract class NewsWeeklyStrategy implements Strategy {
     protected final String symbol;
     protected final double quantity;
     protected final List<Order> pending = new ArrayList<>();
-    /**
-     * Bar log kept for the {@code Strategy#getHistory()} reflection contract (it reads a field named
-     * {@code history} on the concrete class); this base class never reads it for decisions. It stays
-     * deliberately: removing it silently turns {@code getHistory()} into {@code Optional.empty()} for
-     * every news strategy. Growth is bounded in practice — the runner warms up ~200 bars and one
-     * week adds ~120 — so the unbounded-in-theory list is not a leak on this path.
-     */
-    protected final List<Bar> history = new ArrayList<>();
 
     private final Instant eventStart;
     private final Instant weekEnd;
@@ -150,7 +158,6 @@ public abstract class NewsWeeklyStrategy implements Strategy {
     @Override
     public void reset() {
         pending.clear();
-        history.clear();
         phase = Phase.WAITING;
         stopPrice = 0;
         extremePrice = 0;
@@ -162,7 +169,6 @@ public abstract class NewsWeeklyStrategy implements Strategy {
     @Override
     public void onBar(Bar bar) {
         if (!bar.symbol().equals(symbol)) return;
-        history.add(bar);
 
         double pipVal = pipValue(symbol);
 
