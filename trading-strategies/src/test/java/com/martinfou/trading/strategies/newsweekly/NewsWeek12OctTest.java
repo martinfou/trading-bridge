@@ -192,4 +192,51 @@ class NewsWeek12OctTest {
         strategy.onBar(nyBar("EUR_USD", 2026, 10, 20, 10, 0, 1.1000, 1.1035, 1.0995, 1.1030));
         assertTrue(strategy.getPendingOrders().isEmpty(), "and it stays inert");
     }
+
+    // ===== same-day exits, per the playbook, not the week-end =====
+
+    @Test
+    void cpiIsFlatAtTheSameDayGrid_notAtTheWeekEnd() {
+        var strategy = new NewsWeek12Oct_CpiPpi.CpiEurUsd();
+
+        strategy.onBar(nyBar("EUR_USD", 2026, 10, 14, 9, 0, 1.1000, 1.1035, 1.0995, 1.1030));
+        assertEquals(1, strategy.getPendingOrders().size(), "entered after the 08:30 release");
+
+        strategy.onBar(nyBar("EUR_USD", 2026, 10, 14, 15, 0, 1.1030, 1.1040, 1.1025, 1.1035));
+        assertTrue(strategy.getPendingOrders().isEmpty(), "still in trade at 15:00, nothing queued");
+
+        strategy.onBar(nyBar("EUR_USD", 2026, 10, 14, 16, 0, 1.1035, 1.1040, 1.1030, 1.1035));
+        List<Order> flat = strategy.getPendingOrders();
+        assertEquals(1, flat.size(), "the playbook's mandatory flat is the same day 16:00 ET");
+        assertTrue(flat.get(0).isCloseOnly());
+        assertEquals(Order.Side.SELL, flat.get(0).side(), "closing a long sells it");
+    }
+
+    @Test
+    void ppiIsFlatAtTheSameDayGridToo() {
+        var strategy = new NewsWeek12Oct_CpiPpi.PpiRetailSalesEurUsd();
+
+        strategy.onBar(nyBar("EUR_USD", 2026, 10, 15, 9, 0, 1.1000, 1.1035, 1.0995, 1.1030));
+        strategy.onBar(nyBar("EUR_USD", 2026, 10, 15, 16, 0, 1.1030, 1.1040, 1.1025, 1.1035));
+
+        List<Order> flat = strategy.getPendingOrders();
+        assertEquals(1, flat.size());
+        assertTrue(flat.get(0).isCloseOnly(), "the second inflation setup is not carried into Friday");
+    }
+
+    // ===== a stopless news strategy must not be authorable =====
+
+    private static final class StoplessStrategy extends NewsWeeklyStrategy {
+        StoplessStrategy() {
+            super("StoplessStrategy", "EUR_USD",
+                nyEvent(2026, 10, 14, 8, 30), nyEvent(2026, 10, 14, 16, 0),
+                0, 60, 0.005);
+        }
+    }
+
+    @Test
+    void aStoplessStrategyFailsAtConstruction() {
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, StoplessStrategy::new);
+        assertTrue(ex.getMessage().contains("stopLossPips > 0"), ex.getMessage());
+    }
 }

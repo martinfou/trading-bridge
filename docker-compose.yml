@@ -150,6 +150,94 @@ services:
           cpus: '0.5'
           memory: 256M
 
+  # ===========================================================================
+  # News week 12-16 October 2026 — coded from docs/news-playbooks/week-2026-10-12.md
+  # ONE SERVICE PER INSTRUMENT: the runner resolves a single instrument per process and
+  # each news strategy pins its own pair, so EUR_USD, AUD_JPY and GBP_CHF cannot share a
+  # container. The risk they add to the account is funded by decision D42
+  # (docs/TRADING-GUARDRAILS.md); the whole lane is removed at the end of the week, and
+  # that removal is also what puts the account ceiling back to 3%.
+  # ===========================================================================
+  news-oct12-eur:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading-news-oct12-eur
+    restart: "no"
+    env_file:
+      - /home/martinfou/projects/trading-dashboard/.env
+    environment:
+      - OANDA_ENV=practice
+      - LOG_LEVEL=INFO
+      - TB_ALLOW_ORDERS=1
+      - STRATEGY=${NEWSOCT12_EUR_STRATEGY:-newsoct12cpi newsoct12ppi}
+      - STRATEGY_PAIR=${NEWSOCT12_EUR_PAIR:-EUR_USD}
+      - GRANULARITY=${NEWSOCT12_EUR_GRANULARITY:-H1}
+      - INTERVAL_SEC=${NEWSOCT12_EUR_INTERVAL:-60}
+    command: ["$${OANDA_API_KEY}", "$${OANDA_ACCOUNT_ID}", "$${STRATEGY}", "$${GRANULARITY}", "$${INTERVAL_SEC}"]
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # Chinese CPI (Tue 13 Oct 21:30 ET) on the Aussie, flat Wednesday 16:00 ET
+  news-oct12-aj:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading-news-oct12-aj
+    restart: "no"
+    env_file:
+      - /home/martinfou/projects/trading-dashboard/.env
+    environment:
+      - OANDA_ENV=practice
+      - LOG_LEVEL=INFO
+      - TB_ALLOW_ORDERS=1
+      - STRATEGY=${NEWSOCT12_AJ_STRATEGY:-newsoct12chinacpi}
+      - STRATEGY_PAIR=${NEWSOCT12_AJ_PAIR:-AUD_JPY}
+      - GRANULARITY=${NEWSOCT12_AJ_GRANULARITY:-H1}
+      - INTERVAL_SEC=${NEWSOCT12_AJ_INTERVAL:-60}
+    command: ["$${OANDA_API_KEY}", "$${OANDA_ACCOUNT_ID}", "$${STRATEGY}", "$${GRANULARITY}", "$${INTERVAL_SEC}"]
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # Friday fade (Fri 16 Oct 16:00 ET close grid), held over the week-end, flat at the Monday grid
+  news-oct12-gc:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading-news-oct12-gc
+    restart: "no"
+    env_file:
+      - /home/martinfou/projects/trading-dashboard/.env
+    environment:
+      - OANDA_ENV=practice
+      - LOG_LEVEL=INFO
+      - TB_ALLOW_ORDERS=1
+      - STRATEGY=${NEWSOCT12_GC_STRATEGY:-newsoct12fade}
+      - STRATEGY_PAIR=${NEWSOCT12_GC_PAIR:-GBP_CHF}
+      - GRANULARITY=${NEWSOCT12_GC_GRANULARITY:-H1}
+      - INTERVAL_SEC=${NEWSOCT12_GC_INTERVAL:-60}
+    command: ["$${OANDA_API_KEY}", "$${OANDA_ACCOUNT_ID}", "$${STRATEGY}", "$${GRANULARITY}", "$${INTERVAL_SEC}"]
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
 volumes:
   data:
   logs:
