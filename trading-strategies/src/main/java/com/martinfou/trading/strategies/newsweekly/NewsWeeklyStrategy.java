@@ -182,7 +182,9 @@ public abstract class NewsWeeklyStrategy implements Strategy {
                     break;
                 }
 
-                // Fixed SL: check if price crossed stop
+                // Fixed SL: the stop and the target rode the entry order (see doEntry), so the venue
+                // holds them and the engine exits on them. What stays here is the in-process check,
+                // which turns a crossed stop into an explicit close instead of waiting for the venue.
                 if (trailingStopPips == 0) {
                     boolean hit = entrySide == Order.Side.SELL
                         ? bar.high() >= stopPrice
@@ -191,20 +193,6 @@ public abstract class NewsWeeklyStrategy implements Strategy {
                         pending.clear();
                         pending.add(closeOrder(entrySide));
                         phase = Phase.EXPIRED;
-                        break;
-                    }
-                    // Re-emit the STOP order (engine may have consumed it)
-                    pending.clear();
-                    pending.add(new Order(symbol,
-                        entrySide == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY,
-                        Order.Type.STOP, quantity, stopPrice).asCloseOnly());
-                    if (takeProfitPips > 0) {
-                        double tp = entrySide == Order.Side.BUY
-                            ? entryPrice + takeProfitPips * pipVal
-                            : entryPrice - takeProfitPips * pipVal;
-                        pending.add(new Order(symbol,
-                            entrySide == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY,
-                            Order.Type.LIMIT, quantity, tp).asCloseOnly());
                     }
                 }
 
@@ -237,21 +225,32 @@ public abstract class NewsWeeklyStrategy implements Strategy {
         entryPrice = price;
         extremePrice = price;
 
+        double tp = 0;
         if (stopLossPips > 0) {
             stopPrice = side == Order.Side.BUY
                 ? price - stopLossPips * pipVal
                 : price + stopLossPips * pipVal;
         }
+        if (takeProfitPips > 0) {
+            tp = side == Order.Side.BUY
+                ? price + takeProfitPips * pipVal
+                : price - takeProfitPips * pipVal;
+        }
+
+        // The stop and the target ride the ENTRY order, never a separate close-only order:
+        //  - live, LiveStrategyRunner refuses any entry whose order carries no stop
+        //    (rejectEntryWithoutStop), and the order's stopLoss/takeProfit become the venue's
+        //    stop/limit on fill;
+        //  - backtest, BacktestEngine stores the order's stopLoss/takeProfit on the position and
+        //    exits on them.
+        // Emitting a second close-only STOP for the same size used to double-protect the position
+        // at the broker and to spam "Unsupported order type: LIMIT" on every bar for the target.
+        Order entry = new Order(symbol, side, Order.Type.MARKET, quantity, 0);
+        if (stopLossPips > 0) entry = entry.withStopLoss(stopPrice);
+        if (tp > 0) entry = entry.withTakeProfit(tp);
 
         pending.clear();
-        pending.add(new Order(symbol, side, Order.Type.MARKET, quantity, 0));
-
-        // Emit initial stop
-        if (stopLossPips > 0 && trailingStopPips == 0) {
-            pending.add(new Order(symbol,
-                side == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY,
-                Order.Type.STOP, quantity, stopPrice).asCloseOnly());
-        }
+        pending.add(entry);
     }
 
     private void trackExtreme(Bar bar) {

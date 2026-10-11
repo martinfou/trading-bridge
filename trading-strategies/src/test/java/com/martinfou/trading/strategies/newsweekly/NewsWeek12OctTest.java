@@ -7,7 +7,6 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.List;
 
@@ -16,6 +15,9 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * The week of October 12-16, 2026 news setups (playbook Setups 1 to 4): registration, entry mode,
  * stop/target geometry and the temporal exits.
+ *
+ * <p>The stop and the target ride the ENTRY order: the live runner refuses an entry whose order
+ * carries no stop, and the backtest engine stores the order's stopLoss/takeProfit on the position.
  */
 class NewsWeek12OctTest {
 
@@ -35,11 +37,6 @@ class NewsWeek12OctTest {
     private static Order entry(List<Order> orders) {
         return orders.stream().filter(o -> !o.isCloseOnly())
             .findFirst().orElseThrow(() -> new AssertionError("no entry order in " + orders));
-    }
-
-    private static Order stop(List<Order> orders) {
-        return orders.stream().filter(o -> o.isCloseOnly() && o.type() == Order.Type.STOP)
-            .findFirst().orElseThrow(() -> new AssertionError("no protective stop in " + orders));
     }
 
     // ===== registration =====
@@ -63,6 +60,29 @@ class NewsWeek12OctTest {
             NewsWeeklyStrategyCatalog.defaultSymbol("NewsWeek12Oct_FridayFade_GBP_CHF"));
     }
 
+    // ===== the entry carries its own protection =====
+
+    @Test
+    void entryOrderCarriesItsStopLoss_soTheLiveEntryGuardAcceptsIt() {
+        var strategy = new NewsWeek12Oct_CpiPpi.CpiEurUsd();
+        strategy.onBar(nyBar("EUR_USD", 2026, 10, 14, 9, 0, 1.1000, 1.1035, 1.0995, 1.1030));
+        Order entry = entry(strategy.getPendingOrders());
+        assertTrue(entry.hasProtectiveStop(),
+            "an entry without a stop is refused by LiveStrategyRunner.rejectEntryWithoutStop()");
+        assertEquals(1.1030 - 0.0045, entry.stopLoss(), 1e-9);
+        assertEquals(1.1030 + 0.0068, entry.takeProfit(), 1e-9, "TP 68 pips rides the same order");
+    }
+
+    @Test
+    void noDuplicateCloseOnlyStopOrLimitIsEmittedOnceInTrade() {
+        var strategy = new NewsWeek12Oct_CpiPpi.CpiEurUsd();
+        strategy.onBar(nyBar("EUR_USD", 2026, 10, 14, 9, 0, 1.1000, 1.1035, 1.0995, 1.1030));
+        strategy.onBar(nyBar("EUR_USD", 2026, 10, 14, 10, 0, 1.1030, 1.1050, 1.1035, 1.1045));
+        assertTrue(strategy.getPendingOrders().stream().noneMatch(Order::isCloseOnly),
+            "the venue and the engine already hold the stop and the target from the entry order; a "
+                + "second close-only STOP double-protected the position at the broker");
+    }
+
     // ===== Setup 1 — US CPI, bidirectional =====
 
     @Test
@@ -78,25 +98,27 @@ class NewsWeek12OctTest {
             "a bullish first bar is bought, not sold");
         assertEquals(1_100.0, entry(orders).quantity(),
             0.5, "0.5% of $1,000 over a 45-pip stop = 1,100 units");
-        assertEquals(1.1030 - 0.0045, stop(orders).price(), 1e-9,
-            "SL 45 pips against the entry for a long");
-
-        // The target is re-emitted from the second bar on (the entry bar only carries the stop).
-        strategy.onBar(nyBar("EUR_USD", 2026, 10, 14, 10, 0, 1.1030, 1.1050, 1.1035, 1.1045));
-        Order limit = strategy.getPendingOrders().stream()
-            .filter(o -> o.isCloseOnly() && o.type() == Order.Type.LIMIT)
-            .findFirst().orElseThrow(
-                () -> new AssertionError("TP 68 (1.5 R) must ride as a close-only limit"));
-        assertEquals(1.1030 + 0.0068, limit.price(), 1e-9, "TP 68 pips above the entry");
     }
 
     @Test
     void cpiTakesTheShortSideWhenTheFirstBarIsBearish() {
         var strategy = new NewsWeek12Oct_CpiPpi.CpiEurUsd();
         strategy.onBar(nyBar("EUR_USD", 2026, 10, 14, 9, 0, 1.1030, 1.1035, 1.0990, 1.0995));
-        List<Order> orders = strategy.getPendingOrders();
-        assertEquals(Order.Side.SELL, entry(orders).side());
-        assertEquals(1.0995 + 0.0045, stop(orders).price(), 1e-9);
+        Order entry = entry(strategy.getPendingOrders());
+        assertEquals(Order.Side.SELL, entry.side());
+        assertEquals(1.0995 + 0.0045, entry.stopLoss(), 1e-9);
+        assertEquals(1.0995 - 0.0068, entry.takeProfit(), 1e-9);
+    }
+
+    @Test
+    void cpiClosesWhenTheBarCrossesTheStop() {
+        var strategy = new NewsWeek12Oct_CpiPpi.CpiEurUsd();
+        strategy.onBar(nyBar("EUR_USD", 2026, 10, 14, 9, 0, 1.1000, 1.1035, 1.0995, 1.1030));
+        strategy.onBar(nyBar("EUR_USD", 2026, 10, 14, 11, 0, 1.1030, 1.1035, 1.0970, 1.0980));
+        List<Order> flat = strategy.getPendingOrders();
+        assertEquals(1, flat.size());
+        assertTrue(flat.get(0).isCloseOnly(), "a crossed stop becomes an explicit close");
+        assertEquals(Order.Side.SELL, flat.get(0).side(), "closing a long sells it");
     }
 
     // ===== Setup 2 — PPI + retail sales, smaller risk =====
@@ -119,9 +141,9 @@ class NewsWeek12OctTest {
         assertTrue(strategy.getPendingOrders().isEmpty(), "nothing before the 21:30 release");
 
         strategy.onBar(nyBar("AUD_JPY", 2026, 10, 13, 22, 0, 95.00, 95.10, 94.60, 94.70));
-        List<Order> orders = strategy.getPendingOrders();
-        assertEquals(Order.Side.SELL, entry(orders).side());
-        assertEquals(94.70 + 0.50, stop(orders).price(), 1e-9,
+        Order entry = entry(strategy.getPendingOrders());
+        assertEquals(Order.Side.SELL, entry.side());
+        assertEquals(94.70 + 0.50, entry.stopLoss(), 1e-9,
             "SL 50 pips on a JPY cross is 0.50, not 0.005: the pip is 0.01");
 
         strategy.onBar(nyBar("AUD_JPY", 2026, 10, 14, 16, 0, 94.70, 94.80, 94.50, 94.60));
@@ -141,12 +163,11 @@ class NewsWeek12OctTest {
         assertTrue(strategy.getPendingOrders().isEmpty(), "nothing before the 16:00 ET grid");
 
         strategy.onBar(nyBar("GBP_CHF", 2026, 10, 16, 16, 0, 1.0755, 1.0765, 1.0745, 1.0750));
-        List<Order> orders = strategy.getPendingOrders();
-        assertEquals(Order.Side.SELL, entry(orders).side(), "the fade is a fixed short");
-        assertEquals(1.0755 + 0.0150, stop(orders).price(), 1e-9,
+        Order entry = entry(strategy.getPendingOrders());
+        assertEquals(Order.Side.SELL, entry.side(), "the fade is a fixed short");
+        assertEquals(1.0755 + 0.0150, entry.stopLoss(), 1e-9,
             "SL 150 pips from the OPEN it enters on is an emergency backstop, not the exit");
-        assertTrue(orders.stream().noneMatch(o -> o.isCloseOnly() && o.type() == Order.Type.LIMIT),
-            "the fade has no target: its exit is temporal");
+        assertEquals(0.0, entry.takeProfit(), 1e-9, "the fade has no target: its exit is temporal");
 
         strategy.onBar(utcBar("GBP_CHF", Instant.parse("2026-10-18T22:00:00Z"),
             1.0750, 1.0760, 1.0730, 1.0740));
@@ -154,19 +175,5 @@ class NewsWeek12OctTest {
         assertTrue(flat.stream().allMatch(Order::isCloseOnly),
             "the weekend hold is closed at the Monday grid");
         assertEquals(Order.Side.BUY, flat.get(0).side());
-    }
-
-    // ===== known blocker for the live path (story: wiring the week into the runner) =====
-
-    @Test
-    void entryOrderCarriesNoStopLoss_whichTheLiveEntryGuardRefuses() {
-        var strategy = new NewsWeek12Oct_CpiPpi.CpiEurUsd();
-        strategy.onBar(nyBar("EUR_USD", 2026, 10, 14, 9, 0, 1.1000, 1.1035, 1.0995, 1.1030));
-        Order entry = entry(strategy.getPendingOrders());
-        assertFalse(entry.hasProtectiveStop(),
-            "CHARACTERIZATION: the entry order itself carries no stop (the stop is a separate "
-                + "close-only order), and LiveStrategyRunner.rejectEntryWithoutStop() refuses any "
-                + "entry without one. This test FAILS the day the entry carries its stop, which is "
-                + "what the live wiring needs.");
     }
 }
