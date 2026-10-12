@@ -1,0 +1,57 @@
+================================================================================
+LES CROSSES REFUGE EN MOTEUR — coût MESURÉ, carry RÉEL par année
+Lundi 12 octobre 2026 (55e) · rotation IDÉE NOUVELLE · fenêtre 2006-01-01 → 2026-05-19
+================================================================================
+[data] GBP_CHF <- gbpchf-h1-bid-oanda-2002-05-07-2026-10-09.csv
+[data] GBP_CHF   138789 barres  2002-05-07T20:00:00Z -> 2026-10-09T20:00:00Z
+[data] EUR_CHF <- eurchf-h1-bid-oanda-2002-05-06-2026-10-09.csv
+[data] EUR_CHF   138764 barres  2002-05-06T20:00:00Z -> 2026-10-09T20:00:00Z
+[data] AUD_CHF <- audchf-h1-bid-oanda-2004-05-31-2026-10-09.csv
+[data] AUD_CHF   138303 barres  2004-05-31T20:00:00Z -> 2026-10-09T20:00:00Z
+[data] GBP_JPY   178176 barres  2006-01-01T00:00:00Z -> 2026-05-19T23:00:00Z
+[data] GBP_USD   172752 barres  2006-01-01T00:00:00Z -> 2026-05-19T23:00:00Z
+[data] USD_CAD   172752 barres  2006-01-01T00:00:00Z -> 2026-05-19T23:00:00Z
+
+--- 0. COUT REEL MESURE (OANDA practice -014, 12 oct 2026, 1000 bougies H1 price=BA)
+SYMBOLE   SPREAD pip   HALF/jambe     A/R (bp)          MID
+GBP_CHF             2.50     0.000125        2.278      1.09766
+EUR_CHF             1.60     0.000080        1.702      0.93991
+AUD_CHF             1.50     0.000075        2.584      0.58055
+GBP_JPY             3.30     0.016500        1.573    209.85025
+GBP_USD             1.80     0.000090        1.334      1.34935
+USD_CAD             1.80     0.000090        1.295      1.39037
+
+Rappel 54e : chaque cross etait facture '2 jambes de majeures' = 4.28 bp A/R.
+Un cross COTE se paie son propre spread : la question est de savoir si ca change le verdict.
+
+--- 1. LE FADE (SELL vendredi, sortie lundi) vs MIROIR LONG — coût mesuré + carry réel par année
+          | SELL FRI (la config du 50e/53e/54e)      | LONG FRI (miroir = contrôle)      
+SYMBOLE   |     PF   WR%    DD%  TRADES       NET$      PRIX$ |     PF   WR%       NET$
+GBP_CHF   |   1.20   50%  5.26%    1058    3778.91    5778.30 |   0.70   46%   -9068.91
+EUR_CHF   |   1.09   48%  3.44%    1058     331.11    1432.40 |   0.75   46%   -3716.71
+AUD_CHF   |   1.05   49%  7.95%    1058   -2256.94    1023.10 |   0.83   48%    -917.06
+GBP_JPY   |   1.18   50%  4.38%    1061    4274.55    5306.00 |   0.73   46%   -8942.95
+GBP_USD   |   1.17   53%  4.39%    1029    5339.65    5406.10 |   0.77   45%   -9044.05
+USD_CAD   |   0.82   46% 12.18%    1029   -5131.47   -4916.50 |   1.05   50%    1427.07
+
+--- 2. CONTROLE BETA sur les crosses — vendredi vs TOUS les jours vs Mon-Jeu (mêmes coûts)
+          | SELL vendredi                  | SELL tous les jours            | SELL Mon-Jeu                  
+SYMBOLE   |     PF TRADES       NET$ |     PF TRADES       NET$ |     PF TRADES       NET$
+GBP_CHF   |   1.20   1058    3778.91 |   0.99   5309   -7229.76 |   0.95   4251  -11008.67
+EUR_CHF   |   1.09   1058     331.11 |   0.97   5309   -5415.50 |   0.95   4251   -5746.61
+AUD_CHF   |   1.05   1058   -2256.94 |   0.96   5309  -13793.58 |   0.94   4251  -11536.65
+GBP_JPY   |   1.18   1061    4274.55 |   0.92   5302  -15445.96 |   0.86   4241  -19720.51
+GBP_USD   |   1.17   1029    5339.65 |   0.97   5140   -5637.57 |   0.92   4111  -10977.22
+USD_CAD   |   0.82   1029   -5131.47 |   0.91   5140  -11810.40 |   0.93   4111   -6678.93
+
+--- 3. WALK-FORWARD + DECENNIES + ERE DU PLANCHER SNB (SELL vendredi, mêmes coûts)
+                           | GBP_CHF / EUR_CHF / AUD_CHF — PF (trades, net$)
+FULL 2006-2026             |  1.20 (1058, +3779)  1.09 (1058, +331)  1.05 (1058, -2257)
+IS 2006-2015               |  1.13 (519, +1470)  1.10 (519, +405)  1.00 (519, -2026)
+OOS 2016-2026              |  1.32 (539, +2309)  1.07 (539, -74)  1.15 (539, -231)
+2006-2009                  |  1.25 (208, +1598)  1.19 (208, +439)  1.03 (208, -694)
+2010-2014                  |  0.95 (260, -551)  0.91 (260, -630)  0.86 (260, -1955)
+2015-2019                  |  1.39 (259, +2063)  1.23 (259, +588)  1.22 (259, +123)
+2020-2026                  |  1.27 (331, +669)  1.10 (331, -66)  1.26 (331, +269)
+PEG SNB 09/2011-06/2015    |  0.95 (199, -382)  1.38 (199, +583)  1.05 (199, -455)
+HORS PEG                   |  1.19 (295, +1670)  1.03 (295, -220)  0.94 (295, -1958)
