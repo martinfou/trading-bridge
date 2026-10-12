@@ -1861,7 +1861,18 @@ public class LiveStrategyRunner implements Runnable {
                 m = strategy.getClass().getMethod("isInTrade");
                 root.put("strat_inTrade", (boolean) m.invoke(strategy));
                 m = strategy.getClass().getMethod("getTradeDirection");
-                root.put("strat_tradeDirection", ((Enum<?>) m.invoke(strategy)).name());
+                // A flat strategy legitimately has no direction: Strategy.syncPosition(null, 0, 0, 0)
+                // clears that field when the VENUE closed the position (a stop-loss fill). Calling
+                // name() on the null it returns threw, and because one throw aborts the whole state
+                // write, the runner silently stopped persisting anything: measured on the window
+                // 2026-10-12, 1507 failed saves in 24h, both state files frozen for hours. Null is a
+                // state, not an error, so it is written as an explicit JSON null.
+                Object direction = m.invoke(strategy);
+                if (direction instanceof Enum<?> side) {
+                    root.put("strat_tradeDirection", side.name());
+                } else {
+                    root.putNull("strat_tradeDirection");
+                }
                 m = strategy.getClass().getMethod("getLastTradeDay");
                 root.put("strat_lastTradeDay", (int) m.invoke(strategy));
             } catch (NoSuchMethodException e) {
@@ -1905,7 +1916,7 @@ public class LiveStrategyRunner implements Runnable {
             writeStateAtomic(root);
             lastStateSave = TimeConventions.now();
         } catch (Exception e) {
-            log.warn("Failed to save state for '{}': {}", strategyShortName, e.getMessage());
+            log.warn("Failed to save state for '{}': {}", strategyShortName, describe(e));
         }
     }
 
@@ -2473,7 +2484,29 @@ public class LiveStrategyRunner implements Runnable {
                     int td = root.get("strat_tradesToday").asInt();
                     int ltd = root.get("strat_lastTradeDay").asInt(-1);
                     boolean it = root.get("strat_inTrade").asBoolean();
-                    Order.Side dir = Order.Side.valueOf(root.get("strat_tradeDirection").asText("BUY"));
+                    // An absent or null direction means the strategy was FLAT when this was written:
+                    // the venue closed the position and syncPosition(null, ...) cleared the field.
+                    // Never invent a side for it (the old asText("BUY") fallback did), because the next
+                    // re-entry would be armed on a direction nobody chose.
+                    Order.Side dir = null;
+                    com.fasterxml.jackson.databind.JsonNode dirNode = root.get("strat_tradeDirection");
+                    if (dirNode != null && dirNode.isTextual()) {
+                        try {
+                            dir = Order.Side.valueOf(dirNode.asText());
+                        } catch (IllegalArgumentException unknown) {
+                            log.warn("Saved trade direction '{}' is not a known side for '{}'; restoring"
+                                + " the strategy flat", dirNode.asText(), strategyShortName);
+                        }
+                    }
+                    // The runner's own book is authoritative about whether a trade is open. A strategy
+                    // restored as in-trade while the runner tracks nothing waits for an exit it can
+                    // never take and skips every entry, which is exactly how the window strategy went
+                    // quiet after a broker stop-out.
+                    if (it && activeTrades.isEmpty()) {
+                        log.warn("Strategy '{}' was saved in-trade with no tracked trade; restoring it"
+                            + " flat", strategyShortName);
+                        it = false;
+                    }
                     int cd = root.get("strat_cooldownBars").asInt(0);
                     m.invoke(strategy, td, ltd, it, dir, cd);
                     log.info("♻ Strategy state restored: tradesToday={}, inTrade={}, cooldown={}", td, it, cd);
@@ -2487,8 +2520,24 @@ public class LiveStrategyRunner implements Runnable {
                 String.format("%.2f", ledger.total()));
 
         } catch (Exception e) {
-            log.warn("Failed to resume state (corrupted?): {}", e.getMessage());
+            log.warn("Failed to resume state (corrupted?): {}", describe(e));
         }
+    }
+
+    /**
+     * A failure message a JDK may leave null is not a diagnostic. Measured on this repo: a refused
+     * connection carries message=null on JDK 21 and a real message on 26, and an unboxing NPE has no
+     * message on either. Walk the cause chain for the first text, then fall back to the class name,
+     * so an operational log always names something instead of printing ": null".
+     */
+    static String describe(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            String message = t.getMessage();
+            if (message != null && !message.isBlank()) {
+                return message + " (" + t.getClass().getName() + ")";
+            }
+        }
+        return e.getClass().getName();
     }
 
     public static Map<String, LiveStrategyRunner> getActiveRunners() { return ACTIVE_RUNNERS; }
