@@ -1855,11 +1855,11 @@ public class LiveStrategyRunner implements Runnable {
             // Save strategy internal state (crash recovery) via reflection
             try {
                 var m = strategy.getClass().getMethod("getTradesToday");
-                root.put("strat_tradesToday", (int) m.invoke(strategy));
+                root.put("strat_tradesToday", asInt(invokeQuietly(m, strategy), 0));
                 m = strategy.getClass().getMethod("getCooldownBars");
-                root.put("strat_cooldownBars", (int) m.invoke(strategy));
+                root.put("strat_cooldownBars", asInt(invokeQuietly(m, strategy), 0));
                 m = strategy.getClass().getMethod("isInTrade");
-                root.put("strat_inTrade", (boolean) m.invoke(strategy));
+                root.put("strat_inTrade", asBoolean(invokeQuietly(m, strategy), false));
                 m = strategy.getClass().getMethod("getTradeDirection");
                 // A flat strategy legitimately has no direction: Strategy.syncPosition(null, 0, 0, 0)
                 // clears that field when the VENUE closed the position (a stop-loss fill). Calling
@@ -1867,14 +1867,14 @@ public class LiveStrategyRunner implements Runnable {
                 // write, the runner silently stopped persisting anything: measured on the window
                 // 2026-10-12, 1507 failed saves in 24h, both state files frozen for hours. Null is a
                 // state, not an error, so it is written as an explicit JSON null.
-                Object direction = m.invoke(strategy);
+                Object direction = invokeQuietly(m, strategy);
                 if (direction instanceof Enum<?> side) {
                     root.put("strat_tradeDirection", side.name());
                 } else {
                     root.putNull("strat_tradeDirection");
                 }
                 m = strategy.getClass().getMethod("getLastTradeDay");
-                root.put("strat_lastTradeDay", (int) m.invoke(strategy));
+                root.put("strat_lastTradeDay", asInt(invokeQuietly(m, strategy), -1));
             } catch (NoSuchMethodException e) {
                 // strategy doesn't support state export — fine
             }
@@ -2357,7 +2357,7 @@ public class LiveStrategyRunner implements Runnable {
                 writeJsonAtomic(monitorFile, root);
             }
         } catch (Exception e) {
-            log.warn("Failed to save failed state for '{}': {}", strategyShortName, e.getMessage());
+            log.warn("Failed to save failed state for '{}': {}", strategyShortName, describe(e));
         }
     }
 
@@ -2538,6 +2538,30 @@ public class LiveStrategyRunner implements Runnable {
             }
         }
         return e.getClass().getName();
+    }
+
+    /**
+     * Reads one reflective getter, treating any failure as "no value" rather than throwing. The
+     * export runs inside the state write's single try/catch, so before this a getter returning a
+     * boxed null, throwing, or answering with an unexpected type cost the ENTIRE state file: the
+     * same defect class as the null direction, on the four other getters, left in place when only
+     * that one was fixed.
+     */
+    private static Object invokeQuietly(java.lang.reflect.Method method, Strategy target) {
+        try {
+            return method.invoke(target);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            log.warn("Strategy state getter '{}' failed: {}", method.getName(), describe(e));
+            return null;
+        }
+    }
+
+    private static int asInt(Object value, int fallback) {
+        return value instanceof Number number ? number.intValue() : fallback;
+    }
+
+    private static boolean asBoolean(Object value, boolean fallback) {
+        return value instanceof Boolean bool ? bool : fallback;
     }
 
     public static Map<String, LiveStrategyRunner> getActiveRunners() { return ACTIVE_RUNNERS; }

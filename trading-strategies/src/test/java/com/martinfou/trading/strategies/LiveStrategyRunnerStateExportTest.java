@@ -43,6 +43,7 @@ class LiveStrategyRunnerStateExportTest {
     private static final String FLAT_STRAT = "StateExportFlat";
     private static final String TRACKED_STRAT = "StateExportTracked";
     private static final String UNKNOWN_DIR_STRAT = "StateExportUnknownDirection";
+    private static final String BOXED_STRAT = "StateExportBoxedNull";
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     /**
@@ -88,17 +89,37 @@ class LiveStrategyRunnerStateExportTest {
         }
     }
 
+    /**
+     * The same defect class as the null direction, on a different getter: a boxed null that the export
+     * unboxed used to cost the whole state file. The write must survive it and fall back to a default.
+     */
+    private static class BoxedNullStrategy implements Strategy {
+
+        @Override public String name() { return "BoxedNull"; }
+        @Override public void onBar(Bar bar) { }
+        @Override public void onTick(double bid, double ask, long volume) { }
+        @Override public List<Order> getPendingOrders() { return new ArrayList<>(); }
+        @Override public void reset() { }
+
+        public Integer getTradesToday() { return null; }   // boxed null, not a primitive int
+        public int getCooldownBars() { return 1; }
+        public boolean isInTrade() { return false; }
+        public Order.Side getTradeDirection() { return Order.Side.BUY; }
+        public int getLastTradeDay() { return -1; }
+        public void restoreState(int a, int b, boolean c, Order.Side d, int e) { }
+    }
+
     private static Path statePath(String shortName) {
         return Paths.get("/tmp/live-strategy-state-" + shortName + ".json");
     }
 
-    private static LiveStrategyRunner runner(String shortName, RecordingStrategy strategy) {
+    private static LiveStrategyRunner runner(String shortName, Strategy strategy) {
         return new LiveStrategyRunner("dummy-key", "dummy-acc", strategy, shortName, "H1", 60);
     }
 
     @AfterEach
     void cleanup() throws Exception {
-        for (String s : List.of(FLAT_STRAT, TRACKED_STRAT, UNKNOWN_DIR_STRAT)) {
+        for (String s : List.of(FLAT_STRAT, TRACKED_STRAT, UNKNOWN_DIR_STRAT, BOXED_STRAT)) {
             Files.deleteIfExists(statePath(s));
             Files.deleteIfExists(Paths.get("/tmp/paper-status-" + s + ".json"));
         }
@@ -125,6 +146,25 @@ class LiveStrategyRunnerStateExportTest {
             "the write completed past the direction getter: the tracked trade is persisted");
         assertEquals(291, saved.get("strat_lastTradeDay").asInt(),
             "the export ran to its last getter instead of aborting");
+    }
+
+    /**
+     * Every getter is read defensively, not just the direction one: a boxed null here used to abort the
+     * whole write through the same unboxing NPE.
+     */
+    @Test
+    void aGetterReturningABoxedNullDoesNotAbortTheWrite() throws Exception {
+        LiveStrategyRunner r = runner(BOXED_STRAT, new BoxedNullStrategy());
+        r.getActiveTrades().add(new LiveStrategyRunner.ActiveTrade(
+            "t1", "USD_CHF", "BUY", 0.8327, 6100, 0.8400, 0.8200, Instant.now()));
+
+        assertDoesNotThrow(r::saveStateNow, "a boxed null getter is not an error");
+
+        JsonNode saved = MAPPER.readTree(Files.readString(statePath(BOXED_STRAT)));
+        assertEquals(0, saved.get("strat_tradesToday").asInt(), "the fallback is used, not a crash");
+        assertEquals(1, saved.get("activeTrades").size(),
+            "and the rest of the state is still written");
+        assertEquals("BUY", saved.get("strat_tradeDirection").asText());
     }
 
     /** A strategy the venue flattened is restored flat, never seeded with a side nobody chose. */
@@ -159,7 +199,7 @@ class LiveStrategyRunnerStateExportTest {
         assertEquals(1, strategy.restoredTradesToday, "the counters still ride along");
     }
 
-    /** The other half of the rule: a genuinely tracked trade keeps the strategy latched. */
+    /** A genuinely tracked trade keeps the strategy latched. */
     @Test
     void restoreKeepsInTradeWhenATradeIsTracked() throws Exception {
         Files.writeString(statePath(TRACKED_STRAT), """
