@@ -105,6 +105,9 @@ public class RunRefugeCrossCostFade {
         log("================================================================================");
         log("LES CROSSES REFUGE EN MOTEUR — coût MESURÉ, carry RÉEL par année");
         log("Lundi 12 octobre 2026 (55e) · rotation IDÉE NOUVELLE · fenêtre 2006-01-01 → 2026-05-19");
+        log("SUITE 13 OCT 2026 (56e, variation) : carry " + (System.getenv("CARRY_SCALE") == null
+            ? "= convention du moteur (le week-end est facturé 2x au lieu d'être porté par le mercredi)"
+            : "CORRIGÉ — CARRY_SCALE=" + System.getenv("CARRY_SCALE")));
         log("================================================================================");
 
         loadAll();
@@ -134,7 +137,7 @@ public class RunRefugeCrossCostFade {
         System.out.println(REPORT);
 
         Path out = Path.of(System.getProperty("user.home"),
-            "projects/tb-research/reports/2026-10-12-refuge-cross-costs.txt");
+            "projects/tb-research/reports/" + outName() + ".txt");
         try {
             Files.createDirectories(out.getParent());
             Files.writeString(out, REPORT.toString());
@@ -230,7 +233,31 @@ public class RunRefugeCrossCostFade {
         }
     }
 
-    /** Carry par ANNÉE en pips/lot/jour : différentiel (base − quote) exprimé en %, × 0.274. */
+    /**
+     * VARIATION DU 13 OCT 2026 (56e) : facteur correctif du carry par paire, lu dans
+     * l'environnement ({@code CARRY_SCALE="GBP_CHF=0.505,EUR_CHF=0.514,..."}).
+     *
+     * <p>Le compteur de rollovers du moteur facture CHAQUE jour calendaire a 17:00 ET (+3 le
+     * mercredi) : le week-end est donc facture une 2e fois au lieu d'etre porte par le mercredi.
+     * Mesure du 13 oct (scripts/rollover-daycount.py) sur les instants d'entree/sortie EXACTS de
+     * ce fade : les crosses sont factures 2 jours la ou le marche en facture 1 (989/1058
+     * evenements) ⇒ facteur 0.505-0.524 ; les 3 majeurs sortent samedi 00:00 UTC (barres de
+     * week-end synthetiques Dukascopy) AVANT le roll du samedi ⇒ facteur 0.998 (non touches).
+     * Le facteur applique aux taux injectes reproduit exactement la charge reelle, car le swap
+     * est lineaire dans le taux et le compte de jours est constant par evenement.
+     */
+    static double carryScale(String sym) {
+        String env = System.getenv("CARRY_SCALE");
+        if (env == null || env.isBlank()) return 1.0;
+        for (String kv : env.split(",")) {
+            String[] p = kv.split("=");
+            if (p.length == 2 && p[0].trim().replace("_", "").equalsIgnoreCase(sym.replace("_", ""))) {
+                return Double.parseDouble(p[1].trim());
+            }
+        }
+        return 1.0;
+    }
+
     static Map<Integer, double[]> yearlyCarry(String sym) {
         double[] diff;
         String[] p = sym.split("_");
@@ -243,13 +270,14 @@ public class RunRefugeCrossCostFade {
             diff = DIFF.get(sym);
         }
         Map<Integer, double[]> out = new TreeMap<>();
+        double k = carryScale(sym);
         for (int i = 0; i < diff.length; i++) {
             double d = diff[i];
             // long base = credite r_base − r_quote ; short = le debit inverse.
-            out.put(2006 + i, new double[]{d * BP_PER_PCT_DAY, -d * BP_PER_PCT_DAY});
+            out.put(2006 + i, new double[]{d * BP_PER_PCT_DAY * k, -d * BP_PER_PCT_DAY * k});
         }
-        out.put(-1, new double[]{diff[diff.length - 1] * BP_PER_PCT_DAY,
-                                -diff[diff.length - 1] * BP_PER_PCT_DAY});
+        out.put(-1, new double[]{diff[diff.length - 1] * BP_PER_PCT_DAY * k,
+                                -diff[diff.length - 1] * BP_PER_PCT_DAY * k});
         return out;
     }
 
@@ -313,6 +341,13 @@ public class RunRefugeCrossCostFade {
 
     record Result(double pf, double wr, double dd, int trades, double net, double swap,
                   double price, double slip, double comm) {}
+
+    static String outName() {
+        String suffix = System.getenv("OUT_SUFFIX");
+        return (suffix == null || suffix.isBlank())
+            ? "2026-10-12-refuge-cross-costs"
+            : "2026-10-13-refuge-cross-carrydays-" + suffix;
+    }
 
     static void section(String s) {
         log("");
