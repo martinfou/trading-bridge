@@ -1,0 +1,139 @@
+========================================================================================================
+57e (mercredi 14 oct 2026) — SAISONNALITE FX : PROFIL JOUR-DE-SEMAINE A HOLD EGALISE
+Fix du 56e : sam/dim jetes pour TOUTES les series + snapshot a instant fixe => hold identique.
+Fenetre 2006-01-01 -> 2026-05-20 UTC. Snapshot principal = close a 21:00 UTC (cloture hebdo).
+========================================================================================================
+
+--- 0. FLUX DE DONNEES — la cause du hold divergent du 55e
+  GBP_CHF  CROSS (OANDA, sessions realistes) LUN=27197 MAR=27261 MER=27241 JEU=27266 VEN=24553 | SAM=443 DIM=4828
+  EUR_CHF  CROSS (OANDA, sessions realistes) LUN=27192 MAR=27259 MER=27237 JEU=27266 VEN=24507 | SAM=454 DIM=4849
+  AUD_CHF  CROSS (OANDA, sessions realistes) LUN=27091 MAR=27153 MER=27131 JEU=27155 VEN=24431 | SAM=485 DIM=4857
+  GBP_JPY  MAJEURE (Dukascopy 24x7)         LUN=25464 MAR=25464 MER=25440 JEU=25440 VEN=25464 | SAM=25440 DIM=25464
+  GBP_USD  MAJEURE (Dukascopy 24x7)         LUN=24672 MAR=24672 MER=24672 JEU=24672 VEN=24696 | SAM=24672 DIM=24696
+  USD_CAD  MAJEURE (Dukascopy 24x7)         LUN=24672 MAR=24672 MER=24672 JEU=24672 VEN=24696 | SAM=24672 DIM=24696
+  Les majeures portent ~24 barres SYNTHETIQUES par samedi ET par dimanche : pour elles le
+  'jour de trading suivant' vendredi 00:00 UTC est le SAMEDI (hold 24 h), alors que pour les
+  crosses (aucune barre de week-end utile) c'est le DIMANCHE soir (hold 66 h). C'est exactement
+  l'ecart de tableau du 55e. Ici : lun-ven seulement, des deux cotes.
+
+--- 0b. INTEGRITE DES SERIES (trou > 72 h)
+  ⚠ GBP_CHF  2015-12-24 18:00 -> 2015-12-27 22:00  3 JOURS MANQUANTS
+  ⚠ GBP_CHF  2015-12-31 18:00 -> 2016-01-03 22:00  3 JOURS MANQUANTS
+  ⚠ GBP_CHF  2016-12-23 21:00 -> 2016-12-26 23:00  3 JOURS MANQUANTS
+  ⚠ GBP_CHF  2016-12-30 21:00 -> 2017-01-02 23:00  3 JOURS MANQUANTS
+  ⚠ GBP_CHF  2017-12-22 21:00 -> 2017-12-25 22:00  3 JOURS MANQUANTS
+  ⚠ GBP_CHF  2017-12-29 21:00 -> 2018-01-01 22:00  3 JOURS MANQUANTS
+  ⚠ GBP_CHF  2020-12-24 21:00 -> 2020-12-27 22:00  3 JOURS MANQUANTS
+  ⚠ GBP_CHF  2020-12-31 21:00 -> 2021-01-03 22:00  3 JOURS MANQUANTS
+  ⚠ GBP_CHF  2022-12-23 21:00 -> 2022-12-26 22:00  3 JOURS MANQUANTS
+  ⚠ GBP_CHF  2023-12-22 21:00 -> 2023-12-25 22:00  3 JOURS MANQUANTS
+  ⚠ GBP_CHF  2023-12-29 21:00 -> 2024-01-01 22:00  3 JOURS MANQUANTS
+  ⚠ EUR_CHF  2015-12-24 18:00 -> 2015-12-27 22:00  3 JOURS MANQUANTS
+  ⚠ EUR_CHF  2015-12-31 18:00 -> 2016-01-03 22:00  3 JOURS MANQUANTS
+  ⚠ EUR_CHF  2016-12-23 21:00 -> 2016-12-26 23:00  3 JOURS MANQUANTS
+  ⚠ EUR_CHF  2016-12-30 21:00 -> 2017-01-02 23:00  3 JOURS MANQUANTS
+  ⚠ EUR_CHF  2017-12-22 21:00 -> 2017-12-25 22:00  3 JOURS MANQUANTS
+  ⚠ EUR_CHF  2017-12-29 21:00 -> 2018-01-01 22:00  3 JOURS MANQUANTS
+  ⚠ EUR_CHF  2020-12-24 21:00 -> 2020-12-27 22:00  3 JOURS MANQUANTS
+  ⚠ EUR_CHF  2020-12-31 21:00 -> 2021-01-03 22:00  3 JOURS MANQUANTS
+  ⚠ EUR_CHF  2022-12-23 21:00 -> 2022-12-26 22:00  3 JOURS MANQUANTS
+  ⚠ EUR_CHF  2023-12-22 21:00 -> 2023-12-25 22:00  3 JOURS MANQUANTS
+  ⚠ EUR_CHF  2023-12-29 21:00 -> 2024-01-01 22:00  3 JOURS MANQUANTS
+  ⚠ AUD_CHF  2015-12-24 18:00 -> 2015-12-27 22:00  3 JOURS MANQUANTS
+  ⚠ AUD_CHF  2015-12-31 18:00 -> 2016-01-03 22:00  3 JOURS MANQUANTS
+  ⚠ AUD_CHF  2016-12-23 21:00 -> 2016-12-26 23:00  3 JOURS MANQUANTS
+  ⚠ AUD_CHF  2016-12-30 21:00 -> 2017-01-02 23:00  3 JOURS MANQUANTS
+  ⚠ AUD_CHF  2017-12-22 21:00 -> 2017-12-25 22:00  3 JOURS MANQUANTS
+  ⚠ AUD_CHF  2017-12-29 21:00 -> 2018-01-01 22:00  3 JOURS MANQUANTS
+  ⚠ AUD_CHF  2020-12-24 21:00 -> 2020-12-27 22:00  3 JOURS MANQUANTS
+  ⚠ AUD_CHF  2020-12-31 21:00 -> 2021-01-03 22:00  3 JOURS MANQUANTS
+  ⚠ AUD_CHF  2022-12-23 21:00 -> 2022-12-26 22:00  3 JOURS MANQUANTS
+  ⚠ AUD_CHF  2023-12-22 21:00 -> 2023-12-25 22:00  3 JOURS MANQUANTS
+  ⚠ AUD_CHF  2023-12-29 21:00 -> 2024-01-01 22:00  3 JOURS MANQUANTS
+  GBP_JPY  aucun trou
+  ⚠ GBP_USD  2025-05-18 23:00 -> 2026-01-01 00:00  227 JOURS MANQUANTS
+  ⚠ USD_CAD  2025-05-18 23:00 -> 2026-01-01 00:00  227 JOURS MANQUANTS
+  -> un trou de plusieurs mois fabrique UN 'retour' de plusieurs mois qui pollue une cellule.
+
+--- 1. CONTROLE DU HOLD APRES LE FIX (24 h mar->ven, 72 h lundi ; trous exclus)
+  GBP_CHF  obs= 5273 exclues(hold>96h)=  4  LUN=[72.0, 96.0] MAR=[24.0, 96.0] MER=[24.0, 48.0] JEU=[24.0, 48.0, 72.0] VEN=[24.0, 48.0, 72.0]
+  EUR_CHF  obs= 5274 exclues(hold>96h)=  4  LUN=[72.0, 96.0] MAR=[24.0, 96.0] MER=[24.0, 48.0] JEU=[24.0, 48.0, 72.0] VEN=[24.0, 48.0, 72.0]
+  AUD_CHF  obs= 5273 exclues(hold>96h)=  4  LUN=[72.0, 96.0] MAR=[24.0, 96.0] MER=[24.0, 48.0] JEU=[24.0, 48.0, 72.0] VEN=[24.0, 48.0, 72.0]
+  GBP_JPY  obs= 5302 exclues(hold>96h)=  0  LUN=[72.0, 96.0] MAR=[24.0, 96.0] MER=[24.0, 48.0] JEU=[24.0, 48.0] VEN=[24.0, 48.0]
+  GBP_USD  obs= 5139 exclues(hold>96h)=  1  LUN=[72.0, 96.0] MAR=[24.0, 96.0] MER=[24.0, 48.0] JEU=[24.0, 48.0] VEN=[24.0, 48.0]
+  USD_CAD  obs= 5139 exclues(hold>96h)=  1  LUN=[72.0, 96.0] MAR=[24.0, 96.0] MER=[24.0, 48.0] JEU=[24.0, 48.0] VEN=[24.0, 48.0]
+
+--- 2. P0 NON-REGRESSION (retour BRUT du vendredi ; r<0 = baisse le vendredi)
+  SYMBOLE   r brut bp      t     med     n | ref r brut t ref  ecart bp
+  GBP_CHF       -7.43  -4.13   -5.50  1057 |      -8.48  4.97     +1.05
+  EUR_CHF       -4.50  -3.95   -2.75  1057 |      -5.05  4.52     +0.55
+  AUD_CHF       -8.79  -3.82   -5.29  1057 |     -10.73  4.82     +1.94
+  GBP_JPY       -4.36  -1.74   -0.33  1061 |      -5.61  2.39     +1.25
+  GBP_USD       -5.10  -2.58   -3.89  1029 |      -5.34  2.86     +0.24
+  USD_CAD       +2.19  +1.30   +3.63  1029 |      +0.55  0.40     +1.64
+  ecart moyen : crosses +1.18 bp | majeures +1.04 bp   (plancher de bruit du systeme de jambes : 2,9 bp — 53e)
+
+--- 3. PROFIL COMPLET LUNDI -> VENDREDI (moyenne bp + t). Bonferroni 30 cellules : |t| >= 3
+  SYMBOLE                  LUN                MAR                MER                JEU                VEN            Mon-Jeu
+  GBP_CHF       +1.76(t+0.98)     +1.10(t+0.55)     +0.47(t+0.26)     -3.22(t-1.34)     -7.43(t-4.13)     -1.47(t-1.66)
+  EUR_CHF       +1.85(t+1.59)     +0.44(t+0.31)     -0.41(t-0.36)     -2.49(t-1.18)     -4.50(t-3.95)     -1.03(t-1.59)
+  AUD_CHF       +6.39(t+2.66)     +1.74(t+0.70)     -0.27(t-0.11)     -4.29(t-1.50)     -8.79(t-3.82)     -1.05(t-0.94)
+  GBP_JPY       -0.05(t-0.02)     +1.55(t+0.65)     +4.40(t+1.97)     -1.08(t-0.46)     -4.36(t-1.74)     +0.09(t+0.09)
+  GBP_USD       -1.14(t-0.66)     +1.02(t+0.56)     +1.86(t+1.05)     +0.76(t+0.41)     -5.10(t-2.58)     -0.52(t-0.63)
+  USD_CAD       +0.77(t+0.48)     +0.33(t+0.20)     -1.64(t-0.90)     +0.14(t+0.09)     +2.19(t+1.30)     +0.36(t+0.47)
+
+--- 4. CROSS vs MAJEURE A HOLD EGAL (la question du 56e)
+  fade (SELL vendredi) = -r :
+    crosses  : GBP_CHF +7.43 (t -4.13) · EUR_CHF +4.50 (t -3.95) · AUD_CHF +8.79 (t -3.82)   => moyenne +6.91 bp
+    majeures : GBP_JPY +4.36 (t -1.74) · GBP_USD +5.10 (t -2.58) · USD_CAD -2.19 (t +1.30)   => moyenne +2.42 bp
+  ECART cross - majeure = +4.48 bp   (n=3 par famille : lecture qualitative)
+  Si l'ecart tombait a ~0, l'attribution 'jambe refuge' du 50e/53e/54e serait un artefact de
+  DUREE DE DETENTION. Il ne tombe pas a 0 : la hierarchie cross > majeure survit au hold egal.
+
+--- 5. TEST APPARIE PAR DATE — meme jambe GAUCHE (GBP), jambe droite differente
+  Le 50e/53e : 'la jambe de DROITE decide'. Test propre = deux paires de meme base, retour
+  par retour, sur les MEMES vendredis (difference appariee).
+  GBP_CHF  - GBP_JPY  :   -3.08 bp  (t -1.56, n 1055)
+  GBP_CHF  - GBP_USD  :   -2.25 bp  (t -1.23, n 1023)
+  GBP_USD  - GBP_JPY  :   -0.66 bp  (t -0.32, n 1029)
+  (une jambe droite plus refuge doit donner un vendredi PLUS negatif => difference negative)
+
+--- 6. STABILITE DE LA CELLULE VENDREDI (retour brut)
+  SYMBOLE           IS 06-15        OOS 16-26 |          2006-09          2010-14          2015-19          2020-26
+  GBP_CHF      -5.31(t-2.06)    -9.48(t-3.78) |    -3.91(t-0.90)    -3.66(t-1.08)   -13.01(t-2.93)    -8.25(t-3.25)
+  EUR_CHF      -5.11(t-2.70)    -3.92(t-3.01) |    -5.56(t-2.21)    -1.32(t-0.46)    -7.31(t-3.42)    -4.13(t-2.47)
+  AUD_CHF      -7.54(t-1.93)    -9.99(t-4.02) |    -6.17(t-0.82)    -5.02(t-1.13)    -9.73(t-2.58)   -12.64(t-3.84)
+  GBP_JPY      -1.03(t-0.30)    -7.56(t-2.08) |    -2.21(t-0.34)    +1.37(t+0.32)   -12.89(t-1.99)    -3.50(t-1.05)
+  GBP_USD      -3.40(t-1.37)    -6.83(t-2.22) |    -2.34(t-0.53)    -2.70(t-0.88)    -8.98(t-1.84)    -5.71(t-1.69)
+  USD_CAD      +4.26(t+1.59)    +0.08(t+0.04) |    -1.70(t-0.34)    +5.62(t+1.72)    +2.25(t+0.70)    +1.87(t+0.76)
+
+--- 7. SENSIBILITE A L'ANCRE (fenetre de 24 h SE TERMINANT a H:00 UTC)
+  Meme objet (retour de vendredi) avec une autre heure de coupe. Monotone = gradient.
+  ANCRE                GBP_CHF          EUR_CHF          AUD_CHF          GBP_JPY          GBP_USD          USD_CAD
+  1:00 UTC        -2.86(t-1.1)     -2.87(t-1.3)     -3.58(t-1.2)     +1.78(t+0.7)     -0.77(t-0.4)     +1.46(t+0.9)
+  5:00 UTC        -3.28(t-1.3)     -2.68(t-1.3)     -5.38(t-1.9)     +0.44(t+0.2)     -0.67(t-0.3)     +1.35(t+0.8)
+  9:00 UTC        -3.32(t-1.3)     -2.53(t-1.2)     -6.40(t-2.2)     -0.79(t-0.3)     -1.89(t-0.9)     +3.70(t+2.2)
+  13:00 UTC       -5.73(t-2.9)     -2.39(t-1.9)     -6.93(t-2.7)     -4.45(t-1.6)     -4.29(t-2.1)     +3.34(t+1.8)
+  17:00 UTC       -6.11(t-3.3)     -3.38(t-2.8)     -6.84(t-2.8)     -3.04(t-1.2)     -4.19(t-2.2)     +4.16(t+2.5)
+  21:00 UTC       -7.43(t-4.1)     -4.50(t-4.0)     -8.79(t-3.8)     -4.36(t-1.7)     -5.10(t-2.6)     +2.19(t+1.3)
+
+--- 8. DECOMPOSITION INTRA-JOURNALIERE DU VENDREDI : ou se concentre la baisse ?
+  retour brut = GAP 21:00(J-1)->00:00(J) + ASIE 00->08 + LONDRES 08->13 + NY/CLOTURE 13->21
+  (les 4 composantes sont des rendements BRUTS : negatif = prix en baisse)
+  ⚠ les fenetres n'ont PAS la meme duree (GAP 3 h, ASIE 8 h, LON 5 h, NY 8 h) : lire aussi
+    le bp/heure, sinon la fenetre la plus longue gagne par construction.
+  SYMBOLE      JOUR             GAP        ASIE 0-8        LON 8-13        NY 13-21     TOTAL   NY bp/h  reste/h
+  GBP_CHF       VEN    -0.16(t-0.3)    -1.30(t-1.4)    -0.91(t-0.8)    -4.98(t-4.2)     -7.36    -0.623   -0.149
+  GBP_CHF   Mon-Jeu    +0.46(t+2.2)    -0.27(t-0.7)    +1.09(t+1.6)    -1.24(t-2.3)     +0.04    -0.155   +0.080
+  EUR_CHF       VEN    -0.13(t-0.5)    +0.75(t+1.3)    -1.54(t-2.2)    -3.58(t-4.5)     -4.50    -0.448   -0.057
+  EUR_CHF   Mon-Jeu    +0.47(t+3.1)    +0.82(t+2.9)    -0.47(t-0.9)    -1.01(t-2.7)     -0.19    -0.126   +0.051
+  AUD_CHF       VEN    -0.38(t-0.7)    -0.89(t-0.7)    -0.45(t-0.4)    -7.21(t-5.1)     -8.93    -0.902   -0.108
+  AUD_CHF   Mon-Jeu    +0.48(t+1.4)    +1.83(t+2.8)    +1.01(t+1.5)    -2.51(t-3.4)     +0.81    -0.314   +0.208
+  GBP_JPY       VEN    +0.84(t+1.1)    -3.57(t-2.4)    -1.75(t-1.4)    +0.04(t+0.0)     -4.44    +0.005   -0.280
+  GBP_JPY   Mon-Jeu    -0.05(t-0.1)    -1.54(t-2.4)    +1.11(t+1.7)    +1.60(t+2.4)     +1.12    +0.200   -0.030
+  GBP_USD       VEN    -0.31(t-0.6)    -2.17(t-2.2)    -2.04(t-1.9)    -0.62(t-0.5)     -5.14    -0.078   -0.283
+  GBP_USD   Mon-Jeu    -0.08(t-0.4)    -0.35(t-0.9)    -0.02(t-0.0)    +1.02(t+1.8)     +0.56    +0.127   -0.029
+  USD_CAD       VEN    +1.03(t+3.5)    +1.16(t+1.5)    +0.99(t+1.0)    -0.88(t-0.7)     +2.30    -0.110   +0.199
+  USD_CAD   Mon-Jeu    +1.02(t+5.4)    -0.69(t-2.0)    +0.47(t+1.1)    -0.89(t-1.4)     -0.08    -0.111   +0.050
+  Lecture : si NY/CLOTURE porte tout, le fade est un phenomene de FIN DE SEANCE (de-risquage
+  avant le week-end), pas une derive etalee sur la journee.
