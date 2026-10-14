@@ -138,9 +138,13 @@ fi
 # Pin the reviewer, so the gate does not silently change model when agy updates its own default
 # (measured 2026-09-30: unset AGY_MODEL meant an unreviewed drift to whatever agy defaulted to).
 # Gemini is covered by Martin's Google/Antigravity subscription, so it is the default.
+# Model slugs verified live 2026-10-13 with `agy models` (lineup: gemini-4-argon-*, gemini-3.8-flash-*,
+# claude-opus-5-5-*, claude-sonnet-5-5-*, gpt-oss-120b-medium). agy RENAMES models across releases and a
+# dead slug here fails the gate with `error: invalid model selection` and no verdict, so re-check the
+# lineup after every `agy update` (see the `agy` skill, pitfall 8).
 # Claude credits are limited: opt in explicitly when the diff really warrants it,
-# e.g. AGY_MODEL=claude-opus-4-6-thinking scripts/agy-review.sh <ref>
-AGY_MODEL="${AGY_MODEL:-gemini-3.1-pro-high}"
+# e.g. AGY_MODEL=claude-opus-5-5-medium scripts/agy-review.sh <ref>
+AGY_MODEL="${AGY_MODEL:-gemini-3.8-flash-high}"
 MODEL_ARGS=()
 [[ -n "${AGY_MODEL:-}" ]] && MODEL_ARGS+=(--model "$AGY_MODEL")
 [[ -n "${AGY_EFFORT:-}" ]] && MODEL_ARGS+=(--effort "$AGY_EFFORT")
