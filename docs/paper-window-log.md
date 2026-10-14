@@ -78,14 +78,41 @@ frontière : tout ce qui porte un numéro supérieur à 218 est ici, et rien d'a
 | 2026-10-07 04:00 | vwpreversion | USD_CHF | SELL | −9.14 (stop courtier) |
 | 2026-10-07 09:00 | ltrsi3 | EUR_USD | SELL | −2.74 |
 | 2026-10-08 01:00 | ltrsi3 | EUR_USD | SELL | +6.40 |
-| 2026-10-08 14:00 | vwpreversion | USD_CHF | BUY | −9.34 (sortie sur signal) |
-| 2026-10-09 05:00 | ltrsi3 | EUR_USD | SELL | **ouverte** (stop 1.12341) |
+| 2026-10-08 14:00 | vwpreversion | USD_CHF | BUY | −9.34 |
+| 2026-10-11 18:00 | ltrsi3 | EUR_USD | SELL | +2.66 |
+| 2026-10-11 19:00 | consecbar | GBP_JPY | SELL | −10.21 (stop courtier) |
+| 2026-10-12 01:00 | ltrsi3 | EUR_USD | SELL | +9.83 |
+| 2026-10-12 04:00 | vwpreversion | USD_CHF | SELL | −11.82 (stop courtier) |
+| 2026-10-12 16:00 | consecbar | GBP_JPY | BUY | −7.37 (stop courtier) |
+| 2026-10-12 21:00 | vwpreversion | USD_CHF | SELL | +6.15 |
+| 2026-10-13 07:00 | ltrsi3 | EUR_USD | SELL | −0.99 |
+| 2026-10-13 09:00 | vwpreversion | USD_CHF | BUY | +12.05 |
+| 2026-10-13 12:00 | consecbar | GBP_JPY | SELL | −1.71 |
+| 2026-10-13 23:00 | newsoct12chinacpi | AUD_JPY | BUY | −6.04 (stop courtier) |
+| 2026-10-14 02:00 | ltrsi3 | EUR_USD | SELL | −0.34 |
+| 2026-10-14 04:00 | consecbar | GBP_JPY | BUY | +7.16 |
+| 2026-10-14 09:00 | vwpreversion | USD_CHF | SELL | −12.17 (stop courtier) |
+| 2026-10-14 10:00 | newsoct12cpi | EUR_USD | SELL | −8.95 (sortie même jour, D42) |
 
-Total réalisé dans la fenêtre : **−36.91 CAD** (vwpreversion **−43.78** sur 4 sorties,
-ltrsi3 **−0.90** sur 4 sorties, consecbar **+7.77** sur 2 sorties ; `monthweekphase` et
-`compmomentum` n'ont pas encore tradé. NAV au 2026-10-09 09:30 UTC : **1944.06** (balance 1944.49,
-1 position ouverte à −0.43). Le NAV de départ (1981.39) moins ce total donne exactement la balance :
-aucun financement. Point de passage précédent, conservé : NAV **1961.70** au 2026-10-02 08:56 UTC,
+Mise à jour **2026-10-14 18:15 EDT** : la table couvre **toutes** les transactions de la
+fenêtre (`id > 218`) jusqu'à maintenant. Le `lastTransactionID` de départ reste la frontière, et
+la lane news de la semaine (déployée le 2026-10-11) trade sur le **même compte**, donc ses
+sorties sont dans la fenêtre : elles sont comptées à part ci-dessous plutôt que mêlées aux cinq
+stratégies de la fenêtre.
+
+Total réalisé dans la fenêtre : **−58.66 CAD** sur **24 sorties, dont 8 stops du courtier** :
+vwpreversion **−49.58** (8 sorties, 5 stops), consecbar **−4.36** (6 sorties, 2 stops),
+newsoct12cpi **−8.95** (1 sortie), newsoct12chinacpi **−6.04** (1 sortie, 1 stop) ;
+ltrsi3 **+10.27** (8 sorties) ; `monthweekphase` et `compmomentum` n'ont toujours pas tradé, 0 fill en 13 jours.
+
+Réparti en deux : **stratégies de la fenêtre −43.67** et **lane news −14.99**.
+
+NAV au 2026-10-14 22:10 UTC : **1922.32** (balance 1922.3158, 0 position ouverte, 0 ordre en attente).
+Le NAV de départ (1981.3922) moins le total réalisé et le financement (−0.43) redonne le NAV à
+**0.01 près**, arrondi des P&L ligne par ligne : **aucun financement caché, aucun fill non
+attribué** (0 fill UUID ou sans tag dans la fenêtre ; les 17 fills de ce type sont tous du
+2026-10-01, sous la frontière). Points de passage précédents, conservés : NAV **1944.06** au
+2026-10-09 09:30 UTC, total alors de **−36.91**, et NAV **1961.70** au 2026-10-02 08:56 UTC,
 total alors de **−24.39**.
 
 La séquence `vwpreversion` est le premier écart backtest-vers-live documenté de cette fenêtre : la
@@ -270,3 +297,48 @@ s'est terminée sur une `NumberFormatException` au lieu d'être sautée propreme
 rien n'a rempli, `openTradeCount` n'a pas bougé, aucune position n'est restée sans surveillance. Un signal
 est simplement perdu, et le message d'erreur ne dit pas pourquoi. À corriger dans la famille « une entrée
 sans prix doit être sautée, pas planter ».
+
+## 2026-10-14, 18:30 EDT : relevé de la fenêtre au jour 13, et lane news déployée
+
+Relevé fait en lecture seule (écritures du courtier, moniteur agrégé des 7 conteneurs,
+`trading_pnl_ledger.py`). **Rien n'a été déployé, redémarré, dimensionné ni modifié dans la
+fenêtre** : ni l'instrument, ni le sizing, ni la liste des services, ni l'horloge (début
+2026-10-01 18:31 EDT, fin prévue 2026-10-31).
+
+**Lane news 12-16 octobre 2026, déployée le 2026-10-11 à 19:08 EDT** (merge `f8061a26` sur
+`master` à 19:24 EDT). Quatre stratégies codées en dur pour la semaine, un instrument par
+conteneur, sur le **même compte** `-014` :
+
+| Conteneur | Stratégies | Instrument |
+|---|---|---|
+| `trading-news-oct12-eur` | newsoct12cpi, newsoct12ppi | EUR_USD |
+| `trading-news-oct12-aj` | newsoct12chinacpi | AUD_JPY |
+| `trading-news-oct12-gc` | newsoct12fade | GBP_CHF |
+
+`D42` finance la lane à 4 % tant qu'elle est déployée ; le plafond redescend à 3 % dans
+l'édition qui la retire. Sorties le même jour, stop obligatoire à l'entrée.
+
+**État du 2026-10-14 (13 jours sur 30 écoulés) :**
+
+- NAV **1922.32** CAD, réalisé **−58.66** depuis le début, soit **−2.96 %** du NAV de départ.
+- Aucune position ouverte, aucun ordre en attente, aucune fuite de contrôle (0 fill UUID ou
+  sans tag dans la fenêtre).
+- Les 7 conteneurs sont `healthy` et leur flux est à jour : dernière barre traitée
+  2026-10-14 22:00 UTC (18:00 EDT), le cycle courant.
+- Les 5 conteneurs de la fenêtre exécutent l'image du **2026-10-09 10:08 UTC** ; `master` a
+  avancé depuis (`f8061a26`, lane news). Delta classé : le seul changement de chemin
+  d'exécution est l'ajout des 4 enregistrements news dans `getStrategyMap()`
+  (`LiveStrategyRunner.java`), inerte pour les 5 stratégies de la fenêtre ; le reste est
+  compose, config, stratégies news et documentation. Rien du chemin ordre/état de la
+  fenêtre n'est non déployé, et tout est poussé (`origin/master..master` = 0).
+- **À surveiller sans agir dans la fenêtre** : la re-baseline du 2026-10-10 sous le vrai
+  modèle de coûts conclut qu'aucune des 5 stratégies déployées ne passe la porte, et
+  `vwpreversion` ne produit **aucun** trade dans les données (volume nul). La règle tient :
+  produire l'évidence manquante, allouer à la prochaine fenêtre, ne rien changer au sizing
+  ni à la logique en cours de fenêtre.
+- Point ouvert signalé le même jour : le post-mortem de la lane news et son retrait restent
+  à faire dans la semaine du 2026-10-19 (arrêter puis supprimer les services, vérifier qu'ils
+  ne détiennent aucune position, retirer les noms courts et les blocs `services:` du compose).
+
+*Relevé écrit le 2026-10-14 après la question de Martin sur la journée de trading. Les
+montants viennent du courtier (fills), pas d'une tuile de dashboard.*
