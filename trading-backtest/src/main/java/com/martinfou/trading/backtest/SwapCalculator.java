@@ -199,10 +199,13 @@ public class SwapCalculator {
 
         double total = 0.0;
         while (current.isBefore(toNY)) {
-            int weight = current.getDayOfWeek() == DayOfWeek.WEDNESDAY ? 3 : 1;
+            // Meme regle que countRollovers : pas de rollover le week-end.
+            DayOfWeek dow = current.getDayOfWeek();
+            int weight = dow == DayOfWeek.WEDNESDAY ? 3
+                : (dow == DayOfWeek.SATURDAY || dow == DayOfWeek.SUNDAY) ? 0 : 1;
             double[] r = byYear.get(current.getYear());
             if (r == null) r = byYear.get(-1);           // repli : dernière année connue
-            if (r != null) {
+            if (r != null && weight > 0) {
                 double pipRate = side == Order.Side.BUY ? r[0] : r[1];
                 total += pipRate * pipValueInUSD * weight;
             }
@@ -229,10 +232,12 @@ public class SwapCalculator {
 
         while (current.isBefore(toNY)) {
             DayOfWeek dow = current.getDayOfWeek();
-            // Wednesday = triple swap
+            // Le marche FX est FERME le week-end : aucun rollover samedi/dimanche. Le week-end
+            // est porte par le rollover du MERCREDI (spot T+2 : value date vendredi -> lundi
+            // = 3 jours). Compter aussi samedi et dimanche facturait 9 jours pour 7.
             if (dow == DayOfWeek.WEDNESDAY) {
                 totalDays += 3;
-            } else {
+            } else if (dow != DayOfWeek.SATURDAY && dow != DayOfWeek.SUNDAY) {
                 totalDays += 1;
             }
             current = current.plusDays(1);
