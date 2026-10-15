@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.martinfou.trading.core.Order;
+import com.martinfou.trading.core.guardrails.OrderTripwire;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,6 +20,18 @@ import java.util.Map;
 
 /** Live HTTP client for OANDA v20 REST API (practice or live). */
 public class HttpOandaRestClient implements OandaRestClient {
+
+    static {
+        // The JDK HttpClient transparently retries idempotent GET requests on connection reset/EOF
+        // before surfacing an IOException. Older JDKs (17) retried exactly once; newer JDKs retry up
+        // to jdk.httpclient.redirects.retrylimit (default 5) attempts, which preempts this class's own
+        // explicit retry/backoff loop in sendWithRetry(). Constrain the JDK's implicit retry to a
+        // single retry (2 attempts) so a connection reset surfaces as an IOException and our retry
+        // logic — with its backoff, telemetry and max-attempt policy — genuinely re-sends the request.
+        if (System.getProperty("jdk.httpclient.redirects.retrylimit") == null) {
+            System.setProperty("jdk.httpclient.redirects.retrylimit", "2");
+        }
+    }
 
     private static final Logger log = LoggerFactory.getLogger(HttpOandaRestClient.class);
     private static final java.util.regex.Pattern SECRET_PATTERN = java.util.regex.Pattern.compile("[a-fA-F0-9]{64}");
@@ -232,18 +245,9 @@ public class HttpOandaRestClient implements OandaRestClient {
 
     @Override
     public OandaMarketOrderResult placeMarketOrder(String instrument, long units, String clientTag) {
+        OrderTripwire.checkOrderAllowed(instrument, String.valueOf(units), "HttpOandaRestClient.placeMarketOrder", baseUrl);
         try {
-            Map<String, Object> order = new LinkedHashMap<>();
-            order.put("type", "MARKET");
-            order.put("instrument", instrument);
-            order.put("units", String.valueOf(units));
-            order.put("timeInForce", "FOK");
-            if (clientTag != null && !clientTag.isBlank()) {
-                Map<String, String> ext = Map.of("tag", clientTag, "comment", clientTag);
-                order.put("clientExtensions", ext);
-                order.put("tradeClientExtensions", ext);
-            }
-            String body = mapper.writeValueAsString(Map.of("order", order));
+            String body = mapper.writeValueAsString(Map.of("order", buildMarketOrder(instrument, units, clientTag)));
 
             HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + "accounts/" + accountId + "/orders"))
@@ -270,55 +274,52 @@ public class HttpOandaRestClient implements OandaRestClient {
             double price = Double.parseDouble(fill.get("price").asText());
             return OandaMarketOrderResult.success(orderId, tradeId, price);
         } catch (Exception e) {
-            log.warn("OANDA market order failed: {}", e.getMessage());
-            return OandaMarketOrderResult.failure(0, e.getMessage());
+            String detail = describeFailure(e);
+            log.warn("OANDA market order failed: {}", detail);
+            return OandaMarketOrderResult.failure(0, detail);
         }
+    }
+
+    /**
+     * Décrit un échec de transport sans jamais renvoyer null. Certaines JVM (JDK 21) ne posent AUCUN
+     * message sur la ConnectException d'une connexion refusée, alors que le JDK 26 écrit « Connection
+     * refused » : un ordre refusé avec un message nul est inexploitable dans un log comme dans une
+     * alerte, et le test de non-connexion de la CI le vérifie explicitement. Repli sur la cause la plus
+     * profonde qui porte un message, puis sur le nom de la classe.
+     */
+    static String describeFailure(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null && !message.isBlank()) {
+                return message;
+            }
+            current = current.getCause();
+        }
+        return error.getClass().getSimpleName();
+    }
+
+    /** Builds the MARKET order body map (extracted so the shape is testable without sending). */
+    Map<String, Object> buildMarketOrder(String instrument, long units, String clientTag) {
+        Map<String, Object> order = new LinkedHashMap<>();
+        order.put("type", "MARKET");
+        order.put("instrument", instrument);
+        order.put("units", String.valueOf(units));
+        order.put("timeInForce", "FOK");
+        if (clientTag != null && !clientTag.isBlank()) {
+            Map<String, String> ext = Map.of("tag", clientTag, "comment", clientTag);
+            order.put("clientExtensions", ext);
+            order.put("tradeClientExtensions", ext);
+        }
+        return order;
     }
 
     @Override
     public OandaMarketOrderResult placeOrder(String type, String instrument, long units, double price, double stopLoss, double takeProfit, double trailingStop, boolean guaranteed, String clientTag, boolean reduceOnly) {
+        OrderTripwire.checkOrderAllowed(instrument, String.valueOf(units), "HttpOandaRestClient.placeOrder", baseUrl);
         try {
             OandaInstrument instMeta = getInstrument(instrument);
-            String fmt = "%." + instMeta.displayPrecision() + "f";
-            Map<String, Object> order = new LinkedHashMap<>();
-            order.put("type", type.toUpperCase());
-            order.put("instrument", instrument);
-            order.put("units", String.valueOf(units));
-            if (type.equalsIgnoreCase("MARKET")) {
-                order.put("timeInForce", "FOK");
-            } else {
-                order.put("timeInForce", "GTC");
-                order.put("price", String.format(java.util.Locale.US, fmt, price));
-            }
-            if (reduceOnly) {
-                order.put("positionFill", "REDUCE_ONLY");
-            }
-            if (stopLoss > 0) {
-                Map<String, Object> sl = new LinkedHashMap<>();
-                sl.put("price", String.format(java.util.Locale.US, fmt, stopLoss));
-                sl.put("timeInForce", "GTC");
-                if (guaranteed) {
-                    sl.put("guaranteed", true);
-                }
-                order.put("stopLossOnFill", sl);
-            }
-            if (takeProfit > 0) {
-                Map<String, Object> tp = new LinkedHashMap<>();
-                tp.put("price", String.format(java.util.Locale.US, fmt, takeProfit));
-                tp.put("timeInForce", "GTC");
-                order.put("takeProfitOnFill", tp);
-            }
-            if (trailingStop > 0) {
-                Map<String, Object> ts = new LinkedHashMap<>();
-                ts.put("distance", String.format(java.util.Locale.US, fmt, trailingStop));
-                ts.put("timeInForce", "GTC");
-                order.put("trailingStopLossOnFill", ts);
-            }
-            if (clientTag != null && !clientTag.isBlank()) {
-                Map<String, String> ext = Map.of("tag", clientTag, "comment", clientTag);
-                order.put("clientExtensions", ext);
-                order.put("tradeClientExtensions", ext);
-            }
+            Map<String, Object> order = buildOrder(type, instrument, units, price, stopLoss, takeProfit, trailingStop, guaranteed, clientTag, reduceOnly, instMeta.displayPrecision());
             String body = mapper.writeValueAsString(Map.of("order", order));
 
             HttpRequest request = HttpRequest.newBuilder()
@@ -364,9 +365,58 @@ public class HttpOandaRestClient implements OandaRestClient {
             }
             return new OandaMarketOrderResult(response.statusCode(), orderId, tradeId, fillPriceObj, null);
         } catch (Exception e) {
-            log.warn("OANDA order placement failed: {}", e.getMessage());
-            return OandaMarketOrderResult.failure(0, e.getMessage());
+            String detail = describeFailure(e);
+            log.warn("OANDA order placement failed: {}", detail);
+            return OandaMarketOrderResult.failure(0, detail);
         }
+    }
+
+    /** Builds the generic order body map (extracted so the shape is testable without sending). */
+    Map<String, Object> buildOrder(String type, String instrument, long units, double price,
+                                   double stopLoss, double takeProfit, double trailingStop,
+                                   boolean guaranteed, String clientTag, boolean reduceOnly,
+                                   int displayPrecision) {
+        String fmt = "%." + displayPrecision + "f";
+        Map<String, Object> order = new LinkedHashMap<>();
+        order.put("type", type.toUpperCase());
+        order.put("instrument", instrument);
+        order.put("units", String.valueOf(units));
+        if (type.equalsIgnoreCase("MARKET")) {
+            order.put("timeInForce", "FOK");
+        } else {
+            order.put("timeInForce", "GTC");
+            order.put("price", String.format(java.util.Locale.US, fmt, price));
+        }
+        if (reduceOnly) {
+            order.put("positionFill", "REDUCE_ONLY");
+        }
+        if (stopLoss > 0) {
+            Map<String, Object> sl = new LinkedHashMap<>();
+            sl.put("price", String.format(java.util.Locale.US, fmt, stopLoss));
+            sl.put("timeInForce", "GTC");
+            if (guaranteed) {
+                sl.put("guaranteed", true);
+            }
+            order.put("stopLossOnFill", sl);
+        }
+        if (takeProfit > 0) {
+            Map<String, Object> tp = new LinkedHashMap<>();
+            tp.put("price", String.format(java.util.Locale.US, fmt, takeProfit));
+            tp.put("timeInForce", "GTC");
+            order.put("takeProfitOnFill", tp);
+        }
+        if (trailingStop > 0) {
+            Map<String, Object> ts = new LinkedHashMap<>();
+            ts.put("distance", String.format(java.util.Locale.US, fmt, trailingStop));
+            ts.put("timeInForce", "GTC");
+            order.put("trailingStopLossOnFill", ts);
+        }
+        if (clientTag != null && !clientTag.isBlank()) {
+            Map<String, String> ext = Map.of("tag", clientTag, "comment", clientTag);
+            order.put("clientExtensions", ext);
+            order.put("tradeClientExtensions", ext);
+        }
+        return order;
     }
 
     @Override

@@ -121,7 +121,7 @@ public class GoldWeekdayDxyStrategy implements Strategy {
 
         // --- SORTIE : la session du jour cible vient de se terminer ---
         if (inTrade && isTargetDay(prevDow)) {
-            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, QUANTITY, bar.close()).closeOnly());
+            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, QUANTITY, bar.close()).asCloseOnly());
             inTrade = false;
         }
 

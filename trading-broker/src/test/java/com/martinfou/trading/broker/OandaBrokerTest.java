@@ -58,7 +58,7 @@ class OandaBrokerTest {
         var order = new com.martinfou.trading.core.Order(
             "EUR_USD", com.martinfou.trading.core.Order.Side.BUY,
             com.martinfou.trading.core.Order.Type.MARKET, 1000, 1.10)
-            .closeOnly();
+            .asCloseOnly();
         var result = broker.submitOrder(order);
 
         assertTrue(result.accepted());
@@ -74,7 +74,7 @@ class OandaBrokerTest {
         var order = new com.martinfou.trading.core.Order(
             "EUR_USD", com.martinfou.trading.core.Order.Side.BUY,
             com.martinfou.trading.core.Order.Type.STOP, 1000, 1.10)
-            .closeOnly();
+            .asCloseOnly();
         var result = broker.submitOrder(order);
 
         assertTrue(result.accepted());
@@ -106,8 +106,13 @@ class OandaBrokerTest {
         
         client.throwOnFetchSummary = true;
         
-        for (int i = 0; i < 50; i++) {
-            if (!broker.isConnected()) break;
+        for (int i = 0; i < 200; i++) {
+            // Wait for BOTH the flag and the DISCONNECTED event. OandaBroker sets `connected = false`
+            // before it emits, so polling only the flag can return before the listener has run — a
+            // latent race that loses under load (observed 2026-09-30 during the fees/swaps merge).
+            boolean disconnectedEvent = events.stream().anyMatch(
+                e -> e.type() == BrokerEventType.CONNECTION && e.message().startsWith("DISCONNECTED"));
+            if (!broker.isConnected() && disconnectedEvent) break;
             Thread.sleep(10);
         }
         

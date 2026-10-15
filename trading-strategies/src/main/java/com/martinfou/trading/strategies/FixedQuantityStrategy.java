@@ -47,8 +47,7 @@ public final class FixedQuantityStrategy implements Strategy {
     public List<Order> getPendingOrders() {
         List<Order> scaled = new ArrayList<>();
         for (Order order : delegate.getPendingOrders()) {
-            order.rescaleQuantity(quantity);
-            scaled.add(order);
+            scaled.add(order.rescaleQuantity(quantity));
         }
         return scaled;
     }

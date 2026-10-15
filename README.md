@@ -163,7 +163,8 @@ Le projet contient **118+ tests** couvrant :
 | [`docs/prop-shop-runbook.md`](docs/prop-shop-runbook.md) | Paper → LIVE promotion checklist | EN |
 | [`docs/MISSION_CONTROL.md`](docs/MISSION_CONTROL.md) | Dashboard Laravel | FR |
 | [`docs/batch-backtest-results.md`](docs/batch-backtest-results.md) | Table des résultats des backtests batch sur les paires | FR |
-| `AGENTS.md` | Instructions pour les AI coding agents | EN |
+| [`docs/mes-cme-futures-realism-guide.md`](docs/mes-cme-futures-realism-guide.md) | Guide Futures CME & Réalisme Backtest (Ticks, Trade-Through, Rollovers, IBKR) | FR/EN |
+| [`docs/llm-context-futures-and-realism.md`](docs/llm-context-futures-and-realism.md) | Spécifications d'invariants système et règles pour agents LLM | EN |
 
 ---
 

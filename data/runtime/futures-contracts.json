@@ -1,0 +1,46 @@
+{
+  "MES": {
+    "symbol": "MES",
+    "name": "Micro E-mini S&P 500",
+    "exchange": "CME",
+    "currency": "USD",
+    "multiplier": 5.0,
+    "minTick": 0.25,
+    "tickValue": 1.25,
+    "initialMargin": 1200.0,
+    "maintenanceMargin": 1000.0
+  },
+  "M2K": {
+    "symbol": "M2K",
+    "name": "Micro E-mini Russell 2000",
+    "exchange": "CME",
+    "currency": "USD",
+    "multiplier": 5.0,
+    "minTick": 0.10,
+    "tickValue": 0.50,
+    "initialMargin": 800.0,
+    "maintenanceMargin": 650.0
+  },
+  "EMD": {
+    "symbol": "EMD",
+    "name": "E-mini S&P MidCap 400",
+    "exchange": "CME",
+    "currency": "USD",
+    "multiplier": 100.0,
+    "minTick": 0.10,
+    "tickValue": 10.0,
+    "initialMargin": 4500.0,
+    "maintenanceMargin": 3800.0
+  },
+  "MNQ": {
+    "symbol": "MNQ",
+    "name": "Micro E-mini Nasdaq 100",
+    "exchange": "CME",
+    "currency": "USD",
+    "multiplier": 2.0,
+    "minTick": 0.25,
+    "tickValue": 0.50,
+    "initialMargin": 1800.0,
+    "maintenanceMargin": 1500.0
+  }
+}

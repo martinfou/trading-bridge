@@ -127,7 +127,7 @@ public class MondayReversionStrategy implements Strategy {
         // SORTIE : la séance précédente était un jour cible (≈ close de la session)
         if (inTrade) {
             Order.Side closeSide = (tradeDirection == Order.Side.BUY) ? Order.Side.SELL : Order.Side.BUY;
-            pending.add(new Order(symbol, closeSide, Order.Type.MARKET, quantity, bar.close()).closeOnly());
+            pending.add(new Order(symbol, closeSide, Order.Type.MARKET, quantity, bar.close()).asCloseOnly());
             inTrade = false;
             tradeDirection = null;
             exits++;

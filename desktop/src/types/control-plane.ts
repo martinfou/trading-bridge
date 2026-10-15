@@ -8,6 +8,25 @@ export interface Strategy {
   type?: string
   indicators?: string[]
   description?: string
+  assetClasses?: string[]
+  tradingStyle?: string
+  timeframeSuitability?: string[]
+  recommendedSymbols?: string[]
+  complexity?: string
+}
+
+export type AssetClass = 'ALL' | 'FUTURES' | 'FOREX' | 'EQUITY' | 'COMMODITIES'
+
+export interface CostPreset {
+  id: string
+  name: string
+  assetClass: AssetClass
+  lotSize: number
+  unitLabel: string
+  capital: number
+  commissionPerTrade: number
+  slippagePct: number
+  description: string
 }
 
 export interface RunConfig {
@@ -143,4 +162,15 @@ export interface WeeklyStat {
   maxDrawdownPct: number
   startCapital: number
   endCapital: number
+}
+
+export interface InstrumentDefinition {
+  symbol: string
+  name: string
+  assetClass: 'FOREX' | 'FUTURES' | 'EQUITIES' | string
+  pointValue: number
+  tickSize: number
+  currency: string
+  isCustom: boolean
+  providerTicker: string
 }

@@ -32,9 +32,10 @@ public final class ControlSummaryService {
     private final long staleThresholdSeconds;
     private final Clock clock;
     private final DriftSignalService driftSignalService;
+    private final com.martinfou.trading.backtest.persistence.SqliteWfaRunStore wfaRunStore;
 
     public ControlSummaryService(RunManager runManager) {
-        this(runManager, StaleThresholds.loadDefault().runningStaleThresholdSeconds(), Clock.systemUTC(), null);
+        this(runManager, StaleThresholds.loadDefault().runningStaleThresholdSeconds(), Clock.systemUTC(), null, null);
     }
 
     public ControlSummaryService(RunManager runManager, DeploymentStore deploymentStore) {
@@ -42,11 +43,12 @@ public final class ControlSummaryService {
             runManager,
             StaleThresholds.loadDefault().runningStaleThresholdSeconds(),
             Clock.systemUTC(),
-            deploymentStore != null ? new DriftSignalService(runManager, deploymentStore) : null);
+            deploymentStore != null ? new DriftSignalService(runManager, deploymentStore) : null,
+            null);
     }
 
     ControlSummaryService(RunManager runManager, long staleThresholdSeconds, Clock clock) {
-        this(runManager, staleThresholdSeconds, clock, null);
+        this(runManager, staleThresholdSeconds, clock, null, null);
     }
 
     ControlSummaryService(
@@ -55,6 +57,16 @@ public final class ControlSummaryService {
         Clock clock,
         DriftSignalService driftSignalService
     ) {
+        this(runManager, staleThresholdSeconds, clock, driftSignalService, null);
+    }
+
+    ControlSummaryService(
+        RunManager runManager,
+        long staleThresholdSeconds,
+        Clock clock,
+        DriftSignalService driftSignalService,
+        com.martinfou.trading.backtest.persistence.SqliteWfaRunStore wfaRunStore
+    ) {
         if (runManager == null) {
             throw new IllegalArgumentException("runManager is required");
         }
@@ -62,6 +74,7 @@ public final class ControlSummaryService {
         this.staleThresholdSeconds = staleThresholdSeconds;
         this.clock = clock != null ? clock : Clock.systemUTC();
         this.driftSignalService = driftSignalService;
+        this.wfaRunStore = wfaRunStore;
     }
 
     public DriftSignalService driftSignalService() {
@@ -73,6 +86,7 @@ public final class ControlSummaryService {
         List<Map<String, Object>> runItems = new ArrayList<>();
         List<Map<String, Object>> gapSignals = new ArrayList<>();
         List<Map<String, Object>> staleSignals = new ArrayList<>();
+        List<Map<String, Object>> calibrationSignals = new ArrayList<>();
         Optional<Instant> globalLastEvent = Optional.empty();
         int staleRunCount = 0;
 
@@ -204,6 +218,31 @@ public final class ControlSummaryService {
                 });
             }
 
+            int tradesCount = runManager.getTrades(record.runId()).size();
+            Instant lastCalibratedAt = null;
+            if (wfaRunStore != null) {
+                try {
+                    var wfaOpt = wfaRunStore.findLatestCompleted(record.strategyId(), record.symbol());
+                    if (wfaOpt.isPresent()) {
+                        lastCalibratedAt = wfaOpt.get().completedAt();
+                    }
+                } catch (Exception ignored) {}
+            }
+            var calFreshness = com.martinfou.trading.runtime.calibration.CalibrationFreshnessEvaluator.evaluate(
+                record.strategyId(), lastCalibratedAt, 0, tradesCount, now);
+            item.put("calibrationFreshness", calFreshness.toMap());
+
+            if (calFreshness.status() != com.martinfou.trading.runtime.calibration.CalibrationFreshnessEvaluator.Status.FRESH) {
+                Map<String, Object> calSignal = new LinkedHashMap<>();
+                calSignal.put("runId", record.runId());
+                calSignal.put("strategyId", record.strategyId());
+                calSignal.put("status", calFreshness.status().name());
+                calSignal.put("message", calFreshness.message());
+                calSignal.put("ageDays", calFreshness.ageDays());
+                calSignal.put("maxAgeDays", calFreshness.maxAgeDays());
+                calibrationSignals.add(calSignal);
+            }
+
             runItems.add(item);
 
             if (isStale) {
@@ -249,7 +288,8 @@ public final class ControlSummaryService {
         summary.put("signals", Map.of(
             "gaps", gapSignals,
             "drift", driftSignals,
-            "stale", staleSignals));
+            "stale", staleSignals,
+            "calibration", calibrationSignals));
         return Map.copyOf(summary);
     }
 

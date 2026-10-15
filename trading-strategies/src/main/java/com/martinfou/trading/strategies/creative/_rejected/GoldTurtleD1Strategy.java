@@ -144,7 +144,7 @@ public class GoldTurtleD1Strategy implements Strategy {
 
     private void closePosition(DailyBar d) {
         Order.Side closeSide = tradeDirection == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
-        pending.add(new Order(symbol, closeSide, Order.Type.MARKET, QUANTITY, d.close).closeOnly());
+        pending.add(new Order(symbol, closeSide, Order.Type.MARKET, QUANTITY, d.close).asCloseOnly());
         inTrade = false;
     }
 

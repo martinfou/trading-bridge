@@ -1,5 +1,6 @@
 package com.martinfou.trading.core.indicators;
 
+import com.martinfou.trading.core.AssetClass;
 import com.martinfou.trading.core.Bar;
 
 import java.util.List;
@@ -123,13 +124,35 @@ public final class Indicators {
      * @return Position arrondie à la centaine d'units
      */
     public static long calcRiskPosition(double capital, double riskPct, double atr, double atrMult, String symbol) {
-        if (atr <= 0 || capital <= 0) return 1000;
-        double pipSize = symbol.contains("JPY") ? 0.01 : 0.0001;
+        if (atr <= 0 || capital <= 0) {
+            if (symbol == null || symbol.isBlank()) return 1000;
+            AssetClass ac = com.martinfou.trading.core.AssetValuationRegistry.resolve(symbol).assetClass();
+            return ac == AssetClass.FUTURES ? 1 : (ac == AssetClass.EQUITY ? 10 : 1000);
+        }
+
+        if (symbol != null && !symbol.isBlank()) {
+            com.martinfou.trading.core.AssetValuationModel model = com.martinfou.trading.core.AssetValuationRegistry.resolve(symbol);
+            if (model.assetClass() == AssetClass.FUTURES && model instanceof com.martinfou.trading.core.FuturesValuationModel futModel) {
+                double riskAmount = capital * riskPct;
+                double slPoints = atr * atrMult;
+                if (slPoints <= 0) return 1;
+                double riskPerContract = slPoints * futModel.contract().multiplier();
+                if (riskPerContract <= 0) return 1;
+                return Math.max(1, Math.round(riskAmount / riskPerContract));
+            } else if (model.assetClass() == AssetClass.EQUITY) {
+                double riskAmount = capital * riskPct;
+                double slDollars = atr * atrMult;
+                if (slDollars <= 0) return 10;
+                return Math.max(1, Math.round(riskAmount / slDollars));
+            }
+        }
+
+        double pipSize = (symbol != null && symbol.contains("JPY")) ? 0.01 : 0.0001;
         double slPips = (atr * atrMult) / pipSize;
         if (slPips <= 0) return 1000;
         // Approximation: 1 pip ≈ $10 par lot standard (100k units)
         // Pour JPY: 1 pip ≈ ¥1000 ≈ $6.25 (à 160)
-        double pipValuePerUnit = symbol.contains("JPY") ? 0.0000625 : 0.0001;
+        double pipValuePerUnit = (symbol != null && symbol.contains("JPY")) ? 0.0000625 : 0.0001;
         double riskAmount = capital * riskPct;
         double units = riskAmount / (slPips * pipValuePerUnit);
         return Math.max(100, Math.round(units / 100.0) * 100);

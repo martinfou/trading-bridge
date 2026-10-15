@@ -207,7 +207,7 @@ public class RegimeFilteredSeasonalStrategy implements Strategy {
 
     private void forceExit(double price) {
         Order.Side exitSide = (tradeDirection == Order.Side.BUY) ? Order.Side.SELL : Order.Side.BUY;
-        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, QUANTITY, price).closeOnly());
+        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, QUANTITY, price).asCloseOnly());
         inTrade = false;
     }
 

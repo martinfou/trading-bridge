@@ -4,6 +4,7 @@ import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.data.HistoricalDataLoader;
 import com.martinfou.trading.strategies.creative.GoldTurtlePyramidStrategy;
@@ -34,7 +35,7 @@ public class RunGoldTurtlePyramid {
     static final double QTY = 10; // oz par unité — identique à GoldTurtleTrend
 
     public static void main(String[] args) throws Exception {
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
 
         if (args.length > 0 && args[0].equals("--baseline")) { runBaseline(cost); return; }
         if (args.length > 0 && args[0].equals("--sweep"))    { runSweep(cost); return; }
@@ -64,7 +65,7 @@ public class RunGoldTurtlePyramid {
     }
 
     /** maxUnits=1 → équivalent GoldTurtleTrend (validation que la mécanique est préservée). */
-    private static void runBaseline(BacktestExecutionCost cost) throws Exception {
+    private static void runBaseline(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         System.out.println("=== BASELINE maxUnits=1 (≡ GoldTurtleTrend hier) ===");
         System.out.printf("%-8s %-6s %-6s %-6s %-7s %-12s %-10s%n", "SYM", "PF", "WR%", "DD%", "TRADES", "NET$", "RET%");
         for (String symbol : PAIRS) {
@@ -83,7 +84,7 @@ public class RunGoldTurtlePyramid {
     }
 
     /** Sweep maxUnits 1-4 × step 0.25/0.5/1.0 (12 cellules, XAU_USD). */
-    private static void runSweep(BacktestExecutionCost cost) throws Exception {
+    private static void runSweep(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String symbol = "XAU_USD";
         var loaded = HistoricalDataLoader.loadFromArgs(symbol, symbol, YEAR_SPEC);
         List<Bar> bars = loaded.bars();
@@ -109,7 +110,7 @@ public class RunGoldTurtlePyramid {
     }
 
     /** Walk-forward : IS 2006-2015 / OOS 2016-2025, XAU_USD. */
-    private static void runWalkForward(BacktestExecutionCost cost, int maxUnits) throws Exception {
+    private static void runWalkForward(java.util.function.Function<String, BacktestExecutionCost> cost, int maxUnits) throws Exception {
         String symbol = "XAU_USD";
         var isLoaded = HistoricalDataLoader.loadFromArgs(symbol, symbol, "2006-2015");
         var oosLoaded = HistoricalDataLoader.loadFromArgs(symbol, symbol, "2016-2025");
@@ -132,7 +133,7 @@ public class RunGoldTurtlePyramid {
     }
 
     /** Régime de marché : bull 2006-2012 / bear 2013-2015 / bull2 2016-2025. */
-    private static void runRegime(BacktestExecutionCost cost, int maxUnits) throws Exception {
+    private static void runRegime(java.util.function.Function<String, BacktestExecutionCost> cost, int maxUnits) throws Exception {
         String symbol = "XAU_USD";
         String[] regimes = {"2006-2012", "2013-2015", "2016-2025"};
 

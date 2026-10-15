@@ -322,5 +322,54 @@ So that I can access the complete dashboard from the main navigation sidebar.
 **Then** Vue Router navigates to `/strategy-pnl` rendering `StrategyPnlDashboardView.vue`
 **And** real-time WebSocket updates automatically refresh trade logs and PnL metrics as new orders fill.
 
+---
 
+## Epic 44: Strategy Discovery & Multi-Faceted Filtering System
+
+Permettre aux traders de filtrer, rechercher et sélectionner facilement n'importe quelle stratégie parmi un catalogue multi-actifs de plus de 25 modèles grâce à des métadonnées enrichies, une recherche floue, des puces de filtrage interactives et des préréglages de coûts et de dimensionnement réalistes.
+
+### Story 44.1: Backend Strategy Catalog Metadata Enrichment & Taxonomy API
+As a quantitative developer, I want `StrategyCatalog.java` to expose structured taxonomy metadata (`assetClasses`, `tradingStyle`, `timeframeSuitability`, `recommendedSymbols`, `complexity`), so that clients can query and filter strategies by asset class and style.
+
+### Story 44.2: Strategy Discovery Composable (`useStrategyCatalog.ts`) & Filtering Engine
+As a frontend engineer, I want a reactive filtering composable providing facet filtering, fuzzy search indexing, and bi-directional instrument compatibility linking.
+
+### Story 44.3: Interactive `<StrategySelector.vue>` Component with Search & Filter Chips
+As a trader, I want an interactive, accessible modal/popover strategy selector replacing the native select dropdown with filter chips, instant search, and keyboard navigation.
+
+### Story 44.4: View Integration Across Dashboard, WFA, Strategies Catalog & Compare Views
+As a user, I want the strategy selector unified across Dashboard, WFA, Strategies, and Compare views with deep-linking preservation.
+
+### Story 44.5: Realistic Cost & Sizing Auto-Preset Engine per Asset Class
+As a trader, I want the system to auto-populate broker-accurate Capital, Lot Size (contracts vs lots vs shares), Commission (\$0.62 / \$0.07 / \$0.35), and Slippage (0.01%) whenever an asset or strategy is selected.
+
+---
+
+## Epic 45: MES & CME Futures Backtesting Realism Engine
+
+Eliminate backtesting biases, unrealistic fill assumptions, uncosted contract rollovers, timezone phase shifts, and regulatory misclassifications for CME Micro E-mini S&P 500 (`MES`) and electronic futures.
+
+---
+
+## Epic 46: IBKR Live Autopilot & Headless CME Micro-Futures Gateway Daemon
+
+Deliver a 24/5 autonomous live trading daemon running on Interactive Brokers (IBKR) for CME Micro-Futures (`MES`, `MNQ`, `M2K`, `MGC`, `MCL`) swing trading on H1/D1 timeframes, battle-hardened against network reconnects, daily gateway restarts, flash gaps, and small-account margin exhaustion.
+
+### Story 46.1: Headless IB Gateway Supervisor, Heartbeat Watchdog & Reconnection Sync
+As a quant operator, I want an IBC-supervised headless Docker container that survives mandatory daily 23:45 UTC IBKR reboots, monitors socket liveness every 30s, and automatically reconciles open positions/orders against local SQLite on reconnect.
+
+### Story 46.2: CME Native OCA Bracket Order Router & Hybrid Stop-Loss Engine
+As a trader, I want entry orders to automatically submit exchange-native CME OCA brackets (hard Stop-Market + Take-Profit) directly through IBKR, with the Java daemon adjusting trailing stops at bar closes.
+
+### Story 46.3: Idempotent Order Tagging, Partial-Fill Handling & Rejection Guard
+As a quant developer, I want deterministic `orderTag` generation, duplicate submission blocking, atomic partial fill accumulation, and non-blocking handling of IBKR margin rejections (Error 201).
+
+### Story 46.4: Autonomous CME Quarterly Rollover & Calendar Spread Engine
+As a swing trader, I want the system to monitor volume crossover on expiring futures contracts and autonomously execute calendar spreads (`COMBO` orders) to roll positions into the active quarter.
+
+### Story 46.5: Small-Account Margin Shield & Global Concurrent Position Limiter
+As a risk manager, I want strict 1-micro contract sizing, a hard ceiling of 2 concurrent positions, and a 50% max equity margin utilization cap to protect smaller accounts from margin calls.
+
+### Story 46.6: Deterministic H1/D1 Bar-Close Scheduler & Multi-Regime Ensemble Runner
+As a strategy operator, I want a precision scheduler triggering at `:00:05` post bar-close to retrieve newly closed bars from IBKR and evaluate the 3-strategy ensemble (`MES`/`MNQ` Squeeze, `M2K` Pullback, `MGC` Macro Trend).
 

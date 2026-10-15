@@ -133,6 +133,20 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         }
     }
 
+    /**
+     * Seam for the live-candles fetch inside {@link #loadBars}. The production default
+     * ({@link #fetchOandaCandles}) resolves credentials and constructs a real
+     * {@code OandaPriceClient}; a test suite must never reach a real broker, so tests inject a
+     * fetcher that returns synthetic bars or {@code null}. A {@code null} return makes
+     * {@code loadBars} fall back to the {@link BarSourceResolver} path — the same behaviour the
+     * production code already exhibits when no OANDA credentials are present, so the production
+     * wiring is unchanged when this seam is not injected.
+     */
+    @FunctionalInterface
+    interface LiveCandlesFetcher {
+        List<Bar> fetch(RunConfigSnapshot config, Integer limit, Instant to) throws IOException;
+    }
+
     private final EventStore eventStore;
     private final BrokerFactory brokerFactory;
     private final boolean requireOandaCredentials;
@@ -144,6 +158,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
     private final Map<String, java.util.concurrent.locks.ReentrantLock> startupLocks = new ConcurrentHashMap<>();
     private final Map<String, RunConfigSnapshot> snapshots = new ConcurrentHashMap<>();
     private final Map<String, AutoCloseable> activeExecutors = new ConcurrentHashMap<>();
+    private final Map<String, Broker> activeBrokers = new ConcurrentHashMap<>();
     private final CopyOnWriteArrayList<RunTransitionListener> listeners = new CopyOnWriteArrayList<>();
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     private final com.martinfou.trading.backtest.persistence.SqliteTradeAlignmentStore alignmentStore;
@@ -154,28 +169,40 @@ public class RunManager implements RunLifecycle, AutoCloseable {
     private final Map<String, Integer> consecutiveTimeDrifts = new ConcurrentHashMap<>();
     private final Map<String, com.martinfou.trading.data.oanda.OandaStreamingClient> oandaStreamingClients = new ConcurrentHashMap<>();
     private final Map<String, java.util.concurrent.atomic.AtomicInteger> oandaStreamingClientRefCounts = new ConcurrentHashMap<>();
+    private final LiveCandlesFetcher liveCandlesFetcher;
+    private final Runnable startupLockHook;
 
     public RunManager(EventStore eventStore) {
         this(eventStore, BrokerFactory.fromRegistry(BrokerAccountRegistry.loadDefault()), true,
-            new KillSwitchRegistry(), Optional.empty(), BrokerAccountRegistry.loadDefault());
+            new KillSwitchRegistry(), Optional.empty(), BrokerAccountRegistry.loadDefault(), null, null);
     }
 
     /** Control plane wiring — deployment store enables cross-account routing guards. */
     public RunManager(EventStore eventStore, DeploymentStore deploymentStore) {
         this(eventStore, BrokerFactory.fromRegistry(BrokerAccountRegistry.loadDefault()), true,
-            new KillSwitchRegistry(), Optional.of(deploymentStore), BrokerAccountRegistry.loadDefault());
+            new KillSwitchRegistry(), Optional.of(deploymentStore), BrokerAccountRegistry.loadDefault(), null, null);
+    }
+
+    /**
+     * Test hook — inject the run-record store so a test can decorate {@link RunRecordStore#save}
+     * and observe the exact order of persistence versus in-memory publication (the persist-before-publish
+     * invariant of Story 48.2). Package-private; production callers never invoke it.
+     */
+    RunManager(EventStore eventStore, RunRecordStore runRecordStore) {
+        this(eventStore, BrokerFactory.fromRegistry(BrokerAccountRegistry.loadDefault()), true,
+            new KillSwitchRegistry(), Optional.empty(), BrokerAccountRegistry.loadDefault(), null, null, runRecordStore);
     }
 
     /** Test hook — inject broker without OANDA environment credentials. */
     RunManager(EventStore eventStore, BrokerFactory brokerFactory) {
         this(eventStore, brokerFactory, false, new KillSwitchRegistry(),
-            Optional.empty(), BrokerAccountRegistry.loadDefault());
+            Optional.empty(), BrokerAccountRegistry.loadDefault(), null, null);
     }
 
     /** Test hook — shared kill switch registry with control plane. */
     RunManager(EventStore eventStore, BrokerFactory brokerFactory, KillSwitchRegistry killSwitchRegistry) {
         this(eventStore, brokerFactory, false, killSwitchRegistry,
-            Optional.empty(), BrokerAccountRegistry.loadDefault());
+            Optional.empty(), BrokerAccountRegistry.loadDefault(), null, null);
     }
 
     /** Test hook — multi-account registry and deployment store. */
@@ -186,7 +213,35 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         BrokerAccountRegistry brokerAccountRegistry
     ) {
         this(eventStore, brokerFactory, false, new KillSwitchRegistry(),
-            Optional.of(deploymentStore), brokerAccountRegistry);
+            Optional.of(deploymentStore), brokerAccountRegistry, null, null);
+    }
+
+    /**
+     * Test seam — inject the live-candles fetcher (so a suite never reaches a real broker) and a
+     * startup-lock hook (so {@code testConcurrentStartLocking} can hold the per-strategy critical
+     * section deterministically). The hook runs while the per-strategy startup lock is held.
+     */
+    RunManager(
+        EventStore eventStore,
+        BrokerFactory brokerFactory,
+        LiveCandlesFetcher liveCandlesFetcher,
+        Runnable startupLockHook
+    ) {
+        this(eventStore, brokerFactory, false, new KillSwitchRegistry(),
+            Optional.empty(), BrokerAccountRegistry.loadDefault(), liveCandlesFetcher, startupLockHook);
+    }
+
+    /**
+     * Test seam — same as above but with the default broker factory (for runs that are not
+     * broker-backed, e.g. BACKTEST and PAPER_STUB), so only the fetcher and hook are injected.
+     */
+    RunManager(
+        EventStore eventStore,
+        LiveCandlesFetcher liveCandlesFetcher,
+        Runnable startupLockHook
+    ) {
+        this(eventStore, BrokerFactory.fromRegistry(BrokerAccountRegistry.loadDefault()), true,
+            new KillSwitchRegistry(), Optional.empty(), BrokerAccountRegistry.loadDefault(), liveCandlesFetcher, startupLockHook);
     }
 
     private RunManager(
@@ -195,7 +250,24 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         boolean requireOandaCredentials,
         KillSwitchRegistry killSwitchRegistry,
         Optional<DeploymentStore> deploymentStore,
-        BrokerAccountRegistry brokerAccountRegistry
+        BrokerAccountRegistry brokerAccountRegistry,
+        LiveCandlesFetcher liveCandlesFetcher,
+        Runnable startupLockHook
+    ) {
+        this(eventStore, brokerFactory, requireOandaCredentials, killSwitchRegistry,
+            deploymentStore, brokerAccountRegistry, liveCandlesFetcher, startupLockHook, null);
+    }
+
+    private RunManager(
+        EventStore eventStore,
+        BrokerFactory brokerFactory,
+        boolean requireOandaCredentials,
+        KillSwitchRegistry killSwitchRegistry,
+        Optional<DeploymentStore> deploymentStore,
+        BrokerAccountRegistry brokerAccountRegistry,
+        LiveCandlesFetcher liveCandlesFetcher,
+        Runnable startupLockHook,
+        RunRecordStore runRecordStore
     ) {
         if (eventStore == null) {
             throw new IllegalArgumentException("eventStore must not be null");
@@ -211,9 +283,11 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         this.brokerAccountRegistry = brokerAccountRegistry != null
             ? brokerAccountRegistry
             : BrokerAccountRegistry.loadDefault();
+        this.liveCandlesFetcher = liveCandlesFetcher != null ? liveCandlesFetcher : RunManager::fetchOandaCandles;
+        this.startupLockHook = startupLockHook != null ? startupLockHook : () -> { };
         this.alignmentStore = createAlignmentStore(eventStore);
         this.tradeStore = createTradeStore(eventStore);
-        this.runRecordStore = createRunRecordStore(eventStore);
+        this.runRecordStore = runRecordStore != null ? runRecordStore : createRunRecordStore(eventStore);
     }
 
     private com.martinfou.trading.backtest.persistence.SqliteTradeAlignmentStore createAlignmentStore(EventStore eventStore) {
@@ -342,6 +416,10 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         return Map.copyOf(activeExecutors);
     }
 
+    public Optional<Broker> getActiveBroker(String runId) {
+        return Optional.ofNullable(activeBrokers.get(runId));
+    }
+
     public Map<String, Object> getAlignmentDetails(String runId) {
         List<com.martinfou.trading.backtest.reconciliation.ReconciliationAnomaly> anomalies = alignmentStore.getAnomalies(runId);
         
@@ -352,53 +430,11 @@ public class RunManager implements RunLifecycle, AutoCloseable {
             List<com.martinfou.trading.core.Order> tempBt = new ArrayList<>();
             List<com.martinfou.trading.core.Order> tempLive = new ArrayList<>();
             for (com.martinfou.trading.backtest.events.RunEvent event : eventStore.replayAll(runId)) {
-                if (event.mode() != null && (event.mode().equalsIgnoreCase("PAPER") || event.mode().equalsIgnoreCase("LIVE"))) {
+                if (isLiveOrPaperMode(event)) {
                     if (event.type() == com.martinfou.trading.backtest.events.RunEventType.ORDER_SUBMITTED) {
-                        Map<String, Object> payload = event.payload();
-                        if (payload != null) {
-                            try {
-                                String symbol = String.valueOf(payload.get("symbol"));
-                                String sideStr = String.valueOf(payload.get("side"));
-                                com.martinfou.trading.core.Order.Side side = com.martinfou.trading.core.Order.Side.valueOf(sideStr);
-                                double quantity = toDouble(payload.get("quantity"));
-                                double price = toDouble(payload.get("price"));
-                                String correlationId = payload.containsKey("correlationId") && payload.get("correlationId") != null 
-                                    ? String.valueOf(payload.get("correlationId")) 
-                                    : null;
-                                String orderId = payload.containsKey("orderId") && payload.get("orderId") != null 
-                                    ? String.valueOf(payload.get("orderId")) 
-                                    : null;
-                                com.martinfou.trading.core.Order btOrder = new com.martinfou.trading.core.Order(symbol, side, com.martinfou.trading.core.Order.Type.MARKET, quantity, price)
-                                    .withCorrelationId(correlationId)
-                                    .withStatus(com.martinfou.trading.core.Order.Status.FILLED)
-                                    .withFilledAt(event.timestamp());
-                                if (orderId != null) btOrder.withId(orderId);
-                                tempBt.add(btOrder);
-                            } catch (Exception ignored) {}
-                        }
+                        parseOrderFromEvent(event).ifPresent(tempBt::add);
                     } else if (event.type() == com.martinfou.trading.backtest.events.RunEventType.FILL) {
-                        Map<String, Object> payload = event.payload();
-                        if (payload != null) {
-                            try {
-                                String symbol = String.valueOf(payload.get("symbol"));
-                                String sideStr = String.valueOf(payload.get("side"));
-                                com.martinfou.trading.core.Order.Side side = com.martinfou.trading.core.Order.Side.valueOf(sideStr);
-                                double quantity = toDouble(payload.get("quantity"));
-                                double price = toDouble(payload.get("price"));
-                                String correlationId = payload.containsKey("correlationId") && payload.get("correlationId") != null 
-                                    ? String.valueOf(payload.get("correlationId")) 
-                                    : null;
-                                String orderId = payload.containsKey("orderId") && payload.get("orderId") != null 
-                                    ? String.valueOf(payload.get("orderId")) 
-                                    : null;
-                                com.martinfou.trading.core.Order liveOrder = new com.martinfou.trading.core.Order(symbol, side, com.martinfou.trading.core.Order.Type.MARKET, quantity, price)
-                                    .withCorrelationId(correlationId)
-                                    .withStatus(com.martinfou.trading.core.Order.Status.FILLED)
-                                    .withFilledAt(event.timestamp());
-                                if (orderId != null) liveOrder.withId(orderId);
-                                tempLive.add(liveOrder);
-                            } catch (Exception ignored) {}
-                        }
+                        parseOrderFromEvent(event).ifPresent(tempLive::add);
                     }
                 }
             }
@@ -413,6 +449,43 @@ public class RunManager implements RunLifecycle, AutoCloseable {
             "backtestOrders", btOrders,
             "liveOrders", liveOrders
         );
+    }
+
+    private boolean isLiveOrPaperMode(com.martinfou.trading.backtest.events.RunEvent event) {
+        return event.mode() != null && (event.mode().equalsIgnoreCase("PAPER") || event.mode().equalsIgnoreCase("LIVE"));
+    }
+
+    private java.util.Optional<com.martinfou.trading.core.Order> parseOrderFromEvent(com.martinfou.trading.backtest.events.RunEvent event) {
+        Map<String, Object> payload = event.payload();
+        if (payload == null) {
+            return java.util.Optional.empty();
+        }
+        
+        try {
+            String symbol = String.valueOf(payload.get("symbol"));
+            String sideStr = String.valueOf(payload.get("side"));
+            com.martinfou.trading.core.Order.Side side = com.martinfou.trading.core.Order.Side.valueOf(sideStr);
+            double quantity = toDouble(payload.get("quantity"));
+            double price = toDouble(payload.get("price"));
+            String correlationId = payload.containsKey("correlationId") && payload.get("correlationId") != null 
+                ? String.valueOf(payload.get("correlationId")) 
+                : null;
+            String orderId = payload.containsKey("orderId") && payload.get("orderId") != null 
+                ? String.valueOf(payload.get("orderId")) 
+                : null;
+                
+            com.martinfou.trading.core.Order order = new com.martinfou.trading.core.Order(symbol, side, com.martinfou.trading.core.Order.Type.MARKET, quantity, price)
+                .withCorrelationId(correlationId)
+                .withStatus(com.martinfou.trading.core.Order.Status.FILLED)
+                .withFilledAt(event.timestamp());
+            
+            if (orderId != null) {
+                order = order.withId(orderId);
+            }
+            return java.util.Optional.of(order);
+        } catch (Exception ignored) {
+            return java.util.Optional.empty();
+        }
     }
 
     @Override
@@ -472,7 +545,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         if (record.status() == RunRecord.Status.CREATED) {
             List<com.martinfou.trading.core.Bar> bars;
             try {
-                bars = loadBars(config, null, null);
+                bars = loadBars(config, null, null, liveCandlesFetcher);
             } catch (IOException e) {
                 throw new IllegalArgumentException("Failed to load bars for run " + runId + ": " + e.getMessage(), e);
             }
@@ -503,30 +576,32 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         RunRecord before = record;
         return switch (record.status()) {
             case CREATED -> {
-                record.markFailed("stopped before start");
-                notifyTransition(before, record, RunTransition.STOP);
+                RunState staged = record.stagedFailed("stopped before start");
+                persistThenNotify(record, staged, before, RunTransition.STOP);
                 yield record;
             }
             case RUNNING -> {
-                record.markCompleted(Map.of("message", "stopped by operator"));
-                AutoCloseable exec = activeExecutors.get(runId);
-                if (exec != null) {
-                    try {
-                        if (liquidate && exec instanceof OandaStreamingExecutor poe) {
-                            poe.liquidateAndStop();
-                        } else {
-                            exec.close();
-                        }
-                    } catch (Exception e) {
-                        log.error("Failed to stop executor for run {}", runId, e);
-                    }
+                // Correction 1: liquidate FIRST (best-effort, capturing the outcome), then persist
+                // and publish the terminal state unconditionally. A run that stays COMPLETED in the
+                // store while positions remain open at the broker becomes an unmonitored orphan
+                // position; a run that stays RUNNING in the store during liquidation is the lesser
+                // evil because the runner re-synchronizes the position at restart.
+                Liquidation liquidation = liquidate(runId, liquidate);
+                RunState staged;
+                if (liquidation.ok()) {
+                    staged = record.stagedCompleted(Map.of("message", "stopped by operator"));
+                } else {
+                    // Correction 2: a durable trace, not just a log. Persist FAILED with an explicit
+                    // errorMessage and a liquidation_failed flag + detail in the persisted payload.
+                    staged = record.stagedFailed("liquidation failed: " + liquidation.detail())
+                        .withEndedPayload(Map.of("liquidation_failed", true, "detail", liquidation.detail()));
                 }
-                notifyTransition(before, record, RunTransition.STOP);
+                persistThenNotify(record, staged, before, RunTransition.STOP);
                 yield record;
             }
             case PAUSED -> {
-                record.markFailed("stopped while paused");
-                notifyTransition(before, record, RunTransition.STOP);
+                RunState staged = record.stagedFailed("stopped while paused");
+                persistThenNotify(record, staged, before, RunTransition.STOP);
                 yield record;
             }
             // Already terminal — stopping again is a no-op; return the record silently.
@@ -542,6 +617,100 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         AutoCloseable exec = activeExecutors.get(runId);
         if (exec instanceof OandaStreamingExecutor poe) {
             poe.reconnectBroker();
+        }
+    }
+
+    /**
+     * Outcome of a best-effort broker liquidation step. {@code ok} is {@code true} when the step
+     * completed cleanly; {@code detail} is non-null exactly when {@code ok} is {@code false},
+     * carrying a human-readable description of what went wrong.
+     */
+    private record Liquidation(boolean ok, String detail) {
+        static Liquidation clean() {
+            return new Liquidation(true, null);
+        }
+
+        static Liquidation failed(String detail) {
+            return new Liquidation(false, detail == null ? "unknown liquidation failure" : detail);
+        }
+    }
+
+    /**
+     * Best-effort broker liquidation for a RUNNING run being stopped: cancel working orders, then
+     * flatten positions and stop the executor, capturing the outcome so the caller can persist a
+     * durable trace instead of only logging. Never throws; every failure is folded into the
+     * returned {@link Liquidation}.
+     */
+    private Liquidation liquidate(String runId, boolean liquidate) {
+        Liquidation cancel = liquidate ? cancelAllAtBroker(runId) : Liquidation.clean();
+        Liquidation flatten = Liquidation.clean();
+        try {
+            AutoCloseable exec = activeExecutors.get(runId);
+            if (exec != null) {
+                if (liquidate && exec instanceof OandaStreamingExecutor poe) {
+                    // OANDA streaming: liquidateAndStop() performs per-run position
+                    // disambiguation, flattens, and stops the executor.
+                    poe.liquidateAndStop();
+                } else {
+                    if (liquidate) {
+                        flatten = flattenAtBroker(runId);
+                    }
+                    exec.close();
+                }
+            } else if (liquidate) {
+                // Synchronous broker executor (BrokerRunExecutor) — no streaming handle.
+                flatten = flattenAtBroker(runId);
+            }
+        } catch (Exception e) {
+            log.error("Failed to stop executor for run {}", runId, e);
+            return Liquidation.failed("failed to stop executor: " + e.getMessage());
+        }
+        if (!cancel.ok()) {
+            return cancel;
+        }
+        if (!flatten.ok()) {
+            return flatten;
+        }
+        return Liquidation.clean();
+    }
+
+    /** Cancels working (unfilled) orders at the broker for a run, as part of the kill switch. */
+    private Liquidation cancelAllAtBroker(String runId) {
+        Broker broker = activeBrokers.get(runId);
+        if (broker == null) {
+            log.warn("Kill switch: no active broker for run {}; cannot cancel working orders at broker.", runId);
+            return Liquidation.failed("no active broker for run " + runId);
+        }
+        try {
+            int cancelled = broker.cancelAllOrders();
+            log.info("Kill switch: cancelled {} working orders for run {}", cancelled, runId);
+            return Liquidation.clean();
+        } catch (Exception e) {
+            log.error("Kill switch: failed to cancel working orders for run {}", runId, e);
+            return Liquidation.failed("failed to cancel working orders: " + e.getMessage());
+        }
+    }
+
+    /** Flattens open positions at the broker for a run and verifies the account is flat. */
+    private Liquidation flattenAtBroker(String runId) {
+        Broker broker = activeBrokers.get(runId);
+        if (broker == null) {
+            log.warn("Kill switch: no active broker for run {}; cannot flatten positions at broker.", runId);
+            return Liquidation.failed("no active broker for run " + runId);
+        }
+        try {
+            int flattened = broker.flattenAllPositions();
+            log.info("Kill switch: flattened {} positions for run {}", flattened, runId);
+            List<com.martinfou.trading.core.Position> remaining = broker.getPositions();
+            if (!remaining.isEmpty()) {
+                String detail = remaining.size() + " position(s) remain at broker after flatten for run " + runId;
+                log.error("CRITICAL: {}. Manual intervention required.", detail);
+                return Liquidation.failed(detail);
+            }
+            return Liquidation.clean();
+        } catch (Exception e) {
+            log.error("Kill switch: failed to flatten positions for run {}", runId, e);
+            return Liquidation.failed("failed to flatten positions: " + e.getMessage());
         }
     }
 
@@ -622,6 +791,13 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         var lock = startupLocks.computeIfAbsent(request.strategyId(), k -> new java.util.concurrent.locks.ReentrantLock());
         lock.lock();
         try {
+            // Test seam: runs while the per-strategy startup lock is held, before any state change,
+            // so a test can hold the critical section deterministically and observe mutual exclusion.
+            startupLockHook.run();
+            if (killSwitchRegistry.isKilled(request.strategyId())) {
+                throw new IllegalArgumentException(
+                    "Strategy " + request.strategyId() + " is killed (kill switch active); cannot start new runs");
+            }
             String symbol = request.symbol() != null && !request.symbol().isBlank()
                 ? request.symbol()
                 : StrategyCatalog.defaultSymbol(request.strategyId());
@@ -734,6 +910,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         }
         oandaStreamingClients.clear();
         oandaStreamingClientRefCounts.clear();
+        activeBrokers.clear();
     }
 
     public com.martinfou.trading.backtest.persistence.SqliteTradeStore tradeStore() {
@@ -751,26 +928,28 @@ public class RunManager implements RunLifecycle, AutoCloseable {
             String strategyId = targetRecord.strategyId();
             RunMode mode = targetRecord.mode();
 
-            List<RunRecord> siblingRuns = runRecordStore.listAll().stream()
-                .filter(r -> java.util.Objects.equals(strategyId, r.strategyId())
-                    && mode == r.mode()
-                    && java.util.Objects.equals(targetRecord.symbol(), r.symbol()))
-                .toList();
+            if (mode != RunMode.BACKTEST) {
+                List<RunRecord> siblingRuns = runRecordStore.listAll().stream()
+                    .filter(r -> java.util.Objects.equals(strategyId, r.strategyId())
+                        && mode == r.mode()
+                        && java.util.Objects.equals(targetRecord.symbol(), r.symbol()))
+                    .toList();
 
-            List<com.martinfou.trading.core.Trade> cumulativeTrades = new ArrayList<>();
-            for (RunRecord sibling : siblingRuns) {
-                List<com.martinfou.trading.core.Trade> siblingTrades = tradeStore.getTrades(sibling.runId());
-                if (siblingTrades.isEmpty()) {
-                    siblingTrades = com.martinfou.trading.backtest.persistence.TradeReconstructor.reconstruct(eventStore.replayAll(sibling.runId()));
+                List<com.martinfou.trading.core.Trade> cumulativeTrades = new ArrayList<>();
+                for (RunRecord sibling : siblingRuns) {
+                    List<com.martinfou.trading.core.Trade> siblingTrades = tradeStore.getTrades(sibling.runId());
+                    if (siblingTrades.isEmpty()) {
+                        siblingTrades = com.martinfou.trading.backtest.persistence.TradeReconstructor.reconstruct(eventStore.replayAll(sibling.runId()));
+                    }
+                    cumulativeTrades.addAll(siblingTrades);
                 }
-                cumulativeTrades.addAll(siblingTrades);
+                // Sort by entry time
+                cumulativeTrades.sort(Comparator.comparing(
+                    com.martinfou.trading.core.Trade::entryTime,
+                    Comparator.nullsLast(Instant::compareTo)
+                ));
+                return cumulativeTrades;
             }
-            // Sort by entry time
-            cumulativeTrades.sort(Comparator.comparing(
-                com.martinfou.trading.core.Trade::entryTime,
-                Comparator.nullsLast(Instant::compareTo)
-            ));
-            return cumulativeTrades;
         }
 
         List<com.martinfou.trading.core.Trade> list = tradeStore.getTrades(runId);
@@ -800,6 +979,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
             String oandaStreamError = null;
             if (configSnapshot.resolvedExecutionLabel().isOandaBroker() && System.getProperty("trading.bridge.test") == null) {
                 try (Broker broker = brokerFactory.create(configSnapshot)) {
+                    activeBrokers.put(runId, broker);
                     Strategy strategy = StrategyCatalog.create(
                         configSnapshot.strategyId(), configSnapshot.symbol(), configSnapshot.quantity());
                     RunRiskContext riskContext = new RunRiskContext(
@@ -872,6 +1052,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
                 }
             } else if (isBrokerBackedRun(configSnapshot)) {
                 try (Broker broker = brokerFactory.create(configSnapshot)) {
+                    activeBrokers.put(runId, broker);
                     Strategy strategy = StrategyCatalog.create(
                         configSnapshot.strategyId(), configSnapshot.symbol(), configSnapshot.quantity());
                     RunRiskContext riskContext = new RunRiskContext(
@@ -907,30 +1088,38 @@ public class RunManager implements RunLifecycle, AutoCloseable {
             if (oandaStreamError != null) {
                 // Error-driven stop from OandaStreamingExecutor: drive FAILED through RunManager's
                 // state machine so all transition listeners are properly notified.
-                record.noteEventAt(latestEventTimestamp(runId).orElse(Instant.now()));
+                Instant eventAt = latestEventTimestamp(runId).orElse(Instant.now());
                 if (record.status() == RunRecord.Status.RUNNING || record.status() == RunRecord.Status.PAUSED) {
-                    record.markFailed(oandaStreamError);
+                    RunState staged = record.stagedFailed(oandaStreamError).withEventAt(eventAt);
+                    persistThenNotify(record, staged, before, RunTransition.FAIL);
+                } else {
+                    // Already terminal: only refresh the event timestamp and persist as-is.
+                    record.noteEventAt(eventAt);
+                    notifyTransition(before, record, RunTransition.FAIL);
                 }
-                notifyTransition(before, record, RunTransition.FAIL);
             } else if (record.status() == RunRecord.Status.RUNNING) {
-                record.noteEventAt(latestEventTimestamp(runId).orElse(Instant.now()));
-                record.markCompleted(BacktestResultPayload.toEndedPayload(result));
-                notifyTransition(before, record, RunTransition.COMPLETE);
+                RunState staged = record.stagedCompleted(BacktestResultPayload.toEndedPayload(result))
+                    .withEventAt(latestEventTimestamp(runId).orElse(Instant.now()));
+                persistThenNotify(record, staged, before, RunTransition.COMPLETE);
             } else if (record.status() == RunRecord.Status.PAUSED) {
                 record.noteEventAt(latestEventTimestamp(runId).orElse(Instant.now()));
             }
         } catch (RuntimeException e) {
             log.error("Run {} failed with runtime exception", runId, e);
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            if (hasTerminalEvent(runId, RunEventType.ERROR)) {
-                latestEventTimestamp(runId).ifPresent(record::noteEventAt);
-            }
+            Instant eventAt = hasTerminalEvent(runId, RunEventType.ERROR)
+                ? latestEventTimestamp(runId).orElse(null)
+                : null;
             if (record.status() == RunRecord.Status.RUNNING || record.status() == RunRecord.Status.PAUSED) {
-                record.markFailed(msg);
-                notifyTransition(before, record, RunTransition.FAIL);
+                RunState staged = record.stagedFailed(msg);
+                if (eventAt != null) {
+                    staged = staged.withEventAt(eventAt);
+                }
+                persistThenNotify(record, staged, before, RunTransition.FAIL);
             }
             }
         } finally {
+            activeBrokers.remove(runId);
             org.slf4j.MDC.remove("runId");
             org.slf4j.MDC.remove("strategyId");
             org.slf4j.MDC.remove("stale");
@@ -954,6 +1143,33 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         }
     }
 
+    /**
+     * Terminal transition with the persist-before-publish invariant (Story 48.2, defect 2): the
+     * TARGET state is written to the {@link RunRecordStore} BEFORE it becomes visible in memory, so
+     * no reader of the in-memory map can observe a terminal run as still-active, and a crash between
+     * the two steps leaves the store (not memory) as the authority. Listeners are notified only after
+     * the state is both durable and published.
+     *
+     * <p>If the store write itself fails (disk/sync error), the live process still publishes the
+     * terminal state and notifies the listeners: the material reality of the stop must prevail over a
+     * failed disk synchronization. The invariant is preserved — we always ATTEMPT to persist before
+     * publishing — but on a disk failure the coherence of the live process wins. Otherwise the run
+     * thread would end while the record stays RUNNING in memory (a ghost run in {@code /api/runs}),
+     * and {@code ControlPlaneServer} listeners would never be called, leaving orphan subscriptions.
+     */
+    private void persistThenNotify(RunRecord record, RunState staged, RunRecord before, RunTransition cause) {
+        try {
+            runRecordStore.save(record.withState(staged));
+        } catch (Exception e) {
+            log.error("Failed to persist run record {} on transition {}; publishing terminal state anyway.",
+                record.runId(), cause, e);
+        }
+        record.publish(staged);
+        for (RunTransitionListener listener : listeners) {
+            listener.onTransition(before, record, cause);
+        }
+    }
+
     private RunRecord requireRun(String runId) {
         RunRecord record = runs.get(runId);
         if (record == null) {
@@ -963,26 +1179,16 @@ public class RunManager implements RunLifecycle, AutoCloseable {
     }
 
     static List<Bar> loadBars(RunConfigSnapshot config, Integer limit, Instant to) throws IOException {
+        return loadBars(config, limit, to, RunManager::fetchOandaCandles);
+    }
+
+    static List<Bar> loadBars(RunConfigSnapshot config, Integer limit, Instant to, LiveCandlesFetcher fetcher) throws IOException {
         String mode = config.mode();
         if (mode != null && (mode.equalsIgnoreCase("PAPER") || mode.equalsIgnoreCase("LIVE"))) {
             try {
-                String accountId = config.brokerAccountId();
-                var registry = BrokerAccountRegistry.loadDefault();
-                var oandaCreds = registry.credentials(accountId);
-                if (oandaCreds.isPresent()) {
-                    var creds = oandaCreds.get();
-                    String tf = config.strategyTimeframe();
-                    if (tf == null || tf.isBlank()) {
-                        tf = "H1";
-                    } else {
-                        tf = tf.toUpperCase();
-                    }
-                    com.martinfou.trading.data.OandaPriceClient priceClient = new com.martinfou.trading.data.OandaPriceClient(
-                        creds.apiToken(), creds.accountId(), creds.restUrl().contains("practice")
-                    );
-                    int fetchCount = (limit != null && limit > 0) ? limit : 500;
-                    log.info("Fetching last {} live {} bars from OANDA for symbol {} (to: {})...", fetchCount, tf, config.symbol(), to);
-                    return priceClient.getCandlesBefore(config.symbol(), tf, fetchCount, to);
+                List<Bar> fetched = fetcher.fetch(config, limit, to);
+                if (fetched != null) {
+                    return fetched;
                 }
             } catch (Exception e) {
                 log.warn("Failed to fetch live candles from OANDA: {}. Falling back to default bars.", e.getMessage());
@@ -1047,6 +1253,34 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         return allBars;
     }
 
+    /**
+     * Production live-candles fetch: resolves the broker account credentials and constructs a real
+     * {@code OandaPriceClient}, returning {@code null} when no credentials are configured (so
+     * {@code loadBars} falls back to the {@link BarSourceResolver} path). This is the default
+     * {@link LiveCandlesFetcher}; tests inject their own to avoid reaching a real broker.
+     */
+    private static List<Bar> fetchOandaCandles(RunConfigSnapshot config, Integer limit, Instant to) throws IOException {
+        String accountId = config.brokerAccountId();
+        var registry = BrokerAccountRegistry.loadDefault();
+        var oandaCreds = registry.credentials(accountId);
+        if (oandaCreds.isEmpty()) {
+            return null;
+        }
+        var creds = oandaCreds.get();
+        String tf = config.strategyTimeframe();
+        if (tf == null || tf.isBlank()) {
+            tf = "H1";
+        } else {
+            tf = tf.toUpperCase();
+        }
+        com.martinfou.trading.data.OandaPriceClient priceClient = new com.martinfou.trading.data.OandaPriceClient(
+            creds.apiToken(), creds.accountId(), creds.restUrl().contains("practice")
+        );
+        int fetchCount = (limit != null && limit > 0) ? limit : 500;
+        log.info("Fetching last {} live {} bars from OANDA for symbol {} (to: {})...", fetchCount, tf, config.symbol(), to);
+        return priceClient.getCandlesBefore(config.symbol(), tf, fetchCount, to);
+    }
+
     private static void downloadYearSync(String symbol, int year, String tf) throws IOException {
         String pair = symbol.replace("_", "").toLowerCase(java.util.Locale.ROOT);
         String tfLower = tf.toLowerCase(java.util.Locale.ROOT);
@@ -1086,7 +1320,6 @@ public class RunManager implements RunLifecycle, AutoCloseable {
                 if (timeframe == null || timeframe.isBlank()) {
                     timeframe = "H1";
                 }
-                System.out.println("No bars available for strategy symbol " + symbol + " and year " + year + ". Downloading data... This will take a while.");
                 log.info("No bars available for strategy symbol {} and year {}. Downloading data... This will take a while.", symbol, year);
                 downloadYearSync(symbol, year, timeframe);
             }
@@ -1214,21 +1447,38 @@ public class RunManager implements RunLifecycle, AutoCloseable {
             String symbol = configSnapshot.symbol();
             String accountId = configSnapshot.resolvedBrokerAccountId();
 
-            boolean duplicate = runs.values().stream()
-                .filter(r -> r.status() == RunRecord.Status.RUNNING || r.status() == RunRecord.Status.PAUSED)
-                .filter(r -> r.mode() == mode)
-                .filter(r -> r.strategyId().equalsIgnoreCase(strategyId))
-                .filter(r -> r.symbol().equalsIgnoreCase(symbol))
-                .anyMatch(r -> {
-                    String existingAccount = r.configSnapshot() != null
-                        ? BrokerAccountRegistry.resolveId((String) r.configSnapshot().get("brokerAccountId"))
-                        : BrokerAccountRegistry.DEFAULT_ID;
-                    return existingAccount.equalsIgnoreCase(accountId);
-                });
-
+            boolean duplicate = findActiveDuplicate(strategyId, symbol, mode, accountId);
             if (duplicate) {
                 throw new IllegalArgumentException("Strategy " + strategyId + " is already running on account " + accountId + " for symbol " + symbol);
             }
+        }
+    }
+
+    /**
+     * Detects an already-active run for the same strategy+symbol+mode+account, consulting both the
+     * in-memory map and the persistent {@link RunRecordStore}. The persistent check closes the
+     * restart race window where the control plane accepts {@code POST /api/runs} before the
+     * startup reconciliation has repopulated the in-memory map.
+     */
+    private boolean findActiveDuplicate(String strategyId, String symbol, RunMode mode, String accountId) {
+        java.util.function.Predicate<RunRecord> matches = r ->
+            (r.status() == RunRecord.Status.RUNNING || r.status() == RunRecord.Status.PAUSED)
+                && r.mode() == mode
+                && r.strategyId().equalsIgnoreCase(strategyId)
+                && r.symbol().equalsIgnoreCase(symbol)
+                && BrokerAccountRegistry.resolveId(
+                        r.configSnapshot() != null ? (String) r.configSnapshot().get("brokerAccountId") : null)
+                    .equalsIgnoreCase(accountId);
+
+        if (runs.values().stream().anyMatch(matches)) {
+            return true;
+        }
+        try {
+            return runRecordStore.listAll().stream().anyMatch(matches);
+        } catch (Exception e) {
+            log.warn("Failed to query persistent run records for duplicate check; falling back to in-memory only: {}",
+                e.getMessage());
+            return false;
         }
     }
 
@@ -1362,7 +1612,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
                     .withStatus(com.martinfou.trading.core.Order.Status.FILLED)
                     .withFilledAt(event.timestamp());
                 if (orderId != null) {
-                    btOrder.withId(orderId);
+                    btOrder = btOrder.withId(orderId);
                 }
                 
                 btOrdersByRun.computeIfAbsent(runId, k -> new CopyOnWriteArrayList<>()).add(btOrder);

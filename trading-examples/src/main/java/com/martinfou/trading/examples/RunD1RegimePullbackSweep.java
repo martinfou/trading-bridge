@@ -4,6 +4,7 @@ import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.data.HistoricalDataLoader;
 import com.martinfou.trading.strategies.creative.D1RegimeEmaPullbackContinuation;
@@ -22,7 +23,7 @@ public class RunD1RegimePullbackSweep {
     public static void main(String[] args) throws Exception {
         String symbol = args.length > 0 ? args[0] : "GBP_USD";
         String yearSpec = args.length > 1 ? args[1] : "2006-2026";
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
 
         var loaded = HistoricalDataLoader.loadFromArgs(symbol, symbol, yearSpec);
         List<Bar> bars = loaded.bars();

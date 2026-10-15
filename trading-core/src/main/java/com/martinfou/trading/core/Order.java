@@ -1,86 +1,113 @@
 package com.martinfou.trading.core;
 
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.UUID;
 
-public class Order {
+public record Order(
+    String id,
+    String symbol,
+    Side side,
+    Type type,
+    double quantity,
+    double price,
+    double stopLoss,
+    double takeProfit,
+    double trailingStop,
+    boolean guaranteed,
+    boolean closeOnly,
+    Status status,
+    Instant createdAt,
+    Instant filledAt,
+    String strategyId,
+    String correlationId,
+    double priceDriftLimit,
+    String ocaGroup,
+    int ocaType,
+    String parentId
+) {
     public enum Side { BUY, SELL }
     public enum Type { MARKET, LIMIT, STOP }
     public enum Status { PENDING, FILLED, PARTIAL, CANCELLED, REJECTED }
 
-    private String id = UUID.randomUUID().toString();
-    private final String symbol;
-    private final Side side;
-    private final Type type;
-    private double quantity;
-    private double price;
-    private double stopLoss;
-    private double takeProfit;
-    private double trailingStop;
-    private boolean guaranteed;
-    private boolean closeOnly;
-    private Status status = Status.PENDING;
-    private Instant createdAt = TimeConventions.now();
-    private Instant filledAt;
-    private String strategyId;
-    private String correlationId;
-    private double priceDriftLimit;
+    private static final DateTimeFormatter TAG_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMdd-HHmm")
+        .withZone(ZoneId.of("UTC"));
 
     public Order(String symbol, Side side, Type type, double quantity, double price) {
-        this.symbol = symbol;
-        this.side = side;
-        this.type = type;
-        this.quantity = quantity;
-        this.price = price;
+        this(UUID.randomUUID().toString(), symbol, side, type, quantity, price, 
+             0.0, 0.0, 0.0, false, false, Status.PENDING, Instant.now(), 
+             null, null, null, 0.0, null, 0, null);
     }
 
-    public String id() { return id; }
-    public String symbol() { return symbol; }
-    public Side side() { return side; }
-    public Type type() { return type; }
-    public double quantity() { return quantity; }
-    public double price() { return price; }
-    public double stopLoss() { return stopLoss; }
-    public double takeProfit() { return takeProfit; }
-    public double trailingStop() { return trailingStop; }
-    public boolean guaranteed() { return guaranteed; }
-    public boolean isCloseOnly() { return closeOnly; }
-    public Status status() { return status; }
-    public Instant createdAt() { return createdAt; }
-    public Instant filledAt() { return filledAt; }
-    public String strategyId() { return strategyId; }
-    public String correlationId() { return correlationId; }
-    public double priceDriftLimit() { return priceDriftLimit; }
+    public Order(String symbol, Side side, Type type, double quantity, double price, double stopLoss, double takeProfit) {
+        this(UUID.randomUUID().toString(), symbol, side, type, quantity, price, 
+             stopLoss, takeProfit, 0.0, false, false, Status.PENDING, Instant.now(), 
+             null, null, null, 0.0, null, 0, null);
+    }
 
-    public Order withStopLoss(double sl) { this.stopLoss = sl; return this; }
-    public Order withTakeProfit(double tp) { this.takeProfit = tp; return this; }
-    public Order withTrailingStop(double ts) { this.trailingStop = ts; return this; }
-    public Order withGuaranteed(boolean g) { this.guaranteed = g; return this; }
-    public Order withStrategyId(String strategyId) { this.strategyId = strategyId; return this; }
-    public Order withCorrelationId(String correlationId) { this.correlationId = correlationId; return this; }
-    public Order withPrice(double price) { this.price = price; return this; }
-    public Order withFilledAt(Instant filledAt) { this.filledAt = filledAt; return this; }
-    public Order withStatus(Status status) { this.status = status; return this; }
-    public Order withPriceDriftLimit(double limit) { this.priceDriftLimit = limit; return this; }
+    public Order(
+        String id, String symbol, Side side, Type type, double quantity, double price,
+        double stopLoss, double takeProfit, double trailingStop, boolean guaranteed,
+        boolean closeOnly, Status status, Instant createdAt, Instant filledAt,
+        String strategyId, String correlationId, double priceDriftLimit
+    ) {
+        this(id, symbol, side, type, quantity, price, stopLoss, takeProfit, trailingStop,
+             guaranteed, closeOnly, status, createdAt, filledAt, strategyId, correlationId,
+             priceDriftLimit, null, 0, null);
+    }
+
+    /**
+     * Generates a deterministic, canonical order tag to enforce idempotency and avoid duplicate submissions.
+     */
+    public static String generateCanonicalTag(String symbol, String strategy, Instant barTime, Side side) {
+        String sym = symbol != null ? symbol.replace("/", "").replace("_", "").toUpperCase() : "UNKNOWN";
+        String strat = strategy != null ? strategy.replaceAll("[^a-zA-Z0-9]", "").toUpperCase() : "GENERAL";
+        String time = barTime != null ? TAG_FORMATTER.format(barTime) : TAG_FORMATTER.format(Instant.now());
+        String s = side != null ? side.name() : "BUY";
+        return String.format("%s-%s-%s-%s", sym, strat, time, s);
+    }
+
+    public boolean isCloseOnly() { return closeOnly; }
+
+    /**
+     * Single source of truth for the "no stop ⇒ no entry" guard (story 1.4). True when this order
+     * carries a protective stop loss ({@code stopLoss > 0}). The live entry path refuses any entry
+     * for which this is false, and the (deferred) backtest mirror must call this same predicate —
+     * never re-implement the comparison, or the two paths will diverge again.
+     */
+    public boolean hasProtectiveStop() { return stopLoss > 0; }
+
+    public Order withStopLoss(double sl) { return new Order(id, symbol, side, type, quantity, price, sl, takeProfit, trailingStop, guaranteed, closeOnly, status, createdAt, filledAt, strategyId, correlationId, priceDriftLimit, ocaGroup, ocaType, parentId); }
+    public Order withTakeProfit(double tp) { return new Order(id, symbol, side, type, quantity, price, stopLoss, tp, trailingStop, guaranteed, closeOnly, status, createdAt, filledAt, strategyId, correlationId, priceDriftLimit, ocaGroup, ocaType, parentId); }
+    public Order withTrailingStop(double ts) { return new Order(id, symbol, side, type, quantity, price, stopLoss, takeProfit, ts, guaranteed, closeOnly, status, createdAt, filledAt, strategyId, correlationId, priceDriftLimit, ocaGroup, ocaType, parentId); }
+    public Order withGuaranteed(boolean g) { return new Order(id, symbol, side, type, quantity, price, stopLoss, takeProfit, trailingStop, g, closeOnly, status, createdAt, filledAt, strategyId, correlationId, priceDriftLimit, ocaGroup, ocaType, parentId); }
+    public Order withStrategyId(String strategyId) { return new Order(id, symbol, side, type, quantity, price, stopLoss, takeProfit, trailingStop, guaranteed, closeOnly, status, createdAt, filledAt, strategyId, correlationId, priceDriftLimit, ocaGroup, ocaType, parentId); }
+    public Order withCorrelationId(String correlationId) { return new Order(id, symbol, side, type, quantity, price, stopLoss, takeProfit, trailingStop, guaranteed, closeOnly, status, createdAt, filledAt, strategyId, correlationId, priceDriftLimit, ocaGroup, ocaType, parentId); }
+    public Order withPrice(double price) { return new Order(id, symbol, side, type, quantity, price, stopLoss, takeProfit, trailingStop, guaranteed, closeOnly, status, createdAt, filledAt, strategyId, correlationId, priceDriftLimit, ocaGroup, ocaType, parentId); }
+    public Order withFilledAt(Instant filledAt) { return new Order(id, symbol, side, type, quantity, price, stopLoss, takeProfit, trailingStop, guaranteed, closeOnly, status, createdAt, filledAt, strategyId, correlationId, priceDriftLimit, ocaGroup, ocaType, parentId); }
+    public Order withStatus(Status status) { return new Order(id, symbol, side, type, quantity, price, stopLoss, takeProfit, trailingStop, guaranteed, closeOnly, status, createdAt, filledAt, strategyId, correlationId, priceDriftLimit, ocaGroup, ocaType, parentId); }
+    public Order withPriceDriftLimit(double limit) { return new Order(id, symbol, side, type, quantity, price, stopLoss, takeProfit, trailingStop, guaranteed, closeOnly, status, createdAt, filledAt, strategyId, correlationId, limit, ocaGroup, ocaType, parentId); }
+    public Order withOcaGroup(String group, int ocaTypeVal) { return new Order(id, symbol, side, type, quantity, price, stopLoss, takeProfit, trailingStop, guaranteed, closeOnly, status, createdAt, filledAt, strategyId, correlationId, priceDriftLimit, group, ocaTypeVal, parentId); }
+    public Order withParentId(String parentId) { return new Order(id, symbol, side, type, quantity, price, stopLoss, takeProfit, trailingStop, guaranteed, closeOnly, status, createdAt, filledAt, strategyId, correlationId, priceDriftLimit, ocaGroup, ocaType, parentId); }
+
     public Order withId(String id) {
         if (id != null && !id.isBlank()) {
-            this.id = id;
+            return new Order(id, symbol, side, type, quantity, price, stopLoss, takeProfit, trailingStop, guaranteed, closeOnly, status, createdAt, filledAt, strategyId, correlationId, priceDriftLimit, ocaGroup, ocaType, parentId);
         }
         return this;
     }
 
-    /** Updates quantity in place so strategy and engine share the same order instance. */
     public Order rescaleQuantity(double quantity) {
-        this.quantity = quantity;
-        return this;
+        return new Order(id, symbol, side, type, quantity, price, stopLoss, takeProfit, trailingStop, guaranteed, closeOnly, status, createdAt, filledAt, strategyId, correlationId, priceDriftLimit, ocaGroup, ocaType, parentId);
     }
-    /** Mark this order as close-only: reduces existing position instead of opening new one (avoids hedging on OANDA). */
-    public Order closeOnly() { this.closeOnly = true; return this; }
+
+    public Order asCloseOnly() { 
+        return new Order(id, symbol, side, type, quantity, price, stopLoss, takeProfit, trailingStop, guaranteed, true, status, createdAt, filledAt, strategyId, correlationId, priceDriftLimit, ocaGroup, ocaType, parentId); 
+    }
 
     public Order fill() {
-        this.status = Status.FILLED;
-        this.filledAt = TimeConventions.now();
-        return this;
+        return new Order(id, symbol, side, type, quantity, price, stopLoss, takeProfit, trailingStop, guaranteed, closeOnly, Status.FILLED, createdAt, TimeConventions.now(), strategyId, correlationId, priceDriftLimit, ocaGroup, ocaType, parentId);
     }
 
     public double pnl(double currentPrice) {

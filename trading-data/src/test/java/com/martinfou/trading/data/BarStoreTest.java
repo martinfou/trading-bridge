@@ -59,4 +59,26 @@ class BarStoreTest {
         assertEquals(1, store.count());
         assertEquals(epochSec, store.get(0).timestamp().getEpochSecond());
     }
+
+    @Test
+    void read_supportsBigEndianEpochMillis(@TempDir Path dir) throws Exception {
+        // Legacy historical .bars files on disk are big-endian with epoch millis
+        Path file = dir.resolve("EUR_USD_H1_2012.bars");
+        long epochMillis = Instant.parse("2012-01-01T00:00:00Z").toEpochMilli();
+        var bytes = java.nio.ByteBuffer.allocate(BarStore.BAR_SIZE);
+        bytes.order(java.nio.ByteOrder.BIG_ENDIAN);
+        bytes.putLong(epochMillis);
+        bytes.putDouble(1.30);
+        bytes.putDouble(1.31);
+        bytes.putDouble(1.29);
+        bytes.putDouble(1.305);
+        bytes.putInt(1000);
+        Files.write(file, bytes.array());
+
+        var store = new BarStore("EUR_USD", "H1_2012", dir);
+        store.open();
+
+        assertEquals(1, store.count());
+        assertEquals(epochMillis, store.get(0).timestamp().toEpochMilli());
+    }
 }

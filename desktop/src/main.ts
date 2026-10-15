@@ -8,10 +8,12 @@ import StrategiesView from './views/StrategiesView.vue'
 import CompareView from './views/CompareView.vue'
 import LiveTradingView from './views/LiveTradingView.vue'
 import DataManagerView from './views/DataManagerView.vue'
+import WfaView from './views/WfaView.vue'
 
 const routes = [
   { path: '/', redirect: '/dashboard' },
   { path: '/dashboard', name: 'dashboard', component: DashboardView },
+  { path: '/wfa', name: 'wfa', component: WfaView },
   { path: '/results', name: 'results', component: BacktestHistoryView },
   { path: '/results/:runId', name: 'results-details', component: ResultsView },
   { path: '/strategies', name: 'strategies', component: StrategiesView },

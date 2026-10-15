@@ -69,6 +69,12 @@ public class BacktestEngine {
     private double usdJpyRate = ForexPnL.DEFAULT_USD_JPY;
     private String dataTimeframe = "h1";
     private String strategyTimeframe = "h1";
+    private boolean marginTrackingEnabled = false;
+    private MarginTracker marginTracker = new MarginTracker();
+    private boolean rolloverEnabled = false;
+    private FillMode fillMode = FillMode.TOUCH;
+
+
 
     // ---------------------------------------------------------------
     //  Constructors
@@ -78,16 +84,46 @@ public class BacktestEngine {
      * Creates a backtest engine with default zero-cost configuration.
      *
      * @param strategy       the strategy to drive
-     * @param bars           historical bar data
-     * @param initialCapital starting account balance
+     * @param bars           historical bar series to replay
+     * @param initialCapital starting balance in USD (e.g. 10_000.0)
      */
     public BacktestEngine(Strategy strategy, List<Bar> bars, double initialCapital) {
-        this.strategy = strategy;
-        this.bars = bars;
+        this.strategy = Objects.requireNonNull(strategy, "strategy");
+        this.bars = Objects.requireNonNull(bars, "bars");
         this.initialCapital = initialCapital;
         this.equity = initialCapital;
         this.peakEquity = initialCapital;
     }
+
+    public BacktestEngine withMarginTracking(boolean enabled) {
+        this.marginTrackingEnabled = enabled;
+        return this;
+    }
+
+    public BacktestEngine withMarginTracker(MarginTracker marginTracker) {
+        if (marginTracker != null) {
+            this.marginTracker = marginTracker;
+            this.marginTrackingEnabled = true;
+        }
+        return this;
+    }
+
+    public BacktestEngine withRollover(boolean enabled) {
+        this.rolloverEnabled = enabled;
+        return this;
+    }
+
+    public BacktestEngine withFillMode(FillMode fillMode) {
+        if (fillMode != null) {
+            this.fillMode = fillMode;
+        }
+        return this;
+    }
+
+    public FillMode fillMode() {
+        return fillMode;
+    }
+
 
     // ---------------------------------------------------------------
     //  Configuration setters (fluent)
@@ -105,7 +141,7 @@ public class BacktestEngine {
         return this;
     }
 
-    /** Fixed slippage in USD per filled trade. */
+    /** Fixed slippage as a PRICE delta applied per filled trade (see BacktestEngine.applySlippage). */
     public BacktestEngine withSlippageFixed(double slippageFixed) {
         this.slippageFixed = slippageFixed;
         return this;
@@ -177,55 +213,50 @@ public class BacktestEngine {
         Bar previousBar = null;
         for (int i = 0; i < bars.size(); i++) {
             Bar bar = bars.get(i);
-            if (!ForexMarketCalendar.isTradingBar(bar)) {
+            if (!isTradingBar(bar)) {
                 continue;
             }
 
-            // 1. Strategy Evaluation on completed prior periods
-            // This happens BEFORE we execute orders at the current bar's open, 
-            // preventing look-ahead bias (strategy seeing close price and executing at open of the same bar).
-            if (isMultiTimeframe) {
-                BarAggregator aggregator = aggregators.computeIfAbsent(bar.symbol(), s -> new BarAggregator(s, strategyTimeframe));
-                boolean isNew = aggregator.isNewPeriod(bar);
-                if (isNew) {
-                    Bar completedBar = aggregator.getInProgressBar();
-                    if (completedBar != null) {
-                        strategy.onBar(completedBar);
-                    }
+
+            if (marginTrackingEnabled && marginTracker.currentHealth() == MarginTracker.MarginHealth.MARGIN_CALL) {
+                // Forced liquidation triggered by previous bar close -> liquidate all open positions at bar open
+                log.warn("MARGIN CALL LIQUIDATION: Liquidating open positions at {} open: {}", bar.timestamp(), bar.open());
+                List<Position> toLiquidate = new ArrayList<>();
+                for (List<Position> list : openPositionsBySymbol.values()) {
+                    toLiquidate.addAll(list);
                 }
-            } else {
-                if (previousBar != null) {
-                    strategy.onBar(previousBar);
+                for (Position pos : toLiquidate) {
+                    closePosition(pos, bar.open(), bar.timestamp());
                 }
+                marginTracker.markLiquidated();
+                strategy.getPendingOrders().clear();
             }
 
-            // 2. Intra-bar execution
-            // Process pending MARKET orders at bar.open()
-            // Evaluate LIMIT/STOP orders against bar.high()/low()
-            processOrders(bar);
+            if (marginTracker.currentHealth() != MarginTracker.MarginHealth.LIQUIDATED) {
+                evaluateStrategyForPreviousPeriod(bar, previousBar, isMultiTimeframe, aggregators);
 
-            // Check SL/TP on open positions against bar.high()/low()
-            checkStopLossesTakeProfits(bar);
+                if (rolloverEnabled) {
+                    checkFuturesRollovers(bar);
+                }
 
-            // 3. Accumulate data and handle final bar
-            if (isMultiTimeframe) {
-                BarAggregator aggregator = aggregators.get(bar.symbol());
-                aggregator.add(bar);
-                if (i == bars.size() - 1) {
-                    aggregator.completePeriod();
-                    Bar completedBar = aggregator.getLastCompletedBar();
-                    if (completedBar != null) {
-                        strategy.onBar(completedBar);
-                    }
-                }
-            } else {
-                if (i == bars.size() - 1) {
-                    strategy.onBar(bar);
-                }
+                // 2. Intra-bar execution
+                processOrders(bar);
+                checkStopLossesTakeProfits(bar);
+
+                // 3. Accumulate data and handle final bar
+                accumulateAndEvaluateFinalBar(bar, i, isMultiTimeframe, aggregators);
             }
 
             // Recompute equity: cash + floating P&L from open positions
             recomputeEquity(bar);
+
+            if (marginTrackingEnabled && marginTracker.currentHealth() != MarginTracker.MarginHealth.LIQUIDATED) {
+                List<Position> currentPositions = new ArrayList<>();
+                for (List<Position> list : openPositionsBySymbol.values()) {
+                    currentPositions.addAll(list);
+                }
+                marginTracker.evaluate(equity, currentPositions, bar.close(), bar.timestamp());
+            }
 
             // Track equity curve (once per bar, after processing)
             equityCurve.add(equity);
@@ -244,15 +275,48 @@ public class BacktestEngine {
         return buildResult();
     }
 
-    private static Bar lastTradingBar(List<Bar> bars) {
+    private void evaluateStrategyForPreviousPeriod(Bar bar, Bar previousBar, boolean isMultiTimeframe, Map<String, BarAggregator> aggregators) {
+        if (isMultiTimeframe) {
+            BarAggregator aggregator = aggregators.computeIfAbsent(bar.symbol(), s -> new BarAggregator(s, strategyTimeframe));
+            if (aggregator.isNewPeriod(bar)) {
+                aggregator.getInProgressBar().ifPresent(strategy::onBar);
+            }
+        } else if (previousBar != null) {
+            strategy.onBar(previousBar);
+        }
+    }
+
+    private void accumulateAndEvaluateFinalBar(Bar bar, int index, boolean isMultiTimeframe, Map<String, BarAggregator> aggregators) {
+        if (isMultiTimeframe) {
+            BarAggregator aggregator = aggregators.get(bar.symbol());
+            aggregator.add(bar);
+            if (index == bars.size() - 1) {
+                aggregator.completePeriod();
+                aggregator.getLastCompletedBar().ifPresent(strategy::onBar);
+            }
+        } else if (index == bars.size() - 1) {
+            strategy.onBar(bar);
+        }
+    }
+
+    private boolean isTradingBar(Bar bar) {
+        if (bar == null) return false;
+        if (FuturesRegistry.isFutures(bar.symbol())) {
+            return CmeGlobexMarketCalendar.isTradingBar(bar);
+        }
+        return ForexMarketCalendar.isTradingBar(bar);
+    }
+
+    private Bar lastTradingBar(List<Bar> bars) {
         Bar last = null;
         for (Bar bar : bars) {
-            if (ForexMarketCalendar.isTradingBar(bar)) {
+            if (isTradingBar(bar)) {
                 last = bar;
             }
         }
         return last;
     }
+
 
     // ---------------------------------------------------------------
     //  Position helpers
@@ -286,61 +350,69 @@ public class BacktestEngine {
     private void processOrders(Bar bar) {
         List<Order> pending = new ArrayList<>(strategy.getPendingOrders());
         for (Order order : pending) {
-            boolean filled = false;
-            double fillPrice = 0;
+            processSingleOrder(order, bar);
+        }
+    }
 
-            switch (order.type()) {
-                case MARKET -> {
-                    filled = true;
-                    fillPrice = bar.open();
-                }
-                case LIMIT -> {
-                    if (order.side() == Order.Side.BUY && bar.low() <= order.price()) {
-                        filled = true;
-                        fillPrice = order.price();
-                    } else if (order.side() == Order.Side.SELL && bar.high() >= order.price()) {
-                        filled = true;
-                        fillPrice = order.price();
-                    }
-                }
-                case STOP -> {
-                    if (order.side() == Order.Side.BUY && bar.high() >= order.price()) {
-                        filled = true;
-                        fillPrice = Math.max(bar.open(), order.price());
-                    } else if (order.side() == Order.Side.SELL && bar.low() <= order.price()) {
-                        filled = true;
-                        fillPrice = Math.min(bar.open(), order.price());
-                    }
-                }
+    private void processSingleOrder(Order order, Bar bar) {
+        double fillPrice = calculateFillPrice(order, bar);
+        if (fillPrice > 0) {
+            executeFill(order, bar, fillPrice);
+        }
+    }
+
+    private double calculateFillPrice(Order order, Bar bar) {
+        return switch (order.type()) {
+            case MARKET -> bar.open();
+            case LIMIT -> calculateLimitFillPrice(order, bar);
+            case STOP -> calculateStopFillPrice(order, bar);
+        };
+    }
+
+    private double calculateLimitFillPrice(Order order, Bar bar) {
+        double orderPrice = FuturesRegistry.quantizePrice(order.symbol(), order.price());
+        if (fillMode == FillMode.TRADE_THROUGH) {
+            if (order.side() == Order.Side.BUY && bar.low() < orderPrice) {
+                return orderPrice;
+            } else if (order.side() == Order.Side.SELL && bar.high() > orderPrice) {
+                return orderPrice;
             }
-
-            if (filled) {
-                // Apply slippage to fill price
-                double adjustedPrice = applySlippage(fillPrice, order.side(), order.quantity());
-
-                // Calculate commission
-                double commission = calcCommission(adjustedPrice, order.quantity());
-
-                order.fill();
-
-                totalCommission += commission;
-
-                if (order.isCloseOnly()) {
-                    // REDUCE_ONLY: find opposite-side position, reduce or close it
-                    // NEVER open a new position
-                    reduceOppositeSide(order, adjustedPrice, bar.timestamp());
-                } else {
-                    // Normal (non-closeOnly) order — OANDA hedging semantics:
-                    //   same-side → scale in
-                    //   opposite-side → create new hedge position
-                    //   no position → create new
-                    handleEntryOrder(order, adjustedPrice, bar.timestamp());
-                }
-
-                log.debug("FILLED: {} {} @ {:.5f} (cost: ${:.2f})",
-                    order.side(), order.quantity(), adjustedPrice, commission);
+        } else {
+            if (order.side() == Order.Side.BUY && bar.low() <= orderPrice) {
+                return orderPrice;
+            } else if (order.side() == Order.Side.SELL && bar.high() >= orderPrice) {
+                return orderPrice;
             }
         }
+        return 0;
+    }
+
+    private double calculateStopFillPrice(Order order, Bar bar) {
+        double orderPrice = FuturesRegistry.quantizePrice(order.symbol(), order.price());
+        if (order.side() == Order.Side.BUY && bar.high() >= orderPrice) {
+            return Math.max(bar.open(), orderPrice);
+        } else if (order.side() == Order.Side.SELL && bar.low() <= orderPrice) {
+            return Math.min(bar.open(), orderPrice);
+        }
+        return 0;
+    }
+
+    private void executeFill(Order order, Bar bar, double fillPrice) {
+        double adjustedPrice = applySlippage(order.symbol(), fillPrice, order.side(), order.quantity());
+        double commission = calcCommission(adjustedPrice, order.quantity());
+
+
+        order.fill();
+        totalCommission += commission;
+
+        if (order.isCloseOnly()) {
+            reduceOppositeSide(order, adjustedPrice, bar.timestamp());
+        } else {
+            handleEntryOrder(order, adjustedPrice, bar.timestamp());
+        }
+
+        log.debug("FILLED: {} {} @ {:.5f} (cost: ${:.2f})",
+            order.side(), order.quantity(), adjustedPrice, commission);
     }
 
     /**
@@ -355,17 +427,12 @@ public class BacktestEngine {
 
         double qty = Math.min(order.quantity(), opposite.quantity());
         double exitPrice = adjustedPrice;
-        double entryValue = opposite.entryPrice() * qty;
-        double exitValue = exitPrice * qty;
-        double pnl = opposite.side() == Order.Side.BUY
-            ? exitValue - entryValue
-            : entryValue - exitValue;
+        Trade trade = new Trade(order.symbol(), opposite.side(), opposite.entryPrice(), exitPrice,
+            qty, opposite.entryTime(), timestamp, usdJpyRate, opposite.stopLoss(), opposite.takeProfit());
+        trades.add(trade);
         totalTrades++;
-        if (pnl > 0) winningTrades++;
-        else if (pnl < 0) losingTrades++;
-
-        trades.add(new Trade(order.symbol(), opposite.side(), opposite.entryPrice(), exitPrice,
-            qty, opposite.entryTime(), timestamp, usdJpyRate, opposite.stopLoss(), opposite.takeProfit()));
+        if (trade.pnl() > 0) winningTrades++;
+        else if (trade.pnl() < 0) losingTrades++;
 
         // Calculate swap for this trade
         double swapCost = SwapCalculator.calculateSwap(
@@ -373,14 +440,20 @@ public class BacktestEngine {
             opposite.entryTime(), timestamp);
         totalSwap += swapCost;
 
-        opposite.reduceQuantity(qty);
+        Position newOpposite = opposite.reduceQuantity(qty);
 
-        // Remove the position if fully reduced
-        if (opposite.quantity() <= 0) {
-            positions(order.symbol()).remove(opposite);
+        // Replace the position in the list
+        List<Position> posList = positions(order.symbol());
+        int index = posList.indexOf(opposite);
+        
+        // Remove the position if fully reduced, otherwise update it
+        if (newOpposite.quantity() <= 0) {
+            posList.remove(index);
+        } else {
+            posList.set(index, newOpposite);
         }
 
-        log.debug("REDUCE_ONLY: {} {} PnL:${:.2f}", order.symbol(), opposite.side(), pnl);
+        log.debug("REDUCE_ONLY: {} {} PnL:${:.2f}", order.symbol(), opposite.side(), trade.pnl());
     }
 
     /**
@@ -392,16 +465,16 @@ public class BacktestEngine {
      */
     private void handleEntryOrder(Order order, double adjustedPrice, Instant timestamp) {
         Position sameSide = findSameSide(order.symbol(), order.side());
+        List<Position> posList = positions(order.symbol());
         if (sameSide != null) {
             // Same-side exists — scale in (SL/TP from the first entry remain)
-            sameSide.addQuantity(order.quantity(), adjustedPrice);
+            Position newPos = sameSide.addQuantity(order.quantity(), adjustedPrice);
+            posList.set(posList.indexOf(sameSide), newPos);
         } else {
             // No same-side position — create new position (may be a hedge)
             Position pos = new Position(order.symbol(), order.side(),
-                order.quantity(), adjustedPrice, timestamp);
-            if (order.stopLoss() != 0) pos.withStopLoss(order.stopLoss());
-            if (order.takeProfit() != 0) pos.withTakeProfit(order.takeProfit());
-            positions(order.symbol()).add(pos);
+                order.quantity(), adjustedPrice, timestamp, null, null, order.stopLoss(), order.takeProfit());
+            posList.add(pos);
         }
     }
 
@@ -444,10 +517,20 @@ public class BacktestEngine {
                 ? pos.stopLoss() : pos.takeProfit();
             // Apply stop slippage (only on SL fills, not TP — TPs are limit orders)
             if (pos.stopLoss() > 0 && hitStopLoss(pos, bar) && stopSlippagePct > 0) {
-                double slipAmount = exitPrice * stopSlippagePct;
+                Optional<FuturesContract> fut = FuturesRegistry.find(pos.symbol());
+                double slipAmount;
+                if (fut.isPresent()) {
+                    FuturesContract c = fut.get();
+                    slipAmount = Math.max(c.minTick(), c.quantizePrice(exitPrice * stopSlippagePct));
+                } else {
+                    slipAmount = exitPrice * stopSlippagePct;
+                }
                 exitPrice = pos.side() == Order.Side.BUY
                     ? exitPrice - slipAmount   // LONG: SL sell, slippage pushes exit lower
                     : exitPrice + slipAmount;  // SHORT: SL buy back, slippage pushes exit higher
+                if (fut.isPresent()) {
+                    exitPrice = fut.get().quantizePrice(exitPrice);
+                }
                 totalSlippage += Math.abs(slipAmount * pos.quantity());
             }
             closePosition(pos, exitPrice, bar.timestamp());
@@ -467,14 +550,13 @@ public class BacktestEngine {
     // ---------------------------------------------------------------
 
     private void closePosition(Position pos, double exitPrice, Instant timestamp) {
-        double pnl = pos.currentPnl(exitPrice);
+        Trade trade = new Trade(pos.symbol(), pos.side(), pos.entryPrice(), exitPrice,
+            pos.quantity(), pos.entryTime(), timestamp, usdJpyRate, pos.stopLoss(), pos.takeProfit());
+        trades.add(trade);
         totalTrades++;
 
-        if (pnl > 0) winningTrades++;
-        else if (pnl < 0) losingTrades++;
-
-        trades.add(new Trade(pos.symbol(), pos.side(), pos.entryPrice(), exitPrice,
-            pos.quantity(), pos.entryTime(), timestamp, usdJpyRate, pos.stopLoss(), pos.takeProfit()));
+        if (trade.pnl() > 0) winningTrades++;
+        else if (trade.pnl() < 0) losingTrades++;
 
         // Calculate swap for this trade (story 39.2: SL/TP/force-close exits must
         // accrue overnight swap like closeOnly reductions do in reduceOppositeSide)
@@ -492,7 +574,7 @@ public class BacktestEngine {
             }
         }
 
-        log.debug("CLOSED: {} {} PnL:${:.2f}", pos.symbol(), pos.side(), pnl);
+        log.debug("CLOSED: {} {} PnL:${:.2f}", pos.symbol(), pos.side(), trade.pnl());
     }
 
     private void closeRemainingPositions(Bar lastBar) {
@@ -503,6 +585,44 @@ public class BacktestEngine {
         }
         for (Position pos : allOpen) {
             closePosition(pos, lastBar.close(), lastBar.timestamp());
+        }
+    }
+
+    private void checkFuturesRollovers(Bar bar) {
+        if (!FuturesRegistry.isFutures(bar.symbol())) {
+            return;
+        }
+        java.time.LocalDate barDate = bar.timestamp().atZone(java.time.ZoneOffset.UTC).toLocalDate();
+        CmeFuturesCalendar.ContractSpec activeSpec = CmeFuturesCalendar.activeContract(bar.symbol(), barDate);
+        if (CmeFuturesCalendar.isRolloverDue(activeSpec, barDate)) {
+            List<Position> posList = positions(bar.symbol());
+            if (!posList.isEmpty()) {
+                CmeFuturesCalendar.ContractSpec nextSpec = CmeFuturesCalendar.nextContract(activeSpec);
+                String rolloverGroupId = java.util.UUID.randomUUID().toString();
+                log.info("FUTURES ROLLOVER: Rolling {} from {} to {} at {}", bar.symbol(), activeSpec.contractCode(), nextSpec.contractCode(), bar.timestamp());
+                List<Position> toRoll = new ArrayList<>(posList);
+                for (Position pos : toRoll) {
+                    Order.Side closeSide = pos.side() == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
+                    double closeSlipped = applySlippage(pos.symbol(), bar.open(), closeSide, pos.quantity());
+                    double openSlipped = applySlippage(pos.symbol(), bar.open(), pos.side(), pos.quantity());
+
+                    double closeComm = calcCommission(closeSlipped, pos.quantity());
+                    double openComm = calcCommission(openSlipped, pos.quantity());
+                    totalCommission += (closeComm + openComm);
+
+                    Trade closingTrade = new Trade(pos.symbol(), pos.side(), pos.entryPrice(), closeSlipped,
+                        pos.quantity(), pos.entryTime(), bar.timestamp(), usdJpyRate, pos.stopLoss(), pos.takeProfit(), rolloverGroupId);
+                    trades.add(closingTrade);
+                    totalTrades++;
+                    if (closingTrade.pnl() > 0) winningTrades++;
+                    else if (closingTrade.pnl() < 0) losingTrades++;
+                    posList.remove(pos);
+
+                    Position rolledPos = new Position(pos.symbol(), pos.side(), pos.quantity(), openSlipped,
+                        bar.timestamp(), rolloverGroupId, null, pos.stopLoss(), pos.takeProfit());
+                    posList.add(rolledPos);
+                }
+            }
         }
     }
 
@@ -526,14 +646,32 @@ public class BacktestEngine {
     //  Cost helpers
     // ---------------------------------------------------------------
 
-    private double applySlippage(double price, Order.Side side, double quantity) {
-        double slipAmount = slippageFixed > 0 ? slippageFixed : price * slippagePct;
+    private double applySlippage(String symbol, double price, Order.Side side, double quantity) {
+        double slipAmount;
+        Optional<FuturesContract> fut = FuturesRegistry.find(symbol);
+        if (fut.isPresent()) {
+            FuturesContract c = fut.get();
+            if (slippageFixed > 0) {
+                slipAmount = slippageFixed;
+            } else if (slippagePct > 0) {
+                slipAmount = Math.max(c.minTick(), c.quantizePrice(price * slippagePct));
+            } else {
+                slipAmount = 0;
+            }
+        } else {
+            slipAmount = slippageFixed > 0 ? slippageFixed : price * slippagePct;
+        }
         totalSlippage += slipAmount * quantity;
-        // Slippage always works against the trader
-        return side == Order.Side.BUY ? price + slipAmount : price - slipAmount;
+        double rawSlipped = side == Order.Side.BUY ? price + slipAmount : price - slipAmount;
+        return fut.isPresent() ? fut.get().quantizePrice(rawSlipped) : rawSlipped;
+    }
+
+    private double applySlippage(double price, Order.Side side, double quantity) {
+        return applySlippage("", price, side, quantity);
     }
 
     private double calcCommission(double price, double quantity) {
+
         double notional = price * quantity;
         return commissionFixed + notional * commissionPct;
     }

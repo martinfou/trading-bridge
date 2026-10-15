@@ -4,6 +4,7 @@ import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.*;
 import com.martinfou.trading.data.HistoricalDataLoader;
 import com.martinfou.trading.strategies.creative.GoldWeekdayEffectStrategy;
@@ -14,7 +15,7 @@ import java.util.List;
 /** Probe — timestamps entrée/sortie réels des trades GoldWeekdayEffect FRI vs GoldFridayWindow. */
 public class GoldExitProbe {
     public static void main(String[] args) throws Exception {
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
         var bars = HistoricalDataLoader.loadFromArgs("XAU_USD", "XAU_USD", "2018").bars();
 
         BacktestResult r1 = RunContext.forStrategy(null, "GoldWeekdayEffect", 

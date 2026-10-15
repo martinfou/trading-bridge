@@ -144,7 +144,7 @@ public final class SqBridgeService implements AutoCloseable {
         if (!inboxProcessing.compareAndSet(false, true)) {
             return ProcessInboxResponse.rejected("Inbox processing already running");
         }
-        executor.submit(this::runInboxWorker);
+        executor.submit(() -> ExecutionBoundary.executeGlobal("SqBridgeService", this::runInboxWorker));
         return ProcessInboxResponse.started();
     }
 

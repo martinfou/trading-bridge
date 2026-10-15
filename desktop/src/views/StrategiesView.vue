@@ -1,16 +1,22 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useControlPlane } from '@/composables/useControlPlane'
-import type { Strategy } from '@/types/control-plane'
+import { useStrategyCatalog } from '@/composables/useStrategyCatalog'
 import StrategyCard from '@/components/StrategyCard.vue'
 
-const { getStrategies } = useControlPlane()
+const {
+  strategies,
+  loading,
+  error: viewError,
+  selectedAssetClass,
+  selectedFamily,
+  selectedStyle,
+  searchQuery,
+  filteredStrategies,
+  groupedStrategies,
+  fetchCatalog,
+  resetFilters
+} = useStrategyCatalog()
 
-const strategies = ref<Strategy[]>([])
-const loading = ref(true)
-const viewError = ref<string | null>(null)
-const activeTab = ref<string>('ALL')
-const searchQuery = ref('')
 const expandedId = ref<string | null>(null)
 
 const families = computed(() => {
@@ -18,52 +24,19 @@ const families = computed(() => {
   return Array.from(set).sort()
 })
 
-const filtered = computed(() => {
-  let list = strategies.value
-  if (activeTab.value !== 'ALL') {
-    list = list.filter((s) => s.family === activeTab.value)
-  }
-  if (searchQuery.value.trim()) {
-    const q = searchQuery.value.trim().toLowerCase()
-    list = list.filter(
-      (s) =>
-        s.id.toLowerCase().includes(q) ||
-        s.family.toLowerCase().includes(q) ||
-        (s.defaultSymbol && s.defaultSymbol.toLowerCase().includes(q)) ||
-        (s.type && s.type.toLowerCase().includes(q)) ||
-        (s.indicators && s.indicators.some((ind) => ind.toLowerCase().includes(q))),
-    )
-  }
-  return list
-})
-
-const grouped = computed(() => {
-  const groups: Record<string, Strategy[]> = {}
-  for (const s of filtered.value) {
-    const key = s.family
-    if (!groups[key]) groups[key] = []
-    groups[key].push(s)
-  }
-  return groups
-})
-
-function countByFamily(family: string): number {
-  if (family === 'ALL') return strategies.value.length
-  return strategies.value.filter((s) => s.family === family).length
-}
+const assetClassOptions = [
+  { id: 'ALL', label: 'All Assets' },
+  { id: 'FUTURES', label: '⚡ CME Futures' },
+  { id: 'FOREX', label: '💱 Forex Majors' },
+  { id: 'EQUITY', label: '📈 US Equities' }
+]
 
 function toggleExpand(id: string) {
   expandedId.value = expandedId.value === id ? null : id
 }
 
-onMounted(async () => {
-  try {
-    strategies.value = await getStrategies()
-  } catch (e: any) {
-    viewError.value = `Failed to load strategies: ${e.message}`
-  } finally {
-    loading.value = false
-  }
+onMounted(() => {
+  fetchCatalog()
 })
 </script>
 
@@ -73,7 +46,7 @@ onMounted(async () => {
       <div>
         <h1>Strategy Catalog</h1>
         <p class="subtitle">
-          {{ strategies.length }} strategies across {{ families.length }} families
+          {{ strategies.length }} quantitative strategies across {{ families.length }} families
         </p>
       </div>
       <div class="search-wrapper">
@@ -81,7 +54,7 @@ onMounted(async () => {
           v-model="searchQuery"
           type="text"
           class="search-input"
-          placeholder="Search strategies..."
+          placeholder="Search strategies, indicators, symbols..."
         />
       </div>
     </div>
@@ -89,24 +62,37 @@ onMounted(async () => {
     <!-- Error -->
     <div v-if="viewError" class="banner error">{{ viewError }}</div>
 
-    <!-- Tab filters -->
-    <div class="tabs">
-      <button
-        :class="['tab', { active: activeTab === 'ALL' }]"
-        @click="activeTab = 'ALL'"
-      >
-        All
-        <span class="tab-count">{{ countByFamily('ALL') }}</span>
-      </button>
-      <button
-        v-for="f in families"
-        :key="f"
-        :class="['tab', { active: activeTab === f }]"
-        @click="activeTab = f"
-      >
-        {{ f }}
-        <span class="tab-count">{{ countByFamily(f) }}</span>
-      </button>
+    <!-- Asset Class & Family Filters -->
+    <div class="filters-container">
+      <div class="asset-chips">
+        <button
+          v-for="opt in assetClassOptions"
+          :key="opt.id"
+          :class="['asset-chip', { active: selectedAssetClass === opt.id }]"
+          @click="selectedAssetClass = opt.id as any"
+        >
+          {{ opt.label }}
+        </button>
+      </div>
+
+      <div class="tabs">
+        <button
+          :class="['tab', { active: selectedFamily === 'ALL' }]"
+          @click="selectedFamily = 'ALL'"
+        >
+          All Families
+          <span class="tab-count">{{ strategies.length }}</span>
+        </button>
+        <button
+          v-for="f in families"
+          :key="f"
+          :class="['tab', { active: selectedFamily === f }]"
+          @click="selectedFamily = f"
+        >
+          {{ f }}
+          <span class="tab-count">{{ strategies.filter(s => s.family === f).length }}</span>
+        </button>
+      </div>
     </div>
 
     <!-- Loading -->
@@ -116,15 +102,16 @@ onMounted(async () => {
     </div>
 
     <!-- Empty state -->
-    <div v-else-if="filtered.length === 0" class="empty-state">
+    <div v-else-if="filteredStrategies.length === 0" class="empty-state">
       <p v-if="searchQuery">No strategies match "{{ searchQuery }}".</p>
-      <p v-else>No strategies loaded. Is the control plane running?</p>
+      <p v-else>No strategies found matching current filters.</p>
+      <button class="reset-btn" @click="resetFilters">Reset Filters</button>
     </div>
 
     <!-- Grid -->
-    <div v-for="(stratList, family) in grouped" :key="family" class="family-section">
-      <h2 class="family-heading" :style="{ color: family === 'PROP' ? '#6366f1' : family === 'SQ_IMPORTED' ? '#f59e0b' : family === 'GENERATED' ? '#22c55e' : family === 'LONG_TERM' ? '#f97316' : '#a855f7' }">
-        {{ family }}
+    <div v-for="(stratList, groupName) in groupedStrategies" :key="groupName" class="family-section">
+      <h2 class="family-heading">
+        {{ groupName }}
         <span class="family-count">{{ stratList.length }}</span>
       </h2>
       <div class="card-grid">
@@ -188,10 +175,57 @@ h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
 
 .banner.error { background: #2d1212; color: #fca5a5; border: 1px solid #7f1d1d; }
 
+.filters-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.asset-chips {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.asset-chip {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 0.4rem 0.85rem;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.asset-chip:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.asset-chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #000;
+  font-weight: 600;
+}
+
+.reset-btn {
+  margin-top: 1rem;
+  background: var(--accent);
+  color: #000;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
 .tabs {
   display: flex;
   gap: 0.4rem;
-  margin-bottom: 1.25rem;
   flex-wrap: wrap;
 }
 

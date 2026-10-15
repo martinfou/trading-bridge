@@ -135,6 +135,39 @@ public record RunContext(
             true);
     }
 
+    /**
+     * Research-runner overload: the last argument is a per-symbol cost resolver (typically
+     * {@code RealCostModel::costFor}), resolved against this context's {@code symbol}. Replaces the
+     * legacy single {@code BacktestExecutionCost} shared across symbols, which could not represent
+     * the per-instrument measured half-spread. An unmeasured symbol resolves to
+     * {@link RealCostModel#costFor(String)} and throws (refuse, never understate).
+     */
+    public static RunContext forStrategy(
+        String assignedRunId,
+        String strategyId,
+        Strategy strategy,
+        String symbol,
+        RunMode mode,
+        List<Bar> bars,
+        double initialCapital,
+        Consumer<RunEvent> eventListener,
+        java.util.function.Function<String, BacktestExecutionCost> costResolver
+    ) {
+        return new RunContext(
+            strategyId,
+            symbol,
+            mode,
+            bars,
+            initialCapital,
+            strategy,
+            eventListener,
+            assignedRunId,
+            costResolver == null ? null : costResolver.apply(symbol),
+            null,
+            null,
+            true);
+    }
+
     public static RunContext forStrategy(
         String assignedRunId,
         String strategyId,
