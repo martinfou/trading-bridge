@@ -4,6 +4,16 @@
   "_halfKelly": "f* = (winRate × avgWinLoss - lossRate) / avgWinLoss / 2",
 
   "defaultRiskPct": 1.5,
+
+  "riskSizing": {
+    "_rule": "Two-sided risk budget (2026-09-29): units = (NAV x riskPct/100) / (stopDistance x quoteHomeConversionFactor). Each strategy's own units are intent only.",
+    "_why": "The old cap omitted the quote->home conversion, so it was 1.38x loose on USD-quoted pairs and ~100x tight on JPY-quoted pairs on this CAD account.",
+    "enabled": true,
+    "roundToUnits": 100,
+    "maxUnitsPerOrder": 1000000,
+    "_notionalRule": "No single order may carry more than 5x NAV of notional in account currency: units x price x quoteToHomeFactor <= 5 x NAV. Policy set 2026-09-30 after one order requested 1,857,300 units on a 96k CAD account. The absolute unit cap is only a typo guard; units alone say nothing about exposure.",
+    "maxNotionalNavMultiple": 5
+  },
   "refreshIntervalSec": 60,
   "stateDir": "/tmp",
 
@@ -37,6 +47,126 @@
         "source": "preliminary — needs full backtest"
       },
       "computedRiskPct": 0.75
+    },
+    "compmomentum": {
+      "instrument": "USD_JPY",
+      "granularity": "H1",
+      "positionSizeUnits": 1000,
+      "backtestMetrics": {
+        "sharpe": 1.0,
+        "maxDrawdown": 8.6,
+        "winRate": 52.0,
+        "avgWinLoss": 1.5,
+        "totalReturn": 60.0,
+        "trades": 320,
+        "source": "paper — OOS PF 2.24 / Sharpe 1.00 / DD 8.6% (docker-compose note; no full walk-forward report)"
+      },
+      "computedRiskPct": 0.4
+    },
+    "monthweekphase": {
+      "instrument": "USD_JPY",
+      "granularity": "H1",
+      "positionSizeUnits": 1000,
+      "backtestMetrics": {
+        "sharpe": 0.9,
+        "maxDrawdown": 4.86,
+        "winRate": 51.0,
+        "avgWinLoss": 1.5,
+        "totalReturn": 45.0,
+        "trades": 280,
+        "source": "paper — OOS PF 2.33 / DD 4.86% (docker-compose note; no full walk-forward report)"
+      },
+      "computedRiskPct": 0.25
+    },
+    "ltrsi3": {
+      "instrument": "EUR_USD",
+      "granularity": "H1",
+      "positionSizeUnits": 1000,
+      "backtestMetrics": {
+        "sharpe": 1.0,
+        "maxDrawdown": 10.0,
+        "winRate": 52.0,
+        "avgWinLoss": 1.5,
+        "totalReturn": 35.0,
+        "trades": 250,
+        "source": "paper — Sharpe>1.0 post look-ahead fix (docker-compose note; no full walk-forward report)"
+      },
+      "computedRiskPct": 0.3
+    },
+    "nfpweek": {
+      "instrument": "EUR_USD",
+      "granularity": "H1",
+      "positionSizeUnits": 1000,
+      "backtestMetrics": {
+        "sharpe": 0.0,
+        "maxDrawdown": 10.0,
+        "winRate": 50.0,
+        "avgWinLoss": 1.0,
+        "totalReturn": 0.0,
+        "trades": 0,
+        "source": "paper — event strategy, no backtest (pre-fix, suspect)"
+      },
+      "computedRiskPct": 0.1
+    },
+    "newsoct12cpi": {
+      "instrument": "EUR_USD",
+      "granularity": "H1",
+      "positionSizeUnits": 1000,
+      "backtestMetrics": {
+        "sharpe": 0.0,
+        "maxDrawdown": 0.0,
+        "winRate": 0.0,
+        "avgWinLoss": 0.0,
+        "totalReturn": 0.0,
+        "trades": 0,
+        "source": "discretionary weekly news playbook (docs/news-playbooks/week-2026-10-12.md) — no backtest, no walk-forward"
+      },
+      "computedRiskPct": 0.5
+    },
+    "newsoct12ppi": {
+      "instrument": "EUR_USD",
+      "granularity": "H1",
+      "positionSizeUnits": 1000,
+      "backtestMetrics": {
+        "sharpe": 0.0,
+        "maxDrawdown": 0.0,
+        "winRate": 0.0,
+        "avgWinLoss": 0.0,
+        "totalReturn": 0.0,
+        "trades": 0,
+        "source": "discretionary weekly news playbook (docs/news-playbooks/week-2026-10-12.md) — no backtest, no walk-forward"
+      },
+      "computedRiskPct": 0.3
+    },
+    "newsoct12chinacpi": {
+      "instrument": "AUD_JPY",
+      "granularity": "H1",
+      "positionSizeUnits": 1000,
+      "backtestMetrics": {
+        "sharpe": 0.0,
+        "maxDrawdown": 0.0,
+        "winRate": 0.0,
+        "avgWinLoss": 0.0,
+        "totalReturn": 0.0,
+        "trades": 0,
+        "source": "discretionary weekly news playbook (docs/news-playbooks/week-2026-10-12.md) — no backtest, no walk-forward"
+      },
+      "computedRiskPct": 0.3
+    },
+    "newsoct12fade": {
+      "instrument": "GBP_CHF",
+      "granularity": "H1",
+      "positionSizeUnits": 1000,
+      "backtestMetrics": {
+        "sharpe": 0.0,
+        "maxDrawdown": 0.0,
+        "winRate": 0.0,
+        "avgWinLoss": 0.0,
+        "totalReturn": 0.0,
+        "trades": 0,
+        "source": "discretionary weekly news playbook (docs/news-playbooks/week-2026-10-12.md) — no backtest, no walk-forward"
+      },
+      "computedRiskPct": 0.5
     },
     "2_31_175": {
       "instrument": "GBP_JPY",

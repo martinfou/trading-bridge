@@ -4,6 +4,7 @@ import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Strategy;
 import com.martinfou.trading.data.HistoricalDataLoader;
@@ -54,7 +55,7 @@ public class RunGoldTurtleDualGate {
     static final double DXY_K = 50.14348112;
 
     public static void main(String[] args) throws Exception {
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
         var xau = HistoricalDataLoader.loadFromArgs(GOLD, GOLD, YEAR_SPEC).bars();
         Map<Long, Double> dxy = buildDxy();
         Map<Long, Double> spx = buildSpxOnXauGrid(xau);
@@ -114,7 +115,7 @@ public class RunGoldTurtleDualGate {
 
     // ---------------------------------------------------------------- validation seule
 
-    private static void runValidate(BacktestExecutionCost cost, List<Bar> xau,
+    private static void runValidate(java.util.function.Function<String, BacktestExecutionCost> cost, List<Bar> xau,
                                     Map<Long, Double> dxy, Map<Long, Double> spx) {
         System.out.println("=== VALIDATION D'IMPLÉMENTATION ===");
         printHeader();
@@ -128,7 +129,7 @@ public class RunGoldTurtleDualGate {
 
     // ---------------------------------------------------------------- sweep 2D
 
-    private static void runSweep(BacktestExecutionCost cost, List<Bar> xau,
+    private static void runSweep(java.util.function.Function<String, BacktestExecutionCost> cost, List<Bar> xau,
                                  Map<Long, Double> dxy, Map<Long, Double> spx) {
         int[] aPeriods = {250, 400, 500, 750, 1000};
         int[] bPeriods = {1200, 2400, 3600, 4800, 7200, 9600};
@@ -141,7 +142,7 @@ public class RunGoldTurtleDualGate {
         System.out.println("\nDONE");
     }
 
-    private static void sweepGrid(BacktestExecutionCost cost, List<Bar> xau,
+    private static void sweepGrid(java.util.function.Function<String, BacktestExecutionCost> cost, List<Bar> xau,
                                   Map<Long, Double> dxy, Map<Long, Double> spx,
                                   int[] aPeriods, int[] bPeriods,
                                   int mode, int pa, int pb, String title) {
@@ -163,7 +164,7 @@ public class RunGoldTurtleDualGate {
 
     // ---------------------------------------------------------------- walk-forward
 
-    private static void runWalkForward(BacktestExecutionCost cost, Map<Long, Double> dxyAll,
+    private static void runWalkForward(java.util.function.Function<String, BacktestExecutionCost> cost, Map<Long, Double> dxyAll,
                                        Map<Long, Double> spxAll) throws Exception {
         System.out.println("=== WALK-FORWARD XAU_USD (IS 2006-2015 / OOS 2016-2025) ===");
         System.out.printf("%-30s %-14s %-6s %-6s %-6s %-7s %-12s%n",
@@ -184,7 +185,7 @@ public class RunGoldTurtleDualGate {
         System.out.println("\nDONE");
     }
 
-    private static void runWf(BacktestExecutionCost cost, String label, String phase,
+    private static void runWf(java.util.function.Function<String, BacktestExecutionCost> cost, String label, String phase,
                               List<Bar> bars, Strategy s) {
         BacktestResult r = runRaw(cost, GOLD, bars, s);
         System.out.printf("%-30s %-14s %-6.2f %-6.1f %-6.2f %-7d %12.2f%n",
@@ -194,7 +195,7 @@ public class RunGoldTurtleDualGate {
 
     // ---------------------------------------------------------------- régimes
 
-    private static void runRegime(BacktestExecutionCost cost, Map<Long, Double> dxyAll,
+    private static void runRegime(java.util.function.Function<String, BacktestExecutionCost> cost, Map<Long, Double> dxyAll,
                                   Map<Long, Double> spxAll) throws Exception {
         String[] eras = {"bull 2006-12", "bear 2013-15", "bull2 2016-25"};
         String[] specs = {"2006-2012", "2013-2015", "2016-2025"};
@@ -221,7 +222,7 @@ public class RunGoldTurtleDualGate {
      * Un net positif qui est un RÉSIDU de cancellation (|LONG| ≈ |SHORT|) n'est pas une capture
      * de tendance. Vérifie AUSSI de quel côté vient un « gain » de filtre/gate.
      */
-    private static void runSignature(BacktestExecutionCost cost, List<Bar> xau,
+    private static void runSignature(java.util.function.Function<String, BacktestExecutionCost> cost, List<Bar> xau,
                                      Map<Long, Double> dxy, Map<Long, Double> spx) {
         System.out.println("=== SIGNATURE LONG/SHORT — XAU_USD 2006-2025 (coûts) ===");
         System.out.printf("%-34s %-6s %-12s %-12s %-12s %-7s%n",
@@ -235,7 +236,7 @@ public class RunGoldTurtleDualGate {
         System.out.println("\nDONE");
     }
 
-    private static void sig(BacktestExecutionCost cost, String label, List<Bar> bars, Strategy s) {
+    private static void sig(java.util.function.Function<String, BacktestExecutionCost> cost, String label, List<Bar> bars, Strategy s) {
         BacktestResult r = runRaw(cost, GOLD, bars, s);
         double longUsd = 0, shortUsd = 0;
         for (com.martinfou.trading.core.Trade t : r.trades()) {
@@ -267,13 +268,13 @@ public class RunGoldTurtleDualGate {
             "CONFIG", "PF", "WR%", "DD%", "TRADES", "NET$", "RET%", "SWAP$");
     }
 
-    private static BacktestResult runRaw(BacktestExecutionCost cost, String symbol,
+    private static BacktestResult runRaw(java.util.function.Function<String, BacktestExecutionCost> cost, String symbol,
                                          List<Bar> bars, Strategy s) {
         return RunContext.forStrategy(null, s.name(), s, symbol, RunMode.BACKTEST,
             bars, CAPITAL, null, cost).run();
     }
 
-    private static void run(BacktestExecutionCost cost, String label, String symbol,
+    private static void run(java.util.function.Function<String, BacktestExecutionCost> cost, String label, String symbol,
                             List<Bar> bars, Strategy s) {
         BacktestResult r = runRaw(cost, symbol, bars, s);
         System.out.printf("%-34s %-6.2f %-6.1f %-6.2f %-7d %12.2f %-9.2f %9.2f%n",

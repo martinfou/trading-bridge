@@ -1,7 +1,7 @@
 import { ref, reactive } from 'vue'
 import { useControlPlaneConfig } from './controlPlaneConfig'
 import { useStatusBar } from './useStatusBar'
-import type { Strategy, RunConfig, RunResult, Trade, RunSummary, Bar, BrokerAccount, PromoteGateThresholds, WeeklyStat, ReconciliationAnomaly } from '@/types/control-plane'
+import type { Strategy, RunConfig, RunResult, Trade, RunSummary, Bar, BrokerAccount, PromoteGateThresholds, WeeklyStat, ReconciliationAnomaly, InstrumentDefinition } from '@/types/control-plane'
 
 interface StartRunResponse {
   runId: string
@@ -356,6 +356,19 @@ export function useControlPlane() {
     return apiGet<{ anomalies: ReconciliationAnomaly[]; backtestOrders: any[]; liveOrders: any[] }>(`/api/runs/${runId}/alignment`, controlPlaneUrl.value)
   }
 
+  async function getInstruments(assetClass?: string): Promise<InstrumentDefinition[]> {
+    const query = assetClass ? `?assetClass=${encodeURIComponent(assetClass)}` : ''
+    return apiGet<InstrumentDefinition[]>(`/api/instruments${query}`, controlPlaneUrl.value)
+  }
+
+  async function createInstrument(def: Partial<InstrumentDefinition>): Promise<InstrumentDefinition> {
+    return apiPost<InstrumentDefinition>('/api/instruments', def, controlPlaneUrl.value)
+  }
+
+  async function deleteInstrument(symbol: string): Promise<void> {
+    return apiDelete<void>(`/api/instruments/${encodeURIComponent(symbol)}`, controlPlaneUrl.value)
+  }
+
   return {
     startRun,
     getRun,
@@ -379,6 +392,9 @@ export function useControlPlane() {
     getHistoricalDataStatus,
     downloadHistoricalData,
     deleteHistoricalData,
+    getInstruments,
+    createInstrument,
+    deleteInstrument,
     listBacktests,
     getBacktestDetails,
     getHeatmap,

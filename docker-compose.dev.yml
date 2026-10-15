@@ -1,0 +1,52 @@
+# =============================================================================
+# Dev lane — the -013 account, nothing at stake, no contact with the observation window
+#
+# Usage, always named and never a bare `docker compose up`:
+#   scripts/dev-lane.sh up | down | status | logs | account
+#
+# Why this file exists rather than reusing docker-compose.yml with another env file:
+#   - the paper stack HARDCODES container_name (trading-live, trading-month-week, ...). A second
+#     copy of the same services would collide with the running ones and could silently replace a
+#     container that belongs to the 30-day window. Every name here is distinct (trading-dev,
+#     project tb-dev).
+#   - the paper stack mounts ./data and ./logs. A dev container sharing those would write its
+#     runner state into the window's state, which is exactly the kind of silent contamination
+#     that made vwpreversion trade the wrong pair for who knows how long. This lane uses
+#     ./data-dev and ./logs-dev, and they are gitignored.
+#   - the account comes from .env.dev (101-002-4729622-013: NAV 2000, lastTransactionID 4, and
+#     those four transactions are account setup, so it has NEVER traded). A mistake here costs
+#     play money and appears nowhere in the window's record.
+#
+# scripts/dev-lane.sh refuses to start if the dev account id equals the paper one.
+#
+# The order tripwire applies to this lane too. TB_ALLOW_ORDERS=1 is set deliberately, because
+# exercising order paths is the entire point of the dev lane.
+# =============================================================================
+
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading-dev
+    restart: "no"
+    env_file:
+      - ./.env.dev
+    environment:
+      - OANDA_ENV=practice
+      - LOG_LEVEL=INFO
+      - TB_ALLOW_ORDERS=1
+      # Strategy selection, same vocabulary as the paper stack. Override with:
+      #   STRATEGY=consecbar scripts/dev-lane.sh up
+      - STRATEGY=${STRATEGY:-vwpreversion}
+      - GRANULARITY=${GRANULARITY:-H1}
+      - INTERVAL_SEC=${INTERVAL_SEC:-60}
+    command: ["$${OANDA_API_KEY}", "$${OANDA_ACCOUNT_ID}", "$${STRATEGY}", "$${GRANULARITY}", "$${INTERVAL_SEC}"]
+    volumes:
+      - ./data-dev:/app/data        # separate from the window's ./data, on purpose
+      - ./logs-dev:/app/logs        # separate from the window's ./logs, on purpose
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M

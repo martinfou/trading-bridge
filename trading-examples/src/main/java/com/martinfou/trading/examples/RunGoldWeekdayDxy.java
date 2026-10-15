@@ -4,6 +4,7 @@ import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Strategy;
 import com.martinfou.trading.data.HistoricalDataLoader;
@@ -58,7 +59,7 @@ public class RunGoldWeekdayDxy {
     static final double DXY_K = 50.14348112;
 
     public static void main(String[] args) throws Exception {
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
 
         Map<Long, Double> dxy = buildDxy();
 
@@ -99,7 +100,7 @@ public class RunGoldWeekdayDxy {
     }
 
     /** Sweep période SMA × mode sur XAU_USD (FRI). */
-    private static void runSweep(BacktestExecutionCost cost, Map<Long, Double> dxy) throws Exception {
+    private static void runSweep(java.util.function.Function<String, BacktestExecutionCost> cost, Map<Long, Double> dxy) throws Exception {
         var xau = HistoricalDataLoader.loadFromArgs(GOLD, GOLD, YEAR_SPEC).bars();
         int[] periods = {250, 400, 500, 600, 750, 1000, 2000};   // ~10j / 17j / 21j / 25j / 31j / 42j / 83j
         System.out.println("=== SWEEP DXY FILTER XAU_USD FRI (SMA période × mode) ===");
@@ -121,7 +122,7 @@ public class RunGoldWeekdayDxy {
     }
 
     /** Walk-forward IS 2006-2015 / OOS 2016-2025 pour FRI seul + ALIGNED + OPPOSITE. */
-    private static void runWalkForward(BacktestExecutionCost cost, Map<Long, Double> dxy) throws Exception {
+    private static void runWalkForward(java.util.function.Function<String, BacktestExecutionCost> cost, Map<Long, Double> dxy) throws Exception {
         String[] specs = {"2006-2015", "2016-2025"};
         System.out.println("=== WALK-FORWARD XAU_USD FRI (SMA 500 H1) ===");
         System.out.printf("%-24s %-12s %-6s %-6s %-6s %-7s %-12s%n",
@@ -153,7 +154,7 @@ public class RunGoldWeekdayDxy {
     }
 
     /** Régime de marché : bull (2006-2012), bear (2013-2015), bull2 (2016-2025). */
-    private static void runRegime(BacktestExecutionCost cost, Map<Long, Double> dxy) throws Exception {
+    private static void runRegime(java.util.function.Function<String, BacktestExecutionCost> cost, Map<Long, Double> dxy) throws Exception {
         String[] regimes = {"bull 2006-12", "bear 2013-15", "bull2 2016-25"};
         String[] specs = {"2006-2012", "2013-2015", "2016-2025"};
         System.out.println("=== RÉGIME XAU_USD FRI (SMA 500 H1) ===");
@@ -202,7 +203,7 @@ public class RunGoldWeekdayDxy {
         System.out.println("\nDONE");
     }
 
-    private static void runOne(BacktestExecutionCost cost, String label, Strategy strategy,
+    private static void runOne(java.util.function.Function<String, BacktestExecutionCost> cost, String label, Strategy strategy,
                                String symbol, List<Bar> bars) {
         BacktestResult r = RunContext.forStrategy(null, strategy.name(), strategy, symbol,
             RunMode.BACKTEST, bars, CAPITAL, null, cost).run();

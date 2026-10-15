@@ -4,6 +4,7 @@ import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.data.HistoricalDataLoader;
 import com.martinfou.trading.strategies.creative.RegimeFilteredSeasonalStrategy;
@@ -37,7 +38,7 @@ public class RunSeasonalRegimeFilter {
     static final double CAPITAL = 50_000;
 
     public static void main(String[] args) throws Exception {
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
 
         if (args.length > 0 && args[0].equals("--wf")) { runWalkForward(cost); return; }
         if (args.length > 0 && args[0].equals("--sweep")) { runSweep(cost); return; }
@@ -67,7 +68,7 @@ public class RunSeasonalRegimeFilter {
     }
 
     private static void runConfig(List<Bar> bars, String symbol, String label,
-                                  int sma, FilterMode mode, BacktestExecutionCost cost) {
+                                  int sma, FilterMode mode, java.util.function.Function<String, BacktestExecutionCost> cost) {
         var strategy = new RegimeFilteredSeasonalStrategy("RegimeFilteredSeasonal", symbol, sma, mode);
         BacktestResult r = RunContext.forStrategy(null, "RegimeFilteredSeasonal", strategy, symbol,
             RunMode.BACKTEST, bars, CAPITAL, null, cost).run();
@@ -77,7 +78,7 @@ public class RunSeasonalRegimeFilter {
     }
 
     /** Walk-forward IS 2006-2015 / OOS 2016-2026 — GBP_USD + EUR_USD. */
-    private static void runWalkForward(BacktestExecutionCost cost) throws Exception {
+    private static void runWalkForward(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         System.out.println("=== WALK-FORWARD (IS 2006-2015 / OOS 2016-2026) ===");
         String[] symbols = {"GBP_USD", "EUR_USD"};
         int[] smas = {0, 50, 100, 200};
@@ -107,7 +108,7 @@ public class RunSeasonalRegimeFilter {
     }
 
     /** Sweep robustesse paramétrique : GBP ALIGNED N ∈ {40,60,80,120,150,250}. */
-    private static void runSweep(BacktestExecutionCost cost) throws Exception {
+    private static void runSweep(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String symbol = "GBP_USD";
         var loaded = HistoricalDataLoader.loadFromArgs(symbol, symbol, "2006-2026");
         List<Bar> bars = loaded.bars();

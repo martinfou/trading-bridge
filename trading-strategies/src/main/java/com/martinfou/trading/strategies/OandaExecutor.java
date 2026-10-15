@@ -2,6 +2,8 @@ package com.martinfou.trading.strategies;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.martinfou.trading.core.Order;
+import com.martinfou.trading.core.guardrails.OrderTripwire;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.net.URI;
@@ -17,9 +19,14 @@ public class OandaExecutor {
     private final ObjectMapper mapper = new ObjectMapper();
 
     public OandaExecutor(String apiKey, String accountId, boolean practice) {
+        this(apiKey, accountId, practice ? "https://api-fxpractice.oanda.com/v3/" : "https://api-fxtrade.oanda.com/v3/");
+    }
+
+    /** Test seam: explicit base URL so tests can point the executor at a local stub. */
+    OandaExecutor(String apiKey, String accountId, String baseUrl) {
         this.apiKey = apiKey;
         this.accountId = accountId;
-        this.baseUrl = practice ? "https://api-fxpractice.oanda.com/v3/" : "https://api-fxtrade.oanda.com/v3/";
+        this.baseUrl = baseUrl.endsWith("/") ? baseUrl : baseUrl + "/";
         this.client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
     }
 
@@ -35,11 +42,9 @@ public class OandaExecutor {
         }};
     }
 
-    public OrderResult placeMarketOrder(String instrument, String units, String tag) throws Exception {
-        return placeMarketOrder(instrument, units, tag, false);
-    }
-
-    public OrderResult placeMarketOrder(String instrument, String units, String tag, boolean reduceOnly) throws Exception {
+    /** Builds the MARKET order JSON body (extracted so the shape is testable without sending). */
+    String buildMarketOrderBody(String instrument, String units, String tag, boolean reduceOnly,
+                                String stopLossOnFill, String takeProfitOnFill) throws Exception {
         var orderBody = new java.util.LinkedHashMap<String, Object>() {{
             put("type", "MARKET");
             put("instrument", instrument);
@@ -49,10 +54,37 @@ public class OandaExecutor {
             if (reduceOnly) {
                 put("positionFill", "REDUCE_ONLY");
             }
+            if (stopLossOnFill != null) {
+                put("stopLossOnFill", new java.util.HashMap<>() {{ put("price", stopLossOnFill); }});
+            }
+            if (takeProfitOnFill != null) {
+                put("takeProfitOnFill", new java.util.HashMap<>() {{ put("price", takeProfitOnFill); }});
+            }
         }};
-        String body = mapper.writeValueAsString(new java.util.HashMap<>() {{
+        return mapper.writeValueAsString(new java.util.HashMap<>() {{
             put("order", orderBody);
         }});
+    }
+
+    public OrderResult placeMarketOrder(String instrument, String units, String tag) throws Exception {
+        return placeMarketOrder(instrument, units, tag, false);
+    }
+
+    public OrderResult placeMarketOrder(String instrument, String units, String tag, boolean reduceOnly) throws Exception {
+        return placeMarketOrder(instrument, units, tag, reduceOnly, null, null);
+    }
+
+    /**
+     * Story 1.7: a market order that carries its stop/target in the SAME order body
+     * ({@code stopLossOnFill}/{@code takeProfitOnFill}) instead of a second call after the fill.
+     * The prices arrive already formatted by the caller (see
+     * {@code LiveStrategyRunner.formatPrice}: 3 decimals for JPY, 1 for metals, 5 otherwise), so no
+     * {@code %.5f} hard-coding is reintroduced here.
+     */
+    public OrderResult placeMarketOrder(String instrument, String units, String tag, boolean reduceOnly,
+                                        String stopLossOnFill, String takeProfitOnFill) throws Exception {
+        OrderTripwire.checkOrderAllowed(instrument, units, "OandaExecutor.placeMarketOrder", baseUrl);
+        String body = buildMarketOrderBody(instrument, units, tag, reduceOnly, stopLossOnFill, takeProfitOnFill);
 
         var req = HttpRequest.newBuilder()
             .uri(URI.create(baseUrl + "accounts/" + accountId + "/orders"))
@@ -83,16 +115,37 @@ public class OandaExecutor {
     public record StopOrderResult(String orderId, String status, String price) {}
 
     public StopOrderResult placeStopOrder(String instrument, String units, String price, String tag) throws Exception {
-        String body = mapper.writeValueAsString(new java.util.HashMap<>() {{
-            put("order", new java.util.HashMap<>() {{
-                put("type", "STOP");
-                put("instrument", instrument);
-                put("units", units);
-                put("price", price);
-                put("timeInForce", "GTC");
-                putAll(clientExtensions(tag));
-            }});
+        return placeStopOrder(instrument, units, price, tag, false, null, null);
+    }
+
+    /** Builds the STOP order JSON body (extracted so the shape is testable without sending). */
+    String buildStopOrderBody(String instrument, String units, String price, String tag,
+                              boolean reduceOnly, String stopLossOnFill, String takeProfitOnFill) throws Exception {
+        var orderBody = new java.util.LinkedHashMap<String, Object>();
+        orderBody.put("type", "STOP");
+        orderBody.put("instrument", instrument);
+        orderBody.put("units", units);
+        orderBody.put("price", price);
+        orderBody.put("timeInForce", "GTC");
+        orderBody.putAll(clientExtensions(tag));
+        if (reduceOnly) {
+            orderBody.put("positionFill", "REDUCE_ONLY");
+        }
+        if (stopLossOnFill != null) {
+            orderBody.put("stopLossOnFill", new java.util.HashMap<>() {{ put("price", stopLossOnFill); }});
+        }
+        if (takeProfitOnFill != null) {
+            orderBody.put("takeProfitOnFill", new java.util.HashMap<>() {{ put("price", takeProfitOnFill); }});
+        }
+        return mapper.writeValueAsString(new java.util.HashMap<>() {{
+            put("order", orderBody);
         }});
+    }
+
+    public StopOrderResult placeStopOrder(String instrument, String units, String price, String tag,
+                                          boolean reduceOnly, String stopLossOnFill, String takeProfitOnFill) throws Exception {
+        OrderTripwire.checkOrderAllowed(instrument, units, "OandaExecutor.placeStopOrder", baseUrl);
+        String body = buildStopOrderBody(instrument, units, price, tag, reduceOnly, stopLossOnFill, takeProfitOnFill);
 
         var req = HttpRequest.newBuilder()
             .uri(URI.create(baseUrl + "accounts/" + accountId + "/orders"))
@@ -119,6 +172,7 @@ public class OandaExecutor {
     }
 
     public String addStopLoss(String tradeId, String price, String tag) throws Exception {
+        OrderTripwire.checkOrderAllowed(tradeId, price, "OandaExecutor.addStopLoss", baseUrl);
         String body = "{\"order\":{\"type\":\"STOP_LOSS\",\"tradeID\":\"" 
             + tradeId + "\",\"price\":\"" + price + "\",\"clientExtensions\":{\"tag\":\"" + tag + "\"}}}";
         var req = HttpRequest.newBuilder()
@@ -134,6 +188,7 @@ public class OandaExecutor {
     }
 
     public String addTakeProfit(String tradeId, String price, String tag) throws Exception {
+        OrderTripwire.checkOrderAllowed(tradeId, price, "OandaExecutor.addTakeProfit", baseUrl);
         String body = "{\"order\":{\"type\":\"TAKE_PROFIT\",\"tradeID\":\"" 
             + tradeId + "\",\"price\":\"" + price + "\",\"clientExtensions\":{\"tag\":\"" + tag + "\"}}}";
         var req = HttpRequest.newBuilder()
@@ -172,6 +227,49 @@ public class OandaExecutor {
             }
         }
         return ids;
+    }
+
+    /**
+     * Total {@code |currentUnits|} currently open at the broker for {@code instrument} on the side a
+     * {@code closingSide} order would reduce (a BUY close reduces shorts, a SELL close reduces
+     * longs). One GET {@code /openTrades} call. Returns 0 when no such position is open or the units
+     * cannot be read — callers treat 0 as "nothing to close".
+     */
+    public double getOpenPositionUnits(String instrument, Order.Side closingSide) throws Exception {
+        var req = HttpRequest.newBuilder()
+            .uri(URI.create(baseUrl + "accounts/" + accountId + "/openTrades"))
+            .header("Authorization", "Bearer " + apiKey)
+            .timeout(Duration.ofSeconds(10))
+            .GET()
+            .build();
+
+        com.martinfou.trading.data.oanda.OandaRateLimiter.GLOBAL.acquire(true);
+        var resp = client.send(req, HttpResponse.BodyHandlers.ofString());
+        if (resp.statusCode() != 200) {
+            throw new RuntimeException("Failed to fetch open trades: status " + resp.statusCode() + ", body " + resp.body());
+        }
+
+        var json = mapper.readTree(resp.body());
+        double total = 0;
+        if (json.has("trades")) {
+            for (var trade : json.get("trades")) {
+                if (!instrument.equals(trade.path("instrument").asText())) continue;
+                double currentUnits = 0;
+                try {
+                    currentUnits = trade.has("currentUnits")
+                        ? Double.parseDouble(trade.path("currentUnits").asText()) : 0;
+                } catch (NumberFormatException ignored) {
+                    continue;
+                }
+                boolean isLong = currentUnits > 0;
+                boolean reduced = (closingSide == Order.Side.BUY && !isLong && currentUnits < 0)
+                    || (closingSide == Order.Side.SELL && isLong);
+                if (reduced) {
+                    total += Math.abs(currentUnits);
+                }
+            }
+        }
+        return total;
     }
 
     public JsonNode getTradeDetails(String tradeId) throws Exception {

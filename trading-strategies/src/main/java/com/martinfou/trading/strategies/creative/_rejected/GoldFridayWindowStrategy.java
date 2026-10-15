@@ -93,7 +93,7 @@ public class GoldFridayWindowStrategy implements Strategy {
         // (la barre précédente était avant exitHour).
         if (inTrade && curDow == DayOfWeek.FRIDAY && !dayTransition
                 && prevHour < exitHour && curHour >= exitHour) {
-            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, QUANTITY, bar.close()).closeOnly());
+            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, QUANTITY, bar.close()).asCloseOnly());
             inTrade = false;
         }
 
@@ -115,7 +115,7 @@ public class GoldFridayWindowStrategy implements Strategy {
         // du vendredi (heure ≥ 22, plus de barres réelles utiles), on coupe —
         // évite de porter la position au lundi via le skip sam/dim.
         if (inTrade && curDow == DayOfWeek.FRIDAY && curHour >= 22) {
-            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, QUANTITY, bar.close()).closeOnly());
+            pending.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, QUANTITY, bar.close()).asCloseOnly());
             inTrade = false;
         }
     }

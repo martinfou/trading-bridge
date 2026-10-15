@@ -1,8 +1,8 @@
 package com.martinfou.trading.examples;
 
 import com.martinfou.trading.backtest.BacktestEngine;
-import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.BacktestResult;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Trade;
 import com.martinfou.trading.strategies.longterm.LtRSI3Momentum;
@@ -19,7 +19,7 @@ public class VerifyLtRSI3Momentum {
 
         LtRSI3Momentum strat = new LtRSI3Momentum("RSI3Mom", "EUR_USD");
         BacktestEngine engine = new BacktestEngine(strat, bars, 10000.0);
-        BacktestExecutionCost.OANDA_SPREAD.configure(engine);
+        RealCostModel.costFor("EUR_USD").configure(engine);
 
         BacktestResult res = engine.run();
 

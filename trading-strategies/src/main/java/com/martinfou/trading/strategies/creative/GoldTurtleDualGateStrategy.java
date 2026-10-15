@@ -286,7 +286,7 @@ public class GoldTurtleDualGateStrategy implements Strategy {
     private void closePosition(Bar bar) {
         Order.Side closeSide = tradeDirection == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
         double qty = Math.max(1, openUnits) * QUANTITY_PER_UNIT;
-        pending.add(new Order(symbol, closeSide, Order.Type.MARKET, qty, bar.close()).closeOnly());
+        pending.add(new Order(symbol, closeSide, Order.Type.MARKET, qty, bar.close()).asCloseOnly());
         inTrade = false;
         openUnits = 0;
     }

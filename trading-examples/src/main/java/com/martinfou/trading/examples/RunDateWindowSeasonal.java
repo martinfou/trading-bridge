@@ -4,6 +4,7 @@ import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.data.HistoricalDataLoader;
@@ -40,7 +41,7 @@ public class RunDateWindowSeasonal {
     static final double CAPITAL = 50_000;
 
     public static void main(String[] args) throws Exception {
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
 
         if (args.length > 0 && args[0].equals("--wf")) {
             runWalkForward(cost);
@@ -88,7 +89,7 @@ public class RunDateWindowSeasonal {
     }
 
     /** Walk-forward IS 2006-2015 / OOS 2016-2026 pour les 2 configs USD/CAD. */
-    private static void runWalkForward(BacktestExecutionCost cost) throws Exception {
+    private static void runWalkForward(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String symbol = "USD_CAD";
         int[][] windows = {{10, 12, 11, 26}, {11, 1, 11, 30}};
         String[] labels = {"Oct12-Nov26 (officielle)", "Nov1-Nov30 (variante)"};
@@ -118,7 +119,7 @@ public class RunDateWindowSeasonal {
     }
 
     /** Sweep robustesse : bordures fenêtre ±5 jours autour de Oct12→Nov26 (USD_CAD). */
-    private static void runSweep(BacktestExecutionCost cost) throws Exception {
+    private static void runSweep(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String symbol = "USD_CAD";
         int baseSM = 10, baseSD = 12, baseEM = 11, baseED = 26;
 

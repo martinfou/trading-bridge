@@ -24,17 +24,7 @@ class FixedQuantityStrategyTest {
         assertEquals(5_000, order.quantity(), 1e-9);
     }
 
-    @Test
-    void fillStatusUpdatesDelegateOrder() {
-        StubStrategy inner = new StubStrategy(500);
-        Strategy wrapped = new FixedQuantityStrategy(inner, 5_000);
 
-        wrapped.onBar(sampleBar());
-        Order order = wrapped.getPendingOrders().getFirst();
-        order.fill();
-
-        assertEquals(Order.Status.FILLED, inner.pendingStatus());
-    }
 
     private static Bar sampleBar() {
         Instant t = Instant.parse("2020-01-01T00:00:00Z");

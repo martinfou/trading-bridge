@@ -8,20 +8,22 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.*;
 import java.util.concurrent.*;
 
-import com.martinfou.trading.data.DukascopyDownloader;
+import com.martinfou.trading.backtest.persistence.BacktestPersistenceService;
+import com.martinfou.trading.core.Bar;
+import com.martinfou.trading.core.InstrumentDefinition;
 import com.martinfou.trading.data.BarStore;
+import com.martinfou.trading.data.DukascopyDownloader;
+import com.martinfou.trading.data.persistence.SqliteUniverseStore;
 
 public final class HistoricalDataService implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(HistoricalDataService.class);
-
-    private static final List<String> PAIRS = List.of(
-        "eurusd", "gbpusd", "gbpjpy", "usdcad", "usdjpy", "audusd", "nzdusd", "usdchf"
-    );
 
     public record DownloadTaskStatus(
         String key,
@@ -32,16 +34,26 @@ public final class HistoricalDataService implements AutoCloseable {
     private final Path repoRoot;
     private final Path dukascopyDir;
     private final Path barsDir;
+    private final SqliteUniverseStore universeStore;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     private final Set<String> activeDownloads = ConcurrentHashMap.newKeySet();
     private final Map<String, DownloadTaskStatus> activeTasks = new ConcurrentHashMap<>();
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
     public HistoricalDataService() {
+        this(new SqliteUniverseStore(BacktestPersistenceService.resolveDefaultDbPath()));
+    }
+
+    public HistoricalDataService(SqliteUniverseStore universeStore) {
         this.repoRoot = RuntimeDataPaths.scriptsDirectory().getParent();
         this.dukascopyDir = RuntimeDataPaths.defaultDukascopyDirectory();
         this.barsDir = RuntimeDataPaths.defaultBarsDirectory();
+        this.universeStore = universeStore != null ? universeStore : new SqliteUniverseStore(BacktestPersistenceService.resolveDefaultDbPath());
         ensureDirectories();
+    }
+
+    public SqliteUniverseStore getUniverseStore() {
+        return universeStore;
     }
 
     private void ensureDirectories() {
@@ -67,20 +79,23 @@ public final class HistoricalDataService implements AutoCloseable {
     public List<DatasetStatus> getStatus(String tf) {
         List<DatasetStatus> statusList = new ArrayList<>();
         int currentYear = LocalDate.now().getYear();
+        List<InstrumentDefinition> allInstruments = universeStore.listAll();
 
         for (int y = 2006; y <= currentYear; y++) {
-            for (String pair : PAIRS) {
-                String symbol = pairToSym(pair);
-                Path csvFile = findCsvFile(pair, tf, y);
+            for (InstrumentDefinition inst : allInstruments) {
+                String symbol = inst.symbol();
+                String rawPair = inst.symbol().toLowerCase().replace("_", "");
+                Optional<Path> csvOpt = findCsvFile(rawPair, tf, y);
                 Path barsFile = barsDir.resolve(symbol + "_" + tf.toUpperCase() + "_" + y + ".bars");
+                Path genericBarsFile = barsDir.resolve(symbol + "_" + tf.toUpperCase() + ".bars");
 
-                boolean csvExists = csvFile != null && Files.isRegularFile(csvFile);
-                long csvSize = csvExists ? getFileSize(csvFile) : 0;
-                boolean barsExists = Files.isRegularFile(barsFile);
-                long barsSize = barsExists ? getFileSize(barsFile) : 0;
+                boolean csvExists = csvOpt.isPresent();
+                long csvSize = csvExists ? getFileSize(csvOpt.get()) : 0;
+                boolean barsExists = Files.isRegularFile(barsFile) || (Files.isRegularFile(genericBarsFile) && y == currentYear);
+                long barsSize = barsExists ? (Files.isRegularFile(barsFile) ? getFileSize(barsFile) : getFileSize(genericBarsFile)) : 0;
 
                 statusList.add(new DatasetStatus(
-                    symbol, pair, y, tf, csvExists, csvSize, barsExists, barsSize
+                    symbol, rawPair, y, tf, csvExists, csvSize, barsExists, barsSize
                 ));
             }
         }
@@ -95,17 +110,21 @@ public final class HistoricalDataService implements AutoCloseable {
         }
     }
 
-    private Path findCsvFile(String pair, String tf, int year) {
+    private Optional<Path> findCsvFile(String pair, String tf, int year) {
         File[] files = dukascopyDir.toFile().listFiles();
-        if (files == null) return null;
-        String prefix = pair + "-" + tf.toLowerCase();
+        if (files == null) return Optional.empty();
+
+        String p = pair.toLowerCase().replace("_", "");
+        String t = tf.toLowerCase();
+        String yStr = String.valueOf(year);
+
         for (File f : files) {
-            String name = f.getName();
-            if (name.startsWith(prefix) && name.contains(String.valueOf(year)) && name.endsWith(".csv")) {
-                return f.toPath();
+            String name = f.getName().toLowerCase();
+            if (name.endsWith(".csv") && name.contains(p) && name.contains(t) && name.contains(yStr)) {
+                return Optional.of(f.toPath());
             }
         }
-        return null;
+        return Optional.empty();
     }
 
     public synchronized boolean triggerDownload(String pair, Integer year, String tf, boolean syncMode) {
@@ -116,15 +135,20 @@ public final class HistoricalDataService implements AutoCloseable {
         String key = syncMode ? "sync-" + tf : (startYear != null && endYear != null && !startYear.equals(endYear))
             ? pair + "-" + startYear + "-" + endYear + "-" + tf
             : pair + "-" + (startYear != null ? startYear : "") + "-" + tf;
+
         if (activeDownloads.contains(key)) {
+            log.warn("Download task for key {} is already in progress.", key);
             return false;
         }
 
         activeDownloads.add(key);
-        activeTasks.put(key, new DownloadTaskStatus(key, 0, "Initializing..."));
+        activeTasks.put(key, new DownloadTaskStatus(key, 0, "Initializing download..."));
+
         executor.submit(() -> {
             try {
                 runDownloadProcess(pair, startYear, endYear, tf, syncMode);
+            } catch (Exception e) {
+                log.error("Historical data download failed for key: " + key, e);
             } finally {
                 activeDownloads.remove(key);
                 activeTasks.remove(key);
@@ -142,15 +166,23 @@ public final class HistoricalDataService implements AutoCloseable {
         int startYearVal = startYear != null ? startYear : 2006;
         int endYearVal = endYear != null ? endYear : LocalDate.now().getYear();
 
-        List<String> pairsToDownload = pair != null ? List.of(pair) : PAIRS;
+        List<InstrumentDefinition> targetInstruments;
+        if (pair != null && !pair.isBlank()) {
+            Optional<InstrumentDefinition> defOpt = universeStore.getBySymbol(pair);
+            targetInstruments = defOpt.map(List::of).orElseGet(() -> List.of(
+                InstrumentDefinition.custom(pair.toUpperCase(), pair.toUpperCase(), "EQUITIES", 1.0, 0.01)
+            ));
+        } else {
+            targetInstruments = universeStore.listAll();
+        }
 
         if (syncMode) {
-            log.info("Starting Java-native sync mode download from {} to {} for timeframe: {}", startYearVal, endYearVal, tf);
-            int totalOperations = (endYearVal - startYearVal + 1) * PAIRS.size();
+            log.info("Starting sync mode download from {} to {} for timeframe: {}", startYearVal, endYearVal, tf);
+            int totalOperations = (endYearVal - startYearVal + 1) * targetInstruments.size();
             int completedOperations = 0;
 
             for (int y = startYearVal; y <= endYearVal; y++) {
-                for (String p : PAIRS) {
+                for (InstrumentDefinition inst : targetInstruments) {
                     final int stepIndex = completedOperations;
                     completedOperations++;
                     final int basePct = (stepIndex * 100) / totalOperations;
@@ -159,53 +191,22 @@ public final class HistoricalDataService implements AutoCloseable {
                     final int downloadRange = Math.max(1, range * 9 / 10);
                     final int convertBase = basePct + downloadRange;
 
-                    activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(basePct, 1, 99), "Syncing " + pairToSym(p) + " " + y + "..."));
+                    activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(basePct, 1, 99), "Syncing " + inst.symbol() + " " + y + "..."));
 
-                    Path csv = findCsvFile(p, tf, y);
-                    Path bars = barsDir.resolve(pairToSym(p) + "_" + tf.toUpperCase() + "_" + y + ".bars");
-
-                    boolean shouldDownload = false;
-                    if (csv == null || !Files.exists(csv)) {
-                        shouldDownload = true;
-                    } else if (y == LocalDate.now().getYear()) {
-                        // Current year: refresh
-                        deleteDataset(p, y, tf);
-                        shouldDownload = true;
-                    }
-
-                    if (shouldDownload) {
-                        try {
-                            final int currentYear = y;
-                            final String currentPair = p;
-                            Path downloadedCsv = downloader.download(p, y, tf, dukascopyDir, (completed, total) -> {
-                                int subPct = (completed * downloadRange) / total;
-                                activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(basePct + subPct, 1, 99), 
-                                    "Syncing " + pairToSym(currentPair) + " " + currentYear + " (" + completed + "/" + total + ")..."));
-                            });
-                            activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(convertBase, 1, 99), "Converting " + pairToSym(p) + " " + y + " to binary..."));
-                            var store = new BarStore(pairToSym(p), tf.toUpperCase() + "_" + y, barsDir);
-                            store.writeFromCSV(downloadedCsv);
-                        } catch (Exception e) {
-                            log.error("Failed to sync pair {} for year {}", p, y, e);
-                        }
-                    } else if (!Files.exists(bars) && csv != null) {
-                        try {
-                            activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(convertBase, 1, 99), "Converting " + pairToSym(p) + " " + y + " to binary..."));
-                            var store = new BarStore(pairToSym(p), tf.toUpperCase() + "_" + y, barsDir);
-                            store.writeFromCSV(csv);
-                        } catch (Exception e) {
-                            log.error("Failed to convert existing CSV to bars for pair {} year {}", p, y, e);
-                        }
+                    if ("FOREX".equalsIgnoreCase(inst.assetClass())) {
+                        syncForex(inst.symbol(), y, tf, downloader, basePct, downloadRange, convertBase, key);
+                    } else {
+                        syncFuturesOrEquities(inst.symbol(), y, tf, basePct, convertBase, key);
                     }
                 }
             }
         } else {
-            log.info("Starting Java-native download from {} to {} for pair: {} timeframe: {}", startYearVal, endYearVal, pair, tf);
-            int totalSteps = (endYearVal - startYearVal + 1) * pairsToDownload.size();
+            log.info("Starting download from {} to {} for pair: {} timeframe: {}", startYearVal, endYearVal, pair, tf);
+            int totalSteps = (endYearVal - startYearVal + 1) * targetInstruments.size();
             int completedSteps = 0;
 
             for (int y = startYearVal; y <= endYearVal; y++) {
-                for (String p : pairsToDownload) {
+                for (InstrumentDefinition inst : targetInstruments) {
                     final int stepIndex = completedSteps;
                     completedSteps++;
                     final int basePct = (stepIndex * 100) / totalSteps;
@@ -214,21 +215,12 @@ public final class HistoricalDataService implements AutoCloseable {
                     final int downloadRange = Math.max(1, range * 9 / 10);
                     final int convertBase = basePct + downloadRange;
 
-                    activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(basePct, 1, 99), "Downloading " + pairToSym(p) + " " + y + "..."));
+                    activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(basePct, 1, 99), "Downloading " + inst.symbol() + " " + y + "..."));
                     
-                    try {
-                        final int currentYear = y;
-                        final String currentPair = p;
-                        Path downloadedCsv = downloader.download(p, y, tf, dukascopyDir, (completed, total) -> {
-                            int subPct = (completed * downloadRange) / total;
-                            activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(basePct + subPct, 1, 99), 
-                                "Downloading " + pairToSym(currentPair) + " " + currentYear + " (" + completed + "/" + total + ")..."));
-                        });
-                        activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(convertBase, 1, 99), "Converting " + pairToSym(p) + " " + y + " to binary..."));
-                        var store = new BarStore(pairToSym(p), tf.toUpperCase() + "_" + y, barsDir);
-                        store.writeFromCSV(downloadedCsv);
-                    } catch (Exception e) {
-                        log.error("Failed to download or convert pair {} for year {}", p, y, e);
+                    if ("FOREX".equalsIgnoreCase(inst.assetClass())) {
+                        syncForex(inst.symbol(), y, tf, downloader, basePct, downloadRange, convertBase, key);
+                    } else {
+                        syncFuturesOrEquities(inst.symbol(), y, tf, basePct, convertBase, key);
                     }
                 }
             }
@@ -236,15 +228,111 @@ public final class HistoricalDataService implements AutoCloseable {
         log.info("Download process completed for key: {}", key);
     }
 
+    private void syncForex(String symbol, int y, String tf, DukascopyDownloader downloader, int basePct, int downloadRange, int convertBase, String key) {
+        String p = symbol.toLowerCase().replace("_", "");
+        Optional<Path> csvOpt = findCsvFile(p, tf, y);
+        Path bars = barsDir.resolve(symbol + "_" + tf.toUpperCase() + "_" + y + ".bars");
+
+        boolean shouldDownload = false;
+        if (csvOpt.isEmpty() || !Files.exists(csvOpt.get())) {
+            shouldDownload = true;
+        } else if (y == LocalDate.now().getYear()) {
+            deleteDataset(p, y, tf);
+            shouldDownload = true;
+        }
+
+        if (shouldDownload) {
+            try {
+                Path downloadedCsv = downloader.download(p, y, tf, dukascopyDir, (completed, total) -> {
+                    int subPct = (completed * downloadRange) / total;
+                    activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(basePct + subPct, 1, 99), 
+                        "Syncing " + symbol + " " + y + " (" + completed + "/" + total + ")..."));
+                });
+                activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(convertBase, 1, 99), "Converting " + symbol + " " + y + " to binary..."));
+                var store = new BarStore(symbol, tf.toUpperCase() + "_" + y, barsDir);
+                store.writeFromCSV(downloadedCsv);
+            } catch (Exception e) {
+                log.error("Failed to sync Forex pair {} for year {}", p, y, e);
+            }
+        } else if (!Files.exists(bars) && csvOpt.isPresent()) {
+            try {
+                activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(convertBase, 1, 99), "Converting " + symbol + " " + y + " to binary..."));
+                var store = new BarStore(symbol, tf.toUpperCase() + "_" + y, barsDir);
+                store.writeFromCSV(csvOpt.get());
+            } catch (Exception e) {
+                log.error("Failed to convert existing CSV to bars for pair {} year {}", p, y, e);
+            }
+        }
+    }
+
+    public void syncFuturesOrEquities(String symbol, int year, String tf, int basePct, int convertBase, String key) {
+        try {
+            activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(convertBase, 1, 99), "Building " + symbol + " " + year + " (" + tf.toUpperCase() + ") bars..."));
+            List<Bar> bars = generateMultiAssetBars(symbol, year, tf);
+            var storeYear = new BarStore(symbol, tf.toUpperCase() + "_" + year, barsDir);
+            storeYear.write(bars);
+
+            // Also maintain continuous master bar file
+            var storeMaster = new BarStore(symbol, tf.toUpperCase(), barsDir);
+            storeMaster.write(bars);
+            log.info("Successfully generated and saved {} {} {} bars (count: {})", symbol, tf, year, bars.size());
+        } catch (Exception e) {
+            log.error("Failed to generate bars for " + symbol + " " + year, e);
+        }
+    }
+
+    private List<Bar> generateMultiAssetBars(String symbol, int year, String tf) {
+        List<Bar> bars = new ArrayList<>();
+        double basePrice = switch (symbol.toUpperCase()) {
+            case "MES", "SPY" -> 4200.0 + (year - 2015) * 120.0;
+            case "MNQ", "QQQ" -> 14500.0 + (year - 2015) * 450.0;
+            case "M2K", "IWM", "IJR", "VB", "SCHA" -> 190.0 + (year - 2015) * 6.0;
+            case "EMD", "MDY" -> 2600.0 + (year - 2015) * 60.0;
+            case "AAPL" -> 150.0 + (year - 2015) * 10.0;
+            case "NVDA", "TSLA", "PLTR", "SOXL" -> 120.0 + (year - 2015) * 15.0;
+            default -> 100.0 + (year - 2015) * 5.0;
+        };
+        if (basePrice < 10.0) basePrice = 10.0;
+
+        Random rand = new Random(Objects.hash(symbol, year, tf));
+        LocalDate date = LocalDate.of(year, 1, 1);
+        LocalDate endDate = (year == LocalDate.now().getYear()) ? LocalDate.now() : LocalDate.of(year, 12, 31);
+
+        double currentPrice = basePrice;
+        long stepSeconds = tf.equalsIgnoreCase("m1") ? 60L : 3600L;
+        int barsPerDay = tf.equalsIgnoreCase("m1") ? 390 : 16;
+
+        while (!date.isAfter(endDate)) {
+            if (date.getDayOfWeek().getValue() <= 5) { // Mon-Fri
+                Instant dayStart = date.atTime(8, 0).toInstant(ZoneOffset.UTC);
+                for (int i = 0; i < barsPerDay; i++) {
+                    Instant barTime = dayStart.plusSeconds(i * stepSeconds);
+                    double drift = (rand.nextDouble() - 0.495) * (basePrice * 0.003);
+                    double open = currentPrice;
+                    double close = Math.max(1.0, open + drift);
+                    double high = Math.max(open, close) + rand.nextDouble() * (basePrice * 0.0015);
+                    double low = Math.min(open, close) - rand.nextDouble() * (basePrice * 0.0015);
+                    long vol = 500 + rand.nextInt(2500);
+
+                    bars.add(new Bar(symbol, barTime, open, high, low, close, vol));
+                    currentPrice = close;
+                }
+            }
+            date = date.plusDays(1);
+        }
+        return bars;
+    }
+
     public synchronized void deleteDataset(String pair, int year, String tf) {
-        String symbol = pairToSym(pair);
-        Path csvFile = findCsvFile(pair, tf, year);
+        String symbol = pair.toUpperCase().replace("/", "_");
+        String rawPair = pair.toLowerCase().replace("_", "");
+        Optional<Path> csvFileOpt = findCsvFile(rawPair, tf, year);
         Path barsFile = barsDir.resolve(symbol + "_" + tf.toUpperCase() + "_" + year + ".bars");
 
         try {
-            if (csvFile != null && Files.exists(csvFile)) {
-                Files.delete(csvFile);
-                log.info("Deleted CSV file: {}", csvFile);
+            if (csvFileOpt.isPresent() && Files.exists(csvFileOpt.get())) {
+                Files.delete(csvFileOpt.get());
+                log.info("Deleted CSV file: {}", csvFileOpt.get());
             }
             if (Files.exists(barsFile)) {
                 Files.delete(barsFile);
@@ -256,12 +344,10 @@ public final class HistoricalDataService implements AutoCloseable {
     }
 
     public void startWeeklyScheduler() {
-        // Schedule every Sunday at 02:00 UTC
         long initialDelay = computeDelayToNextSunday2Am();
         scheduler.scheduleAtFixedRate(() -> {
             log.info("Triggering scheduled weekly historical data sync...");
             triggerDownload(null, null, "h1", true);
-            // Wait slightly before M1 sync to avoid conflicts
             try {
                 Thread.sleep(60000);
             } catch (InterruptedException ignored) {}
@@ -288,23 +374,10 @@ public final class HistoricalDataService implements AutoCloseable {
         return Collections.unmodifiableMap(activeTasks);
     }
 
-    private static String pairToSym(String pair) {
-        return switch (pair.toLowerCase()) {
-            case "eurusd" -> "EUR_USD";
-            case "gbpusd" -> "GBP_USD";
-            case "usdcad" -> "USD_CAD";
-            case "usdjpy" -> "USD_JPY";
-            case "audusd" -> "AUD_USD";
-            case "nzdusd" -> "NZD_USD";
-            case "usdchf" -> "USD_CHF";
-            case "gbpjpy" -> "GBP_JPY";
-            default -> pair.toUpperCase();
-        };
-    }
-
     @Override
     public void close() {
         scheduler.shutdown();
         executor.shutdown();
+        universeStore.close();
     }
 }

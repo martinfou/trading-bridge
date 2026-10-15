@@ -42,6 +42,10 @@ Trading Bridge est un projet multi-parties organisé en monorepo :
 *   **[Modèles de Données locaux](./data-models-trading-bridge-dashboard.md)** – Utilisation locale de SQLite par Laravel.
 *   **[Inventaire des composants Dashboard](./component-inventory-trading-bridge-dashboard.md)** – Liste et description de la console de contrôle et des éléments Blade.
 
+### Multi-Actifs, Futures CME & IA
+*   **[Guide Futures CME & Réalisme Backtest](./mes-cme-futures-realism-guide.md)** – Guide pour humains : Ticks discrets, Trade-Through, Rollovers, Calendrier Globex, et IBKR.
+*   **[Contexte & Invariants LLM](./llm-context-futures-and-realism.md)** – Spécifications techniques et invariants pour les agents IA et LLMs.
+
 ---
 
 ## 3. Documentation de Référence (Existante)

@@ -31,6 +31,37 @@ import java.util.List;
  * <h3>Position sizing</h3>
  * quantity = nearest 100 units to {@code (capital × riskPct) / (stopLossPips × pipValue)}.
  * Default capital: $1,000.
+ *
+ * <p><b>That quantity is INTENT, and it is only arithmetically right when the pair is quoted in the
+ * account's own currency.</b> For a cross (AUD/JPY, GBP/CHF) the risk budget is denominated in USD
+ * while the stop distance is denominated in the quote currency, so the division needs the
+ * quote→account factor to be exact. The class cannot fetch one; the live runner does, and re-derives
+ * every unit from the NAV and the risk % through
+ * {@code RiskSizing.unitsForRisk(..., quoteToAccountFactor, ...)} with the factor taken from the
+ * broker's homeConversions (LiveStrategyRunner.quoteToAccountFactor). Live sizing is therefore
+ * authoritative — do not read this class's quantity as the live position size. A backtest that sizes
+ * from the strategy's own quantity will under-size a JPY cross by the factor.
+ *
+ * <h3>Known limitations on the live path</h3>
+ * Both were measured by independent review; neither loses money, and both are documented rather than
+ * papered over.
+ * <ul>
+ *   <li><b>The entry is consumed on the NEXT bar</b>, because nothing else acknowledges a fill (see
+ *       onBar). If the runner ever feeds two of this strategy's bars before dispatching pending
+ *       orders — a stall of more than one bar, or a restart at the cursor edge — the entry can be
+ *       cleared before it was sent and the setup is missed. Missing a trade, never doubling one.</li>
+ *   <li><b>A restart between the event and the week-end</b> replays the event bar during the warm-up:
+ *       the entry is emitted and then consumed inside the replay, so the strategy finishes the replay
+ *       ENTERED while the broker is flat. No order reaches the venue, and the close it emits at the
+ *       week-end is refused for lack of a tracked position (logged). Deploy before the first event of
+ *       the week, and after any mid-week restart check the monitor for ENTERED strategies with no
+ *       matching broker trade.</li>
+ *   <li><b>The temporal close stays queued after it fires.</b> The EXPIRED phase is a deliberate no-op
+ *       (clearing there could drop the close if two bars ever arrive in one tick, and dropping an
+ *       exit leaves a position open — worse than noise). The runner refuses the repeat with an error
+ *       log once the account is flat, so an expired week logs that error every tick until its
+ *       services are removed. That is noise, not a position.</li>
+ * </ul>
  */
 public abstract class NewsWeeklyStrategy implements Strategy {
 
@@ -41,7 +72,6 @@ public abstract class NewsWeeklyStrategy implements Strategy {
     protected final String symbol;
     protected final double quantity;
     protected final List<Order> pending = new ArrayList<>();
-    protected final List<Bar> history = new ArrayList<>();
 
     private final Instant eventStart;
     private final Instant weekEnd;
@@ -52,7 +82,6 @@ public abstract class NewsWeeklyStrategy implements Strategy {
 
     private Phase phase = Phase.WAITING;
     private Order.Side entrySide;
-    private double entryPrice;
     private double stopPrice;
     private double extremePrice;
 
@@ -106,13 +135,19 @@ public abstract class NewsWeeklyStrategy implements Strategy {
         this.trailingStopPips = trailingStopPips;
         this.bidirectional = bidirectional;
 
-        // Calculate quantity from risk budget
-        if (stopLossPips > 0) {
-            double raw = (capital * riskPct) / (stopLossPips * pipValue(symbol));
-            this.quantity = roundUnits(raw);
-        } else {
-            this.quantity = LotSizing.lotsToUnits(0.01);
+        // Mandatory protective stop. Not a style choice: the live entry guard refuses any entry whose
+        // order carries no stop, and without a stop distance there is no risk denominator to size
+        // from. A stopless strategy used to be authorable here and would then be refused (or sized
+        // from the 1,000-unit micro-lot) at runtime; failing at construction moves that from a
+        // deploy-time surprise to a build-time error.
+        if (stopLossPips <= 0) {
+            throw new IllegalArgumentException("NewsWeeklyStrategy '" + name
+                + "' requires stopLossPips > 0 (a stopless entry is refused by the live path and has "
+                + "no risk denominator). Received: " + stopLossPips);
         }
+
+        double raw = (capital * riskPct) / (stopLossPips * pipValue(symbol));
+        this.quantity = roundUnits(raw);
     }
 
     /** Round to nearest 100 units (keeps positions practical). */
@@ -134,9 +169,7 @@ public abstract class NewsWeeklyStrategy implements Strategy {
     @Override
     public void reset() {
         pending.clear();
-        history.clear();
         phase = Phase.WAITING;
-        entryPrice = 0;
         stopPrice = 0;
         extremePrice = 0;
         if (bidirectional) entrySide = null;
@@ -147,7 +180,6 @@ public abstract class NewsWeeklyStrategy implements Strategy {
     @Override
     public void onBar(Bar bar) {
         if (!bar.symbol().equals(symbol)) return;
-        history.add(bar);
 
         double pipVal = pipValue(symbol);
 
@@ -155,6 +187,14 @@ public abstract class NewsWeeklyStrategy implements Strategy {
 
             // — Enter or analyze — //
             case WAITING:
+                // Inert outside the strategy's own week. Without this, a late start (or the runner's
+                // warm-up replay beginning after the event) enters on a bar the market has already
+                // left behind, and the strategy then believes it holds a position the broker never
+                // received. The week-end is the hard ceiling, checked before the event floor.
+                if (bar.timestamp().compareTo(weekEnd) >= 0) {
+                    phase = Phase.EXPIRED;
+                    break;
+                }
                 if (bar.timestamp().isBefore(eventStart)) break;
 
                 if (bidirectional) {
@@ -182,33 +222,30 @@ public abstract class NewsWeeklyStrategy implements Strategy {
                     break;
                 }
 
-                // Fixed SL: check if price crossed stop
+                // Fixed SL: the stop rode the entry order (see doEntry), so the venue holds it and
+                // the engine exits on it. What stays here is the in-process check, which turns a
+                // crossed stop into an explicit close instead of waiting for the venue.
                 if (trailingStopPips == 0) {
                     boolean hit = entrySide == Order.Side.SELL
                         ? bar.high() >= stopPrice
                         : bar.low() <= stopPrice;
+                    // The entry order is DISPATCHED and must be consumed here. Nothing consumes it
+                    // otherwise: getPendingOrders() hands out an immutable copy and no engine calls
+                    // back to acknowledge a fill, so leaving it queued re-submits a fresh
+                    // risk-sized entry on EVERY bar — a position per hour for as long as the stop
+                    // and the week-end hold. Clearing is not an optimisation.
+                    pending.clear();
                     if (hit) {
-                        pending.clear();
                         pending.add(closeOrder(entrySide));
                         phase = Phase.EXPIRED;
-                        break;
-                    }
-                    // Re-emit the STOP order (engine may have consumed it)
-                    pending.clear();
-                    pending.add(new Order(symbol,
-                        entrySide == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY,
-                        Order.Type.STOP, quantity, stopPrice).closeOnly());
-                    if (takeProfitPips > 0) {
-                        double tp = entrySide == Order.Side.BUY
-                            ? entryPrice + takeProfitPips * pipVal
-                            : entryPrice - takeProfitPips * pipVal;
-                        pending.add(new Order(symbol,
-                            entrySide == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY,
-                            Order.Type.LIMIT, quantity, tp).closeOnly());
                     }
                 }
 
-                // Trailing stop
+                // Trailing stop. Note for whoever writes the first trailing news strategy: doEntry
+                // attaches the initial stop to the ENTRY order (stop-on-fill at the venue) AND this
+                // branch re-emits a close-only STOP every bar, so the venue would hold two stops that
+                // drift apart as this one trails. No deployed news strategy uses trailingStopPips > 0;
+                // review that combination before the first one does.
                 if (trailingStopPips > 0) {
                     double newStop;
                     if (entrySide == Order.Side.SELL) {
@@ -221,7 +258,7 @@ public abstract class NewsWeeklyStrategy implements Strategy {
                     pending.clear();
                     pending.add(new Order(symbol,
                         entrySide == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY,
-                        Order.Type.STOP, quantity, stopPrice).closeOnly());
+                        Order.Type.STOP, quantity, stopPrice).asCloseOnly());
                 }
                 break;
 
@@ -234,24 +271,37 @@ public abstract class NewsWeeklyStrategy implements Strategy {
     // ====== Entry helper ======
 
     private void doEntry(Order.Side side, double price, double pipVal) {
-        entryPrice = price;
         extremePrice = price;
 
+        double tp = 0;
         if (stopLossPips > 0) {
             stopPrice = side == Order.Side.BUY
                 ? price - stopLossPips * pipVal
                 : price + stopLossPips * pipVal;
         }
+        if (takeProfitPips > 0) {
+            tp = side == Order.Side.BUY
+                ? price + takeProfitPips * pipVal
+                : price - takeProfitPips * pipVal;
+        }
+
+        // The stop rides the ENTRY order, never a separate close-only order:
+        //  - live, LiveStrategyRunner refuses any entry whose order carries no stop
+        //    (rejectEntryWithoutStop) and passes order.stopLoss() to the venue as a stop-on-fill
+        //    (LiveStrategyRunner.executeTrade -> placeMarketOrder), which the runner also tracks
+        //    locally in its own ActiveTrade. The take profit is deliberately NOT sent to the venue:
+        //    the target lives in the runner's local monitor (it is lost if the runner goes down).
+        //  - backtest, BacktestEngine stores the order's stopLoss/takeProfit on the position and
+        //    exits on them.
+        // Emitting a second close-only STOP for the same size used to double-protect the position
+        // at the broker and to spam "Unsupported order type: LIMIT" on every bar for the target.
+        // The order below is consumed by the ENTERED branch on the next bar: see onBar().
+        Order entry = new Order(symbol, side, Order.Type.MARKET, quantity, 0);
+        if (stopLossPips > 0) entry = entry.withStopLoss(stopPrice);
+        if (tp > 0) entry = entry.withTakeProfit(tp);
 
         pending.clear();
-        pending.add(new Order(symbol, side, Order.Type.MARKET, quantity, 0));
-
-        // Emit initial stop
-        if (stopLossPips > 0 && trailingStopPips == 0) {
-            pending.add(new Order(symbol,
-                side == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY,
-                Order.Type.STOP, quantity, stopPrice).closeOnly());
-        }
+        pending.add(entry);
     }
 
     private void trackExtreme(Bar bar) {
@@ -265,16 +315,16 @@ public abstract class NewsWeeklyStrategy implements Strategy {
     private Order closeOrder(Order.Side currentSide) {
         return new Order(symbol,
             currentSide == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY,
-            Order.Type.MARKET, quantity, 0).closeOnly();
+            Order.Type.MARKET, quantity, 0).asCloseOnly();
     }
 
     // ====== Static helpers ======
 
     protected static double pipValue(String sym) {
-        return switch (sym) {
-            case "USD_JPY" -> 0.01;
-            default -> 0.0001;
-        };
+        // Any JPY-QUOTED pair prices a pip at 0.01, not 0.0001. Only USD_JPY was special-cased
+        // before, so GBP_JPY / AUD_JPY fell through to the EUR/USD pip: the stop distance and the
+        // risk-based quantity were both off by a factor of 100.
+        return sym != null && sym.endsWith("_JPY") ? 0.01 : 0.0001;
     }
 
     protected static Instant nyEvent(int year, int month, int day, int hour, int minute) {

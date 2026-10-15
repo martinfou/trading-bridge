@@ -63,7 +63,7 @@ public class MonthWeekPhaseStrategy implements Strategy {
     }
 
     private final String name;
-    private final String symbol;
+    private String symbol;
     private final List<Order> pending = new ArrayList<>();
     private final List<Bar> history = new ArrayList<>();
     private final ZoneOffset tzOffset = ZoneOffset.UTC;

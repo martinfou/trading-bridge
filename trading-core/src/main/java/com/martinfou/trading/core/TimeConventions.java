@@ -4,7 +4,6 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Objects;
@@ -12,12 +11,10 @@ import java.util.Objects;
 /**
  * Canonical time handling for Trading Bridge.
  * Storage and comparisons use UTC; {@link #DISPLAY_ZONE} is for human-facing output only.
- *
- * @see docs/specs.md §2.5
  */
 public final class TimeConventions {
 
-    public static final ZoneId UTC = ZoneOffset.UTC;
+    public static final ZoneId UTC = ZoneId.of("UTC");
     public static final ZoneId DISPLAY_ZONE = ZoneId.of("America/Toronto");
 
     private static final DateTimeFormatter DISPLAY_FMT =

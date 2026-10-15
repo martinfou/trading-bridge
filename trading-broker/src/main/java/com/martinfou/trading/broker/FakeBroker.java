@@ -90,6 +90,14 @@ public final class FakeBroker implements Broker {
     }
 
     @Override
+    public int flattenAllPositions() {
+        int flattened = positions.size();
+        positions.clear();
+        balance = equity;
+        return flattened;
+    }
+
+    @Override
     public List<Position> getPositions() {
         return List.copyOf(positions.values());
     }

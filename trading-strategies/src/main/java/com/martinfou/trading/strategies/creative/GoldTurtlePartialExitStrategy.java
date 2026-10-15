@@ -166,7 +166,7 @@ public class GoldTurtlePartialExitStrategy implements Strategy {
         int halfUnits = Math.max(1, unitsAdded / 2);
         Order.Side closeSide = tradeDirection == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
         double qty = halfUnits * quantityPerUnit;
-        pending.add(new Order(symbol, closeSide, Order.Type.MARKET, qty, bar.close()).closeOnly());
+        pending.add(new Order(symbol, closeSide, Order.Type.MARKET, qty, bar.close()).asCloseOnly());
         unitsAdded -= halfUnits;
         partialExitDone = true;
     }
@@ -176,7 +176,7 @@ public class GoldTurtlePartialExitStrategy implements Strategy {
         Order.Side closeSide = tradeDirection == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
         double totalQty = unitsAdded * quantityPerUnit;
         if (totalQty > 0) {
-            pending.add(new Order(symbol, closeSide, Order.Type.MARKET, totalQty, bar.close()).closeOnly());
+            pending.add(new Order(symbol, closeSide, Order.Type.MARKET, totalQty, bar.close()).asCloseOnly());
         }
         inTrade = false;
         unitsAdded = 0;

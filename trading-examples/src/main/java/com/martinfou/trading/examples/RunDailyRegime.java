@@ -3,6 +3,7 @@ package com.martinfou.trading.examples;
 import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.data.HistoricalDataLoader;
 import com.martinfou.trading.strategies.creative.DailyRegimeMomentum;
@@ -26,7 +27,7 @@ public class RunDailyRegime {
 
         var loaded = HistoricalDataLoader.loadFromArgs(symbol, symbol, yearSpec);
         List<Bar> bars = loaded.bars();
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
 
         System.out.printf("%n=== DailyRegimeMomentum %s (%d bars) — coûts $0.07 + 0.01%% slip ===%n%n",
             symbol, bars.size());

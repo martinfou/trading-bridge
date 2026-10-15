@@ -4,6 +4,7 @@ import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.data.HistoricalDataLoader;
 import com.martinfou.trading.strategies.creative.GoldTurtleDualGateStrategy;
@@ -63,7 +64,7 @@ public class RunGoldTurtleSizeOverlay {
     static final int SHORT_ONLY = GoldTurtleDualGateStrategy.SIDE_SHORT_ONLY;
 
     public static void main(String[] args) throws Exception {
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
         var xau = HistoricalDataLoader.loadFromArgs(GOLD, GOLD, YEAR_SPEC).bars();
         Map<Long, Double> dxy = RunGoldTurtleDualGate.buildDxy(YEAR_SPEC);
         Map<Long, Double> spx = RunGoldTurtleDualGate.buildSpxOnXauGrid(xau);
@@ -83,7 +84,7 @@ public class RunGoldTurtleSizeOverlay {
 
     // ---------------------------------------------------------------- validation
 
-    private static void runValidate(BacktestExecutionCost cost, List<Bar> xau,
+    private static void runValidate(java.util.function.Function<String, BacktestExecutionCost> cost, List<Bar> xau,
                                     Map<Long, Double> dxy, Map<Long, Double> spx) {
         System.out.println("=== VALIDATION D'IMPLÉMENTATION (doit reproduire les références publiées) ===");
         header();
@@ -104,7 +105,7 @@ public class RunGoldTurtleSizeOverlay {
 
     // ---------------------------------------------------------------- matrice overlay
 
-    private static void runOverlay(BacktestExecutionCost cost, List<Bar> xau,
+    private static void runOverlay(java.util.function.Function<String, BacktestExecutionCost> cost, List<Bar> xau,
                                    Map<Long, Double> dxy, Map<Long, Double> spx) throws Exception {
         System.out.println("=====================================================================");
         System.out.println("GOLD TURTLE — SÉLECTEUR (gate) vs AMPLIFICATEUR (overlay de taille)");
@@ -187,7 +188,7 @@ public class RunGoldTurtleSizeOverlay {
 
     // ---------------------------------------------------------------- piste long-only
 
-    private static void runLong(BacktestExecutionCost cost, List<Bar> xau,
+    private static void runLong(java.util.function.Function<String, BacktestExecutionCost> cost, List<Bar> xau,
                                 Map<Long, Double> dxy, Map<Long, Double> spx) {
         System.out.println("=== LONG-ONLY vs BOTH (signature LONG/SHORT du 11 sept : le short saigne) ===");
         System.out.println("Turtle Donchian 55/20 XAU H1 2006-2025, coûts complets");
@@ -220,7 +221,7 @@ public class RunGoldTurtleSizeOverlay {
 
     // ---------------------------------------------------------------- sweep 2D
 
-    private static void runSweep(BacktestExecutionCost cost, List<Bar> xau,
+    private static void runSweep(java.util.function.Function<String, BacktestExecutionCost> cost, List<Bar> xau,
                                  Map<Long, Double> dxy, Map<Long, Double> spx) {
         int[] aPeriods = {250, 400, 500, 750, 1000};
         int[] bPeriods = {1200, 2400, 3600, 4800, 7200, 9600};
@@ -236,7 +237,7 @@ public class RunGoldTurtleSizeOverlay {
             OPPOSITE, ALIGNED, 1, 2, LONG_ONLY, "OVERLAY (1,2) LONG-ONLY — OR(A=OPP, B=ALI)");
     }
 
-    private static void sweepGrid(BacktestExecutionCost cost, List<Bar> xau,
+    private static void sweepGrid(java.util.function.Function<String, BacktestExecutionCost> cost, List<Bar> xau,
                                   Map<Long, Double> dxy, Map<Long, Double> spx,
                                   int[] aPeriods, int[] bPeriods,
                                   int mode, int pa, int pb, int ua, int ub, int side, String title) {
@@ -258,7 +259,7 @@ public class RunGoldTurtleSizeOverlay {
 
     // ---------------------------------------------------------------- walk-forward
 
-    private static void runWalkForward(BacktestExecutionCost cost) throws Exception {
+    private static void runWalkForward(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         System.out.println("=== WALK-FORWARD XAU_USD (IS 2006-2015 / OOS 2016-2025) ===");
         System.out.printf("%-36s %-12s %-6s %-6s %-6s %-7s %-12s%n",
             "CONFIG", "PHASE", "PF", "WR%", "DD%", "TRADES", "NET$");
@@ -301,7 +302,7 @@ public class RunGoldTurtleSizeOverlay {
         }
     }
 
-    private static void wf(BacktestExecutionCost cost, String label, String phase,
+    private static void wf(java.util.function.Function<String, BacktestExecutionCost> cost, String label, String phase,
                            List<Bar> bars, GoldTurtleDualGateStrategy s) {
         BacktestResult r = runRaw(cost, GOLD, bars, s);
         System.out.printf("%-36s %-12s %-6.2f %-6.1f %-6.2f %-7d %12.2f%n",
@@ -311,7 +312,7 @@ public class RunGoldTurtleSizeOverlay {
 
     // ---------------------------------------------------------------- régimes
 
-    private static void runRegime(BacktestExecutionCost cost) throws Exception {
+    private static void runRegime(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String[] eras = {"bull 2006-12", "bear 2013-15", "bull2 2016-25"};
         String[] specs = {"2006-2012", "2013-2015", "2016-2025"};
         System.out.println("=== RÉGIMES ===");
@@ -341,7 +342,7 @@ public class RunGoldTurtleSizeOverlay {
         }
     }
 
-    private static void wfRegime(BacktestExecutionCost cost, String era, String label,
+    private static void wfRegime(java.util.function.Function<String, BacktestExecutionCost> cost, String era, String label,
                                  List<Bar> bars, GoldTurtleDualGateStrategy s) {
         BacktestResult r = runRaw(cost, GOLD, bars, s);
         System.out.printf("%-14s %-34s %-6.2f %-6.1f %-6.2f %-7d %12.2f%n",
@@ -351,7 +352,7 @@ public class RunGoldTurtleSizeOverlay {
 
     // ---------------------------------------------------------------- signature LONG/SHORT
 
-    private static void runSignature(BacktestExecutionCost cost, List<Bar> xau,
+    private static void runSignature(java.util.function.Function<String, BacktestExecutionCost> cost, List<Bar> xau,
                                      Map<Long, Double> dxy, Map<Long, Double> spx) {
         System.out.println("=== SIGNATURE LONG/SHORT + EXPOSITION (XAU_USD 2006-2025, coûts) ===");
         System.out.printf("%-40s %-6s %-12s %-12s %-12s %-7s %-9s%n",
@@ -382,7 +383,7 @@ public class RunGoldTurtleSizeOverlay {
             str("d", GOLD, GoldTurtleDualGateStrategy.MODE_OFF, ALIGNED, ALIGNED, 3, 3, BOTH, dxy, spx), 3, 3);
     }
 
-    private static void sig(BacktestExecutionCost cost, String label, List<Bar> bars,
+    private static void sig(java.util.function.Function<String, BacktestExecutionCost> cost, String label, List<Bar> bars,
                             GoldTurtleDualGateStrategy s, int ua, int ub) {
         BacktestResult r = runRaw(cost, GOLD, bars, s);
         double longUsd = 0, shortUsd = 0;
@@ -419,7 +420,7 @@ public class RunGoldTurtleSizeOverlay {
     }
 
     /** Une ligne de résultat + l'exposition (part des entrées à taille pleine vs réduite). */
-    private static void row(BacktestExecutionCost cost, String label, String symbol, List<Bar> bars,
+    private static void row(java.util.function.Function<String, BacktestExecutionCost> cost, String label, String symbol, List<Bar> bars,
                             int mode, int pa, int pb, int ua, int ub, int side,
                             Map<Long, Double> a, Map<Long, Double> b) {
         var s = str("d", symbol, mode, pa, pb, ua, ub, side, a, b);
@@ -432,7 +433,7 @@ public class RunGoldTurtleSizeOverlay {
             r.totalPnl(), r.totalReturnPct(), r.totalSwap(), expo);
     }
 
-    private static BacktestResult runRaw(BacktestExecutionCost cost, String symbol,
+    private static BacktestResult runRaw(java.util.function.Function<String, BacktestExecutionCost> cost, String symbol,
                                          List<Bar> bars, com.martinfou.trading.core.Strategy s) {
         return RunContext.forStrategy(null, s.name(), s, symbol, RunMode.BACKTEST,
             bars, CAPITAL, null, cost).run();

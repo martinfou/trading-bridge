@@ -203,7 +203,7 @@ public class VolumeProfileVAStrategy implements Strategy {
 
     private void closePosition(Bar bar) {
         Order.Side closeSide = tradeDirection == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
-        pending.add(new Order(symbol, closeSide, Order.Type.MARKET, positionSize, bar.close()).closeOnly());
+        pending.add(new Order(symbol, closeSide, Order.Type.MARKET, positionSize, bar.close()).asCloseOnly());
         inTrade = false;
     }
 

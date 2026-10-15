@@ -162,5 +162,31 @@ public final class NewsWeeklyStrategyCatalogRegistrar {
         NewsWeeklyStrategyCatalog.register(
             "NewsWeek10Aug_RetailSales_USD_CAD",
             sym -> new NewsWeek10Aug_CpiRetailSales.RetailSalesUsdCad());
+
+        // === Week 12-16 October 2026 — US inflation week + Chinese CPI + Friday fade ===
+        // Source: docs/news-playbooks/week-2026-10-12.md (Setups 1 to 4).
+        // Setup 5 (Monday long-only reversion) is NOT coded: its activation needs the previous
+        // Friday close AND the week close to be negative, a condition the strategy API cannot
+        // evaluate, and it plays the following Monday.
+
+        // 1 — US CPI (Wed Oct 14, 08:30 ET), bidirectional momentum
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek12Oct_Cpi_EUR_USD",
+            sym -> new NewsWeek12Oct_CpiPpi.CpiEurUsd());
+
+        // 2 — US PPI + Retail Sales (Thu Oct 15, 08:30 ET), bidirectional momentum
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek12Oct_PpiRetail_EUR_USD",
+            sym -> new NewsWeek12Oct_CpiPpi.PpiRetailSalesEurUsd());
+
+        // 3 — Chinese CPI (Tue Oct 13, 21:30 ET), bidirectional on AUD_JPY, flat Wed 16:00 ET
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek12Oct_ChinaCpi_AUD_JPY",
+            sym -> new NewsWeek12Oct_ChinaCpi.ChinaCpiAudJpy());
+
+        // 4 — Friday fade (Fri Oct 16, 16:00 ET close grid), fixed SELL GBP_CHF held over the weekend
+        NewsWeeklyStrategyCatalog.register(
+            "NewsWeek12Oct_FridayFade_GBP_CHF",
+            sym -> new NewsWeek12Oct_FridayFade.FridayFadeGbpChf());
     }
 }

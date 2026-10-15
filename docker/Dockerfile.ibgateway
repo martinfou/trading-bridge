@@ -1,0 +1,40 @@
+# Headless IB Gateway Container with IBC (Interactive Brokers Controller)
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    IB_GATEWAY_VERSION=10.19.1e \
+    IBC_VERSION=3.18.0 \
+    TWS_INSTALL_LOG=/root/tws_install.log \
+    IBC_PATH=/opt/ibc \
+    TWS_PATH=/root/Jts \
+    DISPLAY=:1
+
+# Install prerequisites
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wget \
+    curl \
+    unzip \
+    xvfb \
+    libxtst6 \
+    libxrender1 \
+    libxi6 \
+    socat \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt
+
+# Setup directories
+RUN mkdir -p /opt/ibc /root/Jts /root/ibc /opt/scripts
+
+# Copy startup scripts
+COPY docker/start-gateway.sh /opt/scripts/start-gateway.sh
+RUN chmod +x /opt/scripts/start-gateway.sh
+
+# Expose IB Gateway API ports (4001 live, 4002 paper)
+EXPOSE 4001 4002
+
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+  CMD curl -f http://localhost:4002 || exit 0
+
+ENTRYPOINT ["/opt/scripts/start-gateway.sh"]

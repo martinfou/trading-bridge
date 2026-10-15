@@ -4,6 +4,7 @@ import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.data.HistoricalDataLoader;
 import com.martinfou.trading.strategies.creative.D1RegimeEmaPullbackContinuation;
@@ -24,7 +25,7 @@ public class RunD1RegimePullbackMulti {
 
     public static void main(String[] args) throws Exception {
         String yearSpec = args.length > 0 ? args[0] : "2006-2026";
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
 
         System.out.printf("%n%-9s | %-34s | %-34s%n", "PAIR", "BASELINE EmaPullback", "VARIATION D1Regime");
         System.out.printf("%-9s | %6s %6s %6s %7s %9s | %6s %6s %6s %7s %9s%n",

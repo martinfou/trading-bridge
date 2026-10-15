@@ -5,6 +5,7 @@ import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
 import com.martinfou.trading.backtest.SwapCalculator;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.data.HistoricalDataLoader;
@@ -265,8 +266,8 @@ public class RunSeasonalityFilterAudit {
         return m;
     }
 
-    static BacktestExecutionCost cost() {
-        return BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+    static java.util.function.Function<String, BacktestExecutionCost> cost() {
+        return RealCostModel::costFor;
     }
 
     // ================================================================ helpers

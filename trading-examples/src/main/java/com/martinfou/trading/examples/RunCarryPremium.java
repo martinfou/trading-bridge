@@ -3,6 +3,7 @@ package com.martinfou.trading.examples;
 import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.data.HistoricalDataLoader;
 import com.martinfou.trading.strategies.creative.CarryPremiumStrategy;
@@ -34,7 +35,7 @@ public class RunCarryPremium {
         System.out.println("First bar: " + bars.get(0).timestamp()
             + "  Last bar: " + bars.get(bars.size() - 1).timestamp());
 
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
         var strategy = new CarryPremiumStrategy("CarryPremium_" + symbol, symbol);
         var ctx = RunContext.forStrategy(
             null, "CarryPremium_" + symbol, strategy, symbol,

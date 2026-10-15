@@ -184,4 +184,56 @@ public class OandaPriceClientTest {
         OandaPriceClient client = createClient(null);
         assertThrows(OandaApiException.class, () -> client.getPrice("EUR_USD"));
     }
+
+    // ========================================================================
+    // getQuoteToHomeLossFactor — FIX 3: accountGain is NOT a fallback (it under-sizes the factor).
+    // ========================================================================
+
+    @Test
+    void lossFactor_prefersAccountLossOverAccountGain() throws Exception {
+        responseStatus.set(200);
+        responsePayload.set("""
+            {
+              "homeConversions": [
+                { "currency": "JPY", "accountGain": "0.008942039415", "accountLoss": "0.009122686676" }
+              ]
+            }
+            """);
+
+        OandaPriceClient client = createClient();
+        assertEquals(0.009122686676, client.getQuoteToHomeLossFactor("GBP_JPY"), 1e-12,
+            "accountLoss is larger and must win over accountGain");
+    }
+
+    @Test
+    void lossFactor_fallsBackToPositionValueWhenAccountLossMissing() throws Exception {
+        responseStatus.set(200);
+        responsePayload.set("""
+            {
+              "homeConversions": [
+                { "currency": "JPY", "accountGain": "0.008942039415", "positionValue": "0.009100000000" }
+              ]
+            }
+            """);
+
+        OandaPriceClient client = createClient();
+        assertEquals(0.0091, client.getQuoteToHomeLossFactor("GBP_JPY"), 1e-12,
+            "positionValue is the only remaining fallback after accountLoss");
+    }
+
+    @Test
+    void lossFactor_accountGainAloneThrowsInsteadOfUnderSizing() {
+        responseStatus.set(200);
+        responsePayload.set("""
+            {
+              "homeConversions": [
+                { "currency": "JPY", "accountGain": "0.008942039415" }
+              ]
+            }
+            """);
+
+        OandaPriceClient client = createClient();
+        assertThrows(OandaApiException.class, () -> client.getQuoteToHomeLossFactor("GBP_JPY"),
+            "accountGain alone must fail safe (never under-size the loss factor)");
+    }
 }

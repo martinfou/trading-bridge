@@ -281,6 +281,109 @@ Tester sur **4 paires** avec découpage :
 
 **Règle :** Si OOS1 ou OOS2 a PF < 1.0, la stratégie est **invalide** malgré un bon FULL.
 
+**Définition du Sharpe — décision de Martin, 2026-10-01.** Le Sharpe de la porte est un Sharpe
+**journalier**, calculé sur la courbe d'équité au pas quotidien :
+
+```
+Sharpe_journalier = moyenne(rendements journaliers) / écart-type(rendements journaliers) × √252
+```
+
+Un Sharpe par bougie H1 annualisé par √6240 gonfle le bruit et n'est pas comparable d'une granularité à
+l'autre. Le nombre actuel a déjà produit PF 1.41 avec Sharpe −3.87, et une perte de 25 000 $ avec
+Sharpe +0.24 : un critère qui ne peut ni passer ni échouer quoi que ce soit n'est pas un critère.
+**L'implémentation (`PerformanceMetrics`, lignes 62 et 80) calcule encore l'ancien nombre : tant qu'elle
+n'est pas corrigée, le critère Sharpe n'est pas exploitable et les verdicts se prennent sur PF, DD et la
+stabilité OOS.**
+
+La propriété qui prouve le correctif, et qu'aucun test ne peut écrire pour l'ancien nombre : **la même
+période mesurée en H1 et en H4 doit donner le même Sharpe journalier.** Une implémentation par bougie
+donne deux valeurs différentes pour la même stratégie.
+
+**Observation sur le PF, mesurée le 2026-10-01, à trancher.** `PerformanceMetrics.profitFactor` travaille
+sur une **liste de P&L par transaction**. Conséquence : le PF **voit le spread** (il est dans le P&L de
+la transaction) mais **ne voit pas le swap** (le financement est porté par la courbe d'équité). C'est
+démontré deux fois : le PF est passé de 0.97 à 0.80 quand le modèle de spread a changé, et il est resté
+**identique** sous swap ×0, ×1 et ×2 sur toutes les fenêtres.
+
+Donc une stratégie qui garde ses positions longtemps peut **franchir la porte en PF tout en perdant sur le
+financement**. Sur les stratégies haute fréquence actuelles (spread = 90 à 100 % du coût) ça ne change
+rien, mais sur du portage (or, saisonnalité, tout ce qui tient des jours) ça décide du verdict.
+Question ouverte, décision de Martin : exiger en plus un **net après tous coûts positifs sur chaque
+fenêtre** (la colonne `NET_A$` du rejeu), ou laisser le PF seul décider.
+
+### 4.3.1 Questions ouvertes pour Martin (2026-10-01)
+
+1. **Le spread du backtest doit-il rester la médiane mesurée, ou un percentile conservateur ?** Une
+   passe de revue a fait valoir que la médiane sous-estime la friction sur la moitié des fills, et
+   surtout autour du rollover de 17 h EST et des nouvelles. Un candidat validé à la médiane peut échouer
+   en réel. Le rejeu du shortlist sera donc fait **aux deux niveaux** (médiane et médiane × 1,5) pour que
+   la question se tranche sur des chiffres au lieu d'une opinion : un candidat qui ne passe qu'à la
+   médiane est fragile et doit être étiqueté comme tel.
+2. **Le net après tous coûts doit-il être une condition de passage** (voir l'observation PF ci-dessus) ?
+3. **Que doit observer la fenêtre paper de 30 jours**, maintenant qu'aucune des cinq stratégies
+   déployées ne survit aux coûts réels ? *(Note du 2026-10-01 au soir : le rejeu du shortlist sous le vrai
+   modèle de coûts donne **trois candidats or** qui passent la porte, le plus propre étant « Gold vendredi
+   long × DXY opposé » — toutes fenêtres ≥ 1.17 même à spread ×1,5, net positif partout. La question
+   devient donc : déployer ce candidat et redémarrer l'horloge de 30 jours, ou garder les cinq actuelles ?)*
+4. **Le Sharpe de la porte doit-il soustraire le taux sans risque ?** Depuis le correctif, il le soustrait
+   (`DEFAULT_RISK_FREE_RATE = 0.025`). Conséquence mesurée : sur une stratégie backtestée petite (10k de
+   capital, positions de 1000 unités, volatilité journalière implicite 0.02 %), le rf est du même ordre que
+   la moyenne et **domine le chiffre** — `consecbar` FULL passe de −1.39 à −9.21 par la seule soustraction,
+   et `compmomentum` OOS1 de +0.59 à −4.61. Économiquement c'est défendable (un portefeuille majoritairement
+   en liquidités gagne le sans-risque), mais la porte juge alors « bats la liquidité » autant que « as-tu un
+   edge ». Deux options : garder la soustraction (sens strict, plus dur) ou la mettre à 0 pour l'évaluation
+   de porte.
+   **TRANCHÉ par Martin (2026-10-01) — D37 : on GARDE la soustraction ET on fixe le sizing.** Tous les
+   backtests de porte se font désormais à **1 % de risque par transaction, capital identique** (10 000 $).
+   Le rf devient alors une charge constante au lieu d'un artefact de sous-dimensionnement, et deux Sharpes
+   ne se comparent que dans ces conditions. Corollaire : **les verdicts du shortlist sont provisoires**
+   jusqu'à leur rejeu à ce sizing, et un backtest ne se compare à la fenêtre paper que s'il tourne au
+   sizing de la fenêtre. C'est exactement la comparabilité backtest ↔ paper qui manquait depuis le début.
+   Le dénominateur du sizing est la **distance au stop** : sans stop, pas de taille (D30), donc chaque
+   stratégie doit avoir un stop — c'est le même mécanisme qui la protège chez le courtier.
+
+### 4.3.2 Résidus connus du modèle de coûts
+
+- Les taux de financement sont un **instantané 2026** appliqué à 2010-2025 : les séries historiques
+  n'existent pas dans le dépôt. L'impact est **borné par mesure** (PF invariant sous swap ×0/×1/×2).
+- Les spreads de sept paires ne sont **pas mesurés** : le modèle refuse désormais de les estimer.
+- `BatchStrategyRunner` (3 sites, `OANDA_SPREAD`) n'est pas migré vers le modèle unifié.
+- Deux recherches retombent encore sur une valeur par défaut au lieu de refuser
+  (`usdPerQuoteUnit` sur une devise de cotation inconnue, `costFor` sur un symbole absent de
+  `REFERENCE_MIDS`).
+
+### 4.3.3 Résidus connus du Sharpe journalier (2026-10-01)
+
+Le Sharpe de la porte est désormais un **Sharpe journalier** calculé sur la courbe d'équité, regroupé par
+**jour de marché FX** (clôture 17:00 `America/New_York`, DST-safe), annualisé par **√252**, **taux sans
+risque soustrait** (`DEFAULT_RISK_FREE_RATE = 0.025`). La propriété qui le distingue de l'ancien nombre :
+la même équité échantillonnée en H1 et en H4 donne le **même** Sharpe (mesuré : `4.434117` dans les deux
+cas), alors que l'ancien calcul par bougie donnait 16.52 (H1) contre 30.87 (H4) pour la même stratégie.
+
+- **Le Sharpe dépend maintenant du rapport capital / taille de position, et c'est le point le plus
+  dangereux.** Comme le taux sans risque est soustrait, une stratégie backtestée petite (10 000 $ de
+  capital, positions de 1 000 unités → volatilité journalière implicite ~0,02 %, soit ~2 $/jour) est
+  jugée contre un rf qui est **du même ordre que sa moyenne**. Mesuré : `consecbar` FULL passe de −1.39 à
+  **−9.21** par la seule soustraction du rf ; `ltrsi3` (vol implicite 15,7 %) ne bouge pas. Conséquence
+  pratique : **on ne compare deux Sharpes que s'ils ont été calculés au même capital et au même sizing.**
+  Exiger de battre le sans-risque est le sens voulu de la métrique ; ce n'est pas un bogue, mais un chiffre
+  brut ne se lit pas sans son sizing.
+- `sortinoRatio` reste **par bougie**, et est maintenant **documenté comme tel** au lieu d'être aligné :
+  l'alignement toucherait la persistance, le runtime, la TUI et les rapports (~15 fichiers) ainsi que la
+  comparaison baseline/live du `DriftEngine`, et la porte n'utilise pas le Sortino. Ne pas comparer les
+  deux nombres entre eux.
+- `DriftEngine` compare encore un Sharpe de backtest (désormais journalier) à `SharpeRatio.of(actualTrades)`
+  (par transaction) : incohérence **préexistante**, non résolue.
+- `dailySharpeRatio` utilise la constante 2.5 % et non le `riskFreeRate` configurable de l'engine
+  (`withRiskFreeRate`, utilisé seulement par le Sortino per-bar) : cohérence à trancher un jour.
+- `PERIODS_PER_YEAR = 252` est juste pour FX et métaux, **faux pour un marché 24/7** (crypto : 365) :
+  documenté dans le code, volontairement non paramétré.
+- `std == 0` avec moyenne positive renvoie `+Infinity` (une variance nulle avec rendement positif EST un
+  Sharpe infini) ; la façon dont ce nombre traverse JSON, SQLite et les comparaisons est **sous revue**.
+- Les chiffres Sharpe du rejeu des cinq stratégies ont été produits avec l'ancien modèle de coûts
+  (`BacktestExecutionCost.DEFAULT`) : la colonne PF de ce rejeu est la version « avant coûts réels » et doit
+  être relue depuis la branche `RealCostModel`, jamais recopiée telle quelle.
+
 ### 4.4 Validation de position sizing
 
 ```bash

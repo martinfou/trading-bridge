@@ -112,15 +112,15 @@ public record RunConfigSnapshot(
     }
 
     public double resolvedCapital() {
-        return LotSizing.resolveCapital(capital);
+        return LotSizing.resolveCapital(capital, symbol);
     }
 
     public double resolvedQuantityUnits() {
-        return LotSizing.resolveQuantityUnits(quantity);
+        return LotSizing.resolveQuantityUnits(quantity, symbol);
     }
 
     public double resolvedLotSize() {
-        return LotSizing.unitsToLots(resolvedQuantityUnits());
+        return LotSizing.unitsToLots(resolvedQuantityUnits(), symbol);
     }
 
     public BacktestExecutionCost executionCost() {
@@ -186,7 +186,7 @@ public record RunConfigSnapshot(
     public static RunConfigSnapshot fromRequest(RunManager.StartRunRequest request, String resolvedSymbol) {
         BarSourceResolver.BarsSource source = request.barsSource();
         Double quantityUnits = request.lotSize() != null
-            ? LotSizing.lotsToUnits(request.lotSize())
+            ? LotSizing.lotsToUnits(request.lotSize(), resolvedSymbol)
             : null;
         return new RunConfigSnapshot(
             request.strategyId(),

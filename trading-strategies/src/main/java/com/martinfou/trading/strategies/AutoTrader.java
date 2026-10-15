@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 public class AutoTrader {
     private static final Logger log = LoggerFactory.getLogger(AutoTrader.class);
@@ -34,9 +35,9 @@ public class AutoTrader {
                     long minutesUntilNews = Duration.between(now, s.getNewsTime()).toMinutes();
 
                     if (minutesUntilNews > 0 && minutesUntilNews <= 30) {
-                        var signal = evaluateStrategy(s);
-                        if (signal != null && signal.isConfident()) {
-                            executeTrade(s, signal);
+                        Optional<TradeSignal> signalOpt = evaluateStrategy(s);
+                        if (signalOpt.isPresent() && signalOpt.get().isConfident()) {
+                            executeTrade(s, signalOpt.get());
                             executed.put(s.name(), true);
                         }
                     }
@@ -54,8 +55,8 @@ public class AutoTrader {
         }
     }
 
-    private TradeSignal evaluateStrategy(NewsTradingStrategy strategy) {
-        return null;
+    private Optional<TradeSignal> evaluateStrategy(NewsTradingStrategy strategy) {
+        return Optional.empty();
     }
 
     private void executeTrade(NewsTradingStrategy strategy, TradeSignal signal) {

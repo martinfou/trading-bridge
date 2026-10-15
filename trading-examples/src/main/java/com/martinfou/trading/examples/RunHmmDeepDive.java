@@ -3,6 +3,7 @@ package com.martinfou.trading.examples;
 import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.data.HistoricalDataLoader;
 import com.martinfou.trading.strategies.creative.HMMRegimeMomentumStrategy;
@@ -16,7 +17,7 @@ import java.util.List;
  * Both HMM strategies were created pre-fix (May 31 / June 3, 2026) — before the
  * look-ahead bias fix (c7a552db, July 16). They are still registered in the catalog
  * and were NEVER re-validated with the corrected engine + costs. This runner does
- * exactly that: BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001).
+ * exactly that, using RealCostModel.costFor(symbol) (0 commission + measured half-spread).
  *
  * Two variants tested:
  *   1. HMMRegimeMomentumStrategy — Lewis Jackson simplified 3-state transition
@@ -37,10 +38,10 @@ public class RunHmmDeepDive {
 
         var loaded = HistoricalDataLoader.loadFromArgs(symbol, symbol, yearSpec);
         List<Bar> bars = loaded.bars();
-        System.out.printf("%n=== %s (%d bars, %s) — avec coûts $0.07 + 0.01%% slippage ===%n%n",
+        System.out.printf("%n=== %s (%d bars, %s) — coûts réels (RealCostModel) ===%n%n",
             symbol, bars.size(), yearSpec);
 
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
 
         System.out.println("--- HMMRegimeMomentumStrategy (v2, Lewis Jackson 60/40 blend) ---");
         var v2 = new HMMRegimeMomentumStrategy("HMMRegimeMomentum_" + symbol, symbol);

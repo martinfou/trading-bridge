@@ -87,6 +87,7 @@ function startJavaProcess(cfg: JvmConfig): void {
       CONTROL_PLANE_PORT: String(CONTROL_PLANE_PORT),
       TRADING_BRIDGE_DATA_DIR: cfg.dataDir,
       TRADING_BRIDGE_RESOURCES_DIR: cfg.resourcesDir,
+      DISABLE_STDIN_WATCHER: 'true',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })

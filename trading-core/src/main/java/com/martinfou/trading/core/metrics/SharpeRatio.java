@@ -24,9 +24,10 @@ public final class SharpeRatio {
             sumSq += Math.pow(t.pnl() - mean, 2);
         }
         double std = Math.sqrt(sumSq / (trades.size() - 1));
-        if (std == 0.0) {
+        if (std == 0.0 || Double.isNaN(std)) {
             return 0.0;
         }
-        return mean / std;
+        double result = mean / std;
+        return Double.isFinite(result) ? result : 0.0;
     }
 }

@@ -4,6 +4,7 @@ import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.data.HistoricalDataLoader;
@@ -41,7 +42,7 @@ public class RunSeasonalCalendarOct {
     static final String[] PAIRS = {"GBP_USD", "EUR_USD", "AUD_USD", "NZD_USD"};
 
     public static void main(String[] args) throws Exception {
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
 
         if (args.length > 0 && args[0].equals("--wf")) {
             runWalkForward(cost);
@@ -90,7 +91,7 @@ public class RunSeasonalCalendarOct {
     }
 
     /** Walk-forward IS 2006-2015 / OOS 2016-2026 pour configs A (baseline) et B (+oct). */
-    private static void runWalkForward(BacktestExecutionCost cost) throws Exception {
+    private static void runWalkForward(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String symbol = "GBP_USD";
         int[][] months = {{4, 5, 8}, {4, 5, 8, 10}};
         Order.Side[][] dirs = {

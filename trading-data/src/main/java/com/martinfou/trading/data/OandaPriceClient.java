@@ -38,6 +38,61 @@ public class OandaPriceClient {
 
     public record AccountSummary(String id, double balance, double NAV, double unrealizedPL) {}
 
+    /**
+     * Quote→home-currency conversion for the QUOTE currency of an instrument, as reported by OANDA's
+     * {@code homeConversions} array: {@code accountGain} converts a positive P&amp;L in that currency,
+     * {@code accountLoss} a negative one. A currency absent from the array IS the account's home currency.
+     */
+
+    /**
+     * Quote→home conversion factor for a LOSS in {@code instrument}'s quote currency (JPY for GBP_JPY),
+     * used to turn a stop-loss distance into account currency.
+     *
+     * <p>OANDA converts a negative P&amp;L at {@code accountLoss}; sizing a stop with it can only err
+     * SMALL. {@code accountGain} is deliberately NOT a fallback: it is SMALLER than {@code accountLoss}
+     * (measured on GBP_JPY: 0.008942039415 vs 0.009122686676), so under-sizing the factor would
+     * over-size the position and let the real stop-out exceed the risk budget. The fallback order is
+     * {@code accountLoss}, then {@code positionValue}, then fail.
+     *
+     * <p>The endpoint only returns {@code homeConversions} when asked via
+     * {@code includeHomeConversions=true}; plain pricing responses omit the field entirely (the per-price
+     * {@code quoteHomeConversionFactors} field is not populated on this account).
+     *
+     * @param instrument broker instrument, e.g. {@code GBP_JPY}
+     * @return factor, or {@code 1.0} when the quote currency is already the account's home currency
+     * @throws OandaApiException when the broker does not report home conversions at all — callers must
+     *         fail safe (never silently assume 1.0)
+     */
+    public double getQuoteToHomeLossFactor(String instrument) throws OandaApiException {
+        var json = get("/accounts/" + accountId + "/pricing?instruments=" + instrument
+            + "&includeHomeConversions=true");
+        var conversions = json == null ? null : json.get("homeConversions");
+        if (conversions == null || !conversions.isArray() || conversions.size() == 0) {
+            throw new OandaApiException("Invalid OANDA response: missing or empty 'homeConversions'");
+        }
+        int underscore = instrument.indexOf('_');
+        String quote = underscore > 0 ? instrument.substring(underscore + 1) : "";
+        for (var hc : conversions) {
+            if (hc == null || !quote.equals(hc.path("currency").asText())) continue;
+            double loss = doubleOrZero(hc, "accountLoss");
+            if (!(loss > 0)) loss = doubleOrZero(hc, "positionValue");
+            if (!(loss > 0)) {
+                throw new OandaApiException("Invalid OANDA response: non-positive conversion for " + quote);
+            }
+            return loss;
+        }
+        // The quote currency is the account's home currency: no conversion needed.
+        return 1.0;
+    }
+
+    private static double doubleOrZero(JsonNode node, String field) {
+        try {
+            return node.has(field) ? Double.parseDouble(node.get(field).asText()) : 0.0;
+        } catch (Exception e) {
+            return 0.0;
+        }
+    }
+
     public Price getPrice(String instrument) throws OandaApiException {
         var json = get("/accounts/" + accountId + "/pricing?instruments=" + instrument);
         if (json == null || !json.has("prices")) {

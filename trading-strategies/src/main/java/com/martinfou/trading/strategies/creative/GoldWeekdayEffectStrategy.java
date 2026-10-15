@@ -148,7 +148,7 @@ public class GoldWeekdayEffectStrategy implements Strategy {
         //  immédiatement — nécessaire pour les masques continus type ALLDAYS)
         if (inTrade && isTargetDay(prevDow)) {
             Order.Side closeSide = (tradeDirection == Order.Side.BUY) ? Order.Side.SELL : Order.Side.BUY;
-            pending.add(new Order(symbol, closeSide, Order.Type.MARKET, currentQty, bar.close()).closeOnly());
+            pending.add(new Order(symbol, closeSide, Order.Type.MARKET, currentQty, bar.close()).asCloseOnly());
             inTrade = false;
         }
 

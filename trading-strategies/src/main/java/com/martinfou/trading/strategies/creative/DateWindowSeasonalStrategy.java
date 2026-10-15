@@ -139,7 +139,7 @@ public class DateWindowSeasonalStrategy implements Strategy {
 
     private void forceExit(double price) {
         Order.Side exitSide = (tradeDirection == Order.Side.BUY) ? Order.Side.SELL : Order.Side.BUY;
-        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, quantity, price).closeOnly());
+        pending.add(new Order(symbol, exitSide, Order.Type.MARKET, quantity, price).asCloseOnly());
         inTrade = false;
     }
 

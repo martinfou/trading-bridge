@@ -58,12 +58,12 @@ public abstract class HarnessScriptedStrategy implements Strategy {
     }
 
     protected Order marketSellClose(Bar bar) {
-        return new Order(symbol, Order.Side.SELL, Order.Type.MARKET, HarnessQuantities.DEFAULT, 0).closeOnly();
+        return new Order(symbol, Order.Side.SELL, Order.Type.MARKET, HarnessQuantities.DEFAULT, 0).asCloseOnly();
     }
 
     /** Close-only exit at this bar's close (LIMIT fills when {@code high >= close}). */
     protected Order limitSellCloseAtClose(Bar bar) {
         return new Order(symbol, Order.Side.SELL, Order.Type.LIMIT, HarnessQuantities.DEFAULT, bar.close())
-            .closeOnly();
+            .asCloseOnly();
     }
 }

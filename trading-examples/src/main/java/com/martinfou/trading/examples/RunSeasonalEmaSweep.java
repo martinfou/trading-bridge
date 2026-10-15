@@ -4,6 +4,7 @@ import com.martinfou.trading.backtest.BacktestExecutionCost;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RunContext;
 import com.martinfou.trading.backtest.RunMode;
+import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.data.HistoricalDataLoader;
 import com.martinfou.trading.strategies.creative.SeasonalEmaPullbackContinuation;
@@ -25,7 +26,7 @@ public class RunSeasonalEmaSweep {
 
         var loaded = HistoricalDataLoader.loadFromArgs(symbol, symbol, yearSpec);
         List<Bar> bars = loaded.bars();
-        var cost = BacktestExecutionCost.ofCommissionAndSlippage(0.07, 0.0001);
+        java.util.function.Function<String, BacktestExecutionCost> cost = RealCostModel::costFor;
 
         System.out.printf("%n=== SWEEP %s (%d bars) — coûts $0.07 + 0.01%% ===%n", symbol, bars.size());
         System.out.println("Baseline (non-saisonnier) pour référence:");
@@ -49,7 +50,7 @@ public class RunSeasonalEmaSweep {
     }
 
     private static void runOne(String symbol, List<Bar> bars, double capital,
-                               BacktestExecutionCost cost, int e20, int e50, int e200) {
+                               java.util.function.Function<String, BacktestExecutionCost> cost, int e20, int e50, int e200) {
         var s = new ParamSeasonalEmaPullback(symbol, e20, e50, e200);
         BacktestResult r = RunContext.forStrategy(null, "SeasonalSweep", s, symbol,
             RunMode.BACKTEST, bars, capital, null, cost).run();

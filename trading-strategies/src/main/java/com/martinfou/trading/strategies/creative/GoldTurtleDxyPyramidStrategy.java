@@ -194,7 +194,7 @@ public class GoldTurtleDxyPyramidStrategy implements Strategy {
     private void closePosition(Bar bar) {
         Order.Side closeSide = tradeDirection == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
         double totalQty = unitsAdded * quantityPerUnit;
-        pending.add(new Order(symbol, closeSide, Order.Type.MARKET, totalQty, bar.close()).closeOnly());
+        pending.add(new Order(symbol, closeSide, Order.Type.MARKET, totalQty, bar.close()).asCloseOnly());
         inTrade = false;
         unitsAdded = 0;
     }
