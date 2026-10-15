@@ -107,4 +107,51 @@ class SwapCalculatorTest {
             SwapCalculator.clearRateOverride();
         }
     }
+
+    @Test
+    void yearlySwapModeDoesNotChargeWeekends() {
+        // Le bug vivait dans DEUX chemins : countRollovers et yearlySwap. Sans ce test, un revert du
+        // seul yearlySwap repasserait a 9 nuits par semaine avec une suite verte.
+        java.util.Map<Integer, double[]> byYear = new java.util.HashMap<>();
+        byYear.put(2024, new double[]{1.0, -1.0});
+        try {
+            SwapCalculator.setYearlyRateOverride("USD_CAD", byYear);
+            // Lundi 00:00 UTC -> lundi suivant 00:00 UTC = 7 nuits (dont le triple du mercredi), pas 9.
+            double week = SwapCalculator.calculateSwap("USD_CAD", Order.Side.BUY, 1000.0,
+                Instant.parse("2024-05-06T00:00:00Z"), Instant.parse("2024-05-13T00:00:00Z"), 150.0);
+            assertEquals(7.0 * 1000 * 0.0001 / 1.422295, week, 0.001);
+            // Deux semaines = 14 nuits, pas 18.
+            double fortnight = SwapCalculator.calculateSwap("USD_CAD", Order.Side.BUY, 1000.0,
+                Instant.parse("2024-05-06T00:00:00Z"), Instant.parse("2024-05-20T00:00:00Z"), 150.0);
+            assertEquals(14.0 * 1000 * 0.0001 / 1.422295, fortnight, 0.001);
+        } finally {
+            SwapCalculator.clearRateOverride();
+        }
+    }
+
+    @Test
+    void weekendRolloverIsNotCounted() {
+        // Vendredi 16:00 ET -> lundi 04:00 ET : un seul rollover reel, celui du vendredi soir. Le
+        // week-end n'est pas un evenement de financement : il est porte par le triple du MERCREDI
+        // (spot T+2 : la value date du mercredi est reportee du vendredi au lundi, donc 3 jours).
+        // L'ancien compteur en facturait 3 (ven + sam + dim).
+        assertEquals(1, SwapCalculator.countRollovers(
+            Instant.parse("2024-05-03T20:00:00Z"), Instant.parse("2024-05-06T08:00:00Z")));
+    }
+
+    @Test
+    void fullWeekIsSevenDaysNotNine() {
+        // 4 charges ordinaires + 1 triple (mercredi) = 7 nuits, pas 9.
+        assertEquals(7, SwapCalculator.countRollovers(
+            Instant.parse("2024-05-06T00:00:00Z"), Instant.parse("2024-05-13T00:00:00Z")));
+    }
+
+    @Test
+    void weekdayRolloversAreUnchanged() {
+        // Non-regression : lundi -> mardi = 1, mercredi -> jeudi = 3 (triple).
+        assertEquals(1, SwapCalculator.countRollovers(
+            Instant.parse("2024-05-06T12:00:00Z"), Instant.parse("2024-05-07T12:00:00Z")));
+        assertEquals(3, SwapCalculator.countRollovers(
+            Instant.parse("2024-05-08T12:00:00Z"), Instant.parse("2024-05-09T12:00:00Z")));
+    }
 }
