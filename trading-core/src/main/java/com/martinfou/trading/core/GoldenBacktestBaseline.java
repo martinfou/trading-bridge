@@ -28,7 +28,7 @@ public final class GoldenBacktestBaseline {
     /** Absolute tolerance on max drawdown percentage points. */
     public static final double MAX_DRAWDOWN_TOLERANCE_PCT = 0.01;
 
-    public static final String CAPTURED_AT = "2026-10-02";
+    public static final String CAPTURED_AT = "2026-10-15";
 
     public record Profile(
         int bars,
@@ -61,12 +61,24 @@ public final class GoldenBacktestBaseline {
      * (6.9921 / 30.2550). The measured half-spread of {@code RealCostModel} is therefore <b>not</b>
      * part of what the golden guards: the default {@code RunContexts.backtest} path still passes
      * {@code BacktestExecutionCost.DEFAULT}. Recorded via {@code GoldenBaselineCapture}.
+     *
+     * <p><b>Re-captured 2026-10-15</b> — weekend rollover fix in {@code SwapCalculator}: the FX market is
+     * closed on Saturday and Sunday, so the weekend financing is carried by the <b>Wednesday</b> triple
+     * rollover (spot T+2: Friday's value date rolls to Monday = 3 days). The old counter billed 9 nights
+     * for a 7-night week. Shift measured with the A/B probe {@code ProveSwapWeekendShift} (the same source
+     * run in the pre-fix tree and in the fixed tree) then re-read by {@code GoldenBaselineCapture}:
+     * the trade set is <b>identical</b> (4 and 68 trades, byte-identical per-trade signatures) and the
+     * entire move is the swap line, to the cent —
+     * CI subset: PnL 6.9921 → 7.2961 (+0.3040), swap −0.6840 → −0.3800 (+0.3040), 4 nights removed;
+     * EUR_USD 2012: PnL 30.2550 → 31.8550 (+1.6000), swap −8.0880 → −6.4880 (+1.6000), 32 nights removed.
+     * The pre-fix tree reproduces the previous constants <b>exactly</b> (6.9921 / 30.2550), which is what
+     * makes this a re-capture rather than a blessed regression.
      */
     public static final Profile CI_SUBSET = new Profile(
-        744, 4, 0.0069920714285707, 6.9920714285706875, 0.0149949882628025);
+        744, 4, 0.0072960714285707, 7.2960714285706880, 0.0148429991244108);
 
     public static final Profile EUR_USD_2012 = new Profile(
-        8760, 68, 0.0302550357142771, 30.2550357142770700, 0.0645864074441832);
+        8760, 68, 0.0318550357142771, 31.8550357142770720, 0.0640064238935006);
 
     private GoldenBacktestBaseline() {}
 
