@@ -231,7 +231,16 @@ public final class BrokerAccountRegistry {
     }
 
     public boolean credentialsConfigured(String accountId) {
-        AccountEntry entry = accountsById.get(resolveId(accountId));
+        String id = resolveId(accountId);
+        // A registered mock broker IS a usable broker for this JVM: nothing has to be resolved from the
+        // environment, so an account backed by a mock counts as configured. Without this short-circuit the
+        // check reads the DEVELOPER'S shell instead of the test: ControlSummaryServiceTest passed wherever
+        // OANDA_API_KEY happened to be exported and failed everywhere else, which is what kept CI red on
+        // master from 2026-10-09 to 2026-10-15 (reproduced locally with the three OANDA_* variables unset).
+        if (mockBrokers.containsKey(id)) {
+            return true;
+        }
+        AccountEntry entry = accountsById.get(id);
         if (entry == null) {
             return false;
         }
