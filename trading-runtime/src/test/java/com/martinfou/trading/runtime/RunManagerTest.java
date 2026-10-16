@@ -738,7 +738,9 @@ class RunManagerTest {
         // 1. Start a run and let it get saved to database as RUNNING
         String runId;
         try (SqliteEventStore eventStore = new SqliteEventStore(config);
-             RunManager manager = new RunManager(eventStore, HERMETIC_FETCHER, null)) {
+             RunManager manager = new RunManager(eventStore,
+                 cfg -> new FakeBroker(cfg.capital() != null ? cfg.capital() : 100_000.0),
+                 HERMETIC_FETCHER, null)) {
 
             RunConfigSnapshot snapshot = new RunConfigSnapshot(
                 "LondonOpenRangeBreakout", "EUR_USD", "LIVE", "sample", 100, null, 1000.0, null, null, "LIVE_OANDA"
@@ -751,8 +753,15 @@ class RunManagerTest {
 
         // 2. Simulate control plane restart and verify restoreActiveRuns restarts it
         try (SqliteEventStore eventStore = new SqliteEventStore(config);
-             RunManager manager = new RunManager(eventStore, HERMETIC_FETCHER, null)) {
-            
+             RunManager manager = new RunManager(eventStore,
+                 cfg -> new FakeBroker(cfg.capital() != null ? cfg.capital() : 100_000.0),
+                 HERMETIC_FETCHER, null)) {
+
+            // The broker factory is not decoration: the fetcher-only constructor requires real OANDA
+            // credentials for a broker-backed run, so restoring a LIVE_OANDA run here resolved the account
+            // against data/runtime/broker-accounts.local.json (gitignored, present only on the developer's
+            // machine) and the restored run came back FAILED on CI (measured 2026-10-15). With the factory
+            // the restore drives a FakeBroker, like its sibling test above, and no environment is needed.
             // Verify runs map is empty initially
             assertTrue(manager.list(null).isEmpty());
 
