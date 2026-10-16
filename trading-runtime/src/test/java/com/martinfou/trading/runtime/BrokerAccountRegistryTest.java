@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -223,5 +224,59 @@ class BrokerAccountRegistryTest {
                 System.setProperty(e.getKey(), e.getValue());
             }
         }
+    }
+
+    /**
+     * A registered mock broker must be enough to make an account "configured".
+     *
+     * <p>The two environment-variable names below are deliberately absent everywhere, so the first
+     * assertion holds in a developer shell that exports the real {@code OANDA_*} variables as well as in
+     * CI. Before the fix the second assertion failed in CI only: {@code ControlSummaryServiceTest}
+     * registers a mock broker and then marks a broker-backed run as running, which validates the account's
+     * credentials against the ENVIRONMENT, so the whole suite depended on the developer's shell. That is
+     * what kept CI red on master (measured 2026-10-09 to 2026-10-15, reproduced locally by unsetting the
+     * three {@code OANDA_*} variables).</p>
+     */
+    @Test
+    void aRegisteredMockBrokerCountsAsConfigured() {
+        BrokerAccountRegistry registry = BrokerAccountRegistry.ofEntries(
+            new BrokerAccountRegistry.AccountEntry(
+                "mock-only",
+                "OANDA",
+                "HERMES_TEST_ABSENT_TOKEN_ENV",
+                "HERMES_TEST_ABSENT_ACCOUNT_ENV",
+                null,
+                "https://api-fxpractice.oanda.com",
+                null,
+                null,
+                null,
+                null,
+                null));
+
+        assertFalse(registry.credentialsConfigured("mock-only"),
+            "no credential is resolvable: both env var names are deliberately absent");
+
+        registry.registerMockBroker("mock-only", stubBroker());
+
+        assertTrue(registry.credentialsConfigured("mock-only"),
+            "a mock broker IS a usable broker, so the account is configured without any environment");
+        assertDoesNotThrow(() -> registry.requireConfigured("mock-only"));
+    }
+
+    private static com.martinfou.trading.broker.Broker stubBroker() {
+        return new com.martinfou.trading.broker.Broker() {
+            @Override public boolean isConnected() { return true; }
+            @Override public void connect() {}
+            @Override public void disconnect() {}
+            @Override public void reconnect() {}
+            @Override public com.martinfou.trading.broker.OrderSubmitResult submitOrder(com.martinfou.trading.core.Order order) { return null; }
+            @Override public com.martinfou.trading.broker.OrderSubmitResult cancelOrder(String id) { return null; }
+            @Override public List<com.martinfou.trading.core.Position> getPositions() { return List.of(); }
+            @Override public com.martinfou.trading.broker.AccountState getAccountState() {
+                return new com.martinfou.trading.broker.AccountState(100_000, 100_000, "USD");
+            }
+            @Override public void addEventListener(
+                java.util.function.Consumer<com.martinfou.trading.broker.BrokerEvent> listener) {}
+        };
     }
 }
