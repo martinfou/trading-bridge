@@ -144,6 +144,11 @@ puisse pas être réintroduite.
   écartées par Martin, qui a choisi de financer la semaine au sizing du playbook sur `-014`. Ce qui n'a
   **pas** été décidé : le plafond reste à 3 % hors lane news, et rien de ceci n'autorise une stratégie
   de la fenêtre à dépasser son `computedRiskPct`.
+  **Suite (D44, D52, 2026-10-16)** : la lane news est réduite à la seule jambe fade (0,5 %), donc la
+  somme déployée redescend à **2,80 %** (2,30 % pour la fenêtre + 0,5 % pour la lane). Le plafond reste
+  toutefois à **4 %** tant que la lane est déployée, et se révise à la rotation de fenêtre du
+  2026-10-31. Le détail des dix décisions est dans `docs/paper-window-log.md` (section du 2026-10-16).
+
 - **Retry d'ordre** : le client OANDA ne réessaie que les échecs de connexion, donc une fermeture du
   serveur **pendant** l'envoi n'est pas réessayée. Or réessayer un POST d'ordre peut doubler une position :
   c'est une décision de trading, pas de code, et elle attend sa propre conversation.

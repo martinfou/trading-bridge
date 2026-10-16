@@ -342,3 +342,33 @@ l'édition qui la retire. Sorties le même jour, stop obligatoire à l'entrée.
 
 *Relevé écrit le 2026-10-14 après la question de Martin sur la journée de trading. Les
 montants viennent du courtier (fills), pas d'une tuile de dashboard.*
+
+---
+
+## 2026-10-16, 07:00 EDT : décisions D43 à D52 (rotation de fenêtre, lane fade, barre du réel)
+
+État mesuré au moment des décisions (lecture seule, 10:37 UTC) : NAV **1908.05** CAD sur `-014`,
+réalisé de la fenêtre **−72.81**, aucune position ouverte, aucune fuite de contrôle. Semaine du
+12 au 16 octobre : **−38.56** réalisé sur 37 fills de clôture. Contexte : aucune des 5 stratégies
+déployées ne passe la re-baseline du 2026-10-10 sous le vrai modèle de coûts, la lane news est à
+0 sur 3 sur ses setups directionnels, et le fade du vendredi est la seule famille de recherche
+survivante (55e, 57e, 58e).
+
+Les dix décisions ci-dessous ont été prises avec Martin, une question à la fois.
+
+| # | Décision | Portée |
+|---|---|---|
+| **D43** | **Audit d'abord.** L'audit d'évidence des stratégies déployées (stratégie, instrument, risk %, provenance, verdict walk-forward) est produit AVANT toute décision de rotation. | La fin de la fenêtre 1 (2026-10-31) se tranche avec le tableau en main. |
+| **D44** | **Lane news réduite à la jambe fade.** Les setups directionnels de la semaine (CPI, CPI Chine, PPI) sont abandonnés ; le fade se joue au sizing du playbook. | La lane reste déployée mais ne porte plus que la famille qui a survécu à la recherche (1,6 % → 0,5 %). |
+| **D45** | **Une seule cross sur le chemin réel**, la plus forte de la recherche, au sizing du playbook. | Un trade par semaine : le test réel le moins cher et le plus lisible. |
+| **D46** | **Barre du passage au réel (`-005`)** : walk-forward passant sous le vrai modèle de coûts ET fenêtre paper complète à P&L positif. Ensuite seulement, taille minimale. | Le backtest ne suffit pas, la fenêtre paper non plus. |
+| **D47** | **Recherche orientée famille survivante** : la majorité des cycles va au fade du vendredi (crosses, timing d'entrée et de sortie, sizing, robustesse), avec une journée d'exploration par semaine. | Le rythme quotidien est conservé, la priorité change. |
+| **D48** | **La famille de défauts du chemin des ordres se corrige dans le déploiement de la lane du 2026-10-23**, après revue, sans autre changement. | Inclut le défaut `N/A` du rollover de 17:00 ET (entrée perdue le 2026-10-08, aucun risque pris). |
+| **D49** | **Fenêtre du fade : 8 trades hebdomadaires** (environ deux mois, fin décembre), puis décision de passage au réel sur le walk-forward ET la fenêtre. | Horloge distincte de la fenêtre 1. |
+| **D50** | **Coupe-circuit mesuré** : la lane s'arrête si sa série de pertes dépasse la pire série du walk-forward. | Une série au-delà du walk-forward signifie que le modèle est faux, pas que le marché est défavorable. |
+| **D51** | **Autorité sur le chemin réel** : aplatir immédiatement une position inexpliquée, arrêter la lane seulement si le défaut se répète. | Une position fantôme a déjà été mesurée sur cette pile (2026-10-11) : premier signal = contrôle, second = défaut. |
+| **D52** | **Le plafond de risque reste à 4 %** tant que la lane fade est déployée, révision à la rotation du 2026-10-31. | La somme déployée redescend à 2,80 % (2,30 % fenêtre + 0,5 % fade) sans que le plafond redescende maintenant. |
+
+Ce que ces décisions ne font pas : elles ne changent rien dans la fenêtre 1 en cours (instruments,
+sizing, liste de services et horloge intacts), elles n'autorisent aucune hausse de taille, et elles
+ne préjugent pas du verdict de l'audit de D43.
