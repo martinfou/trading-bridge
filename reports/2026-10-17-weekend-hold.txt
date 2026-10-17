@@ -1,0 +1,116 @@
+========================================================================================================================
+60e (samedi 17 oct 2026) — QUE COLLECTE LA CONFIG QUI VA SE DEPLOYER ?
+A = 13:00 UTC -> CLOTURE reelle (mesuree comme passant les couts) | B = cloture -> reouverture
+dimanche (D57/D61) | C = 13:00 -> reouverture. Convention publiee : FADE (SELL) ; fade > 0 = SELL gagnant.
+========================================================================================================================
+
+--- 0. FLUX
+  GBP_CHF  CROSS (OANDA)      bars= 138789
+  EUR_CHF  CROSS (OANDA)      bars= 138764
+  AUD_CHF  CROSS (OANDA)      bars= 138303
+  GBP_JPY  MAJEURE (Dukascopy) bars= 178176
+  GBP_USD  MAJEURE (Dukascopy) bars= 172752
+  USD_CAD  MAJEURE (Dukascopy) bars= 172752
+  (majeures Dukascopy = 24x7 rempli : le samedi et le dimanche portent des barres plates de carry)
+
+--- 1. ANCRAGE DE LA REOPENDURE DU DIMANCHE — bouge-t-elle avec l'heure d'ete, comme la cloture ?
+  Heure UTC de la premiere barre REELLE de la semaine, par mois (crosses) :
+  GBP_CHF  | h17 n=  66 M01:20%M11:20%M02:17%M10:15% | h18 n= 202 M03:10%M04:10%M05:9%M06:9% | h19 n= 117 M07:19%M08:19%M05:15%M04:13% | h20 n=  24 M01:29%M02:17%M11:17%M12:12% | h21 n= 458 M05:13%M07:13%M08:13%M09:13% | h22 n= 253 M12:23%M01:22%M02:22%M11:22%
+  EUR_CHF  | h17 n=  62 M10:19%M01:18%M02:18%M12:16% | h18 n= 180 M03:12%M11:10%M04:9%M05:9% | h19 n= 112 M08:17%M07:16%M04:14%M05:14% | h20 n=  34 M01:26%M02:15%M11:12%M08:9% | h21 n= 477 M04:13%M05:13%M06:13%M07:13% | h22 n= 237 M12:24%M01:23%M02:23%M11:23%
+  AUD_CHF  | h16 n=  17 M10:24%M05:18%M04:12%M06:12% | h17 n=  89 M01:20%M10:17%M11:15%M02:13% | h18 n= 167 M03:12%M05:10%M09:10%M04:9% | h19 n=  96 M07:22%M08:18%M04:14%M05:12% | h20 n=  19 M01:32%M11:21%M02:16%M12:16% | h21 n= 469 M05:13%M06:13%M07:13%M08:13% | h22 n= 239 M01:23%M02:23%M11:23%M12:23%
+  Lecture : si la reouverture est a h22 en hiver et h21 en ete, alors 'sortir a 21:00 UTC' (D61)
+  est la MEME erreur d'ancre fixe que le 59e vient de diagnostiquer sur la cloture.
+  Heure de la derniere barre du vendredi (rappel du 59e) vs heure de la reouverture :
+  SYMBOLE    cloture h20  cloture h21 cloture h22+  reouv h21  reouv h22  reouv h23
+  GBP_CHF            684          406           39        458        253          5
+  EUR_CHF            704          399           26        477        237          7
+  AUD_CHF            685          405           39        469        239          8
+
+--- 2. DISTRIBUTION DU HOLD (loi du 57e : le hold est EMERGENT du flux — le publier)
+  SYMBOLE       n  hold moy     min     med     max
+  GBP_CHF    1130      46.9     3.0    48.0    73.0
+  EUR_CHF    1130      46.8     3.0    48.0    73.0
+  AUD_CHF    1130      46.4     3.0    48.0    73.0
+  GBP_JPY    1059      48.1    47.0    48.0    72.0
+  GBP_USD    1027      48.1    47.0    48.0    72.0
+  USD_CAD    1027      48.1    47.0    48.0    72.0
+
+--- 3. LES TROIS CONFIGS, DECOMPOSEES EN JAMBES (brut, bp de fade)
+  A = 13:00 -> cloture | B = cloture -> reouverture (D57/D61) | C = 13:00 -> reouverture
+  net = fade brut - cout A/R - carry (0 / 1 / 2 jours factures ; 1 jour = 1 rollover selon le
+  correctif du 15 oct, le week-end n'est plus facture deux fois).
+  SYMBOLE     A brut    A t |    B brut    B t |    C brut    C t |   cout carry/j
+  GBP_CHF      +5.71  +5.12 |     +2.51  +5.10 |     +8.22  +7.04 |  2.278   -0.96
+  EUR_CHF      +4.15  +5.57 |     +1.91  +5.39 |     +6.05  +7.87 |  1.702   -0.41
+  AUD_CHF      +9.09  +6.87 |     +2.33  +3.38 |    +11.42  +8.24 |  2.584   -0.99
+  GBP_JPY      +0.72  +0.52 |     +4.99  +6.11 |     +5.71  +3.58 |  1.630   -0.96
+  GBP_USD      +1.37  +1.12 |     +2.77  +4.68 |     +4.13  +3.10 |  2.140   -0.00
+  USD_CAD      +1.73  +1.32 |     +0.61  +1.31 |     +2.34  +1.76 |  2.140   -0.34
+
+--- 3b. P0 NON-REGRESSION — table du 59e (entree = CLOSE de la barre [12,13), sortie = close de la
+  derniere barre reelle) : net = fade - cout. On doit retrouver +3.88 / +2.55 / +6.87 (a l'entree
+  conventionnelle pres : l'entree de ce harnais est l'OPEN de [13,14), un tick plus tard).
+  SYMBOLE    brut 59e  net 59e brut ici (A)   ecart
+  GBP_CHF       +5.70    +3.43        +5.71   +0.01
+  EUR_CHF       +4.15    +2.44        +4.15   -0.00
+  AUD_CHF       +9.09    +6.51        +9.09   +0.00
+
+--- 4. NET PAR CONFIG — A (0 nuit) / B (1 et 2 jours) / C (1 et 2 jours)
+  SYMBOLE      A net  B net j1  B net j2  C net j1  C net j2
+  GBP_CHF      +3.43     +1.19     +2.15     +6.90     +7.86
+  EUR_CHF      +2.44     +0.62     +1.03     +4.76     +5.17
+  AUD_CHF      +6.51     +0.73     +1.71     +9.82    +10.81
+  GBP_JPY      -0.91     +4.32     +5.28     +5.04     +6.00
+  GBP_USD      -0.77     +0.63     +0.63     +1.99     +1.99
+  USD_CAD      -0.41     -1.19     -0.85     +0.54     +0.88
+
+--- 5. PLACEBO DE MEME DUREE : close -> open a J+2, ancre lundi / mardi / mercredi / jeudi
+  Un portage de week-end doit se distinguer d'un trou de 2 nuits ordinaire.
+  SYMBOLE    LUN->MER  MAR->JEU  MER->VEN  VEN->DIM  diff VEN-moy      t
+  GBP_CHF       -1.47     +1.26     +2.78     +2.51         +1.65  +1.30
+  EUR_CHF       -0.66     +0.97     +2.45     +1.91         +0.99  +1.01
+  AUD_CHF       -1.86     +3.57     +2.00     +2.33         +1.09  +0.70
+  GBP_JPY       -2.61     -1.63     -1.25     +4.99         +6.82  +4.21
+  GBP_USD       -1.75     -0.81     -0.54     +2.77         +3.80  +3.10
+  USD_CAD       -0.23     +0.97     -0.01     +0.61         +0.37  +0.34
+
+--- 6. LA JAMBE B (le portage de week-end SEUL, ce que D57/D61 collecte) : IS/OOS, eres, TRIM
+  SYMBOLE       FULL  IS 06-15  OOS 16-26  mediane  hit>0   TRIM5      n                            eres (4)
+  GBP_CHF      +2.50     -0.38      +5.44    +1.43    57%   +2.03   1130          +2.10  -0.33  +0.93  +6.53
+  EUR_CHF      +1.90     +0.53      +3.30    +0.75    55%   +1.49   1130          +0.49  +0.68  -0.36  +5.56
+  AUD_CHF      +2.32     -1.21      +5.94    +1.79    58%   +2.47   1130          -2.56  +0.31  +0.65  +8.35
+  GBP_JPY      +4.99     +2.33      +7.56    +4.13    63%   +4.51   1059          +4.88  -0.67  +4.88  +9.59
+  GBP_USD      +2.77     +1.26      +4.31    +1.65    57%   +2.46   1027          +1.98  +1.05  +3.92  +3.80
+  USD_CAD      +0.61     +0.99      +0.22    +0.95    55%   +0.93   1027          +0.32  +1.35  +0.90  -0.08
+
+--- 7. DECOMPOSITION DE A EN BARRES (k barres avant la cloture reelle) — vendredi, crosses
+  Si B (entree a la cloture) vaut ~0, c'est parce que la jambe k=0 est DEJA realisee a l'entree.
+  SYMBOLE               k=0             k=1             k=2             k=3
+  GBP_CHF       +3.38(t+11.7)     +0.77(t+3.1)     +0.31(t+1.1)     -0.42(t-1.4)
+  EUR_CHF       +1.93(t+10.4)     +0.61(t+3.4)     +0.11(t+0.5)     -0.09(t-0.5)
+  AUD_CHF       +5.98(t+13.3)     +1.56(t+3.7)     -0.55(t-1.4)     -0.00(t-0.0)
+  Lecture : A capte k=0 ; entrer A LA CLOTURE (D57) arrive APRES le mouvement.
+
+--- 9. CONTROLE DE LA REOPENDURE — ne garder que les semaines dont le premier tick tradable est
+  un DIMANCHE (soir). Les autres (h16-h20 = lundi matin ou donnee manquante) melangent la derive
+  du lundi au 'portage de week-end'.
+  SYMBOLE   n dim n jete   B brut B net j1 C net j1    A IS   A OOS    B IS   B OOS    C IS   C OOS
+  GBP_CHF    1118     12    +2.48    +1.16    +7.03   +3.30   +3.89   -1.68   +4.09   +3.89  +10.26
+  EUR_CHF    1114     16    +1.92    +0.63    +4.93   +3.11   +2.09   -0.75   +2.04   +4.06   +5.83
+  AUD_CHF    1103     27    +2.62    +1.03    +9.99   +3.85   +8.92   -2.27   +4.34   +4.17  +15.84
+  GBP_JPY    1055      4    +4.98    +4.30    +4.97   -4.55   +2.51   +1.66   +6.87   -1.26  +11.01
+  GBP_USD    1023      4    +2.78    +0.64    +1.97   -2.53   +0.95   -0.88   +2.21   -1.27   +5.30
+  USD_CAD    1023      4    +0.57    -1.23    +0.55   -1.44   +0.74   -0.81   -1.66   -0.11   +1.22
+
+--- 10. SENSIBILITE : la jambe B paie son entree A LA CLOTURE, le moment ou le spread est le plus
+  large de la semaine (donnee bid SEULE : on ne peut pas le mesurer, seulement le borner).
+  Net de B si le demi-spread a la cloture vaut 1x / 1.5x / 2x / 3x le demi-spread mesure de la paire :
+  SYMBOLE   cout mesure     B x1   B x1.5     B x2     B x3 seuil de mort
+  GBP_CHF         2.278    +1.15    +0.01    -1.13    -3.41         1.50x
+  EUR_CHF         1.702    +0.62    -0.23    -1.08    -2.79         1.36x
+  AUD_CHF         2.584    +1.02    -0.27    -1.56    -4.14         1.40x
+
+--- 8. LECTURE
+  Le tableau 4 dit ce que chaque config encaisse net ; le tableau 5 separe un portage de week-end
+  d'un trou de 2 nuits ordinaire ; le tableau 6 dit si la jambe B est stable (IS/OOS, eres, TRIM).
+  Le tableau 1 dit si l'ancre de SORTIE de D61 (dimanche 21:00 UTC) est une heure fixe valide.
