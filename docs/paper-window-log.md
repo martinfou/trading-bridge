@@ -372,3 +372,50 @@ Les dix décisions ci-dessous ont été prises avec Martin, une question à la f
 Ce que ces décisions ne font pas : elles ne changent rien dans la fenêtre 1 en cours (instruments,
 sizing, liste de services et horloge intacts), elles n'autorisent aucune hausse de taille, et elles
 ne préjugent pas du verdict de l'audit de D43.
+
+---
+
+## 2026-10-16, 18:00 EDT : incident du fade (halt de 17:00 ET) et décisions D53 à D61
+
+### L'incident, tel que le courtier le montre
+
+Le seul setup survivant de la semaine n'a **pas** tradé. Preuves, dans l'ordre :
+
+| Heure (UTC) | Événement | Détail |
+|---|---|---|
+| 2026-10-16 21:00:33.551 | `MARKET_ORDER` GBP_CHF | tag `newsoct12fade_GBPCHF`, donc bien la stratégie |
+| 2026-10-16 21:00:33.551 | `ORDER_CANCEL` | motif **`MARKET_HALTED`**, aucun fill, aucune position |
+| journal du runner | `ENTRY GBP_CHF SELL -0.00 lots @ N/A` puis `❌ TRADE EXECUTION FAILED: GBP_CHF SELL @ 1.09739 — For input string: "N/A"` | l'absence de fill devient le prix littéral `N/A`, que le runner ne sait pas parser |
+
+Mécanisme : l'entrée se déclenche sur la barre complétée **16:00 EDT**, qui arrive à **21:00:33 UTC, soit
+17:00:33 ET**, la minute du rollover quotidien. La place ferme le marché pendant cette minute et annule
+l'ordre. C'est la même famille que l'incident `consecbar` du 2026-10-08 (même motif, même minute) : chez
+nous, « pas de fill » devient `N/A` au lieu d'être une absence explicite, et le runner **plante au lieu de
+sauter proprement**. Le compteur `totalEntries` s'incrémente avant le parse, d'où `entries: 1` au moniteur
+pour zéro fill. L'état n'est pas verrouillé (`inTrade: false`, `activeTrades: []`), aucun risque pris.
+Le 2026-10-16 21:41 UTC, OANDA practice répondait par ailleurs **503 « System under maintenance »** sur
+`/accounts/{id}` et `/transactions`, depuis le hub et depuis la machine locale, la dernière lecture
+réussie datant de 21:20 UTC.
+
+### Conséquence structurelle pour la semaine du 19
+
+Il n'existe **aucune instance** du fade pour le vendredi 23 octobre : la classe est codée en dur sur
+`nyEvent(2026, 10, 16, 16, 0)`, et sans playbook le cron de construction n'en fabrique pas. La lane fade
+de D44/D45 ne peut donc pas exister la semaine prochaine sans nouveau code.
+
+### Décisions de Martin (2026-10-16, une question à la fois)
+
+| # | Décision | Portée |
+|---|---|---|
+| **D53** | **Le rapport backtest contre production s'affiche dans une section du hub sous `/trading`** (attendu contre réalisé, par stratégie, lisible sur téléphone). Le dépôt et Joplin gardent la trace écrite. | Décide où le travail de D43 se lit. |
+| **D54** | **Le dashboard du hub reçoit un état vide explicite** (OANDA 503 ou injoignable) **plus le dernier NAV du miroir avec son horodatage**. Corrigé tout de suite, petit changement côté hub. | Fini les tirets muets : une page qui n'a pas de donnée dit pourquoi. |
+| **D55** | **L'audit rejoue le set déployé au sizing de la fenêtre** sous le vrai modèle de coûts. C'est ce nombre qui a le droit de tuer une stratégie. | Le caveat de sizing disparaît des verdicts. |
+| **D56** | **La fenêtre 1 court jusqu'au 31 octobre**, verdicts appliqués à la rotation, aucun changement en cours de fenêtre. | La discipline de fenêtre tient, même avec un set sans edge. |
+| **D57** | **Le fade devient permanent et sans date codée en dur** (il calcule lui-même la clôture du vendredi), **entre sur le dernier tick avant le halt de 17:00 ET**, et **saute proprement** quand la place refuse ou ne remplit pas. Déployé **avant le vendredi 23 octobre**. | Ferme les deux défauts d'un coup : la semaine codée en dur et l'entrée dans la minute de halt. |
+| **D58** | **Le déploiement qui le porte ne recrée QUE le conteneur du fade** ; les cinq conteneurs de la fenêtre restent sur leur image actuelle. | La fenêtre garde son état ; la pile porte deux versions d'image une semaine. |
+| **D59** | **Le correctif « sauter proprement » atteint aussi les cinq conteneurs de la fenêtre**, sous le précédent D38 (correctif de comportement seulement, état sauvegardé puis restauré). | Protège aussi le chemin de sortie au passage du halt. |
+| **D60** | **Alerte scindée par conséquence** : alerte Telegram **immédiate** sur une entrée vivante refusée ou sautée, **digest quotidien** de 07:00 pour les vagues 503/504 de l'amont. | L'échec silencieux d'aujourd'hui ne peut plus se reproduire sans être dit. |
+| **D61** | **La sortie du fade est le premier tick tradable après le portage**, soit la réouverture du **dimanche 21:00 UTC**, confirmée ou déplacée par le rejeu de D55. | Le portage de week-end reste, la sortie est un instant mécanique. |
+
+Ce que ces décisions ne font pas : aucun changement d'instrument, de sizing, de liste de services ni
+d'horloge dans la fenêtre 1 ; aucune hausse de risque ; aucun ordre réel sur `-005`.
