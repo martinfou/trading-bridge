@@ -1861,7 +1861,16 @@ public class LiveStrategyRunner implements Runnable {
                 m = strategy.getClass().getMethod("isInTrade");
                 root.put("strat_inTrade", (boolean) m.invoke(strategy));
                 m = strategy.getClass().getMethod("getTradeDirection");
-                root.put("strat_tradeDirection", ((Enum<?>) m.invoke(strategy)).name());
+                // A flat strategy has no side to record, and reporting that is not an error: read the
+                // value first and write an explicit null. Dereferencing it here used to throw a
+                // NullPointerException whose message is literally "null", which aborted the whole save
+                // (state file frozen for days, only the in-trade snapshots ever landed).
+                Object rawDirection = m.invoke(strategy);
+                if (rawDirection instanceof Enum<?> directionEnum) {
+                    root.put("strat_tradeDirection", directionEnum.name());
+                } else {
+                    root.putNull("strat_tradeDirection");
+                }
                 m = strategy.getClass().getMethod("getLastTradeDay");
                 root.put("strat_lastTradeDay", (int) m.invoke(strategy));
             } catch (NoSuchMethodException e) {
@@ -2473,7 +2482,23 @@ public class LiveStrategyRunner implements Runnable {
                     int td = root.get("strat_tradesToday").asInt();
                     int ltd = root.get("strat_lastTradeDay").asInt(-1);
                     boolean it = root.get("strat_inTrade").asBoolean();
-                    Order.Side dir = Order.Side.valueOf(root.get("strat_tradeDirection").asText("BUY"));
+                    // A side is optional: a flat strategy exports an explicit null. Passing "null" to
+                    // valueOf used to abort the whole resume, and a stale file can also claim inTrade
+                    // with no side. Both cases mean "flat", never "keep the flag and guess a side".
+                    JsonNode dirNode = root.get("strat_tradeDirection");
+                    Order.Side dir = null;
+                    if (dirNode != null && dirNode.isTextual()) {
+                        try {
+                            dir = Order.Side.valueOf(dirNode.asText());
+                        } catch (IllegalArgumentException unknownSide) {
+                            log.warn("State file carries an unknown strategy side '{}' — restoring as flat",
+                                dirNode.asText());
+                        }
+                    }
+                    if (dir == null && it) {
+                        log.warn("State file says inTrade=true with no strategy side — restoring as flat");
+                        it = false;
+                    }
                     int cd = root.get("strat_cooldownBars").asInt(0);
                     m.invoke(strategy, td, ltd, it, dir, cd);
                     log.info("♻ Strategy state restored: tradesToday={}, inTrade={}, cooldown={}", td, it, cd);
