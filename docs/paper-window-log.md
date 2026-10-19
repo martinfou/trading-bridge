@@ -419,3 +419,24 @@ de D44/D45 ne peut donc pas exister la semaine prochaine sans nouveau code.
 
 Ce que ces décisions ne font pas : aucun changement d'instrument, de sizing, de liste de services ni
 d'horloge dans la fenêtre 1 ; aucune hausse de risque ; aucun ordre réel sur `-005`.
+
+## 2026-10-18, 20:30 EDT : le fade devient intraday (D62 à D67)
+
+Contexte mesuré : la lane du 12 octobre a perdu son seul setup survivant (`MARKET_HALTED` le 16 oct à
+21:00:33 UTC, entrée comptée pour zéro fill), et il n'existe **aucune instance** du fade pour le vendredi
+23 octobre. La recherche 59e (2026-10-16) déplace la sortie que D61 avait fixée : la sortie au retour du
+dimanche vaut **-0,26 / +0,16 / -0,11 bp**, la sortie à la clôture réelle vaut **+3,88 / +2,55 / +6,87 bp**
+(t 3,3 / 3,2 / 4,9), et **88 % du mouvement de la dernière heure est déjà réalisé à H-10 min**.
+
+| # | Décision | Portée |
+|---|---|---|
+| **D62** | Le chantier de la semaine est **D57 (fade permanent) + le correctif du chemin des ordres** ; l'audit D43 vient après. | Le fade n'a aucune instance pour le 23 sans nouveau code : c'est l'urgence. |
+| **D63** | **Risque 0,5 % par trade**, conforme à D44/D52. | Somme déployée 2,80 %, marge 1,20 % sous le plafond de 4 %. |
+| **D64** | **Une seule cross : AUD_CHF**, la plus forte du profil clôture-relatif (-6,16 bp), une seule instance, un seul conteneur. | Un instrument par conteneur ; pas de risque corrélé déguisé en diversification. |
+| **D65** | **Le fade devient INTRADAY, en M5** : entrée à l'ouverture de la dernière heure (clôture réelle moins 60 min), sortie à **H-10 min de la clôture réelle**. La clôture est **calculée**, pas codée : 21:00 UTC en EDT, 22:00 UTC en EST. | 88 % de l'edge, zéro rollover. D61 est **remplacée** : la sortie au retour du dimanche ne capture rien. |
+| **D66** | **Correctif du chemin des ordres, périmètre complet** : prix de fill explicite au lieu du sentinel `N/A`, compteur d'entrée incrémenté après fill confirmé, raison du `orderCancel` dans le message. | Livré dans le conteneur du fade. **D59 (fenêtre) est reporté** : les cinq conteneurs de la fenêtre gardent leur image cette semaine, conformément à D58. |
+| **D67** | **Nettoyage de la lane oct12 maintenant** : post-mortem rempli depuis les journaux, puis arrêt et suppression des trois conteneurs et de leurs blocs `services:`. **Merge après les revues et la porte verte ; arrêt avant le déploiement**, qui reste le go de Martin. | Le watchdog cesse d'attendre des services morts. |
+
+Ce que ces décisions ne font pas : aucun changement sur les cinq stratégies de la fenêtre, aucun ordre réel
+sur `-005`, aucune hausse du plafond de risque.
+
