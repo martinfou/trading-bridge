@@ -61,6 +61,12 @@ Il n'y a **pas d'outbox** : un POST perdu n'est pas rejoué, il est simplement r
 snapshot suivant. Corollaire assumé : une métrique absente du payload (le Gateway ne l'a pas
 renvoyée, ou a renvoyé le sentinel `1.7976931348623157E308`) s'affiche `—` dans le hub, jamais `0`.
 
+**Gateway arrêté ou illisible** : le script publie quand même un snapshot **dégradé**
+(`connection.connected: false`, `account` sans métriques, `gateway_errors` rempli) puis sort en 1.
+C'est volontaire : sans ce push, le hub garderait le dernier `connected: true` et afficherait un
+Gateway vivant alors qu'il est mort. Ne pas tester ce cas avec le port par défaut, sous peine de
+publier un faux « disconnected » en production : utiliser `--dry-run` pour l'inspection.
+
 ## Pannes
 
 | Symptôme | Cause | Correctif |
