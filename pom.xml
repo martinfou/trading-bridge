@@ -35,7 +35,20 @@
         <langchain4j.version>0.33.0</langchain4j.version>
         <hikaricp.version>5.1.0</hikaricp.version>
         <mockito.version>5.11.0</mockito.version>
+        <!-- Official IBKR TWS API; install with scripts/install-ibkr-api.sh (keep versions in sync) -->
+        <tws.api.version>1050.02</tws.api.version>
+        <protobuf.version>4.29.5</protobuf.version>
     </properties>
+
+    <repositories>
+        <repository>
+            <id>project-local-ibkr</id>
+            <name>Project-local repo for IBKR TwsApi.jar (scripts/install-ibkr-api.sh)</name>
+            <url>file://${maven.multiModuleProjectDirectory}/lib/m2</url>
+            <releases><enabled>true</enabled></releases>
+            <snapshots><enabled>false</enabled></snapshots>
+        </repository>
+    </repositories>
 
     <dependencyManagement>
         <dependencies>

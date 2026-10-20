@@ -698,7 +698,9 @@ public final class ControlPlaneServer implements AutoCloseable {
                                 host = existing.host();
                             }
                         }
-                        if (port == null || port == 0 || port == 7497) {
+                        if (port == null || port == 0
+                            || port == com.martinfou.trading.data.ibkr.IbkrConnectionConfig.TWS_PAPER_PORT
+                            || port == com.martinfou.trading.data.ibkr.IbkrConnectionConfig.DEFAULT_PAPER_PORT) {
                             if (existing.port() != null) {
                                 port = existing.port();
                             }

@@ -162,8 +162,12 @@ public record BrokerEvent(
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("type", type.name());
         map.put("timestamp", timestamp.toString());
-        map.put("orderId", orderId);
-        map.put("symbol", symbol);
+        if (orderId != null) {
+            map.put("orderId", orderId);
+        }
+        if (symbol != null) {
+            map.put("symbol", symbol);
+        }
         if (side != null) {
             map.put("side", side);
         }

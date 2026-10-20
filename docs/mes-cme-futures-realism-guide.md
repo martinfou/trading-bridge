@@ -36,7 +36,7 @@ double validTickPrice = FuturesRegistry.quantizePrice("MES", orderPrice); // -> 
 ### 2.2 Mode d'Exécution `FillMode.TRADE_THROUGH`
 Pour éliminer le biais d'exécution des ordres limites, le moteur supporte deux modes :
 * `FillMode.TOUCH` : Exécution dès contact (mode optimiste / legacy).
-* `FillMode.TRADE_THROUGH` (**Défaut recommandé pour la qualification**) : Un ordre d'achat limite à $5000.00 n'est exécuté que si le `low` de la barre est strictement inférieur ($< 5000.00$), garantissant qu'au moins 1 tick a traversé le carnet d'ordres.
+* `FillMode.TRADE_THROUGH` (**Défaut recommandé pour la qualificati on**) : Un ordre d'achat limite à $5000.00 n'est exécuté que si le `low` de la barre est strictement inférieur ($< 5000.00$), garantissant qu'au moins 1 tick a traversé le carnet d'ordres.  
 
 ```java
 BacktestEngine engine = new BacktestEngine()

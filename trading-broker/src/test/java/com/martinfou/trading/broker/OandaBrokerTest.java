@@ -107,7 +107,9 @@ class OandaBrokerTest {
         client.throwOnFetchSummary = true;
         
         for (int i = 0; i < 200; i++) {
-            if (!broker.isConnected()) break;
+            if (!broker.isConnected() && events.stream().anyMatch(e -> e.type() == BrokerEventType.CONNECTION && e.message().startsWith("DISCONNECTED"))) {
+                break;
+            }
             Thread.sleep(10);
         }
         

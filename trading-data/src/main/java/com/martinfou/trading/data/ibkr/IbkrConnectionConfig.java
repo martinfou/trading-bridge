@@ -15,8 +15,12 @@ public record IbkrConnectionConfig(
     public static final String ENV_CLIENT_ID = "IBKR_CLIENT_ID";
     public static final String ENV_ACCOUNT = "IBKR_ACCOUNT_ID";
 
-    public static final int DEFAULT_PAPER_PORT = 7497;
-    public static final int DEFAULT_LIVE_PORT = 7496;
+    /** IB Gateway paper port. (TWS uses 7497/7496; override via IBKR_GATEWAY_PORT or ibkr.properties.) */
+    public static final int DEFAULT_PAPER_PORT = 4002;
+    /** IB Gateway live port. */
+    public static final int DEFAULT_LIVE_PORT = 4001;
+    public static final int TWS_PAPER_PORT = 7497;
+    public static final int TWS_LIVE_PORT = 7496;
 
     public IbkrConnectionConfig {
         if (host == null || host.isBlank()) {

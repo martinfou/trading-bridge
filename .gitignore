@@ -79,6 +79,7 @@ data/historical/*
 data/runtime/*.db
 data/runtime/*.db-shm
 data/runtime/*.db-wal
+data/runtime/*.json
 
 # SQ hot-folder drops (StrategyQuant XML + sidecar manifests — not committed)
 data/sq-inbox/pending/*
@@ -116,3 +117,7 @@ deployments/
 # Walk-Forward Analysis reports
 data/reports/wfa/
 
+
+# IBKR TWS API (installed by scripts/install-ibkr-api.sh; not redistributable)
+lib/m2/
+lib/.ibapi-download/

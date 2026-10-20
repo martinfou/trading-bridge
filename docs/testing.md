@@ -415,23 +415,39 @@ Tests: `DeploymentStoreTest`, `BrokerAccountRegistryTest`, `BrokerAccountRouting
 
 ## IBKR broker execution (Story 16.10)
 
-`IbkrBroker` implements the shared `Broker` interface via TWS / IB Gateway. Set `IBKR_USE_STUB=true` for tests; otherwise TCP connect validates gateway reachability on port 7497 (paper) or 7496 (live).
+`IbkrBroker` implements the shared `Broker` interface against IB Gateway (or TWS) using the **official TWS API** (`com.interactivebrokers:tws-api`, v1050.02) through `EClientIbkrGatewayClient`. Set `IBKR_USE_STUB=true` to use the in-memory `StubIbkrGatewayClient` instead.
+
+**One-time setup**
+
+1. `./scripts/install-ibkr-api.sh`: downloads the official API and installs `TwsApi.jar` into the project-local Maven repo `lib/m2/` (gitignored; IB's license forbids redistribution). The Dockerfile runs it automatically.
+2. Install IB Gateway (stable) and log in. Under *Configure → Settings → API → Settings*: tick **Enable ActiveX and Socket Clients**, **untick Read-Only API**, socket port **4002** (paper) / **4001** (live), trusted IP `127.0.0.1`. Under *Precautions*: tick **Bypass Order Precautions for API Orders**.
+
+**Supported:** futures (FuturesRegistry, e.g. `MES`, `MNQ`, `M2K`, `EMD`; front quarterly contract qualified via `reqContractDetails`), US stocks (`AAPL`, `SPY`, routed via SMART), and forex (`EUR_USD`, IDEALPRO). Explicit prefixes override the heuristics: `FUT:MES`, `STK:BRK B`, `CASH:EUR_USD`. Order types: MARKET, LIMIT (`price` = limit), and STOP (`price` = trigger). Setting `stopLoss`/`takeProfit` sends a **native IB bracket** (OCA children with order refs `<orderId>-TP`/`-SL`, held server-side). Prices are rounded to the contract tick. Quantities must be whole numbers for FUT/STK.
+
+**Event semantics:** `submitOrder` returns accepted once IB acknowledges the order. One `FILL` (VWAP of the partial executions) is emitted when the order completes. A partially filled order that is later cancelled emits a `FILL` for the filled quantity, then a `REJECT` with message `CANCELLED`. MARKET orders block up to 5 s waiting for the fill. Cancels, IB rejects (with IB's code and reason) and gateway connectivity changes (1100/1101/1102, socket close) are all emitted as events.
 
 Environment:
 
 | Variable | Purpose |
 |----------|---------|
 | `IBKR_GATEWAY_HOST` | Gateway host (default `127.0.0.1`) |
-| `IBKR_GATEWAY_PORT` | Override port |
-| `IBKR_CLIENT_ID` | TWS client id (default `1`) |
-| `IBKR_ACCOUNT_ID` | IB account id |
+| `IBKR_GATEWAY_PORT` | Override port (default 4002 paper / 4001 live; TWS uses 7497 / 7496) |
+| `IBKR_CLIENT_ID` | API client id (default `1`; each concurrent connection needs a unique id) |
+| `IBKR_ACCOUNT_ID` | IB account id (paper accounts start with `DU`); also read from `~/.trading-bridge/ibkr.properties` |
 | `IBKR_USE_STUB` | `true` → in-memory stub (tests) |
 
 Start runs with `executionLabel` `PAPER_IBKR` or `LIVE_IBKR`. Promote to `PAPER_IBKR` is supported (requires IBKR credentials or `IBKR_USE_STUB=true`).
 
 **MVP limitation (decision 1A):** `PAPER_IBKR` does **not** count toward the 30-day paper period required for LIVE promote (`countsTowardPaperPeriod` is true only for `PAPER_OANDA`). LIVE promote always resolves to `LIVE_OANDA` today. Use IBKR paper for connector validation; use `PAPER_OANDA` when targeting the LIVE gate path.
 
-Tests: `IbkrBrokerTest`, `BrokerRunExecutorTest.brokerRunExecutor_ibkr_*`, `OandaBrokerTest` (OANDA independent).
+Tests: `EClientIbkrGatewayClientTest`, `IbkrContractResolverTest`, `IbkrBrokerTest`, `BrokerRunExecutorTest.brokerRunExecutor_ibkr_*`, `OandaBrokerTest` (OANDA independent).
+
+**Live paper smoke test** (needs a running, logged-in paper Gateway; order tests refuse any account not starting with `DU`):
+
+```bash
+IBKR_IT=true ./mvnw -pl trading-broker -am test -Dtest=IbkrPaperSmokeIT -Dsurefire.failIfNoSpecifiedTests=false                      # read-only
+IBKR_IT=true IBKR_IT_ORDERS=true ./mvnw -pl trading-broker -am test -Dtest=IbkrPaperSmokeIT -Dsurefire.failIfNoSpecifiedTests=false  # + paper orders
+```
 
 ## Paper mode (stub)
 

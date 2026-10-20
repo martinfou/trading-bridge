@@ -59,17 +59,44 @@ class IbkrContractResolverTest {
     }
 
     @Test
-    void testTcpGatewayConnectivity() throws IOException {
-        try (MockTcpGatewayServer server = new MockTcpGatewayServer()) {
-            IbkrConnectionConfig config = new IbkrConnectionConfig("127.0.0.1", server.port(), 1, "DU12345");
-            TcpIbkrGatewayClient client = new TcpIbkrGatewayClient(config);
+    void stocksHaveNoHardcodedPrimaryExchange() {
+        // A wrong primary exchange (e.g. ISLAND for ARCA-listed SPY) makes IB return "No security definition".
+        assertNull(IbkrContractResolver.resolve("SPY").primaryExchange());
+        assertNull(IbkrContractResolver.resolve("AAPL").primaryExchange());
+    }
 
-            client.connect();
-            assertTrue(client.isConnected());
-            assertEquals(1, server.connectionCount());
+    @Test
+    void explicitPrefixesOverrideHeuristics() {
+        var brk = IbkrContractResolver.resolve("STK:BRK B");
+        assertEquals(IbkrContractResolver.SecType.STK, brk.secType());
+        assertEquals("BRK B", brk.symbol());
 
-            client.disconnect();
-            assertFalse(client.isConnected());
-        }
+        var fut = IbkrContractResolver.resolve("FUT:MES", java.time.LocalDate.of(2024, 1, 15));
+        assertEquals(IbkrContractResolver.SecType.FUT, fut.secType());
+
+        var fx = IbkrContractResolver.resolve("CASH:EUR_USD");
+        assertEquals(IbkrContractResolver.SecType.CASH, fx.secType());
+
+        assertThrows(IllegalArgumentException.class, () -> IbkrContractResolver.resolve("FUT:NOPE"));
+    }
+
+    @Test
+    void toIbContractAndBackRoundTrips() {
+        var mes = IbkrContractResolver.resolve("MES", java.time.LocalDate.of(2024, 1, 15));
+        var c = IbkrContractResolver.toIbContract(mes);
+        assertEquals("MES", c.symbol());
+        assertEquals("FUT", c.getSecType());
+        assertEquals("CME", c.exchange());
+        assertEquals("202403", c.lastTradeDateOrContractMonth());
+        assertEquals("5", c.multiplier());
+        assertEquals("MES", IbkrContractResolver.toTradingSymbol(c));
+        assertEquals(5000.0, IbkrContractResolver.perUnitPrice(c, 25000.0), 1e-9);
+
+        var eur = IbkrContractResolver.toIbContract(IbkrContractResolver.resolve("EUR_USD"));
+        assertEquals("EUR_USD", IbkrContractResolver.toTradingSymbol(eur));
+
+        var spy = IbkrContractResolver.toIbContract(IbkrContractResolver.resolve("SPY"));
+        assertEquals("SMART", spy.exchange());
+        assertEquals(410.0, IbkrContractResolver.perUnitPrice(spy, 410.0), 1e-9);
     }
 }

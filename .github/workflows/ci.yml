@@ -27,6 +27,9 @@ jobs:
           distribution: temurin
           cache: maven
 
+      - name: Install IBKR TWS API
+        run: bash scripts/install-ibkr-api.sh
+
       - name: Build and test (all modules)
         run: mvn clean install -q
 

@@ -163,8 +163,8 @@ public final class OandaBroker implements Broker {
                 log.warn("OANDA keepalive heartbeat failed (consecutive failures: {})", fails, e);
                 if (fails >= 2) {
                     log.error("OANDA keepalive failed 2 consecutive heartbeats. Declaring broker disconnected.");
-                    connected = false;
                     emit(BrokerEvent.connection("DISCONNECTED", "Keepalive ping failed: " + e.getMessage()));
+                    connected = false;
                     stopKeepalive();
                 }
             }

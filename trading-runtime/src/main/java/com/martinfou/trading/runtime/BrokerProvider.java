@@ -5,10 +5,10 @@ import com.martinfou.trading.broker.BrokerCredentials;
 import com.martinfou.trading.broker.FakeBroker;
 import com.martinfou.trading.broker.IbkrBroker;
 import com.martinfou.trading.broker.OandaBroker;
+import com.martinfou.trading.data.ibkr.EClientIbkrGatewayClient;
 import com.martinfou.trading.data.ibkr.IbkrConnectionConfig;
 import com.martinfou.trading.data.ibkr.IbkrGatewayClient;
 import com.martinfou.trading.data.ibkr.StubIbkrGatewayClient;
-import com.martinfou.trading.data.ibkr.TcpIbkrGatewayClient;
 import com.martinfou.trading.data.oanda.HttpOandaRestClient;
 import com.martinfou.trading.data.oanda.OandaRestClient;
 
@@ -61,7 +61,7 @@ public final class BrokerProvider {
     public static Broker ibkrBroker(IbkrConnectionConfig config) {
         IbkrGatewayClient client = useIbkrStub()
             ? new StubIbkrGatewayClient()
-            : new TcpIbkrGatewayClient(config);
+            : new EClientIbkrGatewayClient(config);
         return new IbkrBroker(client);
     }
 

@@ -1,10 +1,10 @@
 package com.martinfou.trading.data.ibkr;
 
+import com.ib.client.DefaultEWrapper;
 import com.ib.client.EClientSocket;
 import com.ib.client.EJavaSignal;
 import com.ib.client.EReader;
 import com.ib.client.EWrapper;
-import com.ib.client.EWrapperMsgGenerator;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -31,7 +31,7 @@ public class IbkrConfigurationTool {
         String host = scanner.nextLine().trim();
         if (host.isEmpty()) host = defaultHost;
 
-        String defaultPort = props.getProperty("port", "7497");
+        String defaultPort = props.getProperty("port", String.valueOf(IbkrConnectionConfig.DEFAULT_PAPER_PORT));
         System.out.printf("Port [%s]: ", defaultPort);
         String portStr = scanner.nextLine().trim();
         if (portStr.isEmpty()) portStr = defaultPort;
@@ -66,9 +66,9 @@ public class IbkrConfigurationTool {
             }
 
             @Override
-            public void error(int id, int errorCode, String errorMsg, String advancedOrderRejectJson) {
+            public void error(int id, long errorTime, int errorCode, String errorMsg, String advancedOrderRejectJson) {
                 if (errorCode == 502) {
-                    System.err.println("Couldn't connect to TWS. Confirm that \"Enable ActiveX and Socket Clients\" is enabled and connection port is correct.");
+                    System.err.println("Couldn't connect to IB Gateway/TWS. Confirm that \"Enable ActiveX and Socket Clients\" is enabled and connection port is correct.");
                 } else if (id == -1) {
                     // Informational messages
                     System.out.println("Info: " + errorMsg);

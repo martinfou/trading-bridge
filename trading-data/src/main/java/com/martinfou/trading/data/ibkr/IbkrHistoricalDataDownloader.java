@@ -1,6 +1,7 @@
 package com.martinfou.trading.data.ibkr;
 
 import com.ib.client.Contract;
+import com.ib.client.DefaultEWrapper;
 import com.ib.client.EClientSocket;
 import com.ib.client.EJavaSignal;
 import com.ib.client.EReader;
@@ -28,7 +29,7 @@ public class IbkrHistoricalDataDownloader {
         
         var props = IbkrConfigurationTool.loadConfig();
         String host = props.getProperty("host", "127.0.0.1");
-        int port = Integer.parseInt(props.getProperty("port", "7497"));
+        int port = Integer.parseInt(props.getProperty("port", String.valueOf(IbkrConnectionConfig.DEFAULT_PAPER_PORT)));
         // Use a different clientId so we don't conflict with main trading or config test
         int clientId = Integer.parseInt(props.getProperty("clientId", "1")) + 10;
         
@@ -47,7 +48,7 @@ public class IbkrHistoricalDataDownloader {
             }
 
             @Override
-            public void error(int id, int errorCode, String errorMsg, String advancedOrderRejectJson) {
+            public void error(int id, long errorTime, int errorCode, String errorMsg, String advancedOrderRejectJson) {
                 if (id != -1) {
                     System.err.println("Error [" + errorCode + "]: " + errorMsg);
                     if (errorCode >= 162 && errorCode <= 165) {

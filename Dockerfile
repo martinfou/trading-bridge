@@ -12,6 +12,10 @@ COPY trading-examples/pom.xml trading-examples/
 COPY trading-runtime/pom.xml trading-runtime/
 COPY trading-intelligence/pom.xml trading-intelligence/
 COPY trading-tui/pom.xml trading-tui/
+# Official IBKR TWS API (not redistributable) -> project-local repo lib/m2
+COPY scripts/install-ibkr-api.sh scripts/
+RUN (command -v curl >/dev/null || (apt-get update -qq && apt-get install -y -qq curl)) && \
+    bash scripts/install-ibkr-api.sh
 RUN mvn dependency:go-offline -q
 
 COPY . .
