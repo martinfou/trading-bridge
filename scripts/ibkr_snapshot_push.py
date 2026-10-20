@@ -4,11 +4,11 @@
 Un seul cycle par exécution (timer systemd toutes les 5 min). Aucun ordre n'est jamais envoyé.
 
 Contrat : POST {HERMES_WEB_URL}/api/trading/broker/snapshot
-          POST {HERMES_WEB_URL}/api/trading/pnl-import
 Le payload est celui attendu par IbkrPanel.vue (account / connection / positions / open_orders).
+Aucune métrique absente n'est remplacée par 0 : la clé est omise et le panel affiche « — ».
 
 Usage:
-    ibkr_snapshot_push.py [--dry-run] [--url URL] [--timeout S]
+    ibkr_snapshot_push.py [--dry-run] [--selftest] [--url URL] [--timeout S]
 
 Variables d'environnement (ou fichier HERMES_IBKR_ENV, défaut ~/.config/hermes-ibkr/publisher.env):
     IBKR_GATEWAY_HOST (127.0.0.1)   IBKR_GATEWAY_PORT (4002)   IBKR_ACCOUNT_ID (requis)
@@ -24,14 +24,38 @@ import socket
 import sys
 import threading
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
 SOURCE = "hermes-ibkr-publisher"
+SNAPSHOT_PATH = "/api/trading/broker/snapshot"
+
 TAGS = (
     "NetLiquidation,TotalCashValue,BuyingPower,AvailableFunds,"
     "InitMarginReq,MaintMarginReq,GrossPositionValue,UnrealizedPnL,RealizedPnL,Currency"
 )
+
+# Clé du payload -> tag IBKR. Un tag absent est OMIS du payload, jamais remplacé par 0.
+ACCOUNT_TAGS = {
+    "net_liquidation": "NetLiquidation",
+    "total_cash": "TotalCashValue",
+    "buying_power": "BuyingPower",
+    "available_funds": "AvailableFunds",
+    "init_margin": "InitMarginReq",
+    "maint_margin": "MaintMarginReq",
+    "gross_position_value": "GrossPositionValue",
+    "unrealized_pl": "UnrealizedPnL",
+    "realized_pl": "RealizedPnL",
+}
+
+# IBKR renvoie Double.MAX_VALUE quand une métrique est indisponible : ce n'est pas une valeur.
+UNAVAILABLE = 1.7976931348623157e308
+
+# Codes qui signifient réellement « la session n'est pas saine ». Les autres (2104/2106/2158,
+# ou un avertissement de séance) ne doivent pas faire annoncer « déconnecté ».
+FATAL_CODES = {326, 502, 504, 1100, 1102, 2110}
 
 
 def load_env_file(path: Path) -> None:
@@ -50,13 +74,11 @@ def load_env_file(path: Path) -> None:
 
 
 class Probe:
-    """Collecte account summary + positions, avec attente bornée."""
+    """Collecte account summary + positions, avec attente bornée et déconnexion garantie."""
 
     def __init__(self) -> None:
         from ibapi.client import EClient
         from ibapi.wrapper import EWrapper
-
-        outer = self
 
         class _Client(EWrapper, EClient):  # type: ignore[misc, valid-type]
             def __init__(self) -> None:
@@ -68,6 +90,7 @@ class Probe:
                 self.summary_done = threading.Event()
                 self.positions_done = threading.Event()
                 self.connected_flag = threading.Event()
+                self.fatal_error: str | None = None
                 self.errors: list[str] = []
 
             def nextValidId(self, orderId: int) -> None:
@@ -79,9 +102,11 @@ class Probe:
                     self.currency = self.currency or value
                     return
                 try:
-                    self.summary[tag] = float(value)
+                    parsed = float(value)
                 except (TypeError, ValueError):
-                    pass
+                    return
+                if parsed != UNAVAILABLE:
+                    self.summary[tag] = parsed
 
             def accountSummaryEnd(self, reqId):
                 self.summary_done.set()
@@ -90,7 +115,6 @@ class Probe:
                 if not position:
                     return
                 self.account = account
-                outer_seen = contract.currency or ""
                 self.positions.append(
                     {
                         "symbol": contract.symbol,
@@ -98,7 +122,7 @@ class Probe:
                         "quantity": abs(float(position)),
                         "average_price": float(avgCost),
                         "sec_type": contract.secType,
-                        "currency": outer_seen,
+                        "currency": contract.currency or "",
                         "local_symbol": contract.localSymbol or contract.symbol,
                     }
                 )
@@ -110,57 +134,66 @@ class Probe:
                 if code in (2104, 2106, 2107, 2158):
                     return  # information de connexion aux fermes de données
                 self.errors.append(f"{code}: {msg}")
+                if code in FATAL_CODES:
+                    self.fatal_error = f"{code}: {msg}"
 
         self.client = _Client()
 
     def collect(self, host: str, port: int, client_id: int, timeout: int) -> dict:
         client = self.client
-        client.connect(host, port, clientId=client_id)
-        threading.Thread(target=client.run, daemon=True).start()
+        try:
+            client.connect(host, port, clientId=client_id)
+            threading.Thread(target=client.run, daemon=True).start()
 
-        deadline = time.monotonic() + timeout
-        if not client.connected_flag.wait(min(10, timeout)):
-            raise TimeoutError(f"pas de nextValidId du Gateway {host}:{port}")
-        client.reqAccountSummary(1, "All", TAGS)
-        client.reqPositions()
-        while time.monotonic() < deadline:
-            if client.summary_done.is_set() and client.positions_done.is_set():
-                break
-            time.sleep(0.2)
-        client.disconnect()
-        if not client.summary_done.is_set():
-            raise TimeoutError("accountSummary non reçu dans le délai")
-        return {
-            "account": client.account,
-            "currency": client.currency or "CAD",
-            "summary": client.summary,
-            "positions": client.positions,
-            "errors": client.errors,
-        }
+            if not client.connected_flag.wait(min(10, timeout)):
+                raise TimeoutError(f"pas de nextValidId du Gateway {host}:{port}")
+            client.reqAccountSummary(1, "All", TAGS)
+            client.reqPositions()
+
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                if client.summary_done.is_set() and client.positions_done.is_set():
+                    break
+                if client.fatal_error:
+                    break
+                time.sleep(0.2)
+
+            # Les DEUX réponses sont exigées : un seul des deux flux ne prouve pas un état complet.
+            if client.fatal_error:
+                raise ConnectionError(f"erreur fatale du Gateway : {client.fatal_error}")
+            if not client.summary_done.is_set() or not client.positions_done.is_set():
+                missing = []
+                if not client.summary_done.is_set():
+                    missing.append("accountSummary")
+                if not client.positions_done.is_set():
+                    missing.append("positions")
+                raise TimeoutError(f"flux incomplet dans le délai : {', '.join(missing)}")
+
+            return {
+                "account": client.account,
+                "currency": client.currency,
+                "summary": dict(client.summary),
+                "positions": list(client.positions),
+                "connected": True,
+                "errors": list(client.errors),
+            }
+        finally:
+            try:
+                client.disconnect()
+            except Exception:  # noqa: BLE001 - la déconnexion ne masque jamais l'erreur d'origine
+                pass
 
 
 def build_payload(account_id: str, data: dict) -> dict:
     now = datetime.now(timezone.utc)
-    s = data["summary"]
+    summary = data.get("summary") or {}
 
-    def val(*names: str) -> float:
-        for name in names:
-            if name in s:
-                return s[name]
-        return 0.0
-
-    account = {
-        "currency": data["currency"] or "CAD",
-        "net_liquidation": val("NetLiquidation"),
-        "total_cash": val("TotalCashValue"),
-        "buying_power": val("BuyingPower"),
-        "available_funds": val("AvailableFunds"),
-        "init_margin": val("InitMarginReq"),
-        "maint_margin": val("MaintMarginReq"),
-        "gross_position_value": val("GrossPositionValue"),
-        "unrealized_pl": val("UnrealizedPnL"),
-        "realized_pl": val("RealizedPnL"),
-    }
+    account: dict[str, object] = {"currency": data.get("currency") or "CAD"}
+    for key, tag in ACCOUNT_TAGS.items():
+        value = summary.get(tag)
+        # Absent ou sentinel IBKR (« indisponible ») : la clé est omise, jamais remplacée par 0.
+        if value is not None and value != UNAVAILABLE:
+            account[key] = value
 
     return {
         "snapshot_id": f"ibkr:{account_id}:{int(now.timestamp() * 1000)}",
@@ -170,41 +203,20 @@ def build_payload(account_id: str, data: dict) -> dict:
         "captured_at_utc": now.isoformat().replace("+00:00", "Z"),
         "source": SOURCE,
         "connection": {
-            "connected": True,
+            "connected": bool(data.get("connected", True)),
             "gateway": f"{os.environ.get('IBKR_GATEWAY_HOST', '127.0.0.1')}:"
             f"{os.environ.get('IBKR_GATEWAY_PORT', '4002')}",
         },
         "account": account,
         "fx_rates": {},
-        "positions": data["positions"],
+        "positions": data.get("positions") or [],
         "open_orders": [],
-    }
-
-
-def build_pnl_payload(account_id: str, payload: dict) -> dict:
-    account = payload["account"]
-    return {
-        "broker": "ibkr",
-        "account_id": account_id,
-        # L'endpoint pnl-import valide practice|live (pas "paper").
-        "environment": "practice" if payload["environment"] == "paper" else "live",
-        "snapshot": {
-            "nav": account["net_liquidation"],
-            "balance": account["total_cash"],
-            "unrealized_pl": account["unrealized_pl"],
-            "margin_used": account["init_margin"],
-            "open_trade_count": len(payload["positions"]),
-            "currency": account["currency"],
-            "extraction_at_utc": payload["captured_at_utc"],
-            "source": SOURCE,
-        },
-        "entries": [],
+        # Remonté pour que le hub voie ce que le Gateway a signalé, au lieu d'un silence.
+        "gateway_errors": data.get("errors") or [],
     }
 
 
 def post(url: str, token: str, body: dict) -> tuple[int, str]:
-    import urllib.request
-
     request = urllib.request.Request(
         url,
         data=json.dumps(body).encode("utf-8"),
@@ -218,8 +230,11 @@ def post(url: str, token: str, body: dict) -> tuple[int, str]:
     try:
         with urllib.request.urlopen(request, timeout=20) as response:
             return response.status, response.read().decode("utf-8", "replace")
-    except urllib.error.HTTPError as exc:  # type: ignore[attr-defined]
+    except urllib.error.HTTPError as exc:
         return exc.code, exc.read().decode("utf-8", "replace")
+    except (urllib.error.URLError, TimeoutError, socket.timeout, OSError) as exc:
+        # Hub éteint, DNS cassé, coupure réseau : un échec propre, pas un traceback.
+        return 0, f"transport: {exc}"
 
 
 def selftest() -> int:
@@ -249,6 +264,7 @@ def selftest() -> int:
                 "local_symbol": "EUR.USD",
             }
         ],
+        "connected": True,
         "errors": [],
     }
     payload = build_payload("DUR967322", fake)
@@ -258,16 +274,30 @@ def selftest() -> int:
         "snapshot_id préfixé": payload["snapshot_id"].startswith("ibkr:DUR967322:"),
         "nav reprise": payload["account"]["net_liquidation"] == 11282.16,
         "P&L latent signé": payload["account"]["unrealized_pl"] == -12.5,
+        "zéro réel conservé": payload["account"]["gross_position_value"] == 0.0,
         "currency CAD": payload["account"]["currency"] == "CAD",
         "1 position": len(payload["positions"]) == 1,
         "position LONG": payload["positions"][0]["side"] == "LONG",
         "gateway renseigné": bool(payload["connection"]["gateway"]),
+        "connected propagé": payload["connection"]["connected"] is True,
     }
-    # La devise d'un compte absent doit être CAD, jamais vide (jamais de 0 inventé non plus).
+
+    # Une métrique absente ne doit JAMAIS devenir 0.0 : la clé doit être omise.
     empty = dict(fake, summary={}, positions=[], currency="")
     empty_payload = build_payload("DUR967322", empty)
     checks["devise par défaut CAD"] = empty_payload["account"]["currency"] == "CAD"
     checks["positions vides"] = empty_payload["positions"] == []
+    checks["nav absente, pas 0"] = "net_liquidation" not in empty_payload["account"]
+    checks["cash absent, pas 0"] = "total_cash" not in empty_payload["account"]
+
+    # Le sentinel IBKR (métrique indisponible) ne doit pas être poussé tel quel.
+    sentinel = build_payload("DUR967322", dict(fake, summary={"NetLiquidation": UNAVAILABLE}))
+    checks["sentinel filtré"] = "net_liquidation" not in sentinel["account"]
+
+    # Un Gateway en erreur fatale ne doit pas être annoncé « connecté ».
+    down = build_payload("DUR967322", dict(fake, connected=False, errors=["502: lost"]))
+    checks["déconnexion propagée"] = down["connection"]["connected"] is False
+    checks["erreurs remontées"] = down["gateway_errors"] == ["502: lost"]
 
     failed = [name for name, ok in checks.items() if not ok]
     for name, ok in checks.items():
@@ -314,31 +344,19 @@ def main() -> int:
         return 1
 
     payload = build_payload(data["account"] or account_id, data)
-    pnl_payload = build_pnl_payload(account_id, payload)
 
     if args.dry_run:
-        print(json.dumps({"snapshot": payload, "pnl_import": pnl_payload}, indent=2, ensure_ascii=False))
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
         return 0
 
     if not base_url or not token:
         print("HERMES_WEB_URL et HERMES_WEB_TOKEN sont requis", file=sys.stderr)
         return 2
 
-    failures = 0
-    pushes = [("/api/trading/broker/snapshot", payload)]
-    # pnl-import exige au moins une entrée : sans fills, il n'a rien à enregistrer.
-    if pnl_payload.get("entries"):
-        pushes.append(("/api/trading/pnl-import", pnl_payload))
-    for path, body in pushes:
-        status, response = post(base_url + path, token, body)
-        ok = 200 <= status < 300
-        failures += 0 if ok else 1
-        print(f"{'OK ' if ok else 'ERR'} {status} {path} {response[:200]}")
-        if not ok and "pnl-import" in path:
-            # Le snapshot de compte est un bonus : son rejet ne doit pas faire échouer la visibilité.
-            print("avertissement : pnl-import refusé, snapshot principal intact", file=sys.stderr)
-
-    return 0 if failures == 0 else 1
+    status, response = post(base_url + SNAPSHOT_PATH, token, payload)
+    ok = 200 <= status < 300
+    print(f"{'OK ' if ok else 'ERR'} {status} {SNAPSHOT_PATH} {response[:200]}")
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":

@@ -56,6 +56,11 @@ journalctl --user -u hermes-ibkr-publisher.service -n 20 --no-pager
 Attendu sur un cycle réussi : `OK 201 /api/trading/broker/snapshot ... "created":true`.
 Un même `snapshot_id` rejoué renvoie `200 ... "created":false` (idempotent).
 
+Un cycle en échec sort en 1 et n'écrit rien : le tick suivant (5 min) repart d'un état propre.
+Il n'y a **pas d'outbox** : un POST perdu n'est pas rejoué, il est simplement remplacé par le
+snapshot suivant. Corollaire assumé : une métrique absente du payload (le Gateway ne l'a pas
+renvoyée, ou a renvoyé le sentinel `1.7976931348623157E308`) s'affiche `—` dans le hub, jamais `0`.
+
 ## Pannes
 
 | Symptôme | Cause | Correctif |
@@ -68,6 +73,11 @@ Un même `snapshot_id` rejoué renvoie `200 ... "created":false` (idempotent).
 
 ## Ce que ça ne fait pas
 
-- pas de fills historiques ni de P&L réalisé (Flex Queries, chantier séparé)
+- pas de fills historiques ni de P&L réalisé (Flex Queries, chantier séparé) : le POST
+  `/api/trading/pnl-import` n'est pas appelé tant qu'il n'y a pas d'entrées à envoyer
 - pas d'exécution d'ordres : c'est une décision ferme (lecture seule)
 - pas de temps réel : la fraîcheur maximale est celle du timer, 5 minutes
+- pas de filtrage des lignes `sec_type=CASH` : sur un compte multi-devises, IBKR remonte les
+  soldes cash comme des positions CASH, et une vraie position forex (EUR.USD IDEALPRO) porte le
+  même `sec_type`. Les filtrer masquerait le cas d'usage principal ; le champ `sec_type` reste
+  donc dans le payload pour que l'affichage puisse les distinguer.
