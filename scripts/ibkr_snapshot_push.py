@@ -73,6 +73,22 @@ def load_env_file(path: Path) -> None:
             os.environ[key] = value
 
 
+def require_complete(summary_done: bool, positions_done: bool, fatal_error: str | None) -> None:
+    """Exige un état complet ET sain. Une seule des deux réponses ne prouve rien.
+
+    Fonction pure, hors ibapi, pour que le selftest puisse l'exercer sans Gateway.
+    """
+    if fatal_error:
+        raise ConnectionError(f"erreur fatale du Gateway : {fatal_error}")
+    if not summary_done or not positions_done:
+        missing = []
+        if not summary_done:
+            missing.append("accountSummary")
+        if not positions_done:
+            missing.append("positions")
+        raise TimeoutError(f"flux incomplet dans le délai : {', '.join(missing)}")
+
+
 class Probe:
     """Collecte account summary + positions, avec attente bornée et déconnexion garantie."""
 
@@ -158,16 +174,11 @@ class Probe:
                     break
                 time.sleep(0.2)
 
-            # Les DEUX réponses sont exigées : un seul des deux flux ne prouve pas un état complet.
-            if client.fatal_error:
-                raise ConnectionError(f"erreur fatale du Gateway : {client.fatal_error}")
-            if not client.summary_done.is_set() or not client.positions_done.is_set():
-                missing = []
-                if not client.summary_done.is_set():
-                    missing.append("accountSummary")
-                if not client.positions_done.is_set():
-                    missing.append("positions")
-                raise TimeoutError(f"flux incomplet dans le délai : {', '.join(missing)}")
+            require_complete(
+                client.summary_done.is_set(),
+                client.positions_done.is_set(),
+                client.fatal_error,
+            )
 
             return {
                 "account": client.account,
@@ -216,7 +227,7 @@ def build_payload(account_id: str, data: dict) -> dict:
     }
 
 
-def post(url: str, token: str, body: dict) -> tuple[int, str]:
+def post(url: str, token: str, body: dict, timeout: int = 20) -> tuple[int, str]:
     request = urllib.request.Request(
         url,
         data=json.dumps(body).encode("utf-8"),
@@ -228,7 +239,7 @@ def post(url: str, token: str, body: dict) -> tuple[int, str]:
         },
     )
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             return response.status, response.read().decode("utf-8", "replace")
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read().decode("utf-8", "replace")
@@ -299,6 +310,28 @@ def selftest() -> int:
     checks["déconnexion propagée"] = down["connection"]["connected"] is False
     checks["erreurs remontées"] = down["gateway_errors"] == ["502: lost"]
 
+    # Pouvoir du test : require_complete doit refuser un flux partiel et une erreur fatale.
+    def raises(fn, exc_type) -> bool:
+        try:
+            fn()
+        except exc_type:
+            return True
+        except Exception:  # noqa: BLE001
+            return False
+        return False
+
+    checks["flux partiel refusé"] = raises(lambda: require_complete(True, False, None), TimeoutError)
+    checks["summary absent refusé"] = raises(lambda: require_complete(False, True, None), TimeoutError)
+    checks["erreur fatale refusée"] = raises(
+        lambda: require_complete(True, True, "502: lost"), ConnectionError
+    )
+    checks["état complet accepté"] = not raises(lambda: require_complete(True, True, None), Exception)
+
+    # post() ne doit jamais lever : une panne de transport devient un échec propre.
+    status, detail = post("http://127.0.0.1:9/api", "t", {"a": 1}, timeout=2)
+    checks["transport -> status 0"] = status == 0
+    checks["transport -> pas de traceback"] = "transport:" in detail
+
     failed = [name for name, ok in checks.items() if not ok]
     for name, ok in checks.items():
         print(f"{'ok  ' if ok else 'FAIL'} {name}")
@@ -330,33 +363,39 @@ def main() -> int:
         print("IBKR_ACCOUNT_ID manquant", file=sys.stderr)
         return 2
 
+    read_error: str | None = None
     try:
         with socket.create_connection((host, port), timeout=5):
             pass
-    except OSError as exc:
-        print(f"Gateway IBKR injoignable sur {host}:{port} ({exc})", file=sys.stderr)
-        return 1
-
-    try:
         data = Probe().collect(host, port, client_id, args.timeout)
     except Exception as exc:  # noqa: BLE001 - un seul cycle, message clair
-        print(f"Lecture IBKR échouée : {exc}", file=sys.stderr)
-        return 1
+        read_error = str(exc) or exc.__class__.__name__
+        print(f"Lecture IBKR échouée : {read_error}", file=sys.stderr)
+        # On publie quand même un état DÉGRADÉ : sans ça, le hub garderait le dernier
+        # « connected: true » indéfiniment et afficherait un Gateway vivant qui ne l'est plus.
+        data = {
+            "account": account_id,
+            "currency": "CAD",
+            "summary": {},
+            "positions": [],
+            "connected": False,
+            "errors": [read_error],
+        }
 
     payload = build_payload(data["account"] or account_id, data)
 
     if args.dry_run:
         print(json.dumps(payload, indent=2, ensure_ascii=False))
-        return 0
+        return 0 if read_error is None else 1
 
     if not base_url or not token:
         print("HERMES_WEB_URL et HERMES_WEB_TOKEN sont requis", file=sys.stderr)
         return 2
 
-    status, response = post(base_url + SNAPSHOT_PATH, token, payload)
-    ok = 200 <= status < 300
-    print(f"{'OK ' if ok else 'ERR'} {status} {SNAPSHOT_PATH} {response[:200]}")
-    return 0 if ok else 1
+    status, response = post(base_url + SNAPSHOT_PATH, token, payload, timeout=args.timeout)
+    published = 200 <= status < 300
+    print(f"{'OK ' if published else 'ERR'} {status} {SNAPSHOT_PATH} {response[:200]}")
+    return 0 if published and read_error is None else 1
 
 
 if __name__ == "__main__":
