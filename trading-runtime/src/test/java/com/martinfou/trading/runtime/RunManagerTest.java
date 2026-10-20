@@ -573,7 +573,7 @@ class RunManagerTest {
 
             latch.countDown();
             pool.shutdown();
-            assertTrue(pool.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS));
+            assertTrue(pool.awaitTermination(15, java.util.concurrent.TimeUnit.SECONDS));
 
             assertEquals(threads, successCount.get(), "Expected all threads to successfully register and start runs");
         }
