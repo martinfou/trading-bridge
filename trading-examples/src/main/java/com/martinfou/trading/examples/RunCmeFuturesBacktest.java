@@ -8,6 +8,7 @@ import com.martinfou.trading.strategies.longterm.LtDoubleMA;
 import com.martinfou.trading.strategies.longterm.LtEfficiencyRatio;
 import com.martinfou.trading.strategies.longterm.LtRangeBreakout;
 
+import com.martinfou.trading.backtest.persistence.BacktestPersistenceService;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.*;
@@ -150,6 +151,28 @@ public class RunCmeFuturesBacktest {
                     try {
                         BacktestResult res = engine.run();
                         records.add(new BacktestRecord(spec.id(), symbol, p, bars.size(), res));
+
+                        // Persist run to SQLite events.db for Trading Bridge UI
+                        try {
+                            String runId = UUID.randomUUID().toString();
+                            BacktestExecutionCost costs = new BacktestExecutionCost(COMMISSION_PER_CONTRACT, 0.0, SLIPPAGE_PCT, 0.0, 0.0);
+                            RunContext ctx = RunContext.forStrategy(
+                                runId,
+                                runName,
+                                instance,
+                                symbol,
+                                RunMode.BACKTEST,
+                                bars,
+                                DEFAULT_CAPITAL,
+                                null,
+                                costs,
+                                "H1",
+                                "H1"
+                            );
+                            BacktestPersistenceService.save(runId, ctx, res);
+                        } catch (Exception pe) {
+                            System.err.println("    ⚠ Failed to persist run " + runName + ": " + pe.getMessage());
+                        }
 
                         System.out.printf("    %-12s | PnL: %10s (%6.2f%%) | Sharpe: %5.2f | Sortino: %5.2f | MaxDD: %6.2f%% | PF: %5.2f | Win%%: %5.1f%% | Trades: %4d (W:%3d L:%3d) | AvgTrd: %7s%n",
                             p,
