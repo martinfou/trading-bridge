@@ -1,0 +1,211 @@
+==========================================================================================================================================
+62e (mardi 20 oct 2026, VARIATION) — LE FADE EXIGE-T-IL UN MARCHE FERME ? Transposition du 61e a l'OR
+FADE = SELL ; fade = -log(close/open)*1e4 ; fade > 0 = SELL gagnant.
+k=0 = barre qui se termine a 17:00 ET (settlement). p1 = premiere barre APRES le trou.
+P1 = le fade existe tous les jours (trou quotidien) | P2 = ancre settlement, pas heure fixe
+P3 = fonction monotone de la longueur du trou du calendrier de l'OR
+==========================================================================================================================================
+
+--- 0. FLUX, STRUCTURE ET QUALITE DE L'ANCRE
+  XAU_USD H1 bid  bars= 174725  reelles= 120391  2006-01-01 -> 2025-12-30
+  sessions de l'or = 5183  (jours lun-ven avec au moins une barre reelle)
+  VALIDATION DE L'ANCRE (lun-jeu) : heure absente == 17:00 ET + 1 h -> 2417 OK, 91 DECALES, 1652 SANS trou visible
+  par an (OK / decale / sans trou) :
+    2006:0/0/208 2007:0/0/208 2008:0/0/209 2009:0/0/208
+    2010:0/0/208 2011:0/1/207 2012:0/1/207 2013:146/5/56 2014:79/27/100
+    2015:160/7/41 2016:204/4/0 2017:203/5/0 2018:202/6/0 2019:202/6/0
+    2020:204/5/0 2021:205/3/0 2022:204/4/0 2023:203/5/0 2024:203/6/0
+    2025:202/6/0
+  ATTENTION 2006-2012 : feed REMPLI 24 h, aucun trou -> le marche de l'or n'y a pas de cloture observable.
+  La BARRE finissant a 17:00 ET existe sur toute la periode ; mais un FULL 2006-2025 melange 11 ans sans
+  structure et 13 ans avec. Les tableaux donnent FULL et 2016+ separement.
+  Sous-echantillon 'trou visible' : 2508 sessions lun-jeu (2013+)
+
+  DRIFT HORAIRE INCONDITIONNEL (toutes barres reelles lun-ven) : -0.177 bp  t -2.7  n=118330
+  -> tout k=0 se lit CONTRE ce chiffre (loi du 59e : soustraire le drift generique).
+
+--- 1. LOCALISATION — profil settlement-relatif par jour de semaine (localiser AVANT de conditionner)
+    k=0 se termine a 17:00 ET ; k=5 = 5 h avant ; p1 = premiere barre apres le trou.
+
+  [FULL 2006-2025]
+  JOUR      n            k=5            k=4            k=3            k=2            k=1            k=0       p1 reouv
+  LUN    1040   -0.78( -1.0)   -1.45( -1.9)   +1.20( +1.9)   +1.43( +2.5)   +0.06( +0.1)   +0.66( +1.9)   -0.69( -2.0)
+  MAR    1040   -0.53( -0.6)   -0.97( -1.4)   +0.22( +0.3)   +0.34( +0.5)   +0.09( +0.1)   +1.69( +4.8)   -0.85( -2.1)
+  MER    1040   -0.15( -0.2)   +0.26( +0.3)   +0.49( +0.6)   -2.00( -1.8)   -0.20( -0.3)   +1.56( +4.0)   -1.45( -3.9)
+  JEU    1040   -0.15( -0.2)   +0.26( +0.3)   -0.94( -1.3)   -0.58( -0.9)   +0.55( +0.7)   +0.69( +1.8)   -0.92( -2.5)
+  VEN    1023   +0.24( +0.2)   +0.02( +0.0)   -1.21( -1.6)   -0.90( -1.7)   -1.53( -2.7)   -1.06( -2.9)            n/a
+
+  [2016-2025 (trou systematique)]
+  JOUR      n            k=5            k=4            k=3            k=2            k=1            k=0       p1 reouv
+  LUN     521   -1.26( -1.5)   -0.67( -1.0)   +0.62( +0.9)   +0.37( +0.5)   -0.83( -1.4)   +1.48( +3.9)   -3.41( -6.8)
+  MAR     520   -0.39( -0.4)   -0.18( -0.2)   -0.86( -1.3)   +0.31( +0.5)   +0.02( +0.0)   +2.67( +6.3)   -3.16( -4.9)
+  MER     521   -0.48( -0.6)   +0.99( +1.4)   +0.59( +0.8)   -2.02( -1.5)   +0.31( +0.3)   +3.19( +6.2)   -4.59( -8.4)
+  JEU     520   -0.21( -0.2)   +0.54( +0.6)   -0.99( -1.2)   +0.00( +0.0)   -0.18( -0.3)   +1.80( +3.9)   -3.08( -6.1)
+  VEN     507   +1.42( +1.2)   +0.99( +1.2)   +0.27( +0.3)   -0.81( -1.3)   +0.87( +1.3)   -0.97( -1.8)            n/a
+
+--- 2. P1 (TROU) — k=0 par jour de semaine : le fade existe-t-il TOUS les jours ?
+  JOUR      n  k=0 FULL      t  k=0 2016+      t  vs drift  k=1 FULL      t  p1 reouv      t
+  LUN    1040     +0.66  +1.88      +1.48  +3.95     +0.83     +0.06  +0.12     -0.69  -2.03
+  MAR    1040     +1.69  +4.83      +2.67  +6.34     +1.86     +0.09  +0.15     -0.85  -2.09
+  MER    1040     +1.56  +4.02      +3.19  +6.15     +1.73     -0.20  -0.29     -1.45  -3.93
+  JEU    1040     +0.69  +1.80      +1.80  +3.92     +0.86     +0.55  +0.67     -0.92  -2.55
+  VEN    1023     -1.06  -2.90      -0.97  -1.82     -0.89     -1.53  -2.69     +0.00  +0.00
+
+--- 3. P2 (ANCRE) — settlement (17:00 ET : h20 EDT / h21 EST) vs heure UTC fixe
+  JOUR    n EDT   k=0 EDT      t  n EST   k=0 EST      t   ||  barre [20,21)UTC      t  barre [21,22)UTC      t
+  LUN       680     +1.15  +2.65    360     -0.28  -0.48   ||             +0.96  +2.19             +1.10  +2.65
+  MAR       680     +2.04  +4.55    360     +1.02  +1.87   ||             +1.29  +2.72             +1.73  +3.78
+  MER       680     +1.93  +3.89    360     +0.84  +1.38   ||             +1.44  +2.84             +1.59  +3.72
+  JEU       680     +0.64  +1.33    360     +0.78  +1.24   ||             +0.75  +1.68             +1.60  +3.25
+  VEN       667     -0.81  -1.69    356     -1.54  -2.77   ||             -0.87  -1.90             -1.45  -2.60
+  Loi du 59e : sous la BONNE ancre les deux saisons tiennent ; sous une heure UTC fixe l'effet scinde.
+  (en EDT l'ancre EST la barre [20,21) UTC ; en EST c'est [21,22). Une barre fixe melange les deux.)
+
+--- 3b. CONTROLE CROSS-INSTRUMENT — la MEME barre [16,17) ET sur l'or et sur 4 paires FX
+  Si l'effet du settlement est un effet d'HORLOGE commun a tous les actifs, le FX doit montrer le MEME
+  signe a la meme heure. Le 59e a mesure sur le FX une derniere heure NEGATIVE tous les jours.
+  INSTRUMENT   n lun-jeu  k=0 lun-jeu      t  n ven  k=0 vendredi      t
+  XAU_USD           4052        +1.26  +6.73   1005         -1.09  -2.92
+  EUR_USD           4016        +0.30  +2.82    991         +0.51  +2.24
+  GBP_JPY           4145        +0.20  +1.32   1023         +1.77  +5.16
+  USD_CHF           3983        +1.43 +10.05    983         +3.64 +13.33
+  USD_CAD           4016        +1.15  +7.98    991         +2.28  +6.26
+  Lecture : un effet PROPRE a l'or (auction de settlement) donne un signe que le FX ne partage pas.
+
+--- 3c. LA MEME CHOSE, RESTREINTE A 2016+ (periode ou l'or a un vrai trou), et sur la barre SUIVANTE
+  [16,17) ET = la derniere heure avant le settlement ; [17,18) ET = la premiere heure APRES (le 'reopen').
+  Si le FX montre la MEME chose sur [17,18) ET, le rebond n'est pas un effet de l'or : c'est le rollover.
+  INSTRUMENT    [16,17) lun-jeu      t  [17,18) lun-jeu      t  [16,17) ven      t  [17,18) ven      t
+  XAU_USD                 +2.47 +10.77            +0.00  +0.00        -0.87  -1.62        +0.00  +0.00
+  EUR_USD                 +0.84  +7.80            -0.76  -9.08        +1.84  +7.64        +0.00  +0.00
+  GBP_JPY                 +0.99  +5.21            -1.70  -6.60        +2.30  +5.38        +0.00  +0.00
+  USD_CHF                 +1.73 +14.24            +0.17  +1.51        +4.55 +14.68        +0.00  +0.00
+  USD_CAD                 +1.34  +7.99            -0.59  -6.13        +2.57  +7.30        +0.00  +0.00
+
+--- 4. P3 (FERMETURE) — k=0 en fonction de la LONGUEUR DU TROU du calendrier de l'OR
+    g     n    k=0 bp      t   k=1 bp               jour(s)                      exemples
+    1  4133     +1.16  +6.32    +0.14       JEU/LUN/MAR/MER        2006-01-02, 2006-01-03
+    2     6     -0.28  -0.10    +2.08           LUN/MAR/MER        2008-12-30, 2009-12-30
+    3  1019     -1.07  -2.90    -1.49                   VEN        2006-01-06, 2006-01-13
+    4    21     -2.01  -0.68    -5.14               JEU/VEN        2007-12-28, 2010-12-30
+    5     2     +0.00  +0.00    +0.00                   MER        2015-12-30, 2020-12-30
+    6     1     +0.00  +0.00    +0.00                   VEN                    2014-12-26
+
+--- 5. TEST DECISIF — le meme jeudi est 'FX ouvert' et 'or ferme le lendemain' (Good Friday)
+  Rappel 61e (FX, k=0) : veille Good Friday (FX OUVERT) +0.05/+0.22/+0.86 bp ; veille lundi ferie
+  (FX FERME) +4.77/+2.77/+7.85 ; contraste t 3.3-3.7.
+  20 jeudis veille de Good Friday | 99 vendredis veille d'un lundi ferie
+  CATEGORIE                         n    k=0 bp      t  mediane  hit>0
+  ordinaire lun-jeu (g=1)        4133     +1.16  +6.32    +1.45    57%
+  ordinaire vendredi (g=3)       1019     -1.07  -2.90    +0.08    51%
+  JEUDI veille Good Friday         20     -3.92  -1.33    -1.23    40%
+  VENDREDI veille lundi ferie      99     -0.09  -0.09    +0.83    56%
+  -> GoodFriday-PRE - ordin. lun-jeu  :  -5.08 bp  t -1.72
+  -> lundi-ferie-PRE - ordin. vendredi :  +0.98 bp  t +0.90
+  -> lundi-ferie-PRE - GoodFriday-PRE  :  +3.83 bp  t +1.22
+
+--- 6. JAMBES (loi du 60e) et HOLD REEL (loi du 56e)
+  A = 13:00 UTC -> settlement | B = settlement -> 1re barre apres le trou | C = 13:00 -> reouverture
+  CATEGORIE                         n     A bp     B bp     C bp jour plein hold B (h)
+  ordinaire lun-jeu (g=1)        4113    +1.86    -0.98    +0.97      -2.17        1.6
+  ordinaire vendredi (g=3)       1019    -4.12    +0.00    +0.00     -11.70        0.0
+  JEUDI veille Good Friday         20    -7.00    +1.53    -0.58      -3.35        1.0
+  VENDREDI veille lundi ferie      99   -11.22    +0.00    +0.00     -27.74        0.0
+  cout A/R de l'or (0.53 USD mesure) : mediane 4.00 bp, min 1.17, max 10.27 (prix 600 -> 4300 USD)
+
+--- 7. STABILITE — IS/OOS et eres (loi du 61e : le late-bloomer est le mode de mort par defaut)
+  SERIE                                 n    FULL  IS 06-15  OOS 16-25   TRIM5    eres 06-10/10-15/15-20/20-26
+  k=0 lun-jeu (fade pre-settlement)  4160   +1.15     +0.00      +2.29   +1.23   -0.23 /  -0.16 /  +3.27 /  +1.38
+  k=0 vendredi (bid pre-cloture)     1023   -1.06     -1.15      -0.97   -0.64   +0.18 /  -2.30 /  +1.70 /  -3.18
+  k=1 lun-ven (baseline matinee)     5123   -0.21     -0.45      +0.04   -0.41   -0.57 /  -0.60 /  +0.51 /  -0.22
+  A = 13:00 -> settlement lun-jeu    4140   +1.84     +2.13      +1.55   +1.20   -0.60 /  +3.26 /  +5.16 /  -0.45
+  B = settlement -> reouverture      4039   -0.98     +1.53      -3.57   -0.82   +1.67 /  +2.14 /  -2.89 /  -3.90
+  A vendredi = 13:00 -> cloture      1022   -4.20    -10.50      +2.19   -4.83   -7.57 / -13.39 /  +0.59 /  +1.89
+
+--- 7b. STABILITE SUR LA SEULE PERIODE OU LA STRUCTURE EXISTE (2016+) — IS 2016-2020 / OOS 2021-2025
+  Le split 2006/2016 ci-dessus n'est PAS un vrai IS/OOS pour l'effet de settlement : 2006-2012 est un feed
+  rempli 24 h ou la barre de 17:00 ET n'est pas une cloture. On ne mesure pas un phenomene la ou il n'existe pas.
+  SERIE                              n 2016+    FULL  IS 16-20  OOS 21-25  t OOS   TRIM5
+  k=0 lun-jeu (fade pre-settlement)     2082   +2.29     +3.46      +1.12  +3.67   +2.31
+  k=0 vendredi (bid pre-cloture)         507   -0.97     +1.53      -3.49  -4.76   -0.35
+  k=1 lun-ven (baseline matinee)        2543   +0.04     +0.26      -0.18  -0.42   -0.07
+  A = 13:00 -> settlement lun-jeu       2067   +1.55     +3.01      +0.10  +0.05   +1.57
+  B = settlement -> reouverture         1990   -3.57     -3.61      -3.53  -9.10   -3.28
+  A vendredi = 13:00 -> cloture          507   +2.19     +4.47      -0.10  -0.02   +1.33
+
+--- 8. COMPOSITION PAR CONGE et SPECIFICITE (POST / N-1 plats = pas un effet de calendrier generique)
+  MLK           n= 20  brut   -2.91 bp  t -1.05  jours=['VEN']
+  Presidents    n= 20  brut   -0.95 bp  t -0.50  jours=['VEN']
+  GoodFriday    n= 20  brut   -3.92 bp  t -1.33  jours=['JEU']
+  Memorial      n= 20  brut   +0.72 bp  t +0.40  jours=['VEN']
+  July4         n= 20  brut   +1.04 bp  t +0.41  jours=['JEU', 'LUN', 'MAR', 'MER', 'VEN']
+  Labor         n= 20  brut   +4.51 bp  t +2.03  jours=['VEN']
+  Thanksgiving  n= 20  brut   +5.05 bp  t +1.68  jours=['MER']
+  Christmas     n= 20  brut   -0.44 bp  t -0.44  jours=['JEU', 'LUN', 'MAR', 'MER', 'VEN']
+  NewYear       n= 19  brut   -0.43 bp  t -0.24  jours=['JEU', 'LUN', 'MAR', 'MER', 'VEN']
+  Juneteenth    n=  4  brut   -6.91 bp  t -2.71  jours=['MAR', 'MER', 'VEN']
+  CATEGORIE                        PRE k=0  POST n  POST k=0   N-1 k=0
+  ordinaire lun-jeu (g=1)            +1.16    4133     +0.73     +0.72
+  ordinaire vendredi (g=3)           -1.07    1019     +0.67     +0.74
+  JEUDI veille Good Friday           -3.92      20     +0.62     -2.07
+  VENDREDI veille lundi ferie        -0.09      99     -2.39     +1.11
+
+==========================================================================================================================================
+--- 9. ANNEXE A (harnais gold-settlement-vendor-check.py) — CONTROLE FOURNISSEUR / INSTRUMENT
+    Le MEME bar [16,17) ET sur 3 crosses OANDA (celles du 59e) et 5 series Dukascopy, + controle +-1 h.
+==========================================================================================================================================
+
+======================================================================================================================
+62e ANNEXE — barre [16,17) ET : le signe depend-il du FOURNISSEUR ? controle de specificite +-1 heure
+FADE = SELL ; fade = -log(close/open)*1e4 ; fade > 0 = le prix BAISSE dans la barre. 2016+ seulement.
+======================================================================================================================
+
+SERIE        n lun-jeu         [15,16)         [16,17)         [17,18)   n ven         [15,16)         [16,17)         [17,18)
+GBP_CHF(O)        2233    -0.05( -0.3)    +1.66(+12.3)    -1.39( -7.3)     560    -0.02( -0.1)    +4.88(+14.5)    +0.00( +0.0)
+EUR_CHF(O)        2233    +0.07( +0.8)    +1.13(+12.4)    -1.50(-14.3)     560    -0.01( -0.0)    +2.79(+12.9)             n/a
+AUD_CHF(O)        2232    +0.06( +0.3)    +2.40(+14.8)    -1.01( -4.7)     560    +0.04( +0.1)    +7.88(+21.4)             n/a
+EUR_USD(D)        2020    +0.03( +0.2)    +0.80( +7.6)    -0.75( -9.3)     506    -0.56( -2.0)    +1.83( +7.9)             n/a
+GBP_JPY(D)        2149    -0.52( -2.5)    +1.05( +5.7)    -1.74( -7.0)     538    -0.75( -2.2)    +2.47( +6.0)             n/a
+USD_CHF(D)        1987    +0.08( +0.5)    +1.85(+15.4)    +0.17( +1.5)     498    +0.54( +1.9)    +4.53(+14.7)             n/a
+USD_CAD(D)        2020    -0.19( -1.0)    +1.32( +8.1)    -0.55( -5.8)     506    -0.20( -0.6)    +2.57( +7.7)             n/a
+XAU_USD(D)        2001    -0.12( -0.3)    +2.47(+10.8)             n/a     495    +0.94( +1.3)    -0.87( -1.6)             n/a
+
+Lecture : si le signe de [16,17) s'inverse entre les crosses OANDA et les majeures/or Dukascopy,
+la fenetre mesure un artefact de spread au rollover, pas un flux. Le controle +-1 heure dit si l'effet
+est localise sur cette barre ou etale sur la journee.
+
+==========================================================================================================================================
+--- 10. ANNEXE B (harnais gold-settlement-p0-59e.py) — P0 : REJEU DU CHIFFRE DU 59e
+    Loi du 60e : executer le P0 dans le run, sur les fichiers d'origine.
+==========================================================================================================================================
+
+==========================================================================================================================
+62e P0 — REJEU DU CHIFFRE DU 59e SUR SES PROPRES FICHIERS (crosses refuge OANDA H1 bid)
+Convention A = 'derniere barre REELLE du jour' (celle du 59e) | Convention B = barre [16,17) ET exacte
+FADE = SELL ; fade > 0 = SELL gagnant (le prix baisse dans la barre)
+==========================================================================================================================
+
+  GBP_CHF
+    A derniere barre reelle FULL     lun-jeu   -0.99(t -8.6) n= 4542   |  vendredi   +3.38(t+11.7) n=1131   |  ven - lun-jeu  +4.38
+    A derniere barre reelle 2016+    lun-jeu   -1.65(t -9.0) n= 2248   |  vendredi   +4.87(t+14.4) n= 560   |  ven - lun-jeu  +6.52
+    A derniere barre reelle avant16  lun-jeu   -0.35(t -2.5) n= 2294   |  vendredi   +1.92(t +4.2) n= 571   |  ven - lun-jeu  +2.27
+    B barre [16,17) ET       FULL     lun-jeu   +1.36(t+10.6) n= 4512   |  vendredi   +3.48(t+11.7) n=1130   |  ven - lun-jeu  +2.12
+    B barre [16,17) ET       2016+    lun-jeu   +1.66(t+12.3) n= 2233   |  vendredi   +4.88(t+14.5) n= 560   |  ven - lun-jeu  +3.22
+    B barre [16,17) ET       avant16  lun-jeu   +1.06(t +4.9) n= 2279   |  vendredi   +2.09(t +4.3) n= 570   |  ven - lun-jeu  +1.03
+
+  EUR_CHF
+    A derniere barre reelle FULL     lun-jeu   -0.67(t -9.9) n= 4542   |  vendredi   +1.93(t+10.4) n=1131   |  ven - lun-jeu  +2.59
+    A derniere barre reelle 2016+    lun-jeu   -1.14(t-14.3) n= 2248   |  vendredi   +2.79(t+12.9) n= 560   |  ven - lun-jeu  +3.94
+    A derniere barre reelle avant16  lun-jeu   -0.20(t -1.8) n= 2294   |  vendredi   +1.08(t +3.6) n= 571   |  ven - lun-jeu  +1.28
+    B barre [16,17) ET       FULL     lun-jeu   +0.92(t +8.8) n= 4512   |  vendredi   +1.87(t +9.6) n=1130   |  ven - lun-jeu  +0.95
+    B barre [16,17) ET       2016+    lun-jeu   +1.13(t+12.4) n= 2233   |  vendredi   +2.79(t+12.9) n= 560   |  ven - lun-jeu  +1.66
+    B barre [16,17) ET       avant16  lun-jeu   +0.72(t +3.8) n= 2279   |  vendredi   +0.97(t +3.0) n= 570   |  ven - lun-jeu  +0.25
+
+  AUD_CHF
+    A derniere barre reelle FULL     lun-jeu   -1.29(t -7.7) n= 4542   |  vendredi   +5.98(t+13.3) n=1131   |  ven - lun-jeu  +7.27
+    A derniere barre reelle 2016+    lun-jeu   -2.09(t-10.5) n= 2248   |  vendredi   +7.88(t+21.4) n= 560   |  ven - lun-jeu  +9.97
+    A derniere barre reelle avant16  lun-jeu   -0.50(t -1.9) n= 2294   |  vendredi   +4.12(t +5.1) n= 571   |  ven - lun-jeu  +4.62
+    B barre [16,17) ET       FULL     lun-jeu   +1.74(t+10.2) n= 4511   |  vendredi   +6.20(t+13.5) n=1130   |  ven - lun-jeu  +4.45
+    B barre [16,17) ET       2016+    lun-jeu   +2.40(t+14.8) n= 2232   |  vendredi   +7.88(t+21.4) n= 560   |  ven - lun-jeu  +5.48
+    B barre [16,17) ET       avant16  lun-jeu   +1.10(t +3.7) n= 2279   |  vendredi   +4.55(t +5.5) n= 570   |  ven - lun-jeu  +3.44
+
