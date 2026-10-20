@@ -27,10 +27,15 @@ Aucun ordre n'est jamais envoyé. Le publisher ne passe pas par le chemin d'ordr
 IBKR_GATEWAY_HOST=127.0.0.1
 IBKR_GATEWAY_PORT=4002
 IBKR_ACCOUNT_ID=DUR967322
+IBKR_ACCOUNT_CURRENCY=CAD
 HERMES_IBKR_CLIENT_ID=90
 HERMES_WEB_URL=https://hermes.martinfournier.com
 HERMES_WEB_TOKEN=<token accepté par VerifyHealthToken>
 ```
+
+`IBKR_ACCOUNT_CURRENCY` est explicite, pas devinée : le flux `accountSummary` d'ibapi ne fournit
+pas la devise de base du compte. Sans cette variable, le payload n'a pas de devise et le hub
+n'en affiche aucune (plutôt qu'un « CAD » faux sur un compte libellé en USD).
 
 Le `clientId` 90 est dédié à la lecture. Ne pas le partager avec le trader (17) : IBKR refuse
 deux connexions simultanées sur le même clientId (`code=326`).

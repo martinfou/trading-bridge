@@ -92,7 +92,13 @@ def require_complete(summary_done: bool, positions_done: bool, fatal_error: str 
 class Probe:
     """Collecte account summary + positions, avec attente bornée et déconnexion garantie."""
 
-    def __init__(self) -> None:
+    def __init__(self, client=None) -> None:
+        # Le client peut être injecté pour que le selftest exerce le CÂBLAGE de collect()
+        # (et pas seulement require_complete en unitaire) sans Gateway.
+        self.client = client if client is not None else self._build_client()
+
+    @staticmethod
+    def _build_client():
         from ibapi.client import EClient
         from ibapi.wrapper import EWrapper
 
@@ -153,7 +159,7 @@ class Probe:
                 if code in FATAL_CODES:
                     self.fatal_error = f"{code}: {msg}"
 
-        self.client = _Client()
+        return _Client()
 
     def collect(self, host: str, port: int, client_id: int, timeout: int) -> dict:
         client = self.client
@@ -199,7 +205,12 @@ def build_payload(account_id: str, data: dict) -> dict:
     now = datetime.now(timezone.utc)
     summary = data.get("summary") or {}
 
-    account: dict[str, object] = {"currency": data.get("currency") or "CAD"}
+    account: dict[str, object] = {}
+    # Devise : celle lue sur le compte, sinon une valeur EXPLICITE de configuration.
+    # Jamais un "CAD" codé en dur : un compte live USD porterait une devise fausse.
+    currency = data.get("currency") or os.environ.get("IBKR_ACCOUNT_CURRENCY", "")
+    if currency:
+        account["currency"] = currency
     for key, tag in ACCOUNT_TAGS.items():
         value = summary.get(tag)
         # Absent ou sentinel IBKR (« indisponible ») : la clé est omise, jamais remplacée par 0.
@@ -295,8 +306,17 @@ def selftest() -> int:
 
     # Une métrique absente ne doit JAMAIS devenir 0.0 : la clé doit être omise.
     empty = dict(fake, summary={}, positions=[], currency="")
-    empty_payload = build_payload("DUR967322", empty)
-    checks["devise par défaut CAD"] = empty_payload["account"]["currency"] == "CAD"
+    saved = os.environ.pop("IBKR_ACCOUNT_CURRENCY", None)
+    try:
+        empty_payload = build_payload("DUR967322", empty)
+        os.environ["IBKR_ACCOUNT_CURRENCY"] = "EUR"
+        configured = build_payload("DUR967322", empty)
+    finally:
+        os.environ.pop("IBKR_ACCOUNT_CURRENCY", None)
+        if saved is not None:
+            os.environ["IBKR_ACCOUNT_CURRENCY"] = saved
+    checks["devise omise si inconnue"] = "currency" not in empty_payload["account"]
+    checks["devise explicite utilisée"] = configured["account"].get("currency") == "EUR"
     checks["positions vides"] = empty_payload["positions"] == []
     checks["nav absente, pas 0"] = "net_liquidation" not in empty_payload["account"]
     checks["cash absent, pas 0"] = "total_cash" not in empty_payload["account"]
@@ -331,6 +351,51 @@ def selftest() -> int:
     status, detail = post("http://127.0.0.1:9/api", "t", {"a": 1}, timeout=2)
     checks["transport -> status 0"] = status == 0
     checks["transport -> pas de traceback"] = "transport:" in detail
+
+    # Câblage réel de collect() : un flux manquant doit faire échouer, un flux complet passer.
+    class _FakeClient:
+        def __init__(self, with_summary: bool, with_positions: bool) -> None:
+            self.connected_flag = threading.Event()
+            self.summary_done = threading.Event()
+            self.positions_done = threading.Event()
+            self.fatal_error: str | None = None
+            self.summary: dict[str, float] = {"NetLiquidation": 1.0} if with_summary else {}
+            self.positions: list[dict] = []
+            self.errors: list[str] = []
+            self.account = "DUR967322"
+            self.currency = "CAD"
+            self.disconnected = False
+            self._with_summary = with_summary
+            self._with_positions = with_positions
+
+        def connect(self, host, port, clientId=0):  # noqa: N803 - signature ibapi
+            self.connected_flag.set()
+
+        def run(self) -> None:
+            return
+
+        def reqAccountSummary(self, reqId, group, tags):  # noqa: N802, N803
+            if self._with_summary:
+                self.summary_done.set()
+
+        def reqPositions(self):  # noqa: N802
+            if self._with_positions:
+                self.positions_done.set()
+
+        def disconnect(self) -> None:
+            self.disconnected = True
+
+    partial = _FakeClient(with_summary=True, with_positions=False)
+    checks["collect exige les positions"] = raises(
+        lambda: Probe(partial).collect("h", 1, 1, 1), TimeoutError
+    )
+    checks["disconnect malgré l'échec"] = partial.disconnected is True
+
+    full = _FakeClient(with_summary=True, with_positions=True)
+    collected = Probe(full).collect("h", 1, 1, 1)
+    checks["collect retourne le compte"] = collected["account"] == "DUR967322"
+    checks["collect marque connecté"] = collected["connected"] is True
+    checks["collect déconnecte"] = full.disconnected is True
 
     failed = [name for name, ok in checks.items() if not ok]
     for name, ok in checks.items():
@@ -375,7 +440,7 @@ def main() -> int:
         # « connected: true » indéfiniment et afficherait un Gateway vivant qui ne l'est plus.
         data = {
             "account": account_id,
-            "currency": "CAD",
+            "currency": "",
             "summary": {},
             "positions": [],
             "connected": False,
