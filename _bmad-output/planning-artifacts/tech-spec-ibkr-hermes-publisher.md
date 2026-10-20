@@ -59,21 +59,24 @@ Ce qui est abandonné : l'outbox Java et le publisher `--interval` permanent, re
 | `HERMES_IBKR_CLIENT_ID` | `90` | clientId dédié lecture |
 | `HERMES_WEB_URL` | requis | `https://hermes.martinfournier.com` |
 | `HERMES_WEB_TOKEN` | requis | token accepté par `VerifyHealthToken` |
-| `HERMES_IBKR_STATE_DIR` | `data/runtime` | dossier de l'outbox |
 
 ## Comportement d'un cycle `--once`
 
 1. `connect()` sur le Gateway paper.
 2. `reqAccountSummary` (NetLiquidation, TotalCashValue, BuyingPower, AvailableFunds, InitMargin,
-   MaintMargin, GrossPositionValue, UnrealizedPnL, RealizedPnL, Currency) avec attente bornée 15 s.
-3. `reqPositions` avec attente bornée 15 s.
-4. POST `/api/trading/broker/snapshot` avec le payload figé.
-5. POST `/api/trading/pnl-import` (`broker=ibkr`) pour le snapshot de compte.
-6. Sortie code 0 si les deux POST sont acceptés, 1 sinon (le timer systemd journalise l'échec).
+   MaintMargin, GrossPositionValue, UnrealizedPnL, RealizedPnL, Currency) avec attente bornée 20 s.
+3. `reqPositions` avec attente bornée 20 s.
+4. **Les deux flux sont exigés** : si un seul arrive, le cycle échoue (aucun POST partiel).
+5. POST `/api/trading/broker/snapshot` avec le payload figé.
+6. Sortie 0 si accepté, 1 sinon (le timer journalise l'échec, le tick suivant repart propre).
 7. `disconnect()` dans un `finally`, quoi qu'il arrive.
 
-Un POST en échec est conservé dans l'outbox (`HERMES_IBKR_STATE_DIR`) et rejoué au cycle suivant.
-Un `snapshot_id` déjà accepté n'est jamais rejoué.
+Une métrique absente ou égale au sentinel IBKR `1.7976931348623157E308` est **omise** du payload :
+le hub affiche `—`, jamais un `0` inventé. Les erreurs non fatales du Gateway sont remontées dans
+`gateway_errors` ; une erreur fatale (326, 502, 504, 1100, 1102, 2110) fait échouer le cycle au lieu
+de publier un état « connecté » mensonger.
+
+Pas d'outbox : un POST perdu n'est pas rejoué, il est remplacé au tick suivant.
 
 ## Interdits explicites
 
