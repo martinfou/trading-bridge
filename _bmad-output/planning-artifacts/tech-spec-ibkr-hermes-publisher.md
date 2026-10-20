@@ -27,27 +27,27 @@ Cette branche est en retard de 202 commits : **on porte les fichiers, on ne merg
 `fetchExecutions` sur `IbkrGatewayClient`. Sur `master`, cette interface ne les expose pas, et
 `TcpIbkrGatewayClient` (client maison utilisé par le chemin d'ordres) ne doit pas être modifié.
 
-## Architecture retenue
+## Architecture retenue (amendée après mesure)
 
-Nouvelle interface dédiée, **sans toucher** `IbkrGatewayClient` ni `TcpIbkrGatewayClient` :
+Le port Java a été évalué puis écarté : `EClientIbkrGatewayClient` fait 1059 lignes couplées au chemin
+d'ordres, et l'importer sur `master` (202 commits d'écart) demandait un refactor non revu pour un besoin
+de lecture. Le repo a déjà la convention d'un script one-shot (`scripts/smoke-oanda-readonly.py`,
+`scripts/trading_pnl_push.py`), donc le publisher suit ce pattern.
 
 ```
-trading-data/src/main/java/com/martinfou/trading/data/ibkr/readonly/
-├── IbkrReadOnlyClient.java        interface : connect, disconnect, isConnected,
-│                                              fetchAccountDetails, fetchOpenPositions,
-│                                              fetchAllOpenOrders
-└── EClientIbkrReader.java         implémentation basée sur l'EClient officiel (ibapi),
-                                   latches bornés, aucun ordre
-
-trading-runtime/src/main/java/com/martinfou/trading/runtime/hermes/
-├── HermesIbkrPublisher.java       cycle push + outbox
-├── HermesIbkrPublisherMain.java   CLI : --once | --dry-run | --interval N
-└── HttpHermesSender.java          POST bearer vers hermes-web
+scripts/ibkr_snapshot_push.py         one-shot : ibapi -> payload -> POST hermes-web
+deploy/systemd (côté machine)         hermes-ibkr-publisher.{service,timer}, 5 min
 ```
 
-Le reader réutilise l'EClient officiel déjà vendoré dans `trading-data` (`com.ib.client`). Il ouvre
-sa propre connexion avec **clientId 90** (`HERMES_IBKR_CLIENT_ID`), ce qui supprime la collision
-`code=326 client id is already in use` mesurée avec le control plane.
+- interface `ibapi` officielle, **clientId 90** (`HERMES_IBKR_CLIENT_ID`) : aucune collision avec le
+  clientId 17 du control plane ni avec celui du trader
+- aucune classe du chemin d'ordres n'est touchée (`git diff --stat` le prouve)
+- `--selftest` vérifie le contrat de payload sans Gateway ni réseau (11 vérifications)
+- `--dry-run` imprime le payload et n'émet aucun POST
+
+Ce qui est conservé du travail existant : le **contrat de payload** (déjà celui qu'attend
+`IbkrPanel.vue`), l'idempotence par `snapshot_id`, et le principe d'un clientId dédié.
+Ce qui est abandonné : l'outbox Java et le publisher `--interval` permanent, remplacés par le timer.
 
 ## Configuration
 
