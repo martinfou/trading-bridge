@@ -49,14 +49,16 @@ public final class IbkrContractResolver {
         if (futOpt.isPresent()) {
             FuturesContract contract = futOpt.get();
             CmeFuturesCalendar.ContractSpec spec = CmeFuturesCalendar.activeContract(contract.symbol(), tradeDate);
-            // IBKR resolves CME futures via exchange=GLOBEX (electronic venue). Use the full
-            // YYYYMMDD last-trade-date so the contract is unambiguous (the 3rd-Friday expiry).
+            // IBKR resolves CME futures with exchange=CME, NOT GLOBEX: measured on Gateway 1050
+            // (paper, 2026-10-21), a request with GLOBEX answers "error 200 No security definition
+            // has been found", while CME returns MESZ6/MNQZ6/M2KZ6 with the right multipliers.
+            // Use the full YYYYMMDD last-trade-date so the contract is unambiguous (3rd-Friday expiry).
             String yyyymmdd = String.format("%04d%02d%02d",
                 spec.expiryDate().getYear(), spec.expiryDate().getMonthValue(), spec.expiryDate().getDayOfMonth());
             return new IbkrContractDetails(
                 contract.symbol(),
                 SecType.FUT,
-                "GLOBEX",
+                "CME",
                 null,
                 "USD",
                 contract.multiplier(),
