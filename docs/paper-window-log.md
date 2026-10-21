@@ -493,28 +493,40 @@ il lit la liste des services attendus **dans le compose**, et la lane y etait en
 
 1. Etat verifie a plat avant arret : courtier 0 trade ouvert, 0 ordre en attente, `lastTransactionID` 462,
    `activeTrades: 0` sur les trois moniteurs.
-2. `docker compose stop news-oct12-eur news-oct12-aj news-oct12-gc` : les trois conteneurs sont sortis (137),
-   puis **supprimes** par `docker rm` (le compose ne les connaissait plus a ce moment-la, donc `compose rm`
-   n'etait plus un chemin possible). Verifie : `docker ps -a --filter name=news-oct12` ne rend plus rien.
-3. Blocs `services:` des trois conteneurs retires de `docker-compose.yml`, ainsi que les quatre cles
-   `newsoct12*` de `config/live-config.json` et leurs quatre entrees dans `getStrategyMap()`. Le watchdog
-   cesse donc de les attendre. Les classes restent dans `newsweekly/` comme archive et restent listees dans
-   le **catalogue de recherche** (`NewsWeeklyStrategyCatalogRegistrar`, qui n'est pas le chemin live) : ce qui
-   disparait, c'est leur enregistrement dans la map du runner et donc tout demarrage possible en live.
-4. `NewsWeekStrategyMapTest` supprime, mais sa couverture est reprise par `StrategyMapCoverageTest`, qui
-   instancie chaque strategie de `DEPLOYED` et verifie son instrument contre `live-config.json`. Le test de
-   plafond lit desormais les services du compose au lieu de faire confiance a une liste ecrite a la main
-   (`composeServicesMatchTheDeployedList`) : c'est exactement le trou qui a laisse la lane invisible neuf jours.
-5. Plafond de risque remis a **3 %** (voir D68), somme deployee **2,4 %**.
+2. `docker compose stop news-oct12-eur news-oct12-aj news-oct12-gc` : les trois conteneurs sont sortis en
+   **137**, c'est-a-dire tues apres le delai d'arret (SIGKILL, pas un arret propre : les runners ne vident
+   pas leur `/tmp`). Acceptable ici uniquement parce que le point 1 avait etabli qu'ils ne detenaient rien.
+3. Edite ensuite : blocs `services:` retires de `docker-compose.yml`, puis les quatre cles `newsoct12*` de
+   `config/live-config.json` et leurs quatre entrees dans `getStrategyMap()`. Le watchdog cesse donc de les
+   attendre. Les classes restent dans `newsweekly/` comme archive et restent listees dans le **catalogue de
+   recherche** (`NewsWeeklyStrategyCatalogRegistrar`, qui n'est pas le chemin live) : ce qui disparait, c'est
+   leur enregistrement dans la map du runner et donc tout demarrage possible en live.
+4. Les conteneurs arretes sont **supprimes** par `docker rm` **apres** l'edition du compose, donc avec un
+   compose qui ne les connaissait plus (`compose rm` n'etait plus un chemin possible). Verifie :
+   `docker ps -a --filter name=news-oct12` ne rend plus rien.
+5. `NewsWeekStrategyMapTest` supprime, mais sa couverture est reprise par `StrategyMapCoverageTest`, qui
+   instancie chaque strategie de `DEPLOYED` et verifie l'instrument sur lequel elle agit apres reconciliation.
+   Le test de plafond lit desormais les services du compose au lieu de faire confiance a une liste ecrite a la
+   main (`composeServicesMatchTheDeployedList`, prouve par mutation : un service ajoute le fait echouer) :
+   c'est exactement le trou qui a laisse la lane invisible neuf jours.
+6. Plafond de risque remis a **3 %** (voir D68), somme deployee **2,4 %**.
 
-### Risque residuel accepte (a solder a la rotation)
+### Risques residuels acceptes (a solder a la rotation)
 
-Les quatre conteneurs de la fenetre gardent leur image (D58), et cette image **embarque `config/` et l'ancienne
-map**, donc `newsoct12*` y existe encore. Un operateur qui poserait deliberement
-`STRATEGY=newsoct12cpi docker compose up -d lt-rsi3` demarrerait un runner news sur `-014`, sans rebuild. Ce
-n'est pas un chemin accidentel (il faut changer une variable d'environnement du compose), et recreer les
-conteneurs de la fenetre maintenant couterait leur etat `/tmp` et violerait D58. La rotation qui reconstruit
-les images ferme ce residu : a verifier explicitement a ce moment-la.
+Deux residus, tous les deux dus au meme repli de `executeTrade` sur `brokerOpenUnits()`, qui reste dans le
+chemin des ordres jusqu'a la story `spec-exit-path-closes-foreign-position.md` :
+
+1. **Deux conteneurs de la fenetre tradent la MEME paire** : `comp-momentum` (`compmomentum`) et
+   `month-week` (`monthweekphase`) sont tous les deux sur `USD_JPY`, sur le meme compte `-014`. Les deux sont a
+   zero entree depuis leur deploiement, donc l'exposition est theorique aujourd'hui, mais le premier qui ouvre
+   une position peut se la faire fermer par l'autre, exactement comme `ltrsi3` l'a ete par la lane news. Ce
+   n'est pas corrige par cette edition et ce n'est pas un effet de la lane.
+2. **Les images des quatre conteneurs de la fenetre embarquent `config/` et l'ancienne map** (D58), donc
+   `newsoct12*` y existe encore. Un operateur qui poserait deliberement
+   `LTRSI3_STRATEGY=newsoct12cpi docker compose up -d lt-rsi3` (ou `STRATEGY=newsoct12cpi ... trader`)
+   demarrerait un runner news sur `-014`, sans rebuild. Recreer les conteneurs de la fenetre maintenant
+   couterait leur etat `/tmp` et violerait D58 ; la rotation qui reconstruit les images ferme ce residu, a
+   verifier explicitement a ce moment-la.
 
 ### Decisions
 

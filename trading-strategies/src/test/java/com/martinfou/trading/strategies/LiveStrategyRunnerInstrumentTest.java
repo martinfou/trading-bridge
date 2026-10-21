@@ -179,23 +179,57 @@ class LiveStrategyRunnerInstrumentTest {
     @Test
     @DisplayName("docker-compose.yml runs exactly the DEPLOYED strategies, so a new service cannot slip under the cap")
     void composeServicesMatchTheDeployedList() throws IOException {
-        // Measured 2026-10-21: the week-of-12-October news lane was declared in the compose file and stayed up
-        // nine days past its week, while every risk check summed a HARD-CODED list that did not know about it.
-        // Parsing the compose defaults makes the deployment itself the input of the cap test: a new service,
-        // or a service whose STRATEGY default changes, fails here before it can trade.
-        java.util.Set<String> fromCompose = new java.util.LinkedHashSet<>();
-        java.util.regex.Matcher m = java.util.regex.Pattern
-            .compile("STRATEGY=\\$\\{[A-Za-z0-9_]+:-([^}]*)}")
-            .matcher(Files.readString(locateCompose()));
-        while (m.find()) {
-            for (String key : m.group(1).trim().split("\\s+")) {
-                if (!key.isEmpty()) fromCompose.add(key);
+        java.util.List<String> fromCompose = composeStrategyKeys();
+        assertEquals(DEPLOYED.size(), fromCompose.size(),
+            "docker-compose.yml and the DEPLOYED list disagree: a service that is not in DEPLOYED is trading "
+                + "unaccounted risk (measured 2026-10-21: the news lane ran nine days outside every check)");
+        assertEquals(new java.util.TreeSet<>(DEPLOYED), new java.util.TreeSet<>(fromCompose),
+            "docker-compose.yml and the DEPLOYED list disagree");
+    }
+
+    /**
+     * Every strategy key a compose service would start, in file order and with duplicates kept.
+     *
+     * <p>Two defects this must not have, both caught in review: a {@code Set} hides a SECOND service running a
+     * key already deployed (its risk would be summed once), and a parser that silently skips a service written
+     * in another YAML shape reads as "no extra service". So the scan tracks the enclosing service, accepts list
+     * and map forms, and fails when any service yields no key.
+     */
+    private static java.util.List<String> composeStrategyKeys() throws IOException {
+        java.util.List<String> keys = new java.util.ArrayList<>();
+        java.util.regex.Pattern strategyLine = java.util.regex.Pattern.compile(
+            "^\\s*-?\\s*[A-Za-z0-9_]*STRATEGY\\s*[=:]\\s*(.+)$");
+        java.util.regex.Pattern defaulted = java.util.regex.Pattern.compile("^\\$\\{[^:}]+:-(.*)}$");
+        java.util.regex.Pattern serviceLine = java.util.regex.Pattern.compile("^  ([a-z][a-z0-9-]*):\\s*$");
+
+        String service = null;
+        int services = 0;
+        int servicesWithStrategy = 0;
+        for (String line : Files.readAllLines(locateCompose())) {
+            if (line.startsWith("#")) continue;              // a commented service is not a deployment
+            if (line.equals("volumes:") || line.equals("networks:")) break;   // the service list is over
+            var svc = serviceLine.matcher(line);
+            if (svc.matches()) {
+                service = svc.group(1);
+                services++;
+                continue;
+            }
+            var m = strategyLine.matcher(line);
+            if (!m.matches()) continue;
+            String value = m.group(1).trim().replaceAll("^[\"']|[\"']$", "");
+            var d = defaulted.matcher(value);
+            if (d.matches()) value = d.group(1).trim();
+            if (value.isEmpty()) continue;
+            servicesWithStrategy++;
+            for (String key : value.split("\\s+")) {
+                if (!key.isEmpty()) keys.add(key);
             }
         }
-        assertFalse(fromCompose.isEmpty(), "no STRATEGY default parsed out of docker-compose.yml");
-        assertEquals(new java.util.TreeSet<>(DEPLOYED), new java.util.TreeSet<>(fromCompose),
-            "docker-compose.yml and the DEPLOYED list disagree: the account risk cap is only as good as the "
-                + "list it sums, so a service that is not in DEPLOYED is trading unaccounted risk");
+        assertEquals(services, servicesWithStrategy,
+            "a service in docker-compose.yml declares no STRATEGY this test can read: fix the parser or the "
+                + "service, never let an unreadable service pass as an absent one");
+        assertFalse(keys.isEmpty(), "no STRATEGY found in docker-compose.yml");
+        return keys;
     }
 
     private static Path locateCompose() {
@@ -220,6 +254,8 @@ class LiveStrategyRunnerInstrumentTest {
             assertTrue(entry != null && !entry.isNull(), "missing strategies." + key);
             assertTrue(entry.hasNonNull("instrument"), key + " has no instrument");
             assertTrue(entry.hasNonNull("computedRiskPct"), key + " has no computedRiskPct");
+            assertTrue(entry.get("computedRiskPct").asDouble() > 0.0,
+                key + " declares a non-positive computedRiskPct: it would lower the sum it is meant to occupy");
             assertTrue(entry.hasNonNull("granularity"), key + " has no granularity");
             assertTrue(entry.hasNonNull("positionSizeUnits"), key + " has no positionSizeUnits");
             assertTrue(entry.hasNonNull("backtestMetrics"), key + " has no backtestMetrics");
@@ -232,7 +268,7 @@ class LiveStrategyRunnerInstrumentTest {
         JsonNode strategies = MAPPER.readTree(Files.readString(locateLiveConfig())).get("strategies");
 
         double sum = 0.0;
-        for (String key : DEPLOYED) {
+        for (String key : composeStrategyKeys()) {
             sum += strategies.get(key).get("computedRiskPct").asDouble();
         }
 

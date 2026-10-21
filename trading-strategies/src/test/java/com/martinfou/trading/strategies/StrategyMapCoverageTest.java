@@ -42,8 +42,8 @@ class StrategyMapCoverageTest {
     }
 
     @Test
-    @DisplayName("each deployed strategy resolves to the instrument its live-config.json entry declares")
-    void deployedStrategiesMatchTheirConfiguredInstrument() throws Exception {
+    @DisplayName("every deployed strategy ends up pinned on the instrument live-config.json declares")
+    void deployedStrategiesActOnTheirConfiguredInstrument() throws Exception {
         JsonNode config = MAPPER.readTree(Files.readString(locateLiveConfig()));
         var map = LiveStrategyRunner.getStrategyMap();
 
@@ -51,11 +51,31 @@ class StrategyMapCoverageTest {
             Strategy strategy = map.get(name).getDeclaredConstructor().newInstance();
 
             var resolution = LiveStrategyRunner.resolveInstrument(name, strategy, config);
+            assertNotNull(resolution.instrument, name + " resolves no instrument at all");
             assertDoesNotThrow(() ->
                     LiveStrategyRunner.verifyInstrumentConsistency(name, resolution.instrument,
                         resolution.source, config),
                 name + " would refuse to start: config and resolved instrument disagree");
-            assertNotNull(strategy.name(), name + " has a display name");
+
+            // resolveInstrument reads the CONFIG value, so comparing it to the config again proves nothing.
+            // What decides behaviour is the strategy's own pinned pair after reconciliation: a class that
+            // keeps filtering bars on another pair silently trades the wrong instrument.
+            strategy.reconcileInstrument(resolution.instrument);
+            java.lang.reflect.Field symbol = null;
+            for (Class<?> c = strategy.getClass(); c != null && symbol == null; c = c.getSuperclass()) {
+                try {
+                    symbol = c.getDeclaredField("symbol");
+                } catch (NoSuchFieldException ignored) {
+                    // keep walking: strategy classes inherit from a base that may hold the field
+                }
+            }
+            if (symbol == null || symbol.getType() != String.class) continue;   // class pins no pair
+            symbol.setAccessible(true);
+            Object pinned = symbol.get(strategy);
+            if (pinned == null) continue;
+            assertEquals(resolution.instrument, pinned.toString(),
+                name + " filters on " + pinned + " after reconciliation, but the runner resolves "
+                    + resolution.instrument + ": it would drop every bar or trade a stale pair");
         }
     }
 
