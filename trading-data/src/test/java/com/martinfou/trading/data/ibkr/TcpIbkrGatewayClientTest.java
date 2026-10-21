@@ -92,6 +92,16 @@ class TcpIbkrGatewayClientTest {
     }
 
     @Test
+    void toSnapshot_fallsBackToTheRegistryWhenTheContractCarriesNoMultiplier() {
+        // IBKR's position callback does not always populate Contract.multiplier(); without the
+        // fallback the avgCost stays 5x too large (measured 38833.11 for a 7766.5 fill).
+        Contract bare = new Contract();
+        bare.symbol("MES");
+        IbkrPositionSnapshot row = TcpIbkrGatewayClient.toSnapshot(bare, 1.0, 38833.11);
+        assertEquals(7766.622, row.averagePrice(), 1e-6);
+    }
+
+    @Test
     void normalizeAveragePrice_leavesNonDerivativesAlone() {
         assertEquals(1.105, TcpIbkrGatewayClient.normalizeAveragePrice(1.105, "1"), 1e-9);
         assertEquals(1.105, TcpIbkrGatewayClient.normalizeAveragePrice(1.105, null), 1e-9);

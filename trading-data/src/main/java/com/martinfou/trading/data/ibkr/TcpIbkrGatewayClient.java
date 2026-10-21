@@ -7,6 +7,7 @@ import com.ib.client.EClientSocket;
 import com.ib.client.EJavaSignal;
 import com.ib.client.EReader;
 import com.ib.client.Execution;
+import com.martinfou.trading.core.FuturesRegistry;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.core.guardrails.OrderTripwire;
 import org.slf4j.Logger;
@@ -67,6 +68,8 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
     private volatile CountDownLatch accountDownloadLatch;
     private volatile CountDownLatch positionsLatch;
     private final List<IbkrPositionSnapshot> positions = new CopyOnWriteArrayList<>();
+    /** Last POSITION answer the venue actually completed; never cleared by a failed query. */
+    private volatile List<IbkrPositionSnapshot> lastKnownPositions = List.of();
 
     // Order correlation: IBKR does NOT echo the clientTag in execDetails/orderStatus, so the
     // orderId -> clientTag map is the only bridge between an application order and its execution.
@@ -202,13 +205,22 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
     @Override
     public List<IbkrPositionSnapshot> fetchOpenPositions() {
         if (!isConnected()) {
-            return List.of();
+            // Not "flat": unknown. An empty list here would let a kill switch confirm a liquidation
+            // it never verified, so hand back the last state the venue did report.
+            return lastKnownPositions;
         }
         positions.clear();
         this.positionsLatch = new CountDownLatch(1);
         client.reqPositions();
-        await(positionsLatch, POSITIONS_TIMEOUT);
-        return List.copyOf(positions);
+        if (!await(positionsLatch, POSITIONS_TIMEOUT)) {
+            // Same reasoning for a silent Gateway: a timeout must never read as "no positions".
+            log.warn("IBKR positions query did not complete within {}; returning last known state ({} row(s))",
+                POSITIONS_TIMEOUT, lastKnownPositions.size());
+            return lastKnownPositions;
+        }
+        List<IbkrPositionSnapshot> snapshot = List.copyOf(positions);
+        lastKnownPositions = snapshot;
+        return snapshot;
     }
 
     private IbkrAccountSnapshot failClosedAccount() {
@@ -267,6 +279,14 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
         Order.Side side = signedQuantity > 0 ? Order.Side.BUY : Order.Side.SELL;
         String symbol = contract != null ? contract.symbol() : null;
         String multiplier = contract != null ? contract.multiplier() : null;
+        if (multiplier == null || multiplier.isBlank()) {
+            // IBKR's position callback does not always carry the multiplier (the Contract it hands
+            // back is minimal). Without it a derivative's avgCost stays 5x or 100x too large, so fall
+            // back to the contract registry rather than silently returning money as a price.
+            multiplier = FuturesRegistry.find(symbol)
+                .map(c -> String.valueOf(c.multiplier()))
+                .orElse(null);
+        }
         return new IbkrPositionSnapshot(symbol, side, Math.abs(signedQuantity),
             normalizeAveragePrice(avgCost, multiplier));
     }
@@ -330,11 +350,12 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
         return decimal == null || !decimal.isValid() ? 0.0 : decimal.value().doubleValue();
     }
 
-    private static void await(CountDownLatch latch, Duration timeout) {
+    private static boolean await(CountDownLatch latch, Duration timeout) {
         try {
-            latch.await(timeout.toMillis(), TimeUnit.MILLISECONDS);
+            return latch.await(timeout.toMillis(), TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            return false;
         }
     }
 
