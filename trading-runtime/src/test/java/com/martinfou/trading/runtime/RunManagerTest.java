@@ -924,6 +924,38 @@ class RunManagerTest {
     }
 
     /**
+     * A broker that answers "no positions" without ever confirming it: the kill switch must treat that
+     * as a failed liquidation, not as a clean stop.
+     */
+    @Test
+    void stop_runningRun_whenPositionStateIsUnconfirmed_persistsFailedWithLiquidationTrace(
+            @org.junit.jupiter.api.io.TempDir java.nio.file.Path tempDir) throws Exception {
+        EventStoreConfig config = EventStoreConfig.withDbPath(tempDir.resolve("stop_flatten_unconfirmed.db"));
+        try (SqliteEventStore eventStore = new SqliteEventStore(config);
+             RunManager manager = new RunManager(eventStore)) {
+
+            RunConfigSnapshot snapshot = new RunConfigSnapshot(
+                "LondonOpenRangeBreakout", "EUR_USD", "PAPER", "sample", 100, null, 1000.0, null, null, "PAPER_IBKR"
+            );
+            RunRecord record = manager.restoreRun("run-flatten-unconfirmed", snapshot);
+            record.markRunning();
+            manager.runRecordStore().save(record);
+
+            installActiveBroker(manager, record.runId(), unconfirmedFlatBroker());
+
+            manager.stop(record.runId(), true);
+
+            RunRecord persisted = manager.runRecordStore().get(record.runId()).orElseThrow();
+            assertEquals(RunRecord.Status.FAILED, persisted.status(),
+                "an unconfirmed position read must persist FAILED, not COMPLETED");
+            assertTrue(persisted.errorMessage().orElse("").contains("UNCONFIRMED"),
+                "errorMessage must say the position state was unconfirmed, was: "
+                    + persisted.errorMessage().orElse(""));
+            assertEquals(Boolean.TRUE, persisted.endedPayload().orElseThrow().get("liquidation_failed"));
+        }
+    }
+
+    /**
      * Story 48.2, defect 2 — the terminal state must be persisted BEFORE it is published to memory.
      * A decorating store captures, at the instant of the COMPLETE save, the status of the SAME run as
      * seen through {@code manager.getRun(runId)} (i.e. the in-memory record). The invariant requires
@@ -1003,6 +1035,28 @@ class RunManagerTest {
                 case "getPositions" -> java.util.List.of(
                     new com.martinfou.trading.core.Position(
                         "EUR_USD", com.martinfou.trading.core.Order.Side.BUY, 1000.0, 1.0850));
+                case "cancelAllOrders" -> 0;
+                default -> {
+                    Class<?> rt = method.getReturnType();
+                    if (rt == boolean.class) yield false;
+                    if (rt == int.class) yield 0;
+                    yield null;
+                }
+            });
+    }
+
+    /**
+     * A broker that reports NO positions but never actually answered the query: the exact shape that
+     * makes a dead gateway look flat and persists a COMPLETED run with an unknown exposure.
+     */
+    private static Broker unconfirmedFlatBroker() {
+        return (Broker) java.lang.reflect.Proxy.newProxyInstance(
+            Broker.class.getClassLoader(),
+            new Class<?>[] { Broker.class },
+            (proxy, method, args) -> switch (method.getName()) {
+                case "flattenAllPositions" -> 0;
+                case "getPositions" -> java.util.List.of();
+                case "lastPositionQueryConfirmed" -> false;
                 case "cancelAllOrders" -> 0;
                 default -> {
                     Class<?> rt = method.getReturnType();

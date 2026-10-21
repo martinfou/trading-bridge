@@ -234,6 +234,11 @@ public final class IbkrBroker implements Broker {
     }
 
     @Override
+    public boolean lastPositionQueryConfirmed() {
+        return connected && client.lastPositionQueryConfirmed();
+    }
+
+    @Override
     public List<Position> getPositions() {
         List<Position> out = new ArrayList<>();
         for (IbkrPositionSnapshot row : client.fetchOpenPositions()) {

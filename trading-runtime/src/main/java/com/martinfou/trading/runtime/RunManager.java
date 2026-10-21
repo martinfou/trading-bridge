@@ -707,6 +707,15 @@ public class RunManager implements RunLifecycle, AutoCloseable {
                 log.error("CRITICAL: {}. Manual intervention required.", detail);
                 return Liquidation.failed(detail);
             }
+            // An empty list is only proof of flatness when the broker actually answered. Without this
+            // check a dead gateway reads as "no positions" and the run is persisted COMPLETED with
+            // an unknown exposure still open at the venue.
+            if (!broker.lastPositionQueryConfirmed()) {
+                String detail = "position state UNCONFIRMED at broker after flatten for run " + runId
+                    + " (empty list from a failed query, not a confirmed flat account)";
+                log.error("CRITICAL: {}. Manual intervention required.", detail);
+                return Liquidation.failed(detail);
+            }
             return Liquidation.clean();
         } catch (Exception e) {
             log.error("Kill switch: failed to flatten positions for run {}", runId, e);
