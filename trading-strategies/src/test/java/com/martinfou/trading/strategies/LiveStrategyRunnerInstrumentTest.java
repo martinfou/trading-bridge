@@ -21,6 +21,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -165,7 +166,7 @@ class LiveStrategyRunnerInstrumentTest {
     // ========================================================================
 
     /** The six strategies that actually run in containers (docker-compose.yml). The 7 {@code 2_*} keys are not deployed. */
-    private static final List<String> DEPLOYED = List.of(
+    static final List<String> DEPLOYED = List.of(
         "vwpreversion", "consecbar", "compmomentum", "monthweekphase", "ltrsi3", "nfpweek");
 
     /**
@@ -174,6 +175,39 @@ class LiveStrategyRunnerInstrumentTest {
      * Nothing here reopens the 4% envelope; a future lane has to win its own decision.
      */
     private static final double ACCOUNT_RISK_CAP_PCT = 3.0;
+
+    @Test
+    @DisplayName("docker-compose.yml runs exactly the DEPLOYED strategies, so a new service cannot slip under the cap")
+    void composeServicesMatchTheDeployedList() throws IOException {
+        // Measured 2026-10-21: the week-of-12-October news lane was declared in the compose file and stayed up
+        // nine days past its week, while every risk check summed a HARD-CODED list that did not know about it.
+        // Parsing the compose defaults makes the deployment itself the input of the cap test: a new service,
+        // or a service whose STRATEGY default changes, fails here before it can trade.
+        java.util.Set<String> fromCompose = new java.util.LinkedHashSet<>();
+        java.util.regex.Matcher m = java.util.regex.Pattern
+            .compile("STRATEGY=\\$\\{[A-Za-z0-9_]+:-([^}]*)}")
+            .matcher(Files.readString(locateCompose()));
+        while (m.find()) {
+            for (String key : m.group(1).trim().split("\\s+")) {
+                if (!key.isEmpty()) fromCompose.add(key);
+            }
+        }
+        assertFalse(fromCompose.isEmpty(), "no STRATEGY default parsed out of docker-compose.yml");
+        assertEquals(new java.util.TreeSet<>(DEPLOYED), new java.util.TreeSet<>(fromCompose),
+            "docker-compose.yml and the DEPLOYED list disagree: the account risk cap is only as good as the "
+                + "list it sums, so a service that is not in DEPLOYED is trading unaccounted risk");
+    }
+
+    private static Path locateCompose() {
+        Path dir = Paths.get("").toAbsolutePath();
+        for (int i = 0; i < 10; i++) {
+            Path candidate = dir.resolve("docker-compose.yml");
+            if (Files.exists(candidate)) return candidate;
+            if (dir.getParent() == null) break;
+            dir = dir.getParent();
+        }
+        throw new AssertionError("docker-compose.yml not found from " + Paths.get("").toAbsolutePath());
+    }
 
     @Test
     @DisplayName("live-config.json declares every deployed strategy with an instrument and a risk")
