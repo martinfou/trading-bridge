@@ -7,6 +7,7 @@ import com.ib.client.EClientSocket;
 import com.ib.client.EJavaSignal;
 import com.ib.client.EReader;
 import com.ib.client.Execution;
+import com.martinfou.trading.core.FuturesRegistry;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.core.guardrails.OrderTripwire;
 import org.slf4j.Logger;
@@ -67,6 +68,10 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
     private volatile CountDownLatch accountDownloadLatch;
     private volatile CountDownLatch positionsLatch;
     private final List<IbkrPositionSnapshot> positions = new CopyOnWriteArrayList<>();
+    /** Last POSITION answer the venue actually completed; never cleared by a failed query. */
+    private volatile List<IbkrPositionSnapshot> lastKnownPositions = List.of();
+    /** False until the venue actually answers a positions request: an empty list alone means nothing. */
+    private volatile boolean lastPositionQueryConfirmed;
 
     // Order correlation: IBKR does NOT echo the clientTag in execDetails/orderStatus, so the
     // orderId -> clientTag map is the only bridge between an application order and its execution.
@@ -202,13 +207,36 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
     @Override
     public List<IbkrPositionSnapshot> fetchOpenPositions() {
         if (!isConnected()) {
-            return List.of();
+            // Not "flat": unknown. An empty list here would let a kill switch confirm a liquidation
+            // it never verified, so hand back the last state the venue did report and say so.
+            lastPositionQueryConfirmed = false;
+            return lastKnownPositions;
         }
         positions.clear();
         this.positionsLatch = new CountDownLatch(1);
+        lastPositionQueryConfirmed = false;
         client.reqPositions();
-        await(positionsLatch, POSITIONS_TIMEOUT);
-        return List.copyOf(positions);
+        if (!await(positionsLatch, POSITIONS_TIMEOUT)) {
+            // Same reasoning for a silent Gateway: a timeout must never read as "no positions".
+            // Cancel so a late positionEnd() cannot trip the latch of the NEXT query.
+            try {
+                client.cancelPositions();
+            } catch (RuntimeException e) {
+                log.debug("cancelPositions after timeout failed: {}", e.toString());
+            }
+            log.warn("IBKR positions query did not complete within {}; last known state ({} row(s)) returned UNCONFIRMED",
+                POSITIONS_TIMEOUT, lastKnownPositions.size());
+            return lastKnownPositions;
+        }
+        List<IbkrPositionSnapshot> snapshot = List.copyOf(positions);
+        lastKnownPositions = snapshot;
+        lastPositionQueryConfirmed = true;
+        return snapshot;
+    }
+
+    @Override
+    public boolean lastPositionQueryConfirmed() {
+        return lastPositionQueryConfirmed;
     }
 
     private IbkrAccountSnapshot failClosedAccount() {
@@ -239,6 +267,44 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
 
     static Contract buildContract(String symbol) {
         return buildContract(IbkrContractResolver.resolve(symbol));
+    }
+
+    /**
+     * IBKR reports {@code avgCost} with the contract multiplier already applied for derivatives
+     * (measured 2026-10-21: 1 MES filled at 7766.5 came back as 38833.11, i.e. x5). A position
+     * price must be a PRICE, so divide it back out; anything downstream that sizes or computes
+     * P&L off this number would otherwise be off by the multiplier.
+     */
+    static double normalizeAveragePrice(double avgCost, String multiplier) {
+        if (multiplier == null || multiplier.isBlank()) {
+            return avgCost;
+        }
+        try {
+            double m = Double.parseDouble(multiplier.trim());
+            return m > 0.0 && m != 1.0 ? avgCost / m : avgCost;
+        } catch (NumberFormatException e) {
+            return avgCost;
+        }
+    }
+
+    /**
+     * Maps one IBKR position row to a snapshot. The SIGN carries the side: a negative quantity is a
+     * SHORT, and it must survive (a dropped short is an invisible exposure).
+     */
+    static IbkrPositionSnapshot toSnapshot(Contract contract, double signedQuantity, double avgCost) {
+        Order.Side side = signedQuantity > 0 ? Order.Side.BUY : Order.Side.SELL;
+        String symbol = contract != null ? contract.symbol() : null;
+        String multiplier = contract != null ? contract.multiplier() : null;
+        if (multiplier == null || multiplier.isBlank()) {
+            // IBKR's position callback does not always carry the multiplier (the Contract it hands
+            // back is minimal). Without it a derivative's avgCost stays 5x or 100x too large, so fall
+            // back to the contract registry rather than silently returning money as a price.
+            multiplier = FuturesRegistry.find(symbol)
+                .map(c -> String.valueOf(c.multiplier()))
+                .orElse(null);
+        }
+        return new IbkrPositionSnapshot(symbol, side, Math.abs(signedQuantity),
+            normalizeAveragePrice(avgCost, multiplier));
     }
 
     static Contract buildContract(IbkrContractResolver.IbkrContractDetails details) {
@@ -300,11 +366,12 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
         return decimal == null || !decimal.isValid() ? 0.0 : decimal.value().doubleValue();
     }
 
-    private static void await(CountDownLatch latch, Duration timeout) {
+    private static boolean await(CountDownLatch latch, Duration timeout) {
         try {
-            latch.await(timeout.toMillis(), TimeUnit.MILLISECONDS);
+            return latch.await(timeout.toMillis(), TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            return false;
         }
     }
 
@@ -375,11 +442,13 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
                 return;
             }
             double qty = toDouble(pos);
-            if (qty <= 0) {
+            if (qty == 0.0) {
                 return;
             }
-            Order.Side side = pos.value().signum() > 0 ? Order.Side.BUY : Order.Side.SELL;
-            positions.add(new IbkrPositionSnapshot(contract.symbol(), side, Math.abs(qty), avgCost));
+            // A SHORT position arrives as a negative quantity: dropping it here made every short
+            // invisible to the broker adapter, so the kill switch saw a flat account while the
+            // venue still held the position.
+            positions.add(toSnapshot(contract, qty, avgCost));
         }
 
         @Override

@@ -47,6 +47,18 @@ public interface Broker extends AutoCloseable {
         return 0;
     }
 
+    /**
+     * Whether the LAST position read was actually answered by the broker.
+     *
+     * <p>An empty list is ambiguous: it means "flat" only when the broker answered. Callers that act
+     * on emptiness (a kill switch, a reconciliation) must consult this, otherwise a dead connection
+     * reads as a flat account. Defaults to {@code true} for brokers whose reads cannot fail silently;
+     * implementations that can must override it.</p>
+     */
+    default boolean lastPositionQueryConfirmed() {
+        return true;
+    }
+
     List<Position> getPositions();
 
     AccountState getAccountState();
