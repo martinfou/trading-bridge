@@ -91,8 +91,7 @@ class StrategyMapCoverageTest {
             // no-op there, so a wrong default survives. A mutable one is precisely what reconcileInstrument
             // exists to correct, and the "after" call checks it.
             if (onlyFinal && !java.lang.reflect.Modifier.isFinal(field.getModifiers())) {
-                seen++;
-                continue;
+                continue;   // a mutable field is corrected by reconcileInstrument, checked by the "after" pass
             }
             field.setAccessible(true);
             try {
@@ -108,8 +107,12 @@ class StrategyMapCoverageTest {
                 fail(name + ": cannot read " + fieldName + " (" + e.getMessage() + ")");
             }
         }
-        assertTrue(seen > 0, name + " carries no readable symbol/oandaSymbol field: this test would pass "
-            + "vacuously, so the class must expose the pair it acts on");
+        // The vacuity guard belongs to the "after" pass: the "before" pass skirts every mutable field on
+        // purpose, so a strategy with only a mutable pair legitimately shows nothing there.
+        if (!onlyFinal) {
+            assertTrue(seen > 0, name + " carries no readable symbol/oandaSymbol field: this test would pass "
+                + "vacuously, so the class must expose the pair it acts on");
+        }
     }
 
     private static Path locateLiveConfig() {
