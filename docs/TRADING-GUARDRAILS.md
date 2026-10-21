@@ -132,10 +132,12 @@ puisse pas être réintroduite.
 #### Résidus assumés (2026-10-01)
 
 - **Plafond de risque par compte (D24, à 3 % depuis D68)** : toujours pas implémenté dans le code. Depuis
-  le **2026-10-21** la lane news du 12 octobre est retirée (D67) et la somme déployée est redescendue à
-  **2,4 %** (les six stratégies de la fenêtre, dont `nfpweek`). Elle doit le rester à chaque édition de
-  `live-config.json`, et le test `deployedRiskSumStaysUnderCap` la compare à **3 %** : l'enveloppe de 4 %
-  de D42 est close, une lane future devra gagner sa propre décision.
+  le **2026-10-21** la lane news du 12 octobre est retirée (D67) et la somme **déclarée** est redescendue à
+  **2,4 %** : `vwpreversion`, `consecbar`, `compmomentum`, `monthweekphase`, `ltrsi3` et `nfpweek`, cette
+  dernière étant déclarée dans le compose mais **jamais créée** (quatre conteneurs tournent réellement). Elle
+  doit le rester à chaque édition de `live-config.json`, et le test `deployedRiskSumStaysUnderCap` compare la
+  somme des services du **compose** à **3 %** : l'enveloppe de 4 % de D42 est close, une lane future devra
+  gagner sa propre décision.
 
   **Décision D42 (Martin, 2026-10-11)** : le plafond par compte passe de 3 % (D24) à 4 % de NAV
   simultanée, le temps de la lane news du 12 au 16 octobre 2026. Motif : la semaine news demande 1,6 %

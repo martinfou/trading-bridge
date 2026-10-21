@@ -202,17 +202,24 @@ class LiveStrategyRunnerInstrumentTest {
         java.util.regex.Pattern defaulted = java.util.regex.Pattern.compile("^\\$\\{[^:}]+:-(.*)}$");
         java.util.regex.Pattern serviceLine = java.util.regex.Pattern.compile("^  ([a-z][a-z0-9-]*):\\s*$");
 
+        java.util.Map<String, Integer> strategyLinesPerService = new java.util.LinkedHashMap<>();
+        java.util.Map<String, Boolean> commandPassesStrategy = new java.util.LinkedHashMap<>();
         String service = null;
-        int services = 0;
-        int servicesWithStrategy = 0;
         for (String line : Files.readAllLines(locateCompose())) {
             if (line.startsWith("#")) continue;              // a commented service is not a deployment
             if (line.equals("volumes:") || line.equals("networks:")) break;   // the service list is over
             var svc = serviceLine.matcher(line);
             if (svc.matches()) {
                 service = svc.group(1);
-                services++;
+                strategyLinesPerService.put(service, 0);
+                commandPassesStrategy.put(service, Boolean.FALSE);
                 continue;
+            }
+            if (service == null) continue;
+            if (line.trim().startsWith("command:")) {
+                // The runner reads its strategy list from argv[2], so what the CAP must count is what the
+                // command actually passes, not only what environment: happens to declare.
+                commandPassesStrategy.put(service, line.contains("STRATEGY"));
             }
             var m = strategyLine.matcher(line);
             if (!m.matches()) continue;
@@ -220,15 +227,18 @@ class LiveStrategyRunnerInstrumentTest {
             var d = defaulted.matcher(value);
             if (d.matches()) value = d.group(1).trim();
             if (value.isEmpty()) continue;
-            servicesWithStrategy++;
+            strategyLinesPerService.merge(service, 1, Integer::sum);
             for (String key : value.split("\\s+")) {
                 if (!key.isEmpty()) keys.add(key);
             }
         }
-        assertEquals(services, servicesWithStrategy,
-            "a service in docker-compose.yml declares no STRATEGY this test can read: fix the parser or the "
-                + "service, never let an unreadable service pass as an absent one");
-        assertFalse(keys.isEmpty(), "no STRATEGY found in docker-compose.yml");
+        assertFalse(strategyLinesPerService.isEmpty(), "no service parsed out of docker-compose.yml");
+        strategyLinesPerService.forEach((name, count) ->
+            assertEquals(1, count, "service " + name + " declares " + count + " STRATEGY line(s): the cap test "
+                + "reads exactly one per service, so an unreadable service must fail here, not pass as absent"));
+        commandPassesStrategy.forEach((name, passes) ->
+            assertTrue(passes, "service " + name + " does not pass STRATEGY on its command line: the strategy "
+                + "that starts is not the one the cap test just counted"));
         return keys;
     }
 

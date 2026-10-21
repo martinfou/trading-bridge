@@ -42,7 +42,7 @@ class StrategyMapCoverageTest {
     }
 
     @Test
-    @DisplayName("every deployed strategy ends up pinned on the instrument live-config.json declares")
+    @DisplayName("every deployed strategy is pinned on the instrument live-config.json declares, before and after reconciliation")
     void deployedStrategiesActOnTheirConfiguredInstrument() throws Exception {
         JsonNode config = MAPPER.readTree(Files.readString(locateLiveConfig()));
         var map = LiveStrategyRunner.getStrategyMap();
@@ -52,31 +52,64 @@ class StrategyMapCoverageTest {
 
             var resolution = LiveStrategyRunner.resolveInstrument(name, strategy, config);
             assertNotNull(resolution.instrument, name + " resolves no instrument at all");
+
+            // BEFORE reconciliation: the class's own default. Several strategies declare a FINAL symbol, and
+            // reconcileInstrument's reflective write is a documented no-op on a final field, so a class that
+            // ships the wrong pair would keep it forever. This is the assertion that catches that.
+            assertPinnedPair(name, strategy, resolution.instrument, "before reconciliation", true);
+
+            strategy.reconcileInstrument(resolution.instrument);
+            assertPinnedPair(name, strategy, resolution.instrument, "after reconciliation", false);
+
             assertDoesNotThrow(() ->
                     LiveStrategyRunner.verifyInstrumentConsistency(name, resolution.instrument,
                         resolution.source, config),
                 name + " would refuse to start: config and resolved instrument disagree");
+        }
+    }
 
-            // resolveInstrument reads the CONFIG value, so comparing it to the config again proves nothing.
-            // What decides behaviour is the strategy's own pinned pair after reconciliation: a class that
-            // keeps filtering bars on another pair silently trades the wrong instrument.
-            strategy.reconcileInstrument(resolution.instrument);
-            java.lang.reflect.Field symbol = null;
-            for (Class<?> c = strategy.getClass(); c != null && symbol == null; c = c.getSuperclass()) {
+    /**
+     * Assert every instrument field the strategy carries ({@code symbol}, {@code oandaSymbol}) equals the pair
+     * the runner resolved. A blank value is a value still to be set, not a mismatch, so it is skipped; the test
+     * fails when the class carries NO such field at all, because then this method proves nothing and the
+     * strategy could be trading any pair.
+     */
+    private static void assertPinnedPair(String name, Strategy strategy, String expected, String moment,
+                                         boolean onlyFinal) {
+        int seen = 0;
+        for (String fieldName : new String[] {"symbol", "oandaSymbol"}) {
+            java.lang.reflect.Field field = null;
+            for (Class<?> c = strategy.getClass(); c != null && field == null; c = c.getSuperclass()) {
                 try {
-                    symbol = c.getDeclaredField("symbol");
+                    field = c.getDeclaredField(fieldName);
                 } catch (NoSuchFieldException ignored) {
-                    // keep walking: strategy classes inherit from a base that may hold the field
+                    // keep walking: the base class may hold it
                 }
             }
-            if (symbol == null || symbol.getType() != String.class) continue;   // class pins no pair
-            symbol.setAccessible(true);
-            Object pinned = symbol.get(strategy);
-            if (pinned == null) continue;
-            assertEquals(resolution.instrument, pinned.toString(),
-                name + " filters on " + pinned + " after reconciliation, but the runner resolves "
-                    + resolution.instrument + ": it would drop every bar or trade a stale pair");
+            if (field == null || field.getType() != String.class) continue;
+            // Only a FINAL field is dangerous before reconciliation: the reflective write is a documented
+            // no-op there, so a wrong default survives. A mutable one is precisely what reconcileInstrument
+            // exists to correct, and the "after" call checks it.
+            if (onlyFinal && !java.lang.reflect.Modifier.isFinal(field.getModifiers())) {
+                seen++;
+                continue;
+            }
+            field.setAccessible(true);
+            try {
+                Object pinned = field.get(strategy);
+                if (pinned == null || pinned.toString().isBlank()) continue;
+                seen++;
+                // Same pair, two notations: strategies declare "USD/CHF", the runner resolves "USD_CHF".
+                String actual = pinned.toString().trim().replace('/', '_').toUpperCase();
+                assertEquals(expected.toUpperCase(), actual,
+                    name + " carries " + fieldName + "=" + pinned + " " + moment + ", but the runner resolves "
+                        + expected + ": it would drop every bar or trade a stale pair");
+            } catch (IllegalAccessException e) {
+                fail(name + ": cannot read " + fieldName + " (" + e.getMessage() + ")");
+            }
         }
+        assertTrue(seen > 0, name + " carries no readable symbol/oandaSymbol field: this test would pass "
+            + "vacuously, so the class must expose the pair it acts on");
     }
 
     private static Path locateLiveConfig() {

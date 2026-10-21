@@ -527,6 +527,13 @@ chemin des ordres jusqu'a la story `spec-exit-path-closes-foreign-position.md` :
    demarrerait un runner news sur `-014`, sans rebuild. Recreer les conteneurs de la fenetre maintenant
    couterait leur etat `/tmp` et violerait D58 ; la rotation qui reconstruit les images ferme ce residu, a
    verifier explicitement a ce moment-la.
+3. **`nfp-week` est declare dans le compose mais n'a jamais ete cree**, et il vise `EUR_USD` comme `ltrsi3`.
+   `NfpWeekStrategy` n'a aucune date limite (elle se declenche a chaque vendredi NFP), donc un
+   `docker compose up -d` sans argument de service le demarre et remet `ltrsi3` dans la situation exacte qui a
+   coute -5,19 CAD avec la lane news : deux strategies sur la meme paire, meme compte, et le repli sur
+   `brokerOpenUnits()` dans le chemin de sortie. Non corrige ici : retirer `nfp-week` du compose et de
+   `DEPLOYED`, ou le mettre derriere un `profiles:` pour qu'il ne parte pas sur un `up` ordinaire, est une
+   decision a prendre (elle change ce qui est declare deploye).
 
 ### Decisions
 
