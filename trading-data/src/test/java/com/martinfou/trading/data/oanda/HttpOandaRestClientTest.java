@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class HttpOandaRestClientTest {
 
@@ -273,7 +274,14 @@ class HttpOandaRestClientTest {
             assertNotNull(summary);
             assertEquals(10000.0, summary.balance());
 
-            assertEquals(2, client.sendCount.get());
+            // The JDK HttpClient may transparently re-send a GET on a connection it finds closed, so the
+            // number of sends made by OUR retry layer is not deterministic. What is deterministic is
+            // the server side: it closes the exchange while its count is <= 3, so the successful
+            // response can only be the 4th request, and the caller must still get a valid snapshot.
+            assertEquals(4, requestCount.get(),
+                "server must have seen three failed attempts then one success, saw " + requestCount.get());
+            assertTrue(client.sendCount.get() <= 8,
+                "retry budget exceeded: " + client.sendCount.get() + " sends");
         } finally {
             testServer.stop(0);
         }
