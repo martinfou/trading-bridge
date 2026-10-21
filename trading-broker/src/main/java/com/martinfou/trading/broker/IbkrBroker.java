@@ -193,17 +193,23 @@ public final class IbkrBroker implements Broker {
         if (submitted == 0) {
             return 0;
         }
+        if (!connected) {
+            log.error("IBKR flatten NOT confirmed: broker disconnected with {} closing order(s) accepted only", submitted);
+            return 0;
+        }
         // An ACCEPTED closing order is not a CLOSED position: IBKR fills asynchronously, so the
         // position stays open for a moment after submitOrder returns. Confirm against the venue
         // before claiming anything was flattened, otherwise a kill switch reports success while
-        // the account is still exposed.
-        for (long attempt = 1; attempt <= flattenConfirmAttempts; attempt++) {
-            try {
-                Thread.sleep(flattenConfirmIntervalMs);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                log.error("IBKR flatten interrupted while waiting for confirmation; {} order(s) accepted only", submitted);
-                return 0;
+        // the account is still exposed. Check once immediately: a paper fill can land in <1 ms.
+        for (long attempt = 0; attempt <= flattenConfirmAttempts; attempt++) {
+            if (attempt > 0) {
+                try {
+                    Thread.sleep(flattenConfirmIntervalMs);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    log.error("IBKR flatten interrupted while waiting for confirmation; {} order(s) accepted only", submitted);
+                    return 0;
+                }
             }
             int stillOpen = getPositions().size();
             if (stillOpen == 0) {
