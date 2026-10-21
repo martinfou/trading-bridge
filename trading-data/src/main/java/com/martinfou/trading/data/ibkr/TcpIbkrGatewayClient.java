@@ -301,8 +301,11 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
         String symbol = contract != null ? contract.symbol() : null;
         if ((symbol == null || symbol.isBlank()) && contract != null) {
             // A bare contract may carry only the local symbol (MESZ6); without any symbol the closing
-            // order would have no instrument.
+            // order would have no instrument. conid is the last resort: it still identifies the trade.
             symbol = contract.localSymbol();
+            if (symbol == null || symbol.isBlank()) {
+                symbol = contract.conid() > 0 ? String.valueOf(contract.conid()) : null;
+            }
         }
         String multiplier = contract != null ? contract.multiplier() : null;
         if (multiplier == null || multiplier.isBlank()) {
@@ -480,7 +483,9 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
             }
             return who + "|sym:" + nullSafe(contract.symbol()) + "/" + nullSafe(contract.localSymbol())
                 + "/" + nullSafe(contract.secType()) + "/" + nullSafe(contract.lastTradeDateOrContractMonth())
-                + "/" + nullSafe(contract.right()) + "/" + contract.strike();
+                + "/" + nullSafe(contract.right()) + "/" + contract.strike()
+                + "/" + nullSafe(contract.currency()) + "/" + nullSafe(contract.multiplier())
+                + "/" + nullSafe(contract.tradingClass());
         }
 
         private static String nullSafe(com.ib.client.Types.SecType value) {
