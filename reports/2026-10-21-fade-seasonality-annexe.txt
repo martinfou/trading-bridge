@@ -1,0 +1,98 @@
+====================================================================================================================================
+63e ANNEXE — L'ANCRE ET LE MIROIR : la saisonnalite est-elle dans le FADE ou dans le DRIFT ?
+====================================================================================================================================
+
+====================================================================================================================================
+ANNEXE A — ATTRIBUTION DU ±1 VENDREDI vs le 62e (loi du 60e : tout ecart doit etre attribue)
+------------------------------------------------------------------------------------------------------------------------------------
+  GBPCHF   vendredis bruts= 1131 | rejetes heure<17 UTC= 1 | rejetes Mon-Jeu<2= 0 | retenus= 1130
+           vendredis a heure basse : ['2009-12-25']
+  EURCHF   vendredis bruts= 1131 | rejetes heure<17 UTC= 1 | rejetes Mon-Jeu<2= 0 | retenus= 1130
+           vendredis a heure basse : ['2009-12-25']
+  AUDCHF   vendredis bruts= 1131 | rejetes heure<17 UTC= 1 | rejetes Mon-Jeu<2= 0 | retenus= 1130
+           vendredis a heure basse : ['2009-12-25']
+  Attendu 62e : n ven = 1131. Un ecart de 1 doit etre nomme ci-dessus, pas explique par du bruit.
+
+====================================================================================================================================
+ANNEXE B — VALIDITE DE L'ANCRE : heure de la DERNIERE barre reelle, par mois (ete = 20 UTC, hiver = 21)
+------------------------------------------------------------------------------------------------------------------------------------
+  MOIS        GBPCHF        EURCHF        AUDCHF   part_heure<20
+  JAN         22.634        22.627        22.629     0.0%
+  FEV         22.619        22.610        22.622     0.0%
+  MAR         22.501        22.493        22.499     0.0%
+  AVR         22.416        22.410        22.416     0.0%
+  MAI         22.411        22.407        22.402     0.1%
+  JUN         22.411        22.413        22.417     0.0%
+  JUL         22.407        22.402        22.411     0.0%
+  AOU         22.431        22.409        22.425     0.0%
+  SEP         22.417        22.407        22.415     0.0%
+  OCT         22.415        22.415        22.419     0.0%
+  NOV         22.589        22.580        22.593     0.0%
+  DEC         22.453        22.419        22.445     2.0%
+  Lecture : une moyenne qui glisse entre ete et hiver est NORMALE (la cloture suit l'heure d'ete).
+  Le danger est une part d'heure < 20 UTC qui explose sur certains mois (selection de barre).
+
+====================================================================================================================================
+ANNEXE C — DRIFT A HEURE FIXE : barre 16:00->17:00 ET (20 UTC en EDT, 21 UTC en EST), identique ete/hiver
+------------------------------------------------------------------------------------------------------------------------------------
+  SERIE     n mois   ANOVA F(11,..)        p   effet par mois (bp)
+  GBPCHF       261   F(11,249)=0.50   0.9008   J+0.7 F+0.1 M+0.2 A-0.2 M-0.3 J-0.0 J-0.2 A-0.2 S-0.3 O+0.1 N+0.2 D-0.2
+  EURCHF       261   F(11,249)=1.03   0.4204   J+0.8 F-0.0 M+0.4 A-0.4 M-0.0 J+0.3 J-0.3 A-0.1 S-0.3 O-0.1 N-0.2 D+0.0
+  AUDCHF       261   F(11,249)=1.52   0.1232   J+1.4 F+0.1 M+0.4 A-0.9 M-0.2 J+0.3 J-0.5 A+0.4 S-1.2 O-0.4 N+0.6 D-0.0
+  EURUSD       228   F(11,216)=1.05   0.4026   J-0.3 F-0.1 M+0.0 A-0.3 M+0.6 J-0.0 J-0.8 A+0.6 S+0.4 O+0.0 N-0.2 D+0.1
+  GBPUSD       228   F(11,216)=0.47   0.9176   J-0.1 F+0.1 M-0.4 A-0.1 M+0.1 J-0.2 J-0.6 A+0.3 S+0.3 O+0.2 N+0.0 D+0.2
+  USDJPY       226   F(11,214)=1.20   0.2862   J-0.4 F-0.9 M+0.1 A+0.1 M-0.1 J-0.4 J+0.8 A-0.4 S+0.3 O+0.3 N+0.5 D+0.2
+
+====================================================================================================================================
+ANNEXE D — MIROIR : effet mois de l'INCREMENT (fade ven - drift) contre effet mois du DRIFT
+------------------------------------------------------------------------------------------------------------------------------------
+  ANOVA increment : F=1.86 p=0.0447   |   ANOVA drift : F=10.80 p=0.000000
+  correlation des 12 effets-mois (increment vs drift) : r = -0.903
+  MOIS  effet INCR  effet DRIFT
+  JAN        +1.41        -1.24
+  FEV        +0.35        -1.02
+  MAR        +1.61        -1.19
+  AVR        -1.05        +0.69
+  MAI        -0.58        +1.05
+  JUN        -0.61        +1.02
+  JUL        -0.11        +0.81
+  AOU        -0.72        +1.22
+  SEP        -1.92        +1.13
+  OCT        -0.74        +0.34
+  NOV        +1.34        -1.64
+  DEC        +1.13        -1.30
+  Lecture : si r est fortement negatif, la 'saison' de l'increment est le MIROIR MECANIQUE de celle
+  du drift (D = fade_ven - drift) -> la saison est dans le drift, pas dans le fade.
+
+  Stabilite de la FORME par ere (effets-mois demeanes par annee, 3 crosses) :
+    2006-2015: r(increment,drift) = -0.459 | pic increment SEP | pic drift MAR
+    2016-2026: r(increment,drift) = -0.842 | pic increment JAN | pic drift JAN
+
+====================================================================================================================================
+ANNEXE E — PORTEE : le drift saisonnier existe-t-il sur les MAJEURES et AVANT 2006 ?
+------------------------------------------------------------------------------------------------------------------------------------
+  SERIE    periode       n mois   NOV-FEV   MAI-AOU    ecart
+  GBPCHF   2006-2015        120     -0.74     +0.01    -0.74   (t -2.7 / +0.0)
+  GBPCHF   2016-2026        130     -4.09     +0.05    -4.14   (t -15.6 / +0.3)
+  GBPCHF   FULL             262     -2.28     +0.04    -2.32   (t -8.5 / +0.3)
+
+  EURCHF   2006-2015        120     -0.74     +0.01    -0.74   (t -2.7 / +0.0)
+  EURCHF   2016-2026        130     -4.09     +0.05    -4.14   (t -15.6 / +0.3)
+  EURCHF   FULL             262     -2.28     +0.04    -2.32   (t -8.5 / +0.3)
+
+  AUDCHF   2006-2015        120     -0.74     +0.01    -0.74   (t -2.7 / +0.0)
+  AUDCHF   2016-2026        130     -4.09     +0.05    -4.14   (t -15.6 / +0.3)
+  AUDCHF   FULL             262     -2.28     +0.04    -2.32   (t -8.5 / +0.3)
+
+  EURUSD   2006-2015        120     -0.74     +0.01    -0.74   (t -2.7 / +0.0)
+  EURUSD   2016-2026        130     -4.09     +0.05    -4.14   (t -15.6 / +0.3)
+  EURUSD   FULL             262     -2.28     +0.04    -2.32   (t -8.5 / +0.3)
+
+  GBPUSD   2006-2015        120     -0.74     +0.01    -0.74   (t -2.7 / +0.0)
+  GBPUSD   2016-2026        130     -4.09     +0.05    -4.14   (t -15.6 / +0.3)
+  GBPUSD   FULL             262     -2.28     +0.04    -2.32   (t -8.5 / +0.3)
+
+  USDJPY   2006-2015        120     -0.74     +0.01    -0.74   (t -2.7 / +0.0)
+  USDJPY   2016-2026        130     -4.09     +0.05    -4.14   (t -15.6 / +0.3)
+  USDJPY   FULL             262     -2.28     +0.04    -2.32   (t -8.5 / +0.3)
+

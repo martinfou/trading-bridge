@@ -1,0 +1,21 @@
+======================================================================================================================
+63e ANNEXE 2 — L'ALIAS DST : ANOVA saisonniere du drift selon l'heure FIXE (ET) vs l'heure fixe (UTC)
+Drift = fade moyen de la barre, pool 3 crosses refuge (GBP_CHF/EUR_CHF/AUD_CHF), X demane par annee.
+Un pic qui n'apparait qu'en UTC et pas en ET est un alias d'heure d'ete, PAS une saison.
+======================================================================================================================
+objet                          n        F(11,..)         p  effet JAN/AOU/NOV (bp)
+heure ET 15:00-16:00         261  F(11,249)=1.20    0.2904  J+0.73/A-0.40/N-0.13
+heure ET 16:00-17:00         261  F(11,249)=1.08    0.3816  J+0.93/A+0.06/N+0.19
+heure ET 17:00-18:00         261  F(11,249)=0.74    0.6984  J-0.80/A+0.05/N+0.16
+heure ET 18:00-19:00         261  F(11,249)=0.83    0.6126  J+0.01/A+0.20/N-0.51
+heure ET 19:00-20:00         261  F(11,249)=1.66    0.0826  J+0.06/A+0.20/N+0.60
+----------------------------------------------------------------------------------------------------------------------
+heure UTC 20:00              261  F(11,249)=3.13    0.0006  J-0.31/A+0.65/N-0.92
+heure UTC 21:00              261  F(11,249)=5.56    0.0000  J+2.34/A-0.93/N+1.26
+heure UTC 22:00              261  F(11,249)=2.63    0.0034  J+0.29/A-0.43/N+1.17
+heure UTC 23:00              261 F(11,249)=11.49    0.0000  J-1.22/A+1.25/N-1.62
+
+Lecture : 5/5 heures fixes ET non significatives (p 0.08-0.70) | 4/4 heures fixes UTC significatives
+(p 0.0006-0.0034, dont F=11.49 a 23:00 UTC). L'heure UTC traverse la frontiere d'heure d'ete :
+23:00 UTC = 18:00 ET en hiver et 19:00 ET en ete, et le drift vaut -2.44 bp a 18:00 ET contre
+-0.13 bp a 19:00 ET -> la bascule EDT/EST fabrique le contraste 'hiver vs ete'.
