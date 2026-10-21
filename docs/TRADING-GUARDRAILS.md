@@ -131,11 +131,11 @@ puisse pas être réintroduite.
 
 #### Résidus assumés (2026-10-01)
 
-- **Plafond de risque par compte (D24, porté à 4 % par D42)** : toujours pas implémenté dans le code. La
-  somme des `computedRiskPct` déployés est **4,0 %** depuis le 2026-10-11 (2,4 % pour les six stratégies
-  de la fenêtre + 1,6 % pour la lane news hebdomadaire), sous le plafond, et doit le rester à chaque
-  édition de `live-config.json`. Le plafond redevient **3 %** quand la lane news est retirée : c'est la
-  même édition qui doit retirer ses quatre clés de la liste `DEPLOYED` du test et son plafond.
+- **Plafond de risque par compte (D24, à 3 % depuis D68)** : toujours pas implémenté dans le code. Depuis
+  le **2026-10-21** la lane news du 12 octobre est retirée (D67) et la somme déployée est redescendue à
+  **2,4 %** (les six stratégies de la fenêtre, dont `nfpweek`). Elle doit le rester à chaque édition de
+  `live-config.json`, et le test `deployedRiskSumStaysUnderCap` la compare à **3 %** : l'enveloppe de 4 %
+  de D42 est close, une lane future devra gagner sa propre décision.
 
   **Décision D42 (Martin, 2026-10-11)** : le plafond par compte passe de 3 % (D24) à 4 % de NAV
   simultanée, le temps de la lane news du 12 au 16 octobre 2026. Motif : la semaine news demande 1,6 %
@@ -148,6 +148,8 @@ puisse pas être réintroduite.
   somme déployée redescend à **2,80 %** (2,30 % pour la fenêtre + 0,5 % pour la lane). Le plafond reste
   toutefois à **4 %** tant que la lane est déployée, et se révise à la rotation de fenêtre du
   2026-10-31. Le détail des dix décisions est dans `docs/paper-window-log.md` (section du 2026-10-16).
+  **Clôture (D68, 2026-10-21)** : la lane est retirée avant la rotation, donc le plafond redescend tout de
+  suite à **3 %** sans attendre le 2026-10-31 ; D52 est soldée par D68.
 
 - **Retry d'ordre** : le client OANDA ne réessaie que les échecs de connexion, donc une fermeture du
   serveur **pendant** l'envoi n'est pas réessayée. Or réessayer un POST d'ordre peut doubler une position :

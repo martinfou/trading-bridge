@@ -169,21 +169,11 @@ class LiveStrategyRunnerInstrumentTest {
         "vwpreversion", "consecbar", "compmomentum", "monthweekphase", "ltrsi3", "nfpweek");
 
     /**
-     * The weekly news lane: one week only, four strategies, three services (one per instrument).
-     * They trade real (practice) orders, so they count against the account ceiling while they are
-     * deployed, and removing them at the end of the week is what puts the ceiling back to 3%.
+     * The account ceiling is 3% of simultaneous NAV again: D24 raised to 4% by D42 for the week-of-12-
+     * October news lane, and restored to 3% by D68 (2026-10-21) in the same edit that retired the lane.
+     * Nothing here reopens the 4% envelope; a future lane has to win its own decision.
      */
-    private static final List<String> NEWS_WEEK = List.of(
-        "newsoct12cpi", "newsoct12ppi", "newsoct12chinacpi", "newsoct12fade");
-
-    private static final double ACCOUNT_RISK_CAP_PCT = 4.0;
-
-    /** Everything that runs in a container this week: the window plus the weekly news lane. */
-    private static List<String> everyDeployed() {
-        java.util.List<String> all = new java.util.ArrayList<>(DEPLOYED);
-        all.addAll(NEWS_WEEK);
-        return all;
-    }
+    private static final double ACCOUNT_RISK_CAP_PCT = 3.0;
 
     @Test
     @DisplayName("live-config.json declares every deployed strategy with an instrument and a risk")
@@ -191,7 +181,7 @@ class LiveStrategyRunnerInstrumentTest {
         JsonNode root = MAPPER.readTree(Files.readString(locateLiveConfig()));
         JsonNode strategies = root.get("strategies");
 
-        for (String key : everyDeployed()) {
+        for (String key : DEPLOYED) {
             JsonNode entry = strategies.get(key);
             assertTrue(entry != null && !entry.isNull(), "missing strategies." + key);
             assertTrue(entry.hasNonNull("instrument"), key + " has no instrument");
@@ -203,19 +193,18 @@ class LiveStrategyRunnerInstrumentTest {
     }
 
     @Test
-    @DisplayName("the sum of computedRiskPct over deployed strategies stays under the 4% account cap (D42)")
+    @DisplayName("the sum of computedRiskPct over deployed strategies stays under the 3% account cap (D24, restored by D68)")
     void deployedRiskSumStaysUnderCap() throws IOException {
         JsonNode strategies = MAPPER.readTree(Files.readString(locateLiveConfig())).get("strategies");
 
         double sum = 0.0;
-        for (String key : everyDeployed()) {
+        for (String key : DEPLOYED) {
             sum += strategies.get(key).get("computedRiskPct").asDouble();
         }
 
         assertTrue(sum <= ACCOUNT_RISK_CAP_PCT,
             "deployed risk sum " + sum + "% exceeds the " + ACCOUNT_RISK_CAP_PCT
-                + "% account cap (D24, raised to 4% by D42 for the news lane; it returns to 3% when the "
-                + "news week is removed)");
+                + "% account cap (D24; the 4% envelope of D42 closed with the news lane on 2026-10-21)");
     }
 
     private static Path locateLiveConfig() {
