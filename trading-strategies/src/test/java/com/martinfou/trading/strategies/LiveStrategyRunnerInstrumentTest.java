@@ -219,7 +219,7 @@ class LiveStrategyRunnerInstrumentTest {
             if (line.trim().startsWith("command:")) {
                 // The runner reads its strategy list from argv[2], so what the CAP must count is what the
                 // command actually passes, not only what environment: happens to declare.
-                commandPassesStrategy.put(service, line.contains("STRATEGY"));
+                commandPassesStrategy.put(service, line.contains("$${STRATEGY}"));
             }
             var m = strategyLine.matcher(line);
             if (!m.matches()) continue;
