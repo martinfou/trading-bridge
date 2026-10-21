@@ -762,20 +762,9 @@ public class LiveStrategyRunner implements Runnable {
             // Long-term strategies
             map.put("ltrsi3", Class.forName("com.martinfou.trading.strategies.longterm.LtRSI3Momentum")
                 .asSubclass(Strategy.class));
-            // News week 12-16 October 2026 — coded from docs/news-playbooks/week-2026-10-12.md.
-            // One week only: these dates expire on 2026-10-19 and the entries are removed then.
-            map.put("newsoct12cpi", Class.forName(
-                "com.martinfou.trading.strategies.newsweekly.NewsWeek12Oct_CpiPpi$CpiEurUsd")
-                .asSubclass(Strategy.class));
-            map.put("newsoct12ppi", Class.forName(
-                "com.martinfou.trading.strategies.newsweekly.NewsWeek12Oct_CpiPpi$PpiRetailSalesEurUsd")
-                .asSubclass(Strategy.class));
-            map.put("newsoct12chinacpi", Class.forName(
-                "com.martinfou.trading.strategies.newsweekly.NewsWeek12Oct_ChinaCpi$ChinaCpiAudJpy")
-                .asSubclass(Strategy.class));
-            map.put("newsoct12fade", Class.forName(
-                "com.martinfou.trading.strategies.newsweekly.NewsWeek12Oct_FridayFade$FridayFadeGbpChf")
-                .asSubclass(Strategy.class));
+            // The week-of-12-October news entries were retired on 2026-10-21 (D67, executed as D68 in
+            // docs/paper-window-log.md): the classes stay in newsweekly/ as an archive, but nothing
+            // registers them any more, so no container can be started on an expired, hard-coded week.
         } catch (ClassNotFoundException e) {
             throw new RuntimeException("Strategy class not found", e);
         }

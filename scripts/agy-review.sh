@@ -140,7 +140,7 @@ fi
 # Gemini is covered by Martin's Google/Antigravity subscription, so it is the default.
 # Claude credits are limited: opt in explicitly when the diff really warrants it,
 # e.g. AGY_MODEL=claude-opus-4-6-thinking scripts/agy-review.sh <ref>
-AGY_MODEL="${AGY_MODEL:-gemini-3.1-pro-high}"
+AGY_MODEL="${AGY_MODEL:-gemini-3.8-flash-high}"
 MODEL_ARGS=()
 [[ -n "${AGY_MODEL:-}" ]] && MODEL_ARGS+=(--model "$AGY_MODEL")
 [[ -n "${AGY_EFFORT:-}" ]] && MODEL_ARGS+=(--effort "$AGY_EFFORT")
