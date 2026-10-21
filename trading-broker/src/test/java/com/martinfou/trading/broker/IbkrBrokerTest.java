@@ -152,6 +152,21 @@ class IbkrBrokerTest {
         assertEquals(1, broker.getPositions().size());
     }
 
+    @Test
+    void flattenAllPositions_doesNotClaimSuccessWhenThePositionQueryWasNeverAnswered() {
+        var client = new StubIbkrGatewayClient();
+        var broker = new IbkrBroker(client, 2, 10);
+        broker.connect();
+
+        broker.submitOrder(new Order("MES", Order.Side.BUY, Order.Type.MARKET, 1.0, 0.0));
+        assertEquals(1, broker.getPositions().size());
+
+        // The venue stops answering: an empty list would be ignorance, not flatness.
+        client.positionQueryConfirmed(false);
+
+        assertEquals(0, broker.flattenAllPositions());
+    }
+
     private static final class ListenerCapturingClient implements IbkrGatewayClient {
         java.util.function.Consumer<IbkrExecution> listener;
 

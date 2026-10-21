@@ -17,6 +17,8 @@ public final class StubIbkrGatewayClient implements IbkrGatewayClient {
     private final java.util.concurrent.atomic.AtomicLong nextOrderId = new java.util.concurrent.atomic.AtomicLong(1);
     private volatile boolean connected;
     private volatile boolean asyncFills = true;
+    /** Defaults to true: the stub always "answers" unless a test says otherwise. */
+    private volatile boolean positionQueryConfirmed = true;
 
     public StubIbkrGatewayClient scriptFailure(String message) {
         scriptedResults.add(IbkrMarketOrderResult.failure(message));
@@ -30,6 +32,17 @@ public final class StubIbkrGatewayClient implements IbkrGatewayClient {
     public StubIbkrGatewayClient scriptAcceptedWithoutFill(String orderId, double price) {
         scriptedResults.add(IbkrMarketOrderResult.success(orderId, "E-" + orderId, price));
         return this;
+    }
+
+    /** Simulates a positions query the venue never answered (timeout / dead connection). */
+    public StubIbkrGatewayClient positionQueryConfirmed(boolean confirmed) {
+        this.positionQueryConfirmed = confirmed;
+        return this;
+    }
+
+    @Override
+    public boolean lastPositionQueryConfirmed() {
+        return positionQueryConfirmed;
     }
 
     public StubIbkrGatewayClient account(IbkrAccountSnapshot snapshot) {

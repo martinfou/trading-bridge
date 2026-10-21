@@ -70,6 +70,8 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
     private final List<IbkrPositionSnapshot> positions = new CopyOnWriteArrayList<>();
     /** Last POSITION answer the venue actually completed; never cleared by a failed query. */
     private volatile List<IbkrPositionSnapshot> lastKnownPositions = List.of();
+    /** False until the venue actually answers a positions request: an empty list alone means nothing. */
+    private volatile boolean lastPositionQueryConfirmed;
 
     // Order correlation: IBKR does NOT echo the clientTag in execDetails/orderStatus, so the
     // orderId -> clientTag map is the only bridge between an application order and its execution.
@@ -206,21 +208,35 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
     public List<IbkrPositionSnapshot> fetchOpenPositions() {
         if (!isConnected()) {
             // Not "flat": unknown. An empty list here would let a kill switch confirm a liquidation
-            // it never verified, so hand back the last state the venue did report.
+            // it never verified, so hand back the last state the venue did report and say so.
+            lastPositionQueryConfirmed = false;
             return lastKnownPositions;
         }
         positions.clear();
         this.positionsLatch = new CountDownLatch(1);
+        lastPositionQueryConfirmed = false;
         client.reqPositions();
         if (!await(positionsLatch, POSITIONS_TIMEOUT)) {
             // Same reasoning for a silent Gateway: a timeout must never read as "no positions".
-            log.warn("IBKR positions query did not complete within {}; returning last known state ({} row(s))",
+            // Cancel so a late positionEnd() cannot trip the latch of the NEXT query.
+            try {
+                client.cancelPositions();
+            } catch (RuntimeException e) {
+                log.debug("cancelPositions after timeout failed: {}", e.toString());
+            }
+            log.warn("IBKR positions query did not complete within {}; last known state ({} row(s)) returned UNCONFIRMED",
                 POSITIONS_TIMEOUT, lastKnownPositions.size());
             return lastKnownPositions;
         }
         List<IbkrPositionSnapshot> snapshot = List.copyOf(positions);
         lastKnownPositions = snapshot;
+        lastPositionQueryConfirmed = true;
         return snapshot;
+    }
+
+    @Override
+    public boolean lastPositionQueryConfirmed() {
+        return lastPositionQueryConfirmed;
     }
 
     private IbkrAccountSnapshot failClosedAccount() {

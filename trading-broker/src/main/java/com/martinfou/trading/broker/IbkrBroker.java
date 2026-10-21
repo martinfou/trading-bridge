@@ -191,6 +191,10 @@ public final class IbkrBroker implements Broker {
             }
         }
         if (submitted == 0) {
+            if (!connected || !client.lastPositionQueryConfirmed()) {
+                log.error("IBKR flatten: position state UNCONFIRMED (connected={}, queryConfirmed={}); the account is not known to be flat",
+                    connected, client.lastPositionQueryConfirmed());
+            }
             return 0;
         }
         if (!connected) {
@@ -201,6 +205,7 @@ public final class IbkrBroker implements Broker {
         // position stays open for a moment after submitOrder returns. Confirm against the venue
         // before claiming anything was flattened, otherwise a kill switch reports success while
         // the account is still exposed. Check once immediately: a paper fill can land in <1 ms.
+        // An EMPTY list is only proof of flatness when the venue actually answered the query.
         for (long attempt = 0; attempt <= flattenConfirmAttempts; attempt++) {
             if (attempt > 0) {
                 try {
@@ -211,11 +216,16 @@ public final class IbkrBroker implements Broker {
                     return 0;
                 }
             }
-            int stillOpen = getPositions().size();
-            if (stillOpen == 0) {
+            List<Position> open = getPositions();
+            boolean confirmed = connected && client.lastPositionQueryConfirmed();
+            if (confirmed && open.isEmpty()) {
                 log.info("IBKR flatten confirmed flat after {} ms ({} closing order(s))",
                     attempt * flattenConfirmIntervalMs, submitted);
                 return submitted;
+            }
+            if (!confirmed) {
+                log.error("IBKR flatten attempt {}: position state UNCONFIRMED (connected={}), {} position(s) known",
+                    attempt, connected, open.size());
             }
         }
         log.error("IBKR flatten NOT confirmed: position(s) still open after {} ms; {} closing order(s) were only accepted, not verified",

@@ -30,4 +30,15 @@ public interface IbkrGatewayClient {
     IbkrAccountSnapshot fetchAccountSummary();
 
     List<IbkrPositionSnapshot> fetchOpenPositions();
+
+    /**
+     * Whether the LAST {@link #fetchOpenPositions()} call was actually answered by the venue.
+     *
+     * <p>An empty position list is ambiguous on its own: it means "flat" only if the venue answered.
+     * A kill switch that reads an empty list produced by a timeout or a dead connection concludes the
+     * account is flat while it is merely blind, so callers that act on emptiness must consult this.</p>
+     */
+    default boolean lastPositionQueryConfirmed() {
+        return true;
+    }
 }
