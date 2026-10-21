@@ -205,9 +205,15 @@ def build_payload(account_id: str, environment: str, executions: list[dict],
             continue
 
         native = float(report["realized_pnl"])       # déjà net des commissions des deux jambes
-        # La devise du P&L est celle du CONTRAT ; celle du rapport est celle de la commission, qui peut
-        # differer (forex IDEALPRO par exemple).
-        currency = (execution.get("currency") or report.get("currency") or "").upper()
+        # IBKR ne dit pas explicitement dans quelle devise realizedPNL est exprime ; quand la devise du
+        # contrat et celle du rapport different, on refuse plutot que de choisir au hasard.
+        contract_ccy = (execution.get("currency") or "").upper()
+        report_ccy = (report.get("currency") or "").upper()
+        if contract_ccy and report_ccy and contract_ccy != report_ccy:
+            refused.append(f"{execution['exec_id']}: devise du contrat ({contract_ccy}) != devise du rapport "
+                           f"({report_ccy}), P&L non attribuable")
+            continue
+        currency = contract_ccy or report_ccy
         if not currency:
             refused.append(f"{execution['exec_id']}: devise du rapport inconnue")
             continue
@@ -244,7 +250,7 @@ def build_payload(account_id: str, environment: str, executions: list[dict],
             # La commission est dans la devise du rapport : si elle differe de celle du contrat, on ne
             # l'etiquette pas de travers, on ne la publie pas.
             "commission": (round(float(report.get("commission") or 0.0), 4)
-                           if (report.get("currency") or "").upper() in ("", currency) else 0.0),
+                           if (report.get("currency") or "").upper() in ("", currency) else None),
             "financing": 0.0,
             # exit_reason est borné à 32 caractères par l'API : le taux garde sa place, le bavardage non.
             "exit_reason": (f"IBKR FX {rate:.6f}" if rate != 1.0 else "IBKR"),
@@ -299,6 +305,7 @@ def collect(host: str, port: int, client_id: int, account: str, since: datetime,
             self.executions: list[dict] = []
             self.reports: dict[str, dict] = {}
             self.summary: dict[str, str] = {}
+            self.currencies: dict[str, str] = {}
             self.managed: list[str] = []
             self.positions = 0
             self.errors: list[str] = []
@@ -354,6 +361,8 @@ def collect(host: str, port: int, client_id: int, account: str, since: datetime,
             if acct and acct != account:
                 return
             self.summary[tag] = value
+            if currency:                             # devise de la valeur, pas un tag « Currency »
+                self.currencies[tag] = currency
 
         def accountSummaryEnd(self, reqId):  # noqa: N802
             self.summary_done.set()
@@ -426,7 +435,8 @@ def collect(host: str, port: int, client_id: int, account: str, since: datetime,
         "balance": num("TotalCashValue"),
         "unrealized_pl": num("UnrealizedPnL"),
         "open_trade_count": client.positions,
-        "currency": client.summary.get("Currency") or "CAD",
+        # Devise de la NAV telle que le Gateway la rend ; inconnue = on refuse plus loin plutot que d'inventer.
+        "currency": client.currencies.get("NetLiquidation") or "",
         "extraction_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "source": SOURCE,
     }
@@ -557,7 +567,7 @@ def main() -> int:
         print("IBKR_ACCOUNT_ID requis", file=sys.stderr)
         return 2
     # Un compte live commence par U, un compte papier par DU : tout ecart est refuse, dans les deux sens.
-    expected = "live" if account.startswith("U") else "practice"
+    expected = "practice" if account.startswith("D") else "live"
     environment = os.environ.get("HERMES_IBKR_ENVIRONMENT") or expected
     if environment != expected:
         print(f"HERMES_IBKR_ENVIRONMENT={environment} ne correspond pas au compte {account} ({expected})",
@@ -590,6 +600,9 @@ def main() -> int:
         return 1
 
     fx = FxRates(oanda_key())
+    if not data["snapshot"].get("currency"):
+        print("devise du compte inconnue (accountSummary sans devise) : rien n'est publie", file=sys.stderr)
+        return 1
     payload, refused = build_payload(account, environment, data["executions"], data["snapshot"], fx)
 
     if args.dry_run:
