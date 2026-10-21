@@ -7,8 +7,9 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Registry for CME and multi-asset Futures contracts, loaded from data/runtime/futures-contracts.json
- * with deterministic built-in fallbacks for CME micros/minis (MES, M2K, EMD, MNQ).
+ * Registry for CME and multi-asset Futures contracts, from deterministic built-in defaults for CME
+ * micros/minis (MES, M2K, EMD, MNQ). data/runtime/futures-contracts.json mirrors these values but is
+ * NOT read by this class: nothing loads it, so editing that file changes no sizing and no exchange.
  */
 public final class FuturesRegistry {
 
