@@ -10,7 +10,7 @@ soit exactement -1.25 de mouvement moins 1.22 de commissions. Conséquence : auc
 multiplicateur à deviner, aucune commission à re-soustraire, et aucun historique à reconstituer.
 
 Contrat : POST {HERMES_WEB_URL}/api/trading/pnl-import avec broker=ibkr.
-- Identité de ligne : fill_ref = execId IBKR (idempotent). Une correction IBKR arrive avec le dernier segment
+- Identité de ligne : fill_ref = base de l'execId IBKR (idempotent). Une correction arrive avec le dernier segment
   d'execId incrémenté : seule la révision la plus haute est gardée, sinon la quantité et le P&L comptent double.
 - Compte : refus de publier si le Gateway n'est pas connecté au compte configuré (managedAccounts), et
   exécutions, positions et résumé sont filtrés sur ce compte. Un compte live (U…) exige
@@ -158,7 +158,8 @@ class FxRates:
         query = urllib.parse.urlencode({
             "granularity": "H1",
             "from": (hour_start - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "to": (hour_start + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "to": min(hour_start + timedelta(hours=2),
+                      datetime.now(timezone.utc)).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "price": "M",
         })
         request = urllib.request.Request(
@@ -240,7 +241,10 @@ def build_payload(account_id: str, environment: str, executions: list[dict],
             "pl": round(native * rate, 4),
             "pl_native": round(native, 4),
             "currency": currency,
-            "commission": round(float(report.get("commission") or 0.0), 4),
+            # La commission est dans la devise du rapport : si elle differe de celle du contrat, on ne
+            # l'etiquette pas de travers, on ne la publie pas.
+            "commission": (round(float(report.get("commission") or 0.0), 4)
+                           if (report.get("currency") or "").upper() in ("", currency) else 0.0),
             "financing": 0.0,
             # exit_reason est borné à 32 caractères par l'API : le taux garde sa place, le bavardage non.
             "exit_reason": (f"IBKR FX {rate:.6f}" if rate != 1.0 else "IBKR"),
@@ -256,8 +260,14 @@ def build_payload(account_id: str, environment: str, executions: list[dict],
         })
 
     # Le Gateway ne rend qu'une fenetre courte d'executions : annoncer 2026-10-01 serait faux. La fenetre
-    # publiee est la plus ancienne execution REELLEMENT recue.
-    window_start = min((e["closed_at_utc"] for e in entries), default=None)
+    # publiee est la plus ancienne execution REELLEMENT recue, refusee ou non.
+    received: list[str] = []
+    for execution in executions:
+        try:
+            received.append(parse_ibkr_time(execution["time"]).strftime("%Y-%m-%dT%H:%M:%SZ"))
+        except (ValueError, TypeError, KeyError):
+            continue
+    window_start = min(received, default=None)
 
     payload = {
         "broker": "ibkr",
@@ -301,7 +311,7 @@ def collect(host: str, port: int, client_id: int, account: str, since: datetime,
             # retient que les erreurs des requetes qu'on a faites et les vraies pertes de connexion.
             if code in BENIGN_ERRORS:
                 return
-            if reqId in (-1, 1, 2) or code in FATAL_CODES:
+            if reqId in (1, 2) or code in FATAL_CODES:
                 self.errors.append(f"{code}: {msg}")
 
         def managedAccounts(self, accountsList: str) -> None:  # noqa: N802
@@ -546,10 +556,12 @@ def main() -> int:
     if not account:
         print("IBKR_ACCOUNT_ID requis", file=sys.stderr)
         return 2
-    # Un compte live commence par U : refus de l'étiqueter practice tant que ce n'est pas dit explicitement.
-    environment = os.environ.get("HERMES_IBKR_ENVIRONMENT") or ("practice" if account.startswith("DU") else "")
-    if environment not in ("practice", "live"):
-        print(f"HERMES_IBKR_ENVIRONMENT requis pour le compte {account} (practice|live)", file=sys.stderr)
+    # Un compte live commence par U, un compte papier par DU : tout ecart est refuse, dans les deux sens.
+    expected = "live" if account.startswith("U") else "practice"
+    environment = os.environ.get("HERMES_IBKR_ENVIRONMENT") or expected
+    if environment != expected:
+        print(f"HERMES_IBKR_ENVIRONMENT={environment} ne correspond pas au compte {account} ({expected})",
+              file=sys.stderr)
         return 2
     if not args.dry_run and (not base or not token):
         print("HERMES_WEB_URL et HERMES_WEB_TOKEN requis", file=sys.stderr)
@@ -581,9 +593,9 @@ def main() -> int:
     payload, refused = build_payload(account, environment, data["executions"], data["snapshot"], fx)
 
     if args.dry_run:
-        print(json.dumps({"entries": payload["entries"], "refused": refused, "fx_errors": fx.errors},
-                         indent=1, default=str))
-        return 0
+        print(json.dumps({"entries": payload["entries"], "refused": refused, "fx_errors": fx.errors,
+                          "window_start_utc": payload["window_start_utc"]}, indent=1, default=str))
+        return 1 if (refused or fx.errors) else 0
 
     status, body = post(base + PNL_PATH, token, payload)
     print(json.dumps({"http": status, "response": body[:300], "sent": len(payload["entries"]),
