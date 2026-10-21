@@ -19,6 +19,8 @@ Contrat : POST {HERMES_WEB_URL}/api/trading/pnl-import avec broker=ibkr.
   de l'heure du fill, stocké sur la ligne (exit_reason « IBKR FX 1.403980 »). Bougie absente ou incomplète,
   devise non convertible ⇒ ligne refusée, jamais convertie au hasard.
 - `orderRef` nomme la stratégie quand il en porte une, sinon la ligne est un leak.
+- Retournement (vendre 2 contre un long de 1) : IBKR ne donne realizedPNL que sur la partie fermée, mais
+  `units` reste la taille exécutée ; le P&L reste juste, la quantité affichée est celle du fill.
 - Gateway muet, partiel ou en erreur : payload dégradé publié ET code de sortie non nul.
 
 Usage:
@@ -39,6 +41,7 @@ import os
 import re
 import sys
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -112,6 +115,8 @@ def is_close(report: dict | None) -> bool:
 def parse_ibkr_time(raw: str) -> datetime:
     """'20261021 05:56:48' (heure Gateway) → UTC. Refuse une heure ambiguë (changement d'heure)."""
     cleaned = " ".join(raw.split())
+    # Un Gateway recent peut suffixer l'heure d'un fuseau ou d'un Z : on ne garde que la partie horaire.
+    cleaned = re.sub(r"\s+[A-Za-z/_+-][A-Za-z0-9/_+:-]*$", "", cleaned)
     naive = datetime.strptime(cleaned, "%Y%m%d %H:%M:%S")
     first = naive.replace(tzinfo=EXCHANGE_TZ, fold=0)
     second = naive.replace(tzinfo=EXCHANGE_TZ, fold=1)
@@ -184,7 +189,11 @@ def build_payload(account_id: str, environment: str, executions: list[dict],
     account_currency = snapshot.get("currency") or "CAD"
 
     for execution in sorted(latest_revisions(executions), key=lambda e: (e["time"], e["exec_id"])):
-        report = execution.get("report") or {}
+        report = execution.get("report")
+        if report is None:
+            refused.append(f"{execution['exec_id']}: aucun rapport de commission reçu, impossible de savoir "
+                           f"si ce fill ferme une position")
+            continue
         if not is_close(report):
             continue                                  # ouverture : le miroir enregistre de l'argent
         try:
@@ -200,7 +209,7 @@ def build_payload(account_id: str, environment: str, executions: list[dict],
             continue
 
         rate = 1.0
-        if currency != account_currency:
+        if currency != "CAD":                        # pl est en CAD, point : on compare a CAD, pas au compte
             fetched = fx.rate(currency, closed_at)
             if fetched is None:
                 refused.append(f"{execution['exec_id']}: taux {currency}→{account_currency} introuvable, "
@@ -214,7 +223,8 @@ def build_payload(account_id: str, environment: str, executions: list[dict],
         local = closed_at.astimezone(MONTREAL)
 
         entries.append({
-            "fill_ref": execution["exec_id"],
+            # Base de l'execId : une correction arrivee plus tard ecrase la ligne au lieu de la doubler.
+            "fill_ref": base_exec_id(execution["exec_id"])[0],
             "kind": "strategy" if is_strategy else "leak",
             "strategy": order_ref if is_strategy else None,
             "tag": tag,
@@ -288,8 +298,8 @@ def collect(host: str, port: int, client_id: int, account: str, since: datetime,
             self.accounts_known.set()
 
         def execDetails(self, reqId, contract, execution):  # noqa: N802
-            if execution.acctNumber and execution.acctNumber != account:
-                return                                    # un autre compte n'entre jamais ici
+            if execution.acctNumber != account:
+                return                                    # compte vide ou different : jamais publie
             self.executions.append({
                 "exec_id": execution.execId,
                 "time": execution.time,
@@ -344,7 +354,8 @@ def collect(host: str, port: int, client_id: int, account: str, since: datetime,
             raise TimeoutError("pas de nextValidId")
 
         client.reqManagedAccts()
-        client.accounts_known.wait(min(5, timeout))
+        if not client.accounts_known.wait(min(5, timeout)):
+            raise TimeoutError("managedAccounts non reçu : impossible de vérifier le compte")
         if account not in client.managed:
             raise ConnectionError(
                 f"le Gateway n'est pas connecté au compte {account} (comptes vus : {client.managed or 'aucun'})"
@@ -361,6 +372,11 @@ def collect(host: str, port: int, client_id: int, account: str, since: datetime,
                              (client.pos_done, "positions")):
             if not event.wait(timeout):
                 raise TimeoutError(f"{label} non reçues dans le délai")
+        # Les commissionReport peuvent suivre execDetailsEnd : on leur laisse le temps d'arriver, sinon un
+        # close passerait pour une ouverture et disparaitrait en silence.
+        deadline = time.monotonic() + min(10, timeout)
+        while time.monotonic() < deadline and len(client.reports) < len(client.executions):
+            time.sleep(0.2)
         if client.errors:
             raise ConnectionError("; ".join(client.errors[:5]))
 
@@ -445,18 +461,43 @@ def selftest() -> int:
     execution = {
         "exec_id": "a.b.01.01", "time": "20261021 05:56:50", "side": "SLD", "shares": 1.0, "price": 7766.25,
         "order_id": 1001, "order_ref": "", "symbol": "MESZ6", "con_id": 1,
-        "report": {"realized_pnl": -2.47, "currency": "USD", "commission": 0.61},
+        "report": {"realized_pnl": -2.47, "currency": "CAD", "commission": 0.61},
     }
     payload, refused = build_payload("DU123", "practice", [execution], {"currency": "CAD"}, FxRates(None))
-    checks["sans clé FX : ligne refusée, rien d'inventé"] = payload["entries"] == [] and len(refused) == 1
-
-    payload, _ = build_payload("DU123", "practice", [execution], {"currency": "USD"}, FxRates(None))
     entry = payload["entries"][0]
     checks["pl natif = realizedPNL (net des commissions)"] = entry["pl_native"] == -2.47
     checks["sans ordre nommé : leak"] = entry["kind"] == "leak"
     checks["units = taille exécutée"] = entry["units"] == 1.0
-    checks["devise du compte : pas de conversion"] = entry["pl"] == -2.47
+    checks["devise CAD : pas de conversion"] = entry["pl"] == -2.47
     checks["prix d'entrée non inventé"] = entry["entry_price"] is None
+    checks["fill_ref = base d'execId"] = entry["fill_ref"] == "a.b.01"
+
+    # Une correction vue par une AUTRE exécution doit viser la même ligne du miroir.
+    later, _ = build_payload("DU123", "practice",
+                             [dict(execution, exec_id="a.b.01.07")], {"currency": "CAD"}, FxRates(None))
+    checks["correction tardive : même fill_ref"] = later["entries"][0]["fill_ref"] == entry["fill_ref"]
+
+    # Devise étrangère : pl est en CAD, donc conversion demandée ; sans taux, refus.
+    foreign = dict(execution, report={"realized_pnl": -2.0, "currency": "EUR", "commission": 0.5})
+    refused_payload, refused_fx = build_payload("DU123", "practice", [foreign], {"currency": "CAD"},
+                                                FxRates(None))
+    checks["devise étrangère : refus sans taux"] = (
+        refused_payload["entries"] == [] and len(refused_fx) == 1
+    )
+
+    class FixedFx(FxRates):
+        def rate(self, currency, instant):
+            return 1.5
+
+    converted, _ = build_payload("DU123", "practice", [foreign], {"currency": "CAD"}, FixedFx(None))
+    checks["conversion appliquée (EUR→CAD)"] = converted["entries"][0]["pl"] == -3.0
+    checks["taux conservé sur la ligne"] = converted["entries"][0]["exit_reason"] == "IBKR FX 1.500000"
+
+    missing, refused_missing = build_payload("DU123", "practice", [dict(execution, report=None)],
+                                             {"currency": "CAD"}, FxRates(None))
+    checks["close sans rapport : refusé, pas ignoré en silence"] = (
+        missing["entries"] == [] and len(refused_missing) == 1
+    )
 
     if not all(checks.values()):
         for name, ok in checks.items():
