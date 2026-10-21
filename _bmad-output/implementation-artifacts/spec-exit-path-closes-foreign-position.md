@@ -79,7 +79,21 @@ pas non suivie, elle appartient à quelqu'un d'autre.
 - [ ] Test de mutation : retirer le contrôle de propriété fait échouer le test (une fermeture de position
       étrangère redevient possible) ; un test qui passe sans garde est de la décoration.
 
-## 5. Hors périmètre
+## 5. Instance déjà vivante du même défaut, hors lane news
+
+Le repli n'est pas un vestige de la lane : deux conteneurs de la fenêtre tradent **la même paire**,
+`USD_JPY`, sur le même compte `-014` :
+
+| Conteneur | Stratégie | Paire |
+|---|---|---|
+| `trading-comp-momentum` | `compmomentum` | USD_JPY |
+| `trading-month-week` | `monthweekphase` | USD_JPY |
+
+Les deux sont à zéro entrée depuis leur déploiement, donc l'exposition est théorique aujourd'hui, mais le
+premier qui ouvre une position peut se la faire fermer par l'autre. Ce correctif couvre ce cas sans
+configuration supplémentaire : il ne dépend pas du nom des stratégies, seulement de la propriété des unités.
+
+## 6. Hors périmètre
 
 - Aucune modification du sizing, du plafond de risque ou de la fenêtre d'observation en cours.
 - Aucun ordre réel sur `-005`.
