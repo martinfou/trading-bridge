@@ -56,11 +56,11 @@ class TcpIbkrGatewayClientTest {
     // ------------------------------------------------------------------
 
     @Test
-    void buildContract_mesFuturesGlobex() {
+    void buildContract_mesFuturesCme() {
         Contract contract = TcpIbkrGatewayClient.buildContract("MES");
         assertEquals("MES", contract.symbol());
         assertEquals("FUT", contract.secType().toString());
-        assertEquals("GLOBEX", contract.exchange());
+        assertEquals("CME", contract.exchange());
         assertEquals("USD", contract.currency());
         assertNotNull(contract.lastTradeDateOrContractMonth());
         assertEquals(8, contract.lastTradeDateOrContractMonth().length()); // YYYYMMDD
