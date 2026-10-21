@@ -21,17 +21,30 @@ public final class IbkrBroker implements Broker {
 
     private static final Logger log = LoggerFactory.getLogger(IbkrBroker.class);
 
+    /** How long the kill switch waits for the venue to confirm the account is flat. */
+    static final long FLATTEN_CONFIRM_ATTEMPTS = 10;
+    static final long FLATTEN_CONFIRM_INTERVAL_MS = 500;
+
     private final IbkrGatewayClient client;
     private final List<Consumer<BrokerEvent>> listeners = new CopyOnWriteArrayList<>();
     private final java.util.Map<String, Order> pendingOrdersByClientTag = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.Map<String, Order> pendingOrdersByBrokerId = new java.util.concurrent.ConcurrentHashMap<>();
+    private final long flattenConfirmAttempts;
+    private final long flattenConfirmIntervalMs;
     private volatile boolean connected;
 
     public IbkrBroker(IbkrGatewayClient client) {
+        this(client, FLATTEN_CONFIRM_ATTEMPTS, FLATTEN_CONFIRM_INTERVAL_MS);
+    }
+
+    /** Test seam: shrink the flatten confirmation window so tests do not sleep 5s. */
+    IbkrBroker(IbkrGatewayClient client, long flattenConfirmAttempts, long flattenConfirmIntervalMs) {
         if (client == null) {
             throw new IllegalArgumentException("client is required");
         }
         this.client = client;
+        this.flattenConfirmAttempts = flattenConfirmAttempts;
+        this.flattenConfirmIntervalMs = flattenConfirmIntervalMs;
         this.client.addExecutionListener(this::onExecution);
     }
 
@@ -162,8 +175,9 @@ public final class IbkrBroker implements Broker {
         // Last-resort de-risk: close every open position with an opposite MARKET order.
         // The kill switch MUST be able to flatten paper positions; a silent 0 here would let
         // the kill switch "succeed" while leaving the account exposed.
-        int flattened = 0;
-        for (Position pos : getPositions()) {
+        List<Position> initial = getPositions();
+        int submitted = 0;
+        for (Position pos : initial) {
             if (pos.quantity() <= 0.0) {
                 continue;
             }
@@ -171,13 +185,36 @@ public final class IbkrBroker implements Broker {
             Order close = new Order(pos.symbol(), closeSide, Order.Type.MARKET, pos.quantity(), 0.0);
             OrderSubmitResult result = submitOrder(close);
             if (result.accepted()) {
-                flattened++;
+                submitted++;
             } else {
                 log.warn("IBKR flatten failed for {} {}: {}", pos.symbol(), closeSide, result.rejectReason());
             }
         }
-        log.info("IBKR flatten submitted {} closing order(s)", flattened);
-        return flattened;
+        if (submitted == 0) {
+            return 0;
+        }
+        // An ACCEPTED closing order is not a CLOSED position: IBKR fills asynchronously, so the
+        // position stays open for a moment after submitOrder returns. Confirm against the venue
+        // before claiming anything was flattened, otherwise a kill switch reports success while
+        // the account is still exposed.
+        for (long attempt = 1; attempt <= flattenConfirmAttempts; attempt++) {
+            try {
+                Thread.sleep(flattenConfirmIntervalMs);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.error("IBKR flatten interrupted while waiting for confirmation; {} order(s) accepted only", submitted);
+                return 0;
+            }
+            int stillOpen = getPositions().size();
+            if (stillOpen == 0) {
+                log.info("IBKR flatten confirmed flat after {} ms ({} closing order(s))",
+                    attempt * flattenConfirmIntervalMs, submitted);
+                return submitted;
+            }
+        }
+        log.error("IBKR flatten NOT confirmed: position(s) still open after {} ms; {} closing order(s) were only accepted, not verified",
+            flattenConfirmAttempts * flattenConfirmIntervalMs, submitted);
+        return 0;
     }
 
     @Override
