@@ -17,7 +17,7 @@ class IbkrContractResolverTest {
 
         assertEquals("MES", mesDetails.symbol());
         assertEquals(IbkrContractResolver.SecType.FUT, mesDetails.secType());
-        assertEquals("GLOBEX", mesDetails.exchange());
+        assertEquals("CME", mesDetails.exchange());
         assertNull(mesDetails.primaryExchange());
         assertEquals("USD", mesDetails.currency());
         assertEquals(5.0, mesDetails.multiplier(), 1e-6);
