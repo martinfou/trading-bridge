@@ -440,3 +440,74 @@ dimanche vaut **-0,26 / +0,16 / -0,11 bp**, la sortie à la clôture réelle vau
 Ce que ces décisions ne font pas : aucun changement sur les cinq stratégies de la fenêtre, aucun ordre réel
 sur `-005`, aucune hausse du plafond de risque.
 
+
+## 2026-10-21, 15:50 EDT : la lane du 12 octobre est retiree (execution de D67, decision D68)
+
+Motif mesure : la lane devait tenir **une semaine** (12 au 16 octobre) et tournait encore **neuf jours plus
+tard**, sans aucun signal dans la supervision. Elle produisait deux effets, tous deux mesures sur le
+courtier et les journaux, pas supposes.
+
+### Post-mortem de la lane, lu dans les transactions `-014`
+
+Compte : `101-002-4729622-014`, transactions 1 a 462, solde 1886,45 CAD, aucun trade ni ordre ouvert.
+
+| Strategie | Conteneur | Entrees | Fills | P&L realise | Ce qui s'est passe |
+|---|---|---|---|---|---|
+| `newsoct12cpi` | `news-oct12-eur` | 1 | 2 fills | -8,95 | sortie le jour meme (D42), tx 358 vers 368 |
+| `newsoct12ppi` | `news-oct12-eur` | 1 | 2 fills | -0,30 | entree tx 383, sortie tx 398 |
+| `newsoct12chinacpi` | `news-oct12-aj` | 1 | 1 fill | -6,04 | stop du courtier, tx 361 |
+| `newsoct12fade` | `news-oct12-gc` | 1 | **0 fill** | 0,00 | ordre tx du 2026-10-16 21:00:33 UTC jamais rempli (`MARKET_HALTED`), **compte comme une entree** : moniteur a `totalEntries: 1`, `totalExits: 0`, `activeTrades: 0` |
+
+Argent de la lane sur ses propres trades : **-15,29 CAD** sur quatre positions.
+
+### Ce que la lane a coute en plus : cinq positions de `ltrsi3` fermees par elle
+
+Le chemin de sortie d'une strategie de la lane ferme la position que le courtier detient sur son instrument,
+dimensionnee sur les unites du courtier. Sur `EUR_USD`, cette position etait celle de `ltrsi3` :
+
+| Transaction | Date | Fermee par | Position ouverte par | P&L |
+|---|---|---|---|---|
+| 380 | 2026-10-15 08:00:44 | `newsoct12cpi` | `ltrsi3_EURUSD` | -0,31 |
+| 405 | 2026-10-16 06:00:01 | `newsoct12ppi` | `ltrsi3_EURUSD` | -1,62 |
+| 430 | 2026-10-19 06:00:26 | `newsoct12ppi` | `ltrsi3_EURUSD` | -1,28 |
+| 439 | 2026-10-20 05:00:51 | `newsoct12ppi` | `ltrsi3_EURUSD` | -0,61 |
+| 455 | 2026-10-21 12:00:08 | `newsoct12ppi` | `ltrsi3_EURUSD` | -1,36 |
+
+Total **-5,19 CAD**. A chaque fois le runner `ltrsi3` l'a appris **douze secondes plus tard** par
+`AsyncReconciliationQueue` ("Trade ID N is no longer open at OANDA"), donc sans erreur de son cote : sa
+sortie n'a jamais ete jouee. C'est la forme exacte du defaut documente (une strategie qui ferme une position
+qu'elle ne suit pas) et cela demande un correctif de la couche partagee, pas un reglage de config.
+
+Note d'attribution : ces cinq fills portent le tag de la lane, donc une lecture par tag impute **-20,48 CAD**
+a la lane, dont -5,19 qui appartient en realite aux trades de `ltrsi3`.
+
+### Bruit permanent, et pourquoi rien ne l'a signale
+
+95 lignes `REFUSING to send close order ... no tracked position and no broker position` par 24 h
+(47 sur `-eur`, 24 sur `-aj`, 24 sur `-gc`) : les instants de sortie etaient passes, la lane n'avait plus de
+position, et elle redemandait une fermeture a chaque barre H1. Le watchdog du matin ne pouvait pas le voir :
+il lit la liste des services attendus **dans le compose**, et la lane y etait encore declaree, donc
+"attendue" et jamais "en trop".
+
+### Operations executees
+
+1. Etat verifie a plat avant arret : courtier 0 trade ouvert, 0 ordre en attente, `lastTransactionID` 462,
+   `activeTrades: 0` sur les trois moniteurs.
+2. `docker compose stop news-oct12-eur news-oct12-aj news-oct12-gc` : les trois conteneurs sont sortis (137).
+3. Blocs `services:` des trois conteneurs retires de `docker-compose.yml`, ainsi que les quatre cles
+   `newsoct12*` de `config/live-config.json` et leurs quatre entrees dans `getStrategyMap()`. Le watchdog
+   cesse donc de les attendre. Les classes restent dans `newsweekly/` comme archive, non enregistrees.
+4. `NewsWeekStrategyMapTest` supprime : il ne testait que ces quatre entrees, et `Class.forName` sur une
+   classe non enregistree n'est plus un chemin de production.
+5. Plafond de risque remis a **3 %** (voir D68), somme deployee **2,4 %**.
+
+### Decisions
+
+| # | Decision | Portee |
+|---|---|---|
+| **D68** | **Le plafond de risque par compte repasse a 3 % (D24) immediatement**, sans attendre la rotation du 2026-10-31 que D52 prevoyait. | La lane qui justifiait les 4 % de D42 n'est plus deployee : la somme retombe a 2,4 %, marge 0,6 %. Le test passe de 4,0 a 3,0 dans la meme edition que le retrait, comme le demandait `docs/TRADING-GUARDRAILS.md`. |
+
+Ce que cette edition ne fait pas : aucun changement sur les quatre conteneurs de la fenetre, qui gardent leur
+image (D58) ; aucun ordre sur `-005` ; le correctif du chemin de sortie partage est ouvert comme story
+separee (`spec-exit-path-closes-foreign-position.md`), parce qu'il change le comportement du chemin des
+ordres et se revoit comme tel.
