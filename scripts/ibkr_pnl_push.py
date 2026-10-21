@@ -55,7 +55,8 @@ WINDOW_START = "2026-10-01T00:00:00Z"
 EXCHANGE_TZ = ZoneInfo("America/New_York")     # les heures d'exécution IBKR sont à l'heure du Gateway
 MONTREAL = ZoneInfo("America/Montreal")
 UNAVAILABLE = 1.7976931348623157e308
-BENIGN_ERRORS = (2104, 2106, 2107, 2158, 2100, 2108, 2119)
+BENIGN_ERRORS = (2104, 2106, 2107, 2158, 2100, 2108, 2119, 2103, 2105, 2157)
+FATAL_CODES = (326, 502, 504, 1100, 2110)
 
 
 def load_env_file(path: Path) -> None:
@@ -203,7 +204,9 @@ def build_payload(account_id: str, environment: str, executions: list[dict],
             continue
 
         native = float(report["realized_pnl"])       # déjà net des commissions des deux jambes
-        currency = (report.get("currency") or execution.get("currency") or "").upper()
+        # La devise du P&L est celle du CONTRAT ; celle du rapport est celle de la commission, qui peut
+        # differer (forex IDEALPRO par exemple).
+        currency = (execution.get("currency") or report.get("currency") or "").upper()
         if not currency:
             refused.append(f"{execution['exec_id']}: devise du rapport inconnue")
             continue
@@ -252,11 +255,15 @@ def build_payload(account_id: str, environment: str, executions: list[dict],
             "hour_local": local.hour,
         })
 
+    # Le Gateway ne rend qu'une fenetre courte d'executions : annoncer 2026-10-01 serait faux. La fenetre
+    # publiee est la plus ancienne execution REELLEMENT recue.
+    window_start = min((e["closed_at_utc"] for e in entries), default=None)
+
     payload = {
         "broker": "ibkr",
         "account_id": account_id,
         "environment": environment,
-        "window_start_utc": WINDOW_START,
+        "window_start_utc": window_start,
         "snapshot": snapshot,
         "entries": entries,
     }
@@ -290,7 +297,11 @@ def collect(host: str, port: int, client_id: int, account: str, since: datetime,
             self.ready.set()
 
         def error(self, reqId, code, msg, advancedOrderRejectJson=""):  # noqa: N802
-            if code not in BENIGN_ERRORS:
+            # Un avertissement non sollicite (2103, 2105, 2157…) ne doit pas condamner le cycle : on ne
+            # retient que les erreurs des requetes qu'on a faites et les vraies pertes de connexion.
+            if code in BENIGN_ERRORS:
+                return
+            if reqId in (-1, 1, 2) or code in FATAL_CODES:
                 self.errors.append(f"{code}: {msg}")
 
         def managedAccounts(self, accountsList: str) -> None:  # noqa: N802
@@ -375,7 +386,9 @@ def collect(host: str, port: int, client_id: int, account: str, since: datetime,
         # Les commissionReport peuvent suivre execDetailsEnd : on leur laisse le temps d'arriver, sinon un
         # close passerait pour une ouverture et disparaitrait en silence.
         deadline = time.monotonic() + min(10, timeout)
-        while time.monotonic() < deadline and len(client.reports) < len(client.executions):
+        while time.monotonic() < deadline:
+            if {e["exec_id"] for e in client.executions} <= set(client.reports):
+                break
             time.sleep(0.2)
         if client.errors:
             raise ConnectionError("; ".join(client.errors[:5]))
@@ -392,7 +405,10 @@ def collect(host: str, port: int, client_id: int, account: str, since: datetime,
         raw = client.summary.get(tag)
         if raw is None:
             return None
-        value = float(raw)
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return None
         return None if abs(value) > 1e290 else value
 
     snapshot = {
@@ -549,7 +565,7 @@ def main() -> int:
             "broker": "ibkr",
             "account_id": account,
             "environment": environment,
-            "window_start_utc": WINDOW_START,
+            "window_start_utc": None,
             "snapshot": {
                 "extraction_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "currency": "CAD",
@@ -572,7 +588,10 @@ def main() -> int:
     status, body = post(base + PNL_PATH, token, payload)
     print(json.dumps({"http": status, "response": body[:300], "sent": len(payload["entries"]),
                       "refused": refused, "fx_errors": fx.errors}))
-    return 0 if 200 <= status < 300 else 1
+    if not 200 <= status < 300:
+        return 1
+    # Un fill refuse n'est pas un detail : le Gateway ne garde qu'une fenetre courte, donc il est perdu.
+    return 1 if (refused or fx.errors) else 0
 
 
 if __name__ == "__main__":
