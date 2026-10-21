@@ -39,6 +39,8 @@ public interface IbkrGatewayClient {
      * account is flat while it is merely blind, so callers that act on emptiness must consult this.</p>
      */
     default boolean lastPositionQueryConfirmed() {
-        return true;
+        // Fail-closed: an implementation that does not track this cannot prove it answered, so it must
+        // not be trusted to certify a flat account.
+        return false;
     }
 }
