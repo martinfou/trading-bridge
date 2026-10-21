@@ -116,11 +116,22 @@ def is_close(report: dict | None) -> bool:
 def parse_ibkr_time(raw: str) -> datetime:
     """'20261021 05:56:48' (heure Gateway) → UTC. Refuse une heure ambiguë (changement d'heure)."""
     cleaned = " ".join(raw.split())
-    # Un Gateway recent peut suffixer l'heure d'un fuseau ou d'un Z : on ne garde que la partie horaire.
-    cleaned = re.sub(r"\s+[A-Za-z/_+-][A-Za-z0-9/_+:-]*$", "", cleaned)
+    # Un Gateway recent ajoute le fuseau a l'heure d'execution : on le LIT (le supposer New York
+    # decalerait closed_at, l'heure du taux FX et la date locale sans aucune erreur).
+    zone = EXCHANGE_TZ
+    match = re.search(r"\s+([A-Za-z][A-Za-z0-9/_+-]*)$", cleaned)
+    if match:
+        token = match.group(1)
+        stripped = cleaned[: match.start()].strip()
+        if re.match(r"^\d{4}\d{2}\d{2} \d{2}:\d{2}:\d{2}$", stripped):
+            try:
+                zone = ZoneInfo("UTC" if token.upper() in ("Z", "UTC") else token)
+            except Exception as exc:              # noqa: BLE001 - fuseau inconnu : on refuse la ligne
+                raise ValueError(f"fuseau d'execution inconnu ({token})") from exc
+            cleaned = stripped
     naive = datetime.strptime(cleaned, "%Y%m%d %H:%M:%S")
-    first = naive.replace(tzinfo=EXCHANGE_TZ, fold=0)
-    second = naive.replace(tzinfo=EXCHANGE_TZ, fold=1)
+    first = naive.replace(tzinfo=zone, fold=0)
+    second = naive.replace(tzinfo=zone, fold=1)
     if first.utcoffset() != second.utcoffset():
         raise ValueError(f"heure locale ambiguë (changement d'heure) : {cleaned}")
     return first.astimezone(timezone.utc)
@@ -249,7 +260,7 @@ def build_payload(account_id: str, environment: str, executions: list[dict],
             "currency": currency,
             # La commission est dans la devise du rapport : si elle differe de celle du contrat, on ne
             # l'etiquette pas de travers, on ne la publie pas.
-            "commission": (round(float(report.get("commission") or 0.0), 4)
+            "commission": (None if report.get("commission") is None else round(float(report["commission"]), 4)
                            if (report.get("currency") or "").upper() in ("", currency) else None),
             "financing": 0.0,
             # exit_reason est borné à 32 caractères par l'API : le taux garde sa place, le bavardage non.
@@ -265,21 +276,13 @@ def build_payload(account_id: str, environment: str, executions: list[dict],
             "hour_local": local.hour,
         })
 
-    # Le Gateway ne rend qu'une fenetre courte d'executions : annoncer 2026-10-01 serait faux. La fenetre
-    # publiee est la plus ancienne execution REELLEMENT recue, refusee ou non.
-    received: list[str] = []
-    for execution in executions:
-        try:
-            received.append(parse_ibkr_time(execution["time"]).strftime("%Y-%m-%dT%H:%M:%SZ"))
-        except (ValueError, TypeError, KeyError):
-            continue
-    window_start = min(received, default=None)
-
+    # Aucune fenetre annoncee : le Gateway ne rend qu'une fenetre courte d'executions, donc la lane ne
+    # pretend rien couvrir. Une fenetre trop large ferait croire a une couverture qui n'existe pas.
     payload = {
         "broker": "ibkr",
         "account_id": account_id,
         "environment": environment,
-        "window_start_utc": window_start,
+        "window_start_utc": None,
         "snapshot": snapshot,
         "entries": entries,
     }
@@ -590,7 +593,7 @@ def main() -> int:
             "window_start_utc": None,
             "snapshot": {
                 "extraction_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "currency": "CAD",
+                "currency": None,
                 "source": SOURCE + " (degraded)",
             },
             "entries": [],
