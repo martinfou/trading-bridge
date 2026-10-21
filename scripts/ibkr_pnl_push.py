@@ -538,6 +538,30 @@ def selftest() -> int:
         missing["entries"] == [] and len(refused_missing) == 1
     )
 
+    # Fuseau : lu quand il est fourni, refuse quand il est inconnu.
+    checks["fuseau explicite lu (UTC)"] = (
+        parse_ibkr_time("20261021 09:56:50 UTC").strftime("%H:%M") == "09:56"
+    )
+    try:
+        parse_ibkr_time("20261021 05:56:50 Mars/Olympus")
+        checks["fuseau inconnu refuse"] = False
+    except ValueError:
+        checks["fuseau inconnu refuse"] = True
+    # Devise contrat != devise rapport : P&L non attribuable.
+    mismatch = dict(execution, currency="EUR",
+                    report={"realized_pnl": -2.0, "currency": "USD", "commission": 0.5})
+    mm_payload, mm_refused = build_payload("DU123", "practice", [mismatch], {"currency": "CAD"}, FxRates(None))
+    checks["devises divergentes refusees"] = mm_payload["entries"] == [] and len(mm_refused) == 1
+    # Commission inconnue : null, jamais 0.0.
+    nofee = dict(execution, report={"realized_pnl": -2.47, "currency": "CAD", "commission": None})
+    nofee_entry = build_payload("DU123", "practice", [nofee], {"currency": "CAD"}, FxRates(None))[0]["entries"][0]
+    checks["commission inconnue = null"] = nofee_entry["commission"] is None
+    # Aucune couverture revendiquee.
+    checks["aucune fenetre revendiquee"] = (
+        build_payload("DU123", "practice", [execution], {"currency": "CAD"}, FxRates(None))[0]["window_start_utc"]
+        is None
+    )
+
     if not all(checks.values()):
         for name, ok in checks.items():
             print(("✓" if ok else "✗"), name)
