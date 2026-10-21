@@ -67,6 +67,49 @@ class TcpIbkrGatewayClientTest {
     }
 
     @Test
+    void toSnapshot_keepsShortPositionVisible() {
+        Contract mes = TcpIbkrGatewayClient.buildContract("MES");
+        IbkrPositionSnapshot shortRow = TcpIbkrGatewayClient.toSnapshot(mes, -2.0, 38833.11);
+        assertEquals("MES", shortRow.symbol());
+        assertEquals(Order.Side.SELL, shortRow.side());
+        assertEquals(2.0, shortRow.quantity(), 1e-9);
+    }
+
+    @Test
+    void toSnapshot_longUsesBuySide() {
+        Contract mes = TcpIbkrGatewayClient.buildContract("MES");
+        IbkrPositionSnapshot row = TcpIbkrGatewayClient.toSnapshot(mes, 1.0, 38833.11);
+        assertEquals(Order.Side.BUY, row.side());
+        assertEquals(1.0, row.quantity(), 1e-9);
+    }
+
+    @Test
+    void toSnapshot_dividesOutTheFuturesMultiplier() {
+        Contract mes = TcpIbkrGatewayClient.buildContract("MES");
+        // Measured on the paper Gateway: 1 MES filled at 7766.5, position avgCost came back 38833.11.
+        IbkrPositionSnapshot row = TcpIbkrGatewayClient.toSnapshot(mes, 1.0, 38833.11);
+        assertEquals(7766.622, row.averagePrice(), 1e-6);
+    }
+
+    @Test
+    void toSnapshot_fallsBackToTheRegistryWhenTheContractCarriesNoMultiplier() {
+        // IBKR's position callback does not always populate Contract.multiplier(); without the
+        // fallback the avgCost stays 5x too large (measured 38833.11 for a 7766.5 fill).
+        Contract bare = new Contract();
+        bare.symbol("MES");
+        IbkrPositionSnapshot row = TcpIbkrGatewayClient.toSnapshot(bare, 1.0, 38833.11);
+        assertEquals(7766.622, row.averagePrice(), 1e-6);
+    }
+
+    @Test
+    void normalizeAveragePrice_leavesNonDerivativesAlone() {
+        assertEquals(1.105, TcpIbkrGatewayClient.normalizeAveragePrice(1.105, "1"), 1e-9);
+        assertEquals(1.105, TcpIbkrGatewayClient.normalizeAveragePrice(1.105, null), 1e-9);
+        assertEquals(1.105, TcpIbkrGatewayClient.normalizeAveragePrice(1.105, ""), 1e-9);
+        assertEquals(1.105, TcpIbkrGatewayClient.normalizeAveragePrice(1.105, "not-a-number"), 1e-9);
+    }
+
+    @Test
     void buildContract_mnqUsesMicroMultiplier() {
         Contract contract = TcpIbkrGatewayClient.buildContract("MNQ");
         assertEquals("MNQ", contract.symbol());
