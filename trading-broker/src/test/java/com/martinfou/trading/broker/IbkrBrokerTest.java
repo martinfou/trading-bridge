@@ -123,7 +123,7 @@ class IbkrBrokerTest {
     @Test
     void flattenAllPositions_submitsOppositeMarketOrders() {
         var client = new StubIbkrGatewayClient();
-        var broker = new IbkrBroker(client);
+        var broker = new IbkrBroker(client, 3, 10);
         broker.connect();
 
         // Open a BUY position via the stub.
@@ -134,6 +134,22 @@ class IbkrBrokerTest {
         assertEquals(1, flattened);
         // Stub nets the closing SELL against the open BUY -> flat.
         assertEquals(0, broker.getPositions().size());
+    }
+
+    @Test
+    void flattenAllPositions_doesNotClaimSuccessOnAnAcceptedButUnfilledClose() {
+        var client = new StubIbkrGatewayClient();
+        var broker = new IbkrBroker(client, 2, 10);
+        broker.connect();
+
+        broker.submitOrder(new Order("MES", Order.Side.BUY, Order.Type.MARKET, 1.0, 0.0));
+        assertEquals(1, broker.getPositions().size());
+
+        // The venue accepts the closing order but the position never goes away.
+        client.scriptAcceptedWithoutFill("9999", 7766.5);
+
+        assertEquals(0, broker.flattenAllPositions());
+        assertEquals(1, broker.getPositions().size());
     }
 
     private static final class ListenerCapturingClient implements IbkrGatewayClient {

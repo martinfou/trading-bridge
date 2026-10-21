@@ -23,6 +23,15 @@ public final class StubIbkrGatewayClient implements IbkrGatewayClient {
         return this;
     }
 
+    /**
+     * Scripts an ACCEPTED order that never moves the position (the venue accepted it, the fill never
+     * arrives). This is the shape that made a kill switch claim success on an exposed account.
+     */
+    public StubIbkrGatewayClient scriptAcceptedWithoutFill(String orderId, double price) {
+        scriptedResults.add(IbkrMarketOrderResult.success(orderId, "E-" + orderId, price));
+        return this;
+    }
+
     public StubIbkrGatewayClient account(IbkrAccountSnapshot snapshot) {
         this.account = snapshot;
         return this;

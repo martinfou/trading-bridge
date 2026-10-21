@@ -241,6 +241,36 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
         return buildContract(IbkrContractResolver.resolve(symbol));
     }
 
+    /**
+     * IBKR reports {@code avgCost} with the contract multiplier already applied for derivatives
+     * (measured 2026-10-21: 1 MES filled at 7766.5 came back as 38833.11, i.e. x5). A position
+     * price must be a PRICE, so divide it back out; anything downstream that sizes or computes
+     * P&L off this number would otherwise be off by the multiplier.
+     */
+    static double normalizeAveragePrice(double avgCost, String multiplier) {
+        if (multiplier == null || multiplier.isBlank()) {
+            return avgCost;
+        }
+        try {
+            double m = Double.parseDouble(multiplier.trim());
+            return m > 0.0 && m != 1.0 ? avgCost / m : avgCost;
+        } catch (NumberFormatException e) {
+            return avgCost;
+        }
+    }
+
+    /**
+     * Maps one IBKR position row to a snapshot. The SIGN carries the side: a negative quantity is a
+     * SHORT, and it must survive (a dropped short is an invisible exposure).
+     */
+    static IbkrPositionSnapshot toSnapshot(Contract contract, double signedQuantity, double avgCost) {
+        Order.Side side = signedQuantity > 0 ? Order.Side.BUY : Order.Side.SELL;
+        String symbol = contract != null ? contract.symbol() : null;
+        String multiplier = contract != null ? contract.multiplier() : null;
+        return new IbkrPositionSnapshot(symbol, side, Math.abs(signedQuantity),
+            normalizeAveragePrice(avgCost, multiplier));
+    }
+
     static Contract buildContract(IbkrContractResolver.IbkrContractDetails details) {
         Contract contract = new Contract();
         contract.symbol(details.symbol());
@@ -375,11 +405,13 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
                 return;
             }
             double qty = toDouble(pos);
-            if (qty <= 0) {
+            if (qty == 0.0) {
                 return;
             }
-            Order.Side side = pos.value().signum() > 0 ? Order.Side.BUY : Order.Side.SELL;
-            positions.add(new IbkrPositionSnapshot(contract.symbol(), side, Math.abs(qty), avgCost));
+            // A SHORT position arrives as a negative quantity: dropping it here made every short
+            // invisible to the broker adapter, so the kill switch saw a flat account while the
+            // venue still held the position.
+            positions.add(toSnapshot(contract, qty, avgCost));
         }
 
         @Override
