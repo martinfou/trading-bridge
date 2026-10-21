@@ -72,7 +72,7 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
      * instead of adding a second one. A duplicate row would make the kill switch submit two closing
      * orders for one position.
      */
-    private final Map<Integer, IbkrPositionSnapshot> positionsByContract = new ConcurrentHashMap<>();
+    private final Map<String, IbkrPositionSnapshot> positionsByContract = new ConcurrentHashMap<>();
     /** Last POSITION answer the venue actually completed; never cleared by a failed query. */
     private volatile List<IbkrPositionSnapshot> lastKnownPositions = List.of();
     /** False until the venue actually answers a positions request: an empty list alone means nothing. */
@@ -299,6 +299,11 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
     static IbkrPositionSnapshot toSnapshot(Contract contract, double signedQuantity, double avgCost) {
         Order.Side side = signedQuantity > 0 ? Order.Side.BUY : Order.Side.SELL;
         String symbol = contract != null ? contract.symbol() : null;
+        if ((symbol == null || symbol.isBlank()) && contract != null) {
+            // A bare contract may carry only the local symbol (MESZ6); without any symbol the closing
+            // order would have no instrument.
+            symbol = contract.localSymbol();
+        }
         String multiplier = contract != null ? contract.multiplier() : null;
         if (multiplier == null || multiplier.isBlank()) {
             // IBKR's position callback does not always carry the multiplier (the Contract it hands
@@ -446,10 +451,8 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
             if (pos == null || pos.isZero()) {
                 return;
             }
-            if (contract == null || contract.symbol() == null || contract.symbol().isBlank()) {
-                // A row without an instrument cannot be turned into a position: keeping it would make
-                // the kill switch submit a closing order with no symbol.
-                log.warn("IBKR position callback without a contract symbol ignored (qty={})", pos);
+            if (contract == null) {
+                log.warn("IBKR position callback without a contract ignored (qty={})", pos);
                 return;
             }
             double qty = toDouble(pos);
@@ -459,9 +462,37 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
             // A SHORT position arrives as a negative quantity: dropping it here made every short
             // invisible to the broker adapter, so the kill switch saw a flat account while the
             // venue still held the position.
-            // Keyed by contract so a repeated callback replaces the row instead of duplicating it.
-            int key = contract.conid() > 0 ? contract.conid() : contract.symbol().hashCode();
-            positionsByContract.put(key, toSnapshot(contract, qty, avgCost));
+            // Keyed by account + instrument so a repeated callback REPLACES the row instead of adding
+            // a duplicate (a duplicate would submit two closing orders for one position).
+            positionsByContract.put(positionKey(account, contract), toSnapshot(contract, qty, avgCost));
+        }
+
+        /**
+         * Identity of one open position: the account plus the instrument. conid is authoritative when
+         * IBKR supplies it; otherwise the full contract description is used so two different
+         * instruments that merely share a symbol cannot overwrite each other. Namespaced so a conid can
+         * never collide with a textual key.
+         */
+        private static String positionKey(String account, Contract contract) {
+            String who = account == null || account.isBlank() ? "-" : account;
+            if (contract.conid() > 0) {
+                return who + "|conid:" + contract.conid();
+            }
+            return who + "|sym:" + nullSafe(contract.symbol()) + "/" + nullSafe(contract.localSymbol())
+                + "/" + nullSafe(contract.secType()) + "/" + nullSafe(contract.lastTradeDateOrContractMonth())
+                + "/" + nullSafe(contract.right()) + "/" + contract.strike();
+        }
+
+        private static String nullSafe(com.ib.client.Types.SecType value) {
+            return value == null ? "" : value.toString();
+        }
+
+        private static String nullSafe(com.ib.client.Types.Right value) {
+            return value == null ? "" : value.toString();
+        }
+
+        private static String nullSafe(String value) {
+            return value == null ? "" : value;
         }
 
         @Override
