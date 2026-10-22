@@ -158,3 +158,20 @@ assumant explicitement que c'est un test de **chemin d'exécution** (fills, M5, 
    contre 3,7 bp sur la même fenêtre, 3,4× d'écart, et c'est ce facteur qui inverse le signe.
 4. **Un résultat robuste peut être robustement faux** : le net était négatif 5/5 ères, 3/3 croix, IS et
    OOS — la robustesse ne dit rien de la validité du mécanisme, elle dit que l'artefact est stable.
+
+## Décision (2026-10-22, Martin) : la lane n'est PAS déployée
+
+La lane `FridayFadeAudChf` prévue pour le 23 octobre **n'est pas déployée**. Décision prise sur la
+mesure de ce rapport, pas sur une préférence :
+
+- le net est négatif dans 5/5 ères et en IS comme OOS, pour les trois croix ;
+- le mid ne bouge pas dans la dernière heure (-0,16 bp, t -0,45) : le fade est l'ouverture du spread ;
+- même la fenêtre codée est négative (-2,40 GBP / -3,14 AUD), et son heure de sortie est fausse
+  (close=16:00 NY au lieu de la barre 17:00 ET).
+
+Conséquence concrète : aucune entrée n'est ajoutée à un playbook `docs/news-playbooks/week-*.md` pour
+cette lane, et aucun service n'est ajouté au compose. Le cron « News Week » du vendredi 23 octobre ne
+trouve aucun playbook pour la semaine du 26 : il rapporte et s'arrête, ce qui est le comportement voulu.
+
+Condition pour rouvrir : une entrée au mid (ordre limite, donc pas de spread payé) ou un horizon plus
+long, avec une sortie sur la barre de clôture réelle (17:00 ET) et le spread mesuré à cette barre.
