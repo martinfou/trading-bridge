@@ -108,6 +108,8 @@ def latest_revisions(executions: list[dict]) -> list[dict]:
     return list(kept.values())
 
 
+CONTROL_REFS = {"killswitch", "flatten", "flatten-all", "control"}
+
 UUID_SHAPE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
 
 
@@ -252,14 +254,22 @@ def build_payload(account_id: str, environment: str, executions: list[dict],
 
         order_ref = (execution.get("order_ref") or "").strip()
         tag = order_ref or f"IBKR-ORDER-{execution['order_id']}"
-        is_strategy = looks_like_strategy(order_ref)
+        # Trois natures, jamais confondues : une strategie, un ordre de controle (kill-switch, flatten
+        # declenche a la main), ou un fill non attribue.
+        ref_lower = order_ref.lower()
+        if ref_lower in CONTROL_REFS:
+            kind, strategy_name = "control", None
+        elif looks_like_strategy(order_ref):
+            kind, strategy_name = "strategy", order_ref
+        else:
+            kind, strategy_name = "leak", None
         local = closed_at.astimezone(MONTREAL)
 
         entries.append({
             # Base de l'execId : une correction arrivee plus tard ecrase la ligne au lieu de la doubler.
             "fill_ref": base_exec_id(execution["exec_id"])[0],
-            "kind": "strategy" if is_strategy else "leak",
-            "strategy": order_ref if is_strategy else None,
+            "kind": kind,
+            "strategy": strategy_name,
             "tag": tag,
             "instrument": execution["symbol"] or str(execution["con_id"]),
             "direction": "BUY" if execution["side"] == "BOT" else "SELL",
@@ -612,6 +622,11 @@ def selftest() -> int:
     named = dict(execution, order_ref="mesbreakout")
     named_entry = build_payload("DU123", "practice", [named], {"currency": "CAD"}, FxRates(None))[0]["entries"][0]
     checks["orderRef nomme : strategie"] = named_entry["kind"] == "strategy" and named_entry["strategy"] == "mesbreakout"
+    control = dict(execution, order_ref="killswitch")
+    control_entry = build_payload("DU123", "practice", [control], {"currency": "CAD"}, FxRates(None))[0]["entries"][0]
+    checks["kill-switch : controle, ni strategie ni leak"] = (
+        control_entry["kind"] == "control" and control_entry["strategy"] is None
+    )
     checks["units = taille exécutée"] = entry["units"] == 1.0
     checks["devise CAD : pas de conversion"] = entry["pl"] == -2.47
     checks["prix d'entrée non inventé"] = entry["entry_price"] is None
