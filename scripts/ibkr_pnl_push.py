@@ -55,6 +55,9 @@ WINDOW_START = "2026-10-01T00:00:00Z"
 EXCHANGE_TZ = ZoneInfo("America/New_York")     # les heures d'exécution IBKR sont à l'heure du Gateway
 MONTREAL = ZoneInfo("America/Montreal")
 UNAVAILABLE = 1.7976931348623157e308
+STATE_PATH = Path.home() / ".local/share/hermes-ibkr/pnl_state.json"
+LEDGER_DAYS = 120                # profondeur du registre local
+HOME_ENV = Path.home() / ".hermes/.env"
 BENIGN_ERRORS = (2104, 2106, 2107, 2158, 2100, 2108, 2119, 2103, 2105, 2157)
 FATAL_CODES = (326, 502, 504, 1100, 2110)
 
@@ -446,6 +449,85 @@ def collect(host: str, port: int, client_id: int, account: str, since: datetime,
     return {"executions": client.executions, "snapshot": snapshot}
 
 
+# --------------------------------------------------------------------------- registre local
+
+
+def load_state() -> dict:
+    """Registre local : derniere reussite + executions deja vues, pour ne rien perdre entre deux cycles."""
+    if not STATE_PATH.exists():
+        return {"last_success_utc": None, "executions": {}}
+    try:
+        state = json.loads(STATE_PATH.read_text())
+    except (json.JSONDecodeError, OSError):
+        return {"last_success_utc": None, "executions": {}}
+    state.setdefault("executions", {})
+    state.setdefault("last_success_utc", None)
+    return state
+
+
+def save_state(state: dict) -> None:
+    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=LEDGER_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    kept = {}
+    for exec_id, execution in state["executions"].items():
+        try:
+            if parse_ibkr_time(execution["time"]).strftime("%Y-%m-%dT%H:%M:%SZ") >= cutoff:
+                kept[exec_id] = execution
+        except (ValueError, KeyError, TypeError):
+            kept[exec_id] = execution              # illisible : on le garde, il sera refuse explicitement
+    state["executions"] = kept
+    temporary = STATE_PATH.with_suffix(".tmp")
+    temporary.write_text(json.dumps(state, indent=1, default=str))
+    temporary.replace(STATE_PATH)
+
+
+def backfill_since(state: dict, fallback_days: int = 7) -> datetime:
+    """Depuis quand demander les executions : la derniere reussite, sinon une fenetre de repli."""
+    last = state.get("last_success_utc")
+    if last:
+        try:
+            return datetime.fromisoformat(last.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+    return datetime.now(timezone.utc) - timedelta(days=fallback_days)
+
+
+# --------------------------------------------------------------------------- alerte
+
+
+def telegram_token_and_chat() -> tuple[str | None, str | None]:
+    """Token et canal lus dans ~/.hermes/.env sans charger tout le fichier dans l'environnement."""
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat = os.environ.get("TELEGRAM_HOME_CHANNEL")
+    if (not token or not chat) and HOME_ENV.exists():
+        for line in HOME_ENV.read_text().splitlines():
+            key, _, value = line.strip().partition("=")
+            value = value.split("#")[0].strip().strip('"').strip("'")
+            if key == "TELEGRAM_BOT_TOKEN" and not token:
+                token = value
+            elif key == "TELEGRAM_HOME_CHANNEL" and not chat:
+                chat = value
+    return token, chat
+
+
+def alert(text: str) -> None:
+    """Une alerte qui ne casse jamais le cycle : si Telegram ne repond pas, on l'ecrit et on continue."""
+    token, chat = telegram_token_and_chat()
+    print(f"ALERTE: {text}", file=sys.stderr)
+    if not token or not chat:
+        print("  (pas de token/canal Telegram : alerte seulement dans le journal)", file=sys.stderr)
+        return
+    payload = urllib.parse.urlencode({"chat_id": chat, "text": f"IBKR P&L: {text}",
+                                      "disable_web_page_preview": "true"}).encode()
+    try:
+        with urllib.request.urlopen(
+            f"https://api.telegram.org/bot{token}/sendMessage", data=payload, timeout=15
+        ) as response:
+            response.read()
+    except Exception as exc:                        # noqa: BLE001 - une alerte ratee ne doit pas casser le run
+        print(f"  (Telegram injoignable: {exc})", file=sys.stderr)
+
+
 # --------------------------------------------------------------------------- IO
 
 
@@ -604,10 +686,14 @@ def main() -> int:
         print("HERMES_WEB_URL et HERMES_WEB_TOKEN requis", file=sys.stderr)
         return 2
 
+    state = load_state()
+    since = backfill_since(state)
+
     try:
         data = collect(host, port, client_id, account, since, args.timeout)
     except Exception as exc:                     # noqa: BLE001 - Gateway muet ou mauvais compte
         print(f"Gateway: {exc}", file=sys.stderr)
+        alert(f"cycle echoue, Gateway: {exc}")
         if args.dry_run:
             return 1
         degraded = {
@@ -629,21 +715,39 @@ def main() -> int:
     fx = FxRates(oanda_key())
     if not data["snapshot"].get("currency"):
         print("devise du compte inconnue (accountSummary sans devise) : rien n'est publie", file=sys.stderr)
+        alert("cycle sans devise de compte : rien n'est publie")
         return 1
-    payload, refused = build_payload(account, environment, data["executions"], data["snapshot"], fx)
+
+    # Fusion registre + nouvelles executions : un fill vu par un cycle precedent mais jamais publie
+    # (echec, refus, coupure) repart dans le payload au lieu d'etre perdu.
+    for execution in data["executions"]:
+        state["executions"][execution["exec_id"]] = execution
+    merged = list(state["executions"].values())
+    payload, refused = build_payload(account, environment, merged, data["snapshot"], fx)
 
     if args.dry_run:
         print(json.dumps({"entries": payload["entries"], "refused": refused, "fx_errors": fx.errors,
-                          "window_start_utc": payload["window_start_utc"]}, indent=1, default=str))
+                          "window_start_utc": payload["window_start_utc"],
+                          "since": since.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                          "ledger": len(state["executions"])}, indent=1, default=str))
         return 1 if (refused or fx.errors) else 0
 
     status, body = post(base + PNL_PATH, token, payload)
     print(json.dumps({"http": status, "response": body[:300], "sent": len(payload["entries"]),
                       "refused": refused, "fx_errors": fx.errors}))
     if not 200 <= status < 300:
+        alert(f"le hub a refuse le payload (HTTP {status}) : {body[:160]}")
         return 1
-    # Un fill refuse n'est pas un detail : le Gateway ne garde qu'une fenetre courte, donc il est perdu.
-    return 1 if (refused or fx.errors) else 0
+
+    # Registre ecrit seulement apres un envoi accepte : sinon le prochain cycle rejouerait les memes fills.
+    state["last_success_utc"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    save_state(state)
+
+    if refused or fx.errors:
+        # Un fill refuse n'est pas un detail : sans alerte, il disparaitrait en silence.
+        alert("fills non publies: " + "; ".join((refused + fx.errors)[:3]))
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
