@@ -754,6 +754,11 @@ def main() -> int:
     # Fusion registre + nouvelles executions : un fill vu par un cycle precedent mais jamais publie
     # (echec, refus, coupure) repart dans le payload au lieu d'etre perdu.
     for execution in data["executions"]:
+        stored = state["executions"].get(execution["exec_id"])
+        # Une ligne deja vue AVEC son rapport ne doit jamais etre remplacee par la meme sans rapport : le
+        # fill resterait refuse a chaque cycle et son P&L ne serait plus jamais corrige.
+        if stored is not None and stored.get("report") is not None and execution.get("report") is None:
+            continue
         state["executions"][execution["exec_id"]] = execution
     save_state(state)                  # vu = conserve, meme si l'envoi echoue ensuite
     merged = list(state["executions"].values())
