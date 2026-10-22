@@ -1,0 +1,176 @@
+========================================================================================================================
+64e — LE SPREAD DE SORTIE, MESURE (OANDA BA = bid+ask). Toutes les mesures anterieures etaient BID SEUL.
+========================================================================================================================
+
+--- 0. FLUX ET ANCRE DE LA DERNIERE BARRE DU VENDREDI (controle DST) ---
+  SYMBOLE      barres        debut          fin
+  GBP_CHF      138167 2005-01-02 2026-10-22
+  EUR_CHF      138133 2005-01-02 2026-10-22
+  AUD_CHF      138327 2005-01-02 2026-10-22
+  GBP_CHF heure UTC de la derniere barre du vendredi, par mois :
+      M01 n=  94 h21:73(78%) h22:19(20%)
+      M02 n=  89 h21:70(79%) h22:18(20%)
+      M03 n=  97 h20:44(45%) h21:41(42%)
+      M04 n=  94 h20:75(80%) h21:14(15%)
+      M05 n=  98 h20:75(77%) h21:19(19%)
+      M06 n=  94 h20:73(78%) h21:16(17%)
+      M07 n=  98 h20:79(81%) h21:13(13%)
+      M08 n=  97 h20:73(75%) h21:19(20%)
+      M09 n=  95 h20:69(73%) h21:22(23%)
+      M10 n=  95 h20:70(74%) h21:21(22%)
+      M11 n=  90 h21:63(70%) h22:12(13%)
+      M12 n=  91 h21:75(82%) h22:14(15%)
+  EUR_CHF heure UTC de la derniere barre du vendredi, par mois :
+      M01 n=  94 h21:77(82%) h22:16(17%)
+      M02 n=  89 h21:69(78%) h22:18(20%)
+      M03 n=  97 h21:44(45%) h20:44(45%)
+      M04 n=  94 h20:82(87%) h21:7(7%)
+      M05 n=  98 h20:79(81%) h21:15(15%)
+      M06 n=  94 h20:76(81%) h21:14(15%)
+      M07 n=  98 h20:85(87%) h21:7(7%)
+      M08 n=  97 h20:81(84%) h21:11(11%)
+      M09 n=  95 h20:75(79%) h21:15(16%)
+      M10 n=  95 h20:75(79%) h21:16(17%)
+      M11 n=  90 h21:66(73%) h20:10(11%)
+      M12 n=  91 h21:78(86%) h22:11(12%)
+  AUD_CHF heure UTC de la derniere barre du vendredi, par mois :
+      M01 n=  94 h21:73(78%) h22:19(20%)
+      M02 n=  89 h21:69(78%) h22:18(20%)
+      M03 n=  97 h20:46(47%) h21:38(39%)
+      M04 n=  94 h20:76(81%) h21:12(13%)
+      M05 n=  98 h20:77(79%) h21:16(16%)
+      M06 n=  94 h20:73(78%) h21:15(16%)
+      M07 n=  98 h20:80(82%) h21:12(12%)
+      M08 n=  97 h20:78(80%) h21:14(14%)
+      M09 n=  95 h20:70(74%) h21:20(21%)
+      M10 n=  95 h20:72(76%) h21:19(20%)
+      M11 n=  90 h21:61(68%) h22:13(14%)
+      M12 n=  91 h21:73(80%) h22:16(18%)
+
+--- 1. PROFIL DU SPREAD (bp du mid) PAR HEURE UTC, VENDREDIS SEULEMENT ---
+  Le spread de la DERNIERE barre est-il le plus large de la journee ?
+  GBP_CHF — spread moyen/median des barres NON-finales : 2.868 / 2.501
+      h00:3.13/2.86(n1132)  h01:3.01/2.81(n1132)  h02:2.98/2.77(n1132)  h03:2.95/2.75(n1132)  h04:2.96/2.76(n1132)  h05:3.03/2.82(n1132)  h06:2.97/2.71(n1132)  h07:2.67/2.42(n1132)  h08:2.46/2.26(n1131)  h09:2.42/2.25(n1131)  h10:2.36/2.21(n1131)  h11:2.29/2.15(n1131)  h12:2.31/2.16(n1131)  h13:2.72/2.43(n1131)  h14:2.91/2.56(n1131)  h15:2.51/2.25(n1131)  h16:2.45/2.24(n1131)  h17:2.57/2.39(n1131)  h18:2.65/2.47(n1131)  h19:3.56/2.57(n1131)  h20:6.22/5.77(n562)  h21:11.11/11.92(n97)  h22:11.72/13.00(n9)
+      DERNIERE barre h08 : mean 15.136 median 15.136 n=1
+      DERNIERE barre h20 : mean 8.173 median 8.076 n=569
+      DERNIERE barre h21 : mean 9.135 median 8.764 n=446
+      DERNIERE barre h22 : mean 11.296 median 11.871 n=91
+      DERNIERE barre h23 : mean 12.964 median 13.680 n=25
+  EUR_CHF — spread moyen/median des barres NON-finales : 2.072 / 1.786
+      h00:2.33/1.96(n1132)  h01:2.24/1.92(n1132)  h02:2.20/1.91(n1132)  h03:2.18/1.91(n1132)  h04:2.19/1.90(n1131)  h05:2.20/1.91(n1132)  h06:2.11/1.86(n1132)  h07:1.96/1.75(n1132)  h08:1.90/1.71(n1131)  h09:1.87/1.66(n1131)  h10:1.75/1.60(n1131)  h11:1.66/1.59(n1131)  h12:1.67/1.58(n1131)  h13:1.95/1.70(n1131)  h14:2.06/1.77(n1131)  h15:1.82/1.62(n1131)  h16:1.77/1.61(n1131)  h17:1.86/1.70(n1131)  h18:1.92/1.75(n1131)  h19:2.53/1.87(n1131)  h20:3.97/3.88(n524)  h21:6.71/6.78(n86)  h22:6.75/6.55(n8)
+      DERNIERE barre h08 : mean 10.069 median 10.069 n=1
+      DERNIERE barre h20 : mean 5.683 median 5.717 n=607
+      DERNIERE barre h21 : mean 6.031 median 6.160 n=419
+      DERNIERE barre h22 : mean 6.945 median 6.809 n=78
+      DERNIERE barre h23 : mean 7.606 median 7.799 n=27
+  AUD_CHF — spread moyen/median des barres NON-finales : 3.762 / 3.402
+      h00:3.76/3.57(n1132)  h01:3.69/3.49(n1132)  h02:3.65/3.47(n1132)  h03:3.60/3.46(n1132)  h04:3.61/3.43(n1132)  h05:3.63/3.47(n1132)  h06:3.57/3.39(n1132)  h07:3.44/3.27(n1132)  h08:3.35/3.20(n1132)  h09:3.34/3.11(n1131)  h10:3.30/3.09(n1131)  h11:3.22/3.09(n1131)  h12:3.27/3.16(n1131)  h13:3.80/3.45(n1131)  h14:4.05/3.64(n1131)  h15:3.54/3.36(n1131)  h16:3.40/3.31(n1131)  h17:3.48/3.37(n1131)  h18:3.56/3.40(n1131)  h19:4.84/3.79(n1131)  h20:8.22/6.27(n548)  h21:13.66/10.63(n103)  h22:14.08/10.37(n10)
+      DERNIERE barre h15 : mean 18.245 median 18.245 n=1
+      DERNIERE barre h20 : mean 12.140 median 10.945 n=583
+      DERNIERE barre h21 : mean 13.160 median 11.230 n=422
+      DERNIERE barre h22 : mean 14.475 median 10.883 n=95
+      DERNIERE barre h23 : mean 17.374 median 20.683 n=31
+
+--- 2. PAR VENDREDI : fade BID 13:00 -> cloture, spread entree/tenu/sortie, NET = fade - spread_sortie ---
+  GBP_CHF  n=1131 vendredis (2005-01-07 -> 2026-10-16)
+      fade BID        mean +5.651 bp  median +5.577  t +5.07
+      spread entree   mean 2.344  median 2.171
+      spread tenu     mean 3.734  median 3.442
+      spread SORTIE   mean 12.099  median 11.941  p90 15.91
+      NET (bid-strexit) mean -6.448 bp  median -5.755  t -5.78  hit 41%
+      NET (mid-sym)     mean -6.448 bp  t -5.78
+  EUR_CHF  n=1131 vendredis (2005-01-07 -> 2026-10-16)
+      fade BID        mean +4.133 bp  median +3.646  t +5.56
+      spread entree   mean 1.710  median 1.581
+      spread tenu     mean 2.587  median 2.309
+      spread SORTIE   mean 7.966  median 6.743  p90 12.13
+      NET (bid-strexit) mean -3.833 bp  median -3.900  t -5.21  hit 39%
+      NET (mid-sym)     mean -3.833 bp  t -5.21
+  AUD_CHF  n=1131 vendredis (2005-01-07 -> 2026-10-16)
+      fade BID        mean +9.012 bp  median +7.948  t +6.83
+      spread entree   mean 3.325  median 3.193
+      spread tenu     mean 5.194  median 4.777
+      spread SORTIE   mean 18.061  median 17.675  p90 28.25
+      NET (bid-strexit) mean -9.049 bp  median -10.356  t -6.92  hit 38%
+      NET (mid-sym)     mean -9.048 bp  t -6.91
+
+--- 3. ELARGISSEMENT A LA SORTIE : ratio spread_sortie / spread_tenu, par ere ---
+  GBP_CHF
+      ERE              n  ratio moy     med   >1.5x     >2x     >3x   net moy   net t
+      2005-2009   259       2.19    2.16    100%     81%      0%    -6.548   -2.33
+      2010-2014   260       3.03    2.61     98%     92%     40%    -6.900   -3.05
+      2015-2019   259       4.59    4.61     98%     98%     97%    -6.575   -2.75
+      2020-2026   353       3.81    3.70     98%     93%     69%    -5.949   -3.64
+      FULL          1131       3.44    3.14     99%     91%     53%    -6.448   -5.78
+  EUR_CHF
+      ERE              n  ratio moy     med   >1.5x     >2x     >3x   net moy   net t
+      2005-2009   259       2.50    2.53     98%     91%      7%    -2.292   -1.56
+      2010-2014   260       2.76    2.47     96%     76%     31%    -4.918   -2.79
+      2015-2019   259       4.14    4.12     99%     97%     92%    -3.334   -2.12
+      2020-2026   353       2.99    2.70     88%     73%     41%    -4.530   -3.85
+      FULL          1131       3.09    2.81     95%     83%     42%    -3.833   -5.21
+  AUD_CHF
+      ERE              n  ratio moy     med   >1.5x     >2x     >3x   net moy   net t
+      2005-2009   259       2.31    2.26    100%     88%      2%    -6.283   -1.77
+      2010-2014   260       3.25    2.68     99%     93%     42%   -13.131   -4.99
+      2015-2019   259       4.33    4.38    100%     98%     92%   -11.074   -4.56
+      2020-2026   353       4.08    3.99     98%     92%     72%    -6.586   -3.39
+      FULL          1131       3.54    3.29     99%     93%     54%    -9.049   -6.92
+
+--- 4. IS / OOS DU NET AVEC LE SPREAD MESURE (IS 2006-2015, OOS 2016-2026) + decennies ---
+  GBP_CHF
+      IS 06-15   n= 570 net  -6.825 bp  t  -3.87  med  -5.127  hit  43%
+      OOS 16-26  n= 561 net  -6.065 bp  t  -4.48  med  -6.629  hit  40%
+      2005-2009  n= 259 net  -6.548 bp  t  -2.33  med  -2.291  hit  45%
+      2010-2014  n= 260 net  -6.900 bp  t  -3.05  med  -6.868  hit  41%
+      2015-2019  n= 259 net  -6.575 bp  t  -2.75  med  -7.000  hit  41%
+      2020-2026  n= 353 net  -5.949 bp  t  -3.64  med  -6.629  hit  39%
+      FULL       n=1131 net  -6.448 bp  t  -5.78  med  -5.755  hit  41%
+  EUR_CHF
+      IS 06-15   n= 570 net  -3.686 bp  t  -3.18  med  -3.571  hit  39%
+      OOS 16-26  n= 561 net  -3.982 bp  t  -4.40  med  -4.501  hit  39%
+      2005-2009  n= 259 net  -2.292 bp  t  -1.56  med  -2.475  hit  44%
+      2010-2014  n= 260 net  -4.918 bp  t  -2.79  med  -4.431  hit  33%
+      2015-2019  n= 259 net  -3.334 bp  t  -2.12  med  -3.750  hit  41%
+      2020-2026  n= 353 net  -4.530 bp  t  -3.85  med  -5.145  hit  37%
+      FULL       n=1131 net  -3.833 bp  t  -5.21  med  -3.900  hit  39%
+  AUD_CHF
+      IS 06-15   n= 570 net -10.581 bp  t  -4.98  med -10.439  hit  39%
+      OOS 16-26  n= 561 net  -7.493 bp  t  -4.95  med -10.104  hit  36%
+      2005-2009  n= 259 net  -6.283 bp  t  -1.77  med  -4.211  hit  43%
+      2010-2014  n= 260 net -13.131 bp  t  -4.99  med -12.138  hit  36%
+      2015-2019  n= 259 net -11.074 bp  t  -4.56  med -13.509  hit  34%
+      2020-2026  n= 353 net  -6.586 bp  t  -3.39  med  -9.362  hit  37%
+      FULL       n=1131 net  -9.049 bp  t  -6.92  med -10.356  hit  38%
+
+--- 5. M5 : OU le spread s'elargit dans la derniere heure (sortie H-10 vs cloture) ---
+  GBP_CHF — 93 vendredis M5
+      spread moyen par tranche avant la cloture :
+        [-60,-45) min  mean  2.207  median  1.950  n=93
+        [-45,-30) min  mean  2.218  median  1.942  n=93
+        [-30,-20) min  mean  2.570  median  2.224  n=93
+        [-20,-10) min  mean  2.959  median  2.638  n=93
+        [-10, -5) min  mean  3.895  median  3.546  n=93
+        [ -5, +0) min  mean  7.201  median  6.828  n=93
+      NET si sortie a H-x (fade bid depuis 13:00 - spread de la barre de sortie) :
+        sortie <= -30 min  net  -5.426 bp  t  -1.41  n=93
+        sortie <= -20 min  net  -5.695 bp  t  -1.43  n=93
+        sortie <= -10 min  net  -5.697 bp  t  -1.45  n=93
+        sortie <=  -5 min  net  -5.642 bp  t  -1.41  n=93
+        sortie <=  +0 min  net  -6.079 bp  t  -1.50  n=93
+
+  AUD_CHF — 17 vendredis M5
+      spread moyen par tranche avant la cloture :
+        [-60,-45) min  mean  4.123  median  2.324  n=17
+        [-45,-30) min  mean  4.230  median  2.166  n=17
+        [-30,-20) min  mean  4.418  median  2.393  n=17
+        [-20,-10) min  mean  4.853  median  2.942  n=17
+        [-10, -5) min  mean  6.037  median  4.385  n=17
+        [ -5, +0) min  mean 10.872  median  9.537  n=17
+      NET si sortie a H-x (fade bid depuis 13:00 - spread de la barre de sortie) :
+        sortie <= -30 min  net +12.102 bp  t  +1.18  n=17
+        sortie <= -20 min  net +12.351 bp  t  +1.18  n=17
+        sortie <= -10 min  net +12.582 bp  t  +1.23  n=17
+        sortie <=  -5 min  net +12.035 bp  t  +1.17  n=17
+        sortie <=  +0 min  net +10.473 bp  t  +1.03  n=17
+
