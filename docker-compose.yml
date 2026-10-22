@@ -31,6 +31,12 @@ services:
       - STRATEGY_PAIR=${STRATEGY_PAIR:-USD_CHF}
       - GRANULARITY=${GRANULARITY:-H1}
       - INTERVAL_SEC=${INTERVAL_SEC:-60}
+      # Operations snapshot push to the web hub (absent = push disabled).
+      # These two come from the compose-level .env (repo root), NOT from the
+      # service env_file: an `environment:` entry wins over `env_file:`, and the
+      # empty default below would silently override a token placed there.
+      - HERMES_WEB_URL=${HERMES_WEB_URL:-}
+      - HERMES_WEB_TOKEN=${HERMES_WEB_TOKEN:-}
     command: ["$${OANDA_API_KEY}", "$${OANDA_ACCOUNT_ID}", "$${STRATEGY}", "$${GRANULARITY}", "$${INTERVAL_SEC}"]
     volumes:
       - ./data:/app/data        # Trade persistence
