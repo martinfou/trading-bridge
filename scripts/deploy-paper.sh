@@ -177,21 +177,36 @@ PY
   # Le contrôle porte sur TOUS les services VIVANTS de la pile, pas seulement ceux qu'on vient de
   # redéployer: sinon un déploiement partiel (`--apply trader`) échouerait à tort, parce que les
   # positions des autres stratégies n'apparaîtraient dans aucune liste locale.
-  mapfile -t RECONCILE < <(docker compose ps --services --status running 2>/dev/null | sort)
+  mapfile -t RECONCILE < <(docker compose ps --services --status running 2>/dev/null | sort || true)
   if [ "${#RECONCILE[@]}" -eq 0 ]; then RECONCILE=("${SERVICES[@]}"); fi
+  # Un service DÉPLOYÉ qui ne tourne pas ne certifie RIEN : `ps --status running` l'exclut de la
+  # réconciliation, donc sans ce contrôle le script imprimait « deployment verified » sur les
+  # survivants alors qu'un runner était mort au démarrage (bloquant agy, 2026-10-22).
+  for svc in "${SERVICES[@]}"; do
+    found=0
+    for run in "${RECONCILE[@]}"; do [ "$svc" = "$run" ] && { found=1; break; }; done
+    if [ "$found" = 0 ]; then
+      echo "   ${RED}✗ $svc is in the deployed set but is not running — NOT certifiable${NC}"
+      bad=1
+      RECONCILE+=("$svc")
+    fi
+  done
 
   # La vérité d'exécution est le MONITEUR AGRÉGÉ que chaque runner réécrit toutes les 30 s
   # (/tmp/paper-trading-status.json), pas la ligne « Resumed state » du journal. Cette ligne n'est
   # écrite qu'UNE fois au démarrage : pour un conteneur non recréé elle décrit son état d'il y a
   # plusieurs jours. Mesuré le 2026-10-22: bornée au démarrage du conteneur, elle a quand même fait
   # échouer un déploiement sain en annonçant « lt-rsi3 claims 1 active trade » avec la ligne du
-  # 2026-10-09 10:07:57Z, alors que le moniteur disait activeTrades 0 et le courtier 0. Le moniteur
-  # porte aussi l'instant de sa dernière écriture, ce qui distingue « plat » de « muet ».
+  # 2026-10-09 10:07:57Z, alors que le moniteur disait activeTrades 0 et le courtier 0.
+  # Le moniteur porte aussi l'instant de sa dernière écriture, ce qui distingue « plat » de « muet ».
   declare -A MON_TOTAL=() MON_AGE=()
   for attempt in $(seq 1 20); do
+    # Lecture par tentative, dans des tableaux JETABLES : un conteneur qui meurt ou dont le moniteur
+    # vieillit pendant l'attente ne doit pas être certifié avec la valeur d'une tentative antérieure.
+    declare -A T_TOTAL=() T_AGE=()
     pending=0
     for svc in "${RECONCILE[@]}"; do
-      cid=$(docker compose ps -q "$svc" 2>/dev/null | head -1)
+      cid=$(docker compose ps -q "$svc" 2>/dev/null | head -1 || true)
       [ -n "$cid" ] || { pending=1; continue; }
       raw=$(docker exec "$cid" sh -c 'cat /tmp/paper-trading-status.json' 2>/dev/null || true)
       [ -n "$raw" ] || { pending=1; continue; }
@@ -207,13 +222,18 @@ except Exception:
     pass
 print(total, age)
 ' 2>/dev/null || true)
-      read -r n age <<<"${out:-}"
-      if [ -z "${age:-}" ] || [ "${age:--1}" -lt 0 ] || [ "${age:--1}" -gt 300 ]; then
-        pending=1; continue
-      fi
-      MON_TOTAL["$svc"]="${n:-0}"; MON_AGE["$svc"]="$age"
+      n=""; age=""
+      read -r n age <<<"${out:-}" || true
+      # Un âge non numérique (python en échec partiel, sortie tronquée) ne doit jamais être lu comme
+      # « frais »: `[ x -lt 0 ]` renvoie 2 et la chaîne de tests le laissait passer (mesuré 2026-10-22).
+      if ! [[ "${n:-}" =~ ^[0-9]+$ && "${age:-}" =~ ^[0-9]+$ ]]; then pending=1; continue; fi
+      if [ "$age" -gt 300 ]; then pending=1; continue; fi
+      T_TOTAL["$svc"]="$n"; T_AGE["$svc"]="$age"
     done
-    [ "$pending" = 0 ] && break
+    if [ "$pending" = 0 ]; then
+      for k in "${!T_TOTAL[@]}"; do MON_TOTAL["$k"]="${T_TOTAL[$k]}"; MON_AGE["$k"]="${T_AGE[$k]}"; done
+      break
+    fi
     [ "$attempt" = 20 ] || sleep 3
   done
 
