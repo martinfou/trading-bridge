@@ -1,0 +1,21 @@
+==============================================================================================================
+GBP_CHF — M5 BA, 612 vendredis (2015-01-01 -> 2026-10-22)
+==============================================================================================================
+  FENETRE                      n  fade bid  spread in  spread out      NET       t   hit
+
+  FENETRE                            IS<=2022          OOS>=2023   (net moyen bp, t)
+
+  PROFIL DU SPREAD par minute relative a la cloture (bp) :
+    
+
+==============================================================================================================
+AUD_CHF — M5 BA, 612 vendredis (2015-01-01 -> 2026-10-22)
+==============================================================================================================
+  FENETRE                      n  fade bid  spread in  spread out      NET       t   hit
+
+  FENETRE                            IS<=2022          OOS>=2023   (net moyen bp, t)
+
+  PROFIL DU SPREAD par minute relative a la cloture (bp) :
+    
+
+EUR_CHF: pas de M30
