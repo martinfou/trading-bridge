@@ -36,6 +36,8 @@ public final class OperationsSnapshotPusher {
     static final String ENV_TOKEN = "HERMES_WEB_TOKEN";
     static final String SNAPSHOT_PATH = "/api/trading/operations/snapshot";
     static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(10);
+    /** Hub error bodies are logged, but never beyond this many characters. */
+    static final int MAX_LOGGED_BODY = 300;
 
     private final String endpoint;
     private final String token;
@@ -98,11 +100,26 @@ public final class OperationsSnapshotPusher {
             if (status >= 200 && status < 300) {
                 return true;
             }
-            log.warn("Operations snapshot push rejected by hub: HTTP {} ({})", status, response.body());
+            log.warn("Operations snapshot push rejected by hub: HTTP {} ({})", status, truncate(response.body()));
+            return false;
+        } catch (InterruptedException e) {
+            // Never swallow an interrupt: the monitor thread must be able to stop.
+            Thread.currentThread().interrupt();
+            log.warn("Operations snapshot push interrupted");
             return false;
         } catch (Exception e) {
-            log.warn("Operations snapshot push failed: {}", e.getMessage());
+            // toString(), not getMessage(): an NPE or an HTTP/2 protocol error has no
+            // message, and "push failed: null" hides the class that failed.
+            log.warn("Operations snapshot push failed: {}", e.toString());
             return false;
         }
+    }
+
+    /** Bounds a hub error body so a hostile or verbose response cannot flood the logs. */
+    static String truncate(String body) {
+        if (body == null) {
+            return "";
+        }
+        return body.length() <= MAX_LOGGED_BODY ? body : body.substring(0, MAX_LOGGED_BODY) + "...";
     }
 }
