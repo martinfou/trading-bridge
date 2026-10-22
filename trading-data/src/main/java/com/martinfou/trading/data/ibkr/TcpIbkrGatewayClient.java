@@ -178,7 +178,7 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
         int orderId = generateOrderId();
         trackOrder(orderId, clientTag);
         Contract contract = buildContract(symbol);
-        com.ib.client.Order order = buildMarketOrder(orderId, quantity, side, config.accountId());
+        com.ib.client.Order order = buildMarketOrder(orderId, quantity, side, config.accountId(), clientTag);
         try {
             client.placeOrder(orderId, contract, order);
         } catch (RuntimeException e) {
@@ -339,6 +339,16 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
     }
 
     static com.ib.client.Order buildMarketOrder(int orderId, double quantity, Order.Side side, String accountId) {
+        return buildMarketOrder(orderId, quantity, side, accountId, null);
+    }
+
+    /**
+     * L'orderRef porte le nom de la strategie jusqu'aux fills : c'est la seule chose qui permet a la lane P&L
+     * de rattacher une execution a une strategie plutot qu'a un leak. Sans lui, un fill automatique est
+     * indistinguable d'un ordre manuel.
+     */
+    static com.ib.client.Order buildMarketOrder(int orderId, double quantity, Order.Side side, String accountId,
+                                                String orderRef) {
         com.ib.client.Order order = new com.ib.client.Order();
         order.orderId(orderId);
         order.action(side == Order.Side.BUY ? "BUY" : "SELL");
@@ -347,6 +357,9 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
         order.transmit(true);
         if (accountId != null && !accountId.isBlank()) {
             order.account(accountId);
+        }
+        if (orderRef != null && !orderRef.isBlank()) {
+            order.orderRef(orderRef);
         }
         return order;
     }

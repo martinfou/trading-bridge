@@ -117,6 +117,20 @@ class TcpIbkrGatewayClientTest {
     }
 
     @Test
+    void buildMarketOrder_carriesTheOrderRef() {
+        // Le nom de la strategie doit voyager jusqu'aux fills, sinon la lane P&L le compte comme un leak.
+        com.ib.client.Order order = TcpIbkrGatewayClient.buildMarketOrder(1235, 1, Order.Side.SELL, "DU12345",
+                "mesbreakout");
+        org.junit.jupiter.api.Assertions.assertEquals("mesbreakout", order.orderRef());
+    }
+
+    @Test
+    void buildMarketOrder_withoutOrderRefLeavesItEmpty() {
+        com.ib.client.Order order = TcpIbkrGatewayClient.buildMarketOrder(1236, 1, Order.Side.BUY, "DU12345");
+        org.junit.jupiter.api.Assertions.assertTrue(order.orderRef() == null || order.orderRef().isEmpty());
+    }
+
+    @Test
     void buildMarketOrder_buyMktTransmit() {
         com.ib.client.Order order = TcpIbkrGatewayClient.buildMarketOrder(1234, 1.5, Order.Side.BUY, "DU12345");
         assertEquals(1234, order.orderId());
