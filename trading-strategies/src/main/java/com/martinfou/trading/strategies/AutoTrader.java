@@ -72,7 +72,7 @@ public class AutoTrader {
             String slStr = LiveStrategyRunner.formatPrice(signal.stopLoss(), signal.pair());
             String tpStr = LiveStrategyRunner.formatPrice(signal.takeProfit(), signal.pair());
 
-            if (result.tradeId() != null && !result.tradeId().equals("N/A")) {
+            if (result.isFilled()) {
                 executor.addStopLoss(result.tradeId(), slStr, "AUTO");
                 executor.addTakeProfit(result.tradeId(), tpStr, "AUTO");
                 log.info("   SL: {} TP: {}", slStr, tpStr);
