@@ -163,6 +163,12 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
 
     @Override
     public IbkrMarketOrderResult placeMarketOrder(String symbol, double quantity, Order.Side side, String clientTag) {
+        return placeMarketOrder(symbol, quantity, side, clientTag, null);
+    }
+
+    @Override
+    public IbkrMarketOrderResult placeMarketOrder(String symbol, double quantity, Order.Side side, String clientTag,
+                                                  String orderRef) {
         OrderTripwire.checkOrderAllowed(symbol, String.valueOf(quantity), "TcpIbkrGatewayClient.placeMarketOrder",
                 config.host() + ":" + config.port());
         if (!isConnected()) {
@@ -178,7 +184,7 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
         int orderId = generateOrderId();
         trackOrder(orderId, clientTag);
         Contract contract = buildContract(symbol);
-        com.ib.client.Order order = buildMarketOrder(orderId, quantity, side, config.accountId(), clientTag);
+        com.ib.client.Order order = buildMarketOrder(orderId, quantity, side, config.accountId(), orderRef);
         try {
             client.placeOrder(orderId, contract, order);
         } catch (RuntimeException e) {

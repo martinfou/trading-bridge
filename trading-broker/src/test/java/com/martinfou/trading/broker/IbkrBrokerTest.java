@@ -42,6 +42,24 @@ class IbkrBrokerTest {
     }
 
     @Test
+    void submitOrder_carriesTheStrategyNameAsOrderRef() {
+        // Sans ce champ, le fill arrive sans nom de strategie et la lane P&L le classe en leak : c'est la
+        // seule chose qui rattache une execution a la strategie qui l'a produite.
+        var client = new RecordingClient();
+        var broker = new IbkrBroker(client);
+        broker.connect();
+
+        var order = new Order(
+            "id-1", "EUR_USD", Order.Side.BUY, Order.Type.MARKET, 1000, 1.10,
+            0.0, 0.0, 0.0, false, false, Order.Status.PENDING,
+            java.time.Instant.now(), null, "mesbreakout", null, 0.0, null, 0, null);
+
+        broker.submitOrder(order);
+
+        assertEquals("mesbreakout", client.lastOrderRef);
+    }
+
+    @Test
     void submitOrder_whenNotConnected_rejects() {
         var broker = new IbkrBroker(new RecordingClient());
         var order = new Order(
@@ -193,6 +211,7 @@ class IbkrBrokerTest {
     private static final class RecordingClient implements IbkrGatewayClient {
         String lastSymbol;
         double lastQuantity;
+        String lastOrderRef;
 
         @Override
         public void connect() {}
@@ -215,6 +234,13 @@ class IbkrBrokerTest {
             lastSymbol = symbol;
             lastQuantity = quantity;
             return IbkrMarketOrderResult.success("1", "E1", 1.1001);
+        }
+
+        @Override
+        public IbkrMarketOrderResult placeMarketOrder(String symbol, double quantity, Order.Side side,
+                                                      String clientTag, String orderRef) {
+            lastOrderRef = orderRef;
+            return placeMarketOrder(symbol, quantity, side, clientTag);
         }
 
         @Override
