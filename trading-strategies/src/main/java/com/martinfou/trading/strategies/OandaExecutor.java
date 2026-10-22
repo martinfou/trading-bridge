@@ -336,6 +336,8 @@ public class OandaExecutor {
         }
         var exec = new OandaExecutor(args[0], args[1], true);
         var result = exec.placeMarketOrder(args[2], args[3], "TEST");
-        System.out.println("Trade executed: " + result);
+        System.out.println(result.openedTrade()
+            ? "Trade executed: " + result
+            : "Order NOT filled (" + result.status() + (result.cancelReason() != null ? ", " + result.cancelReason() : "") + "): " + result);
     }
 }
