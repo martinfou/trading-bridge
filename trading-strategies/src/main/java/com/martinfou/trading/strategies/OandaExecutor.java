@@ -41,8 +41,20 @@ public class OandaExecutor {
      * comparing strings.
      */
     public record OrderResult(String orderId, String tradeId, String fillPrice, String status, String cancelReason) {
-        /** True only when the order filled — the single condition a caller may use to count or track an entry. */
+        /**
+         * True when the broker returned a fill for this order. A close fills too, and it carries no
+         * trade id, so this is NOT the condition for counting an entry.
+         */
         public boolean isFilled() {
+            return "FILLED".equals(status);
+        }
+
+        /**
+         * True only when the fill OPENED a trade: the single condition a caller may use to count an
+         * entry or to track a position. An entry that filled but opened nothing, and an order that
+         * was created then cancelled, both return false.
+         */
+        public boolean openedTrade() {
             return tradeId != null;
         }
     }
