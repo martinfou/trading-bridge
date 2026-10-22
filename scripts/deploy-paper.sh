@@ -180,84 +180,68 @@ PY
   mapfile -t RECONCILE < <(docker compose ps --services --status running 2>/dev/null | sort)
   if [ "${#RECONCILE[@]}" -eq 0 ]; then RECONCILE=("${SERVICES[@]}"); fi
 
-  # Attente BORNÉE au lieu d'un sommeil fixe: un runner écrit sa ligne « Resumed state » seulement
-  # après avoir initialisé ses connexions et récupéré son historique, et quatre JVM qui démarrent
-  # ensemble peuvent dépasser 25 s. On attend jusqu'à 60 s, puis on juge sur ce qu'on a.
-  declare -A RESUMED=()
+  # La vérité d'exécution est le MONITEUR AGRÉGÉ que chaque runner réécrit toutes les 30 s
+  # (/tmp/paper-trading-status.json), pas la ligne « Resumed state » du journal. Cette ligne n'est
+  # écrite qu'UNE fois au démarrage : pour un conteneur non recréé elle décrit son état d'il y a
+  # plusieurs jours. Mesuré le 2026-10-22: bornée au démarrage du conteneur, elle a quand même fait
+  # échouer un déploiement sain en annonçant « lt-rsi3 claims 1 active trade » avec la ligne du
+  # 2026-10-09 10:07:57Z, alors que le moniteur disait activeTrades 0 et le courtier 0. Le moniteur
+  # porte aussi l'instant de sa dernière écriture, ce qui distingue « plat » de « muet ».
+  declare -A MON_TOTAL=() MON_AGE=()
   for attempt in $(seq 1 20); do
     pending=0
     for svc in "${RECONCILE[@]}"; do
       cid=$(docker compose ps -q "$svc" 2>/dev/null | head -1)
-      line=""
-      if [ -n "$cid" ]; then
-        since=$(docker inspect -f '{{.State.StartedAt}}' "$cid" 2>/dev/null || true)
-        # `docker logs --since ""` is NOT "no logs": the daemon treats an empty bound as no bound and
-        # returns the container's WHOLE history (measured 2026-10-22 on this host, Docker 29.7.2). An
-        # unreadable start instant must therefore yield "not certifiable", never an unbounded read.
-        [ -n "$since" ] || { pending=1; continue; }
-        line=$(docker logs --since "$since" "$cid" 2>&1 | grep -aoE 'Resumed state: [0-9]+ active trades' | tail -1 || true)
+      [ -n "$cid" ] || { pending=1; continue; }
+      raw=$(docker exec "$cid" sh -c 'cat /tmp/paper-trading-status.json' 2>/dev/null || true)
+      [ -n "$raw" ] || { pending=1; continue; }
+      out=$(printf '%s' "$raw" | python3 -c '
+import datetime, json, sys
+d = json.load(sys.stdin)
+total = sum(int(s.get("activeTrades") or 0) for s in d.get("strategies", []))
+age = -1
+try:
+    ts = datetime.datetime.fromisoformat(str(d.get("timestamp")).replace("Z", "+00:00"))
+    age = int((datetime.datetime.now(datetime.timezone.utc) - ts).total_seconds())
+except Exception:
+    pass
+print(total, age)
+' 2>/dev/null || true)
+      read -r n age <<<"${out:-}"
+      if [ -z "${age:-}" ] || [ "${age:--1}" -lt 0 ] || [ "${age:--1}" -gt 300 ]; then
+        pending=1; continue
       fi
-      if [ -n "$line" ]; then RESUMED["$svc"]="$line"; else pending=1; fi
+      MON_TOTAL["$svc"]="${n:-0}"; MON_AGE["$svc"]="$age"
     done
     [ "$pending" = 0 ] && break
     [ "$attempt" = 20 ] || sleep 3
   done
 
   for svc in "${RECONCILE[@]}"; do
-    cid=$(docker compose ps -q "$svc" 2>/dev/null | head -1)
-    resumed="${RESUMED[$svc]:-}"
-    perm=0
-    since=""
-    if [ -n "$cid" ]; then
-      since=$(docker inspect -f '{{.State.StartedAt}}' "$cid" 2>/dev/null || true)
-      if [ -n "$since" ]; then
-        perm=$(docker logs --since "$since" "$cid" 2>&1 | grep -ac "Failed to write aggregated monitor" || true)
-      else
-        # Same trap as above: no bound means the whole history, and a cumulative count would fail a
-        # healthy deploy for a failure that predates this start. Unreadable means "cannot judge".
-        perm="unreadable"
-        bad=1
-      fi
-    fi
-    echo "   $svc: ${resumed:-'(no Resume line yet)'} | monitor write failures: $perm | journal since: ${since:-'?'}"
-    [ "$perm" = "0" ] || bad=1
-    n=$(printf '%s' "$resumed" | grep -oE '[0-9]+' | head -1)
-    if [ -n "$n" ]; then
+    if [ -n "${MON_TOTAL[$svc]+x}" ]; then
+      n="${MON_TOTAL[$svc]}"; age="${MON_AGE[$svc]}"
+      echo "   $svc: $n active trade(s) live (monitor written ${age}s ago)"
       local_total=$((local_total + n))
-      # un runner ne peut pas réclamer plus de trades que le courtier n'en détient
       if [ "$n" -gt "$broker" ]; then
-        echo "   ${RED}✗ $svc claims $n active trade(s) but the broker holds $broker — orphan state${NC}"; bad=1
+        echo "   ${RED}✗ $svc declares $n active trade(s) but the broker holds $broker — orphan state${NC}"; bad=1
       fi
     else
-      local_known=0
+      echo "   ${RED}✗ $svc: no fresh monitor (absent, unreadable, or older than 300 s) — NOT certifiable${NC}"
+      local_known=0; bad=1
     fi
   done
-  # Le contrôle doit aller DANS LES DEUX SENS. Un runner qui réclame un trade absent du courtier est
-  # grave, mais une position que le courtier détient sans qu'aucun run local ne l'explique l'est
-  # autant: personne ne la gère. L'ancien contrôle ne regardait que le surplus local, donc une
-  # position orpheline avec zéro run local (0 > 0 est faux) passait et le script annonçait
-  # « deployment verified ». Trouvé par une revue indépendante le 2026-10-02.
-  # La comparaison porte sur les services VIVANTS de la pile, pas sur la liste déployée: un
-  # déploiement partiel reste donc valide, ce sont les positions de TOUTE la pile qui doivent
-  # expliquer celles du courtier.
-  if [ "$broker" -gt 0 ] && [ "$local_known" = 0 ]; then
-    echo "   ${RED}✗ le courtier détient $broker position(s) mais au moins un runner n'a rien annoncé:${NC}"
-    echo "   ${RED}  réconciliation NON certifiable (il manque une ligne 'Resumed state')${NC}"; bad=1
-  elif [ "$local_known" = 1 ] && [ "$local_total" -ne "$broker" ]; then
-    echo "   ${RED}✗ position(s) orpheline(s): le courtier détient $broker trade(s), les runners n'en expliquent que $local_total${NC}"
+  # Le contrôle va DANS LES DEUX SENS, et un moniteur muet ne vaut jamais « plat »: sans moniteur
+  # frais, le service ne certifie rien (bad=1 déjà posé ci-dessus), quel que soit le courtier.
+  if [ "$local_known" = 1 ] && [ "$local_total" -ne "$broker" ]; then
+    echo "   ${RED}✗ mismatch: the broker holds $broker open trade(s), the runners declare $local_total${NC}"
     echo "   ${RED}  inspecte avant de faire confiance à ce déploiement: un runner précédent a pu laisser une position${NC}"; bad=1
   fi
   [ "$bad" = 0 ] && echo "${GREEN}✓ deployment verified (broker $broker = runners $local_total sur ${#RECONCILE[@]} service(s) vivant(s))${NC}" || { echo "${RED}✗ verification FAILED — inspect before trusting${NC}"; exit 1; }
 else
-  echo "      [dry-run] compare each runner's 'Resumed state: N' against the broker's open trades"
-  echo "      journal window that WOULD be read (bounded to each container's current start):"
+  echo "      [dry-run] read each runner's live monitor (/tmp/paper-trading-status.json) and compare its"
+  echo "                activeTrades sum with the broker's open trades; a monitor older than 300 s certifies nothing"
   for svc in "${SERVICES[@]}"; do
     cid=$(docker compose ps -q "$svc" 2>/dev/null | head -1)
-    if [ -n "$cid" ]; then
-      since=$(docker inspect -f '{{.State.StartedAt}}' "$cid" 2>/dev/null || true)
-      echo "        $svc: --since ${since:-'?'}"
-    else
-      echo "        $svc: no container"
-    fi
+    echo "        $svc: ${cid:+container $cid}${cid:-no container}"
   done
 fi
