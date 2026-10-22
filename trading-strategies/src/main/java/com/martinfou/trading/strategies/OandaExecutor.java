@@ -30,7 +30,22 @@ public class OandaExecutor {
         this.client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
     }
 
-    public record OrderResult(String orderId, String tradeId, String fillPrice, String status) {}
+    /**
+     * Result of a MARKET order submission.
+     *
+     * <p>A fill is <b>explicit</b>: {@code tradeId}/{@code fillPrice} are non-null only when the order
+     * actually filled. An order that was created and then cancelled (a FOK MARKET order with no
+     * liquidity, a market halt, …) returns {@code tradeId == null} with a {@code status} of
+     * {@code CANCELLED} and the broker's {@code orderCancelTransaction.reason} in {@code cancelReason}.
+     * There is deliberately no {@code "N/A"} sentinel: callers test {@link #isFilled()} instead of
+     * comparing strings.
+     */
+    public record OrderResult(String orderId, String tradeId, String fillPrice, String status, String cancelReason) {
+        /** True only when the order filled — the single condition a caller may use to count or track an entry. */
+        public boolean isFilled() {
+            return tradeId != null;
+        }
+    }
 
     /** Ajoute des clientExtensions pour identifier la stratégie dans OANDA. */
     private java.util.Map<String, Object> clientExtensions(String tag) {
@@ -103,13 +118,26 @@ public class OandaExecutor {
             throw new RuntimeException("OANDA order failed: " + err);
         }
 
+        String orderId = json.get("orderCreateTransaction").get("id").asText();
+
+        // Filled: the fill transaction carries the trade id and the fill price.
         var orderFill = json.get("orderFillTransaction");
-        return new OrderResult(
-            json.get("orderCreateTransaction").get("id").asText(),
-            orderFill != null ? orderFill.get("tradeOpened").get("tradeID").asText() : "N/A",
-            orderFill != null ? orderFill.get("price").asText() : "N/A",
-            "FILLED"
-        );
+        if (orderFill != null) {
+            var tradeOpened = orderFill.get("tradeOpened");
+            String tradeId = tradeOpened != null && tradeOpened.has("tradeID")
+                ? tradeOpened.get("tradeID").asText() : null;
+            String fillPrice = orderFill.has("price") ? orderFill.get("price").asText() : null;
+            return new OrderResult(orderId, tradeId, fillPrice, "FILLED", null);
+        }
+
+        // No fill transaction: the order was created and then cancelled (a FOK MARKET order with no
+        // liquidity, a market halt, …). The absence of a fill is explicit here — null tradeId/fillPrice,
+        // never a sentinel string — and the cancel reason is surfaced for the caller's failure message.
+        var orderCancel = json.get("orderCancelTransaction");
+        String cancelReason = orderCancel != null && orderCancel.has("reason")
+            ? orderCancel.get("reason").asText() : null;
+        String status = orderCancel != null ? "CANCELLED" : "UNKNOWN";
+        return new OrderResult(orderId, null, null, status, cancelReason);
     }
 
     public record StopOrderResult(String orderId, String status, String price) {}

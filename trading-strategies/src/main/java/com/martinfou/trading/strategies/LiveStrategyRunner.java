@@ -243,6 +243,18 @@ public class LiveStrategyRunner implements Runnable {
 
     public LiveStrategyRunner(String apiKey, String accountId, Strategy strategy,
                               String strategyShortName, String granularity, int intervalSec) {
+        this(apiKey, accountId, strategy, strategyShortName, granularity, intervalSec,
+            new OandaExecutor(apiKey, accountId, true),
+            new OandaPriceClient(apiKey, accountId, true));
+    }
+
+    /**
+     * Test seam: inject the executor and the price client so the order path can be exercised
+     * hermetically (a stub executor returning a cancelled/no-fill result) without touching the broker.
+     */
+    LiveStrategyRunner(String apiKey, String accountId, Strategy strategy,
+                       String strategyShortName, String granularity, int intervalSec,
+                       OandaExecutor executor, OandaPriceClient priceClient) {
         this.runId = java.util.UUID.randomUUID().toString();
         this.apiKey = apiKey;
         this.accountId = accountId;
@@ -250,11 +262,16 @@ public class LiveStrategyRunner implements Runnable {
         this.strategyShortName = strategyShortName;
         this.granularity = granularity;
         this.intervalSec = intervalSec;
-        this.priceClient = new OandaPriceClient(apiKey, accountId, true);
-        this.executor = new OandaExecutor(apiKey, accountId, true);
+        this.priceClient = priceClient;
+        this.executor = executor;
         // Per-strategy state files
         this.stateFile = Paths.get("/tmp/live-strategy-state-" + strategyShortName + ".json");
         this.monitorFile = Paths.get("/tmp/paper-status-" + strategyShortName + ".json");
+    }
+
+    /** Entries counted since start; only a confirmed fill increments it. */
+    public int getTotalEntries() {
+        return totalEntries;
     }
 
     // ========================================================================
@@ -1296,7 +1313,7 @@ public class LiveStrategyRunner implements Runnable {
         return true;
     }
 
-    private void executeTrade(Order order, String oandaSymbol, double execPrice) {
+    void executeTrade(Order order, String oandaSymbol, double execPrice) {
         try {
             // Size to the risk budget (two-sided): the strategy's units are intent, the risk % is the budget
             double requestedUnits = Math.abs(order.quantity());
@@ -1430,6 +1447,17 @@ public class LiveStrategyRunner implements Runnable {
             String slStr = order.stopLoss() > 0
                 ? formatPrice(order.stopLoss(), oandaSymbol) : null;
             var result = executor.placeMarketOrder(oandaSymbol, unitsStr, tag, false, slStr, null);
+
+            // D66: a submitted-but-not-filled order (a FOK MARKET order cancelled on a market halt,
+            // or with no liquidity) is NOT an entry. Skip cleanly: no entry counter, no tracked trade,
+            // no phantom position, no exception. The real status and the broker's cancel reason are
+            // surfaced instead of being read as a fill with a "N/A" trade id.
+            if (!result.isFilled()) {
+                log.warn("⚠ ENTRY NOT FILLED for {} {}: status={}, cancelReason={} — no position taken, no entry counted.",
+                    oandaSymbol, order.side(), result.status(),
+                    result.cancelReason() != null ? result.cancelReason() : "none");
+                return;
+            }
             totalEntries++;
 
             log.info("═══════ ENTRY {} {} {} @ {} (stop on fill: {}) ═══════",
@@ -1437,16 +1465,14 @@ public class LiveStrategyRunner implements Runnable {
                 String.format("%.2f", units / 100000.0) + " lots",
                 result.fillPrice(), slStr != null ? slStr : "none");
 
-            // Track trade
+            // Track trade — a confirmed fill is the only thing that becomes an active trade.
             double fillPrice = Double.parseDouble(result.fillPrice());
-            if (result.tradeId() != null && !result.tradeId().equals("N/A")) {
-                synchronized (activeTrades) {
-                    activeTrades.add(new ActiveTrade(
-                        result.tradeId(), oandaSymbol, order.side().name(), fillPrice,
-                        Math.abs(units), order.stopLoss(), order.takeProfit(),
-                        TimeConventions.now()
-                    ));
-                }
+            synchronized (activeTrades) {
+                activeTrades.add(new ActiveTrade(
+                    result.tradeId(), oandaSymbol, order.side().name(), fillPrice,
+                    Math.abs(units), order.stopLoss(), order.takeProfit(),
+                    TimeConventions.now()
+                ));
             }
 
         } catch (Exception e) {
