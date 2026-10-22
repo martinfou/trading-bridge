@@ -44,6 +44,9 @@ class IbkrOrderRefGateTest {
             try (Stream<Path> files = Files.walk(sources)) {
                 for (Path file : files.filter(p -> p.toString().endsWith(".java")).toList()) {
                     String content = Files.readString(file);
+                    // Sans les commentaires : un orderRef cite dans une explication ne prouve rien.
+                    String code = content.replaceAll("(?s)/\\*.*?\\*/", "")
+                                         .replaceAll("//[^\\n]*", "");
                     if (!content.contains("placeOrder")) {
                         continue;
                     }
@@ -60,7 +63,7 @@ class IbkrOrderRefGateTest {
                     ibkrOrderPaths.add(file);
                     // Un appel reel, pas le mot dans un commentaire : c'est comme ca qu'un orderRef
                     // jamais rempli a pu passer.
-                    if (!content.contains(".orderRef(")) {
+                    if (!code.contains(".orderRef(")) {
                         offenders.add(root.relativize(file).toString());
                     }
                 }
