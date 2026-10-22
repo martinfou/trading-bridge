@@ -393,11 +393,29 @@ public class LiveStrategyRunner implements Runnable {
         }
 
         Thread monitorThread = new Thread(() -> {
+            int consecutivePushFailures = 0;
             while (RUNNING.get()) {
                 try {
                     String snapshotJson = writeAggregatedMonitor();
-                    if (pusher != null && snapshotJson != null) {
-                        pusher.push(snapshotJson);
+                    if (pusher != null) {
+                        if (snapshotJson == null) {
+                            log.warn("Aggregated monitor snapshot unavailable this cycle; hub push skipped.");
+                        } else if (pusher.push(snapshotJson)) {
+                            if (consecutivePushFailures > 0) {
+                                log.info("Operations snapshot push recovered after {} failed cycle(s).",
+                                    consecutivePushFailures);
+                            }
+                            consecutivePushFailures = 0;
+                        } else {
+                            consecutivePushFailures++;
+                            // The pusher warns on every failed cycle; escalate once when
+                            // the hub has been blind for a while, so a broken token is not
+                            // only visible in a stream of per-cycle warnings.
+                            if (consecutivePushFailures == 5) {
+                                log.error("Operations snapshot push has failed {} consecutive cycles: the hub is not receiving this trader's state.",
+                                    consecutivePushFailures);
+                            }
+                        }
                     }
                     Thread.sleep(30000);
                 } catch (InterruptedException e) {
@@ -709,7 +727,14 @@ public class LiveStrategyRunner implements Runnable {
                 sn.put("liveness", r.getLivenessStatus());
             }
 
-            enrichAggregatedMonitor(root);
+            // Enrichment is telemetry: a failure here must never stop the health
+            // file below from being written, or the trader would look silent to the
+            // watchdog because of a reporting bug.
+            try {
+                enrichAggregatedMonitor(root);
+            } catch (Exception e) {
+                log.warn("Aggregated monitor enrichment skipped: {}", e.toString());
+            }
 
             String json = MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(root);
             Files.writeString(AGGREGATED_MONITOR, json);
@@ -723,9 +748,16 @@ public class LiveStrategyRunner implements Runnable {
     /**
      * Enriches the aggregated monitor root with the fields the hub needs for the
      * snapshot ingest: {@code account_id} and {@code snapshot_id} (idempotence key),
-     * the account NAV, the most recent heartbeat across runners, the flattened
+     * the most recent heartbeat across runners, the flattened
      * {@code open_positions[]} and {@code unreconciled_trades[]}, and the P&L
      * integrity mismatch count.
+     *
+     * <p><b>No {@code nav} field.</b> The only NAV this class holds is
+     * {@code lastKnownBalance}, written once at startup and refreshed only when a
+     * trade is sized; publishing it would show the hub a frozen number that drifts
+     * further from reality every day. NAV already has an owner: the account
+     * snapshot lane, which reads it live. Absent means unknown, never a stale
+     * plausible value.
      *
      * <p>{@code open_positions} is read under {@code synchronized (activeTrades)},
      * the same lock every other accessor in this class uses - never an
@@ -736,9 +768,6 @@ public class LiveStrategyRunner implements Runnable {
         String timestamp = root.path("timestamp").asText(TimeConventions.now().toString());
         root.put("account_id", accountId);
         root.put("snapshot_id", accountId + ":" + timestamp);
-
-        double nav = ACTIVE_RUNNERS.isEmpty() ? 0.0 : ACTIVE_RUNNERS.values().iterator().next().lastKnownBalance;
-        root.put("nav", nav);
 
         Instant latestHeartbeat = null;
         int pnlMismatches = 0;
@@ -776,7 +805,9 @@ public class LiveStrategyRunner implements Runnable {
                 un.put("tradeId", u.tradeId);
                 un.put("symbol", u.symbol);
                 un.put("reason", u.reason);
-                un.put("timestamp", u.timestamp.toString());
+                if (u.timestamp != null) {
+                    un.put("timestamp", u.timestamp.toString());
+                }
             }
         }
 

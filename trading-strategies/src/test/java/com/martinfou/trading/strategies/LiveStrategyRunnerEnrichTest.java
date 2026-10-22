@@ -74,4 +74,22 @@ class LiveStrategyRunnerEnrichTest {
         assertEquals(0, root.path("unreconciled_trades").size());
         assertTrue(root.hasNonNull("heartbeat_at"));
     }
+
+    /**
+     * The only NAV this class holds is frozen at startup, so publishing it would put
+     * a plausible, drifting number on the hub. Absent means unknown; the account
+     * snapshot lane owns the live NAV.
+     */
+    @Test
+    void enrichNeverPublishesTheStartupBalanceAsNav() throws Exception {
+        LiveStrategyRunner runner = new LiveStrategyRunner(
+            "key", "101-004-123", new NoopStrategy(), "consecbar", "H1", 60);
+        LiveStrategyRunner.getActiveRunners().put("consecbar", runner);
+
+        ObjectNode root = new ObjectMapper().createObjectNode();
+        root.put("timestamp", "2026-09-30T12:30:00Z");
+        LiveStrategyRunner.enrichAggregatedMonitor(root);
+
+        assertFalse(root.has("nav"), "nav must stay absent: the value we hold is frozen at startup");
+    }
 }

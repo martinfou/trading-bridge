@@ -97,4 +97,14 @@ class OperationsSnapshotPusherTest {
             OperationsSnapshotPusher.ENV_URL, "https://hub.example.com/",
             OperationsSnapshotPusher.ENV_TOKEN, "tok")));
     }
+
+    @Test
+    void truncateNeverLogsAnUnboundedHubBody() {
+        assertEquals("", OperationsSnapshotPusher.truncate(null));
+        assertEquals("short", OperationsSnapshotPusher.truncate("short"));
+        String longBody = "x".repeat(5000);
+        String bounded = OperationsSnapshotPusher.truncate(longBody);
+        assertEquals(OperationsSnapshotPusher.MAX_LOGGED_BODY + 3, bounded.length());
+        assertTrue(bounded.endsWith("..."));
+    }
 }
