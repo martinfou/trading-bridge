@@ -11,6 +11,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -100,5 +101,44 @@ class LiveStrategyRunnerNoFillTest {
         assertEquals(1, r.getTotalEntries(), "a confirmed fill counts exactly one entry");
         assertEquals(1, r.getActiveTrades().size(), "the filled trade is tracked");
         assertEquals("trade-1", r.getActiveTrades().get(0).tradeId);
+    }
+
+    /** A close/reduce fill: the broker filled the order but opened no new trade. */
+    private static class ClosingExecutor extends OandaExecutor {
+        ClosingExecutor() { super("k", "acc", true); }
+        @Override
+        public OrderResult placeMarketOrder(String instrument, String units, String tag, boolean reduceOnly,
+                                            String stopLossOnFill, String takeProfitOnFill) {
+            return new OrderResult("order-1", null, "0.5905", "FILLED", null);
+        }
+    }
+
+    @Test
+    @DisplayName("a fill that opened no trade is not an entry")
+    void fillWithoutOpenedTradeIsNotAnEntry() {
+        LiveStrategyRunner r = runner(new ClosingExecutor());
+
+        Order entry = new Order("AUD_CHF", Order.Side.SELL, Order.Type.MARKET, 1000, 0)
+            .withStopLoss(0.6055);
+
+        assertDoesNotThrow(() -> r.executeTrade(entry, "AUD_CHF", 0.5905));
+        assertEquals(0, r.getTotalEntries(), "opening no trade means counting no entry");
+        assertTrue(r.getActiveTrades().isEmpty(), "no position is tracked when nothing was opened");
+    }
+
+    @Test
+    @DisplayName("isFilled reflects the broker fill; openedTrade reflects the new position")
+    void fillAndOpenedTradeAreDistinct() {
+        var closed = new OandaExecutor.OrderResult("o", null, "1.0", "FILLED", null);
+        assertTrue(closed.isFilled(), "a close did fill");
+        assertFalse(closed.openedTrade(), "a close opened nothing");
+
+        var cancelled = new OandaExecutor.OrderResult("o", null, null, "CANCELLED", "MARKET_HALTED");
+        assertFalse(cancelled.isFilled(), "a cancelled order never filled");
+        assertFalse(cancelled.openedTrade());
+
+        var opened = new OandaExecutor.OrderResult("o", "t1", "1.0", "FILLED", null);
+        assertTrue(opened.isFilled());
+        assertTrue(opened.openedTrade());
     }
 }

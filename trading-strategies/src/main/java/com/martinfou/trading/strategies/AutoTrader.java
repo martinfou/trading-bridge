@@ -37,8 +37,9 @@ public class AutoTrader {
                     if (minutesUntilNews > 0 && minutesUntilNews <= 30) {
                         Optional<TradeSignal> signalOpt = evaluateStrategy(s);
                         if (signalOpt.isPresent() && signalOpt.get().isConfident()) {
-                            executeTrade(s, signalOpt.get());
-                            executed.put(s.name(), true);
+                            if (executeTrade(s, signalOpt.get())) {
+                                executed.put(s.name(), true);
+                            }
                         }
                     }
 
@@ -59,26 +60,37 @@ public class AutoTrader {
         return Optional.empty();
     }
 
-    private void executeTrade(NewsTradingStrategy strategy, TradeSignal signal) {
+    private boolean executeTrade(NewsTradingStrategy strategy, TradeSignal signal) {
         try {
             String units = signal.side() == com.martinfou.trading.core.Order.Side.BUY
                 ? String.valueOf((int) (signal.quantity() * 100000))
                 : String.valueOf(-(int) (signal.quantity() * 100000));
 
             var result = executor.placeMarketOrder(signal.pair(), units, "AUTO");
+
+            // Never log or mark an order that did not open a trade as executed: a cancelled FOK
+            // order would otherwise read as a fill at price null, and the strategy would be
+            // marked done without ever having traded.
+            if (!result.openedTrade()) {
+                log.warn("⚠ TRADE NOT COUNTED: {} {} — status={}, cancelReason={}. The strategy is not marked as executed.",
+                    signal.pair(), signal.side(), result.status(),
+                    result.cancelReason() != null ? result.cancelReason() : "none");
+                return false;
+            }
+
             log.info("✅ TRADE EXECUTED: {} {} {} lots @ {}",
                 signal.pair(), signal.side(), signal.quantity(), result.fillPrice());
 
             String slStr = LiveStrategyRunner.formatPrice(signal.stopLoss(), signal.pair());
             String tpStr = LiveStrategyRunner.formatPrice(signal.takeProfit(), signal.pair());
 
-            if (result.isFilled()) {
-                executor.addStopLoss(result.tradeId(), slStr, "AUTO");
-                executor.addTakeProfit(result.tradeId(), tpStr, "AUTO");
-                log.info("   SL: {} TP: {}", slStr, tpStr);
-            }
+            executor.addStopLoss(result.tradeId(), slStr, "AUTO");
+            executor.addTakeProfit(result.tradeId(), tpStr, "AUTO");
+            log.info("   SL: {} TP: {}", slStr, tpStr);
+            return true;
         } catch (Exception e) {
             log.error("❌ Trade execution FAILED: {}", e.getMessage());
+            return false;
         }
     }
 

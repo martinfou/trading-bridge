@@ -1448,13 +1448,12 @@ public class LiveStrategyRunner implements Runnable {
                 ? formatPrice(order.stopLoss(), oandaSymbol) : null;
             var result = executor.placeMarketOrder(oandaSymbol, unitsStr, tag, false, slStr, null);
 
-            // D66: a submitted-but-not-filled order (a FOK MARKET order cancelled on a market halt,
-            // or with no liquidity) is NOT an entry. Skip cleanly: no entry counter, no tracked trade,
-            // no phantom position, no exception. The real status and the broker's cancel reason are
-            // surfaced instead of being read as a fill with a "N/A" trade id.
-            if (!result.isFilled()) {
-                log.warn("⚠ ENTRY NOT FILLED for {} {}: status={}, cancelReason={} — no position taken, no entry counted.",
-                    oandaSymbol, order.side(), result.status(),
+            // D66: only a fill that OPENED a trade is an entry. An order created then cancelled (FOK
+            // with no liquidity, market halt) never filled, and a fill that closed a position opened
+            // nothing: neither may increment the entry counter or create a tracked trade.
+            if (!result.openedTrade()) {
+                log.warn("⚠ ENTRY NOT COUNTED for {} {}: status={}, tradeId={}, cancelReason={} — no entry counted.",
+                    oandaSymbol, order.side(), result.status(), result.tradeId(),
                     result.cancelReason() != null ? result.cancelReason() : "none");
                 return;
             }
