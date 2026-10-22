@@ -554,9 +554,11 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
             if (upper.contains("CANCELLED") || upper.contains("CANCELED") || upper.contains("REJECTED")) {
                 String reason = whyHeld != null && !whyHeld.isBlank() ? whyHeld : status;
                 notifyExecution(IbkrExecution.rejected(Integer.toString(orderId), clientTag, null, reason));
-            } else if (upper.contains("FILLED") && !filledOrderIds.contains(orderId)) {
+            } else if ("FILLED".equals(upper) && !filledOrderIds.contains(orderId)) {
                 // Rare: orderStatus reports Filled without a preceding execDetails. Emit the fill
                 // from orderStatus data so the broker is not left waiting on a phantom execution.
+                // IB renvoie souvent ce statut plusieurs fois : on le marque pour ne pas compter deux fois.
+                filledOrderIds.add(orderId);
                 double qty = toDouble(filled);
                 notifyExecution(IbkrExecution.filled(
                     Integer.toString(orderId), null, clientTag, null, null, qty, avgFillPrice));
