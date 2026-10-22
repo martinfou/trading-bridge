@@ -1465,6 +1465,13 @@ public class LiveStrategyRunner implements Runnable {
                 result.fillPrice(), slStr != null ? slStr : "none");
 
             // Track trade — a confirmed fill is the only thing that becomes an active trade.
+            if (result.fillPrice() == null) {
+                // The broker filled but gave no price: the position exists and must not vanish
+                // without a trace. Nothing is tracked, so this line is the reconciliation hook.
+                log.error("⛔ FILL WITHOUT PRICE for {} {}: tradeId={} — the position exists at the broker but cannot be tracked here. Reconciliation required.",
+                    oandaSymbol, order.side(), result.tradeId());
+                return;
+            }
             double fillPrice = Double.parseDouble(result.fillPrice());
             synchronized (activeTrades) {
                 activeTrades.add(new ActiveTrade(
