@@ -2,9 +2,16 @@ package com.martinfou.trading.backtest;
 
 import com.martinfou.trading.core.Bar;
 
+import java.time.DayOfWeek;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 
 /**
@@ -30,7 +37,14 @@ public final class PerformanceMetrics {
     /** Risk-free rate used unless explicitly overridden (2.5 % p.a.). */
     public static final double DEFAULT_RISK_FREE_RATE = 0.025;
 
-    /** Number of trading periods assumed per year (daily bars for forex). */
+    /**
+     * Number of trading periods assumed per year (daily bars for forex).
+     *
+     * <p><b>Limitation:</b> 252 is the standard for 5-day FX / metal markets. It is
+     * <em>not</em> correct for 24/7 markets (crypto, where 365 applies). This codebase
+     * backtests forex and gold only, so 252 is right; a crypto backtest would need a
+     * per-market annualisation factor, which is deliberately out of scope here.</p>
+     */
     public static final double PERIODS_PER_YEAR = 252.0;
 
     /** Seconds in one calendar day (used for timeframe detection). */
@@ -38,6 +52,12 @@ public final class PerformanceMetrics {
 
     /** Default gap for H1 forex bars during weekdays (1 hour in seconds). */
     static final long H1_GAP_SEC = 3_600L;
+
+    /** Time zone whose 17:00 close defines the FX market-day boundary. */
+    public static final ZoneId MARKET_DAY_ZONE = ZoneId.of("America/New_York");
+
+    /** New York wall-clock hour at which the FX trading day rolls over. */
+    public static final LocalTime MARKET_DAY_CLOSE = LocalTime.of(17, 0);
 
     private PerformanceMetrics() {}
 
@@ -87,12 +107,225 @@ public final class PerformanceMetrics {
         return sharpeRatio(periodReturns, DEFAULT_RISK_FREE_RATE);
     }
 
+    /**
+     * A single point of a per-bar equity curve: the equity value at a bar's
+     * timestamp. Used by {@link #dailySharpeRatio(List)} to resample to daily closes.
+     *
+     * @param timestamp the bar's timestamp (UTC instants are expected)
+     * @param equity    the equity value after that bar
+     */
+    public record EquityPoint(Instant timestamp, double equity) {
+        public EquityPoint {
+            if (timestamp == null) throw new NullPointerException("timestamp");
+        }
+    }
+
+    /**
+     * Daily Sharpe Ratio computed from a per-bar equity curve, anchored on the starting
+     * capital for the first market day's return.
+     *
+     * <p>This is the gate-facing Sharpe (docs/lt-strategy-playbook.md §4.3): the equity
+     * curve is resampled to a <em>daily</em> close (the last equity value of each FX market
+     * day), consecutive day-over-day returns are computed net of the daily risk-free rate,
+     * and the result is {@code mean / stddev × √252}. The annualisation factor is always
+     * {@value #PERIODS_PER_YEAR} — independent of the bar granularity — so an H1 and an H4
+     * sampling of the same underlying equity yield the same value.</p>
+     *
+     * <h3>Market-day boundary &amp; bar timestamp convention</h3>
+     * <p>FX convention closes the trading day at {@value #MARKET_DAY_CLOSE} New York time
+     * ({@value #MARKET_DAY_ZONE}), <em>not</em> midnight UTC. Bars are timestamped at the
+     * <em>start</em> of their period (the Dukascopy bi5 / OANDA convention: a bar stamped
+     * {@code T} spans {@code [T, T+period)}), so the bar stamped 16:00 New York is the
+     * <em>last</em> bar of a market day (it closes at 17:00) and the bar stamped 17:00 New
+     * York <em>opens</em> the next market day. {@link #marketDay(Instant)} implements exactly
+     * this mapping and is DST-aware.</p>
+     *
+     * <h3>First-day anchoring</h3>
+     * <p>The first market day's return is computed directly from {@code initialCapital} —
+     * {@code (firstClose − initialCapital) / initialCapital} — with no synthetic seed point.
+     * Fabricating a timestamp one day before the first bar would risk landing on a weekend,
+     * being overwritten by a 25-hour DST day, or inventing a spurious return.</p>
+     *
+     * <h3>Risk-free rate &amp; position-sizing dependence</h3>
+     * <p>The daily risk-free rate ({@link #DEFAULT_RISK_FREE_RATE} ÷
+     * {@value #PERIODS_PER_YEAR}) is subtracted from the mean of the daily returns; the
+     * metric is therefore <em>sizing-dependent</em> — when a strategy's daily volatility is
+     * small relative to the account (e.g. 1000-unit positions on a $10k account), this
+     * constant shift dominates the mean and can drive a marginally-negative Sharpe far more
+     * negative, so the value must not be compared across different account sizes.</p>
+     *
+     * <h3>Degenerate series</h3>
+     * <p>A zero-variance series is <em>unmeasurable</em>, so a perfectly regular series
+     * returns {@code 0.0} (which fails the ≥0.3 promotion gate) rather than
+     * {@code +Infinity} — a non-finite value would survive to the JSON/SQLite persistence
+     * boundary and pass any numeric gate.</p>
+     *
+     * <p>Edge cases:</p>
+     * <ul>
+     *   <li>Empty curve or non-positive capital → {@code 0.0};</li>
+     *   <li>Fewer than 2 returns → {@code 0.0};</li>
+     *   <li>Zero standard deviation → {@code 0.0} (unmeasurable, never infinite);</li>
+     *   <li>A day with bars but no trades still counts as a day whose return is 0;</li>
+     *   <li>Bars whose previous close is zero are skipped to avoid a division by zero.</li>
+     * </ul>
+     *
+     * @param equityCurve    per-bar equity points (one value per bar, with the bar timestamp)
+     * @param initialCapital the starting balance used to anchor the first day's return
+     * @return daily Sharpe Ratio, or 0.0 when undefined
+     */
+    public static double dailySharpeRatio(List<EquityPoint> equityCurve, double initialCapital) {
+        if (equityCurve == null || initialCapital <= 0.0) return 0.0;
+        List<Double> closes = resampleDailyCloses(equityCurve);
+        if (closes.isEmpty()) return 0.0;
+        List<Double> anchored = new ArrayList<>(closes.size() + 1);
+        anchored.add(initialCapital);
+        anchored.addAll(closes);
+        return sharpeFromDailyCloses(anchored);
+    }
+
+    /**
+     * Daily Sharpe Ratio where the first equity point <em>is</em> the starting balance.
+     *
+     * <p>Prefer {@link #dailySharpeRatio(List, double)} when the curve omits the starting
+     * balance; this overload is kept for callers that already include it as day 0.</p>
+     */
+    public static double dailySharpeRatio(List<EquityPoint> equityCurve) {
+        if (equityCurve == null) return 0.0;
+        List<Double> closes = resampleDailyCloses(equityCurve);
+        if (closes.size() < 2) return 0.0;
+        return sharpeFromDailyCloses(closes);
+    }
+
+    /**
+     * Resamples a per-bar equity curve to one close per FX market day (last value wins).
+     *
+     * <p>Bars that fall <em>outside</em> the FX market week — the closed window from Friday
+     * 17:00 New York to Sunday 17:00 New York — are dropped before grouping. Dukascopy/OANDA
+     * H1 exports carry a flat report bar stamped Friday 17:00 NY (22:00 UTC in winter) that
+     * {@link #marketDay(Instant)} would otherwise file under <em>Saturday</em>, injecting a
+     * phantom zero-return market day into every week of the series (≈780 days over 2010-2025),
+     * which dilutes the mean and shrinks the standard deviation. See {@link #isFxWeekend(Instant)}.</p>
+     */
+    static List<Double> resampleDailyCloses(List<EquityPoint> equityCurve) {
+        List<EquityPoint> sorted = new ArrayList<>(equityCurve.size());
+        for (EquityPoint p : equityCurve) {
+            if (p != null) sorted.add(p);
+        }
+        sorted.sort(Comparator.comparing(EquityPoint::timestamp));
+        LinkedHashMap<LocalDate, Double> dailyCloses = new LinkedHashMap<>();
+        for (EquityPoint p : sorted) {
+            if (isFxWeekend(p.timestamp())) continue; // bars outside the FX market week
+            dailyCloses.put(marketDay(p.timestamp()), p.equity());
+        }
+        return new ArrayList<>(dailyCloses.values());
+    }
+
+    /**
+     * Annualised daily Sharpe from an ordered close series whose first element is the
+     * starting balance (all subsequent elements are consecutive market-day closes).
+     */
+    private static double sharpeFromDailyCloses(List<Double> closes) {
+        if (closes.size() < 2) return 0.0;
+
+        // Day-over-day returns (raw). The risk-free rate is a constant subtracted from the
+        // mean only: mean(r - rf) == mean(r) - rf, and subtracting a constant leaves the
+        // standard deviation unchanged — computing std on the raw returns keeps the
+        // zero-variance detection exact (a flat or perfectly-regular series has std == 0.0).
+        double rfDaily = DEFAULT_RISK_FREE_RATE / PERIODS_PER_YEAR;
+        List<Double> rawReturns = new ArrayList<>(closes.size() - 1);
+        for (int i = 1; i < closes.size(); i++) {
+            double prev = closes.get(i - 1);
+            if (prev == 0.0) continue; // guard against division by zero
+            rawReturns.add((closes.get(i) - prev) / prev);
+        }
+        if (rawReturns.size() < 2) return 0.0;
+
+        double mean = mean(rawReturns) - rfDaily;   // excess mean
+        double std = standardDeviation(rawReturns);
+        if (std == 0.0 || Double.isNaN(std)) {
+            // Zero-variance series is unmeasurable → 0.0 (fails the ≥0.3 gate). Never return
+            // +Infinity: a non-finite value would survive to JSON/SQLite and pass any gate.
+            return 0.0;
+        }
+
+        double sharpe = (mean / std) * Math.sqrt(PERIODS_PER_YEAR);
+        return Double.isFinite(sharpe) ? sharpe : 0.0;
+    }
+
+    /**
+     * The FX market day an instant belongs to.
+     *
+     * <p>The trading day rolls over at {@value #MARKET_DAY_CLOSE} {@value #MARKET_DAY_ZONE}
+     * time: an instant on or after 17:00 New York belongs to the <em>next</em> calendar
+     * day's market day (the daily bar is dated by its close). DST-safe — the local
+     * wall-clock time, not a fixed UTC offset, decides the boundary.</p>
+     *
+     * <p>Because bars are timestamped at the <em>start</em> of their period, the bar stamped
+     * 16:00 New York (spanning 16:00–17:00) is the last bar of the current market day and
+     * maps to the same date, while the bar stamped 17:00 New York (spanning 17:00–18:00)
+     * opens the next market day and maps to the next date.</p>
+     *
+     * @param timestamp the instant to classify
+     * @return the market day's close date (e.g. a Sunday 18:00 NY bar belongs to Monday's day)
+     */
+    static LocalDate marketDay(Instant timestamp) {
+        ZonedDateTime ny = timestamp.atZone(MARKET_DAY_ZONE);
+        return ny.toLocalTime().isBefore(MARKET_DAY_CLOSE)
+            ? ny.toLocalDate()
+            : ny.toLocalDate().plusDays(1);
+    }
+
+    /**
+     * Whether an instant falls in the FX weekend — the closed window from Friday 17:00 New
+     * York (inclusive) to Sunday 17:00 New York (exclusive).
+     *
+     * <p>Spot FX is closed across this window, so any bar stamped inside it is a carry/report
+     * bar, not a trading bar. Because bars are timestamped at the <em>start</em> of their
+     * period, the first such bar is stamped Friday 17:00 NY (it spans 17:00–18:00, after the
+     * close) and the window ends at Sunday 17:00 NY (whose bar spans 17:00–18:00 and opens the
+     * Monday market day, so it is <em>not</em> weekend). DST-safe — the New York wall clock
+     * decides, not a fixed UTC offset.</p>
+     *
+     * @param timestamp the instant to classify
+     * @return {@code true} if the instant is outside the FX market week
+     */
+    static boolean isFxWeekend(Instant timestamp) {
+        ZonedDateTime ny = timestamp.atZone(MARKET_DAY_ZONE);
+        DayOfWeek dow = ny.getDayOfWeek();
+        return (dow == DayOfWeek.FRIDAY && !ny.toLocalTime().isBefore(MARKET_DAY_CLOSE))
+            || dow == DayOfWeek.SATURDAY
+            || (dow == DayOfWeek.SUNDAY && ny.toLocalTime().isBefore(MARKET_DAY_CLOSE));
+    }
+
+    /**
+     * Legacy per-bar Sharpe Ratio, kept for diagnostics/comparison only.
+     *
+     * <p>This is the pre-fix engine Sharpe: period returns are annualised by the
+     * detected {@code periodsPerYear} (e.g. √6240 for H1 forex), which makes the number
+     * granularity-dependent and unfit for the gate. It is <em>not</em> the gate Sharpe;
+     * use {@link #dailySharpeRatio(List)} for the gate (§4.3).</p>
+     *
+     * @param periodReturns   per-bar returns (decimal)
+     * @param riskFreeRate    annual risk-free rate as decimal
+     * @param periodsPerYear  bars-per-year annualisation factor
+     * @return legacy per-bar Sharpe, or 0.0 if undefined
+     */
+    public static double perBarSharpeRatioLegacy(List<Double> periodReturns, double riskFreeRate, double periodsPerYear) {
+        return sharpeRatio(periodReturns, riskFreeRate, periodsPerYear);
+    }
+
     // ---------------------------------------------------------------
     //  Sortino Ratio
     // ---------------------------------------------------------------
 
     /**
      * Annualised Sortino Ratio (downside deviation only) with explicit periods-per-year.
+     *
+     * <p><b>Per-bar measure.</b> This operates on per-bar returns annualised by the given
+     * {@code periodsPerYear}; it is <em>not</em> resampled to a daily step like
+     * {@link #dailySharpeRatio(List)}. Do not compare a per-bar Sortino against the daily
+     * Sharpe — they have different frequencies and annualisation. The gate (§4.3) uses the
+     * daily Sharpe; this Sortino is reported for information only.</p>
      */
     public static double sortinoRatio(List<Double> periodReturns, double riskFreeRate, double periodsPerYear) {
         if (periodReturns == null || periodReturns.size() < 2) return 0.0;
