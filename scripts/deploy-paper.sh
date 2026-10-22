@@ -191,6 +191,10 @@ PY
       line=""
       if [ -n "$cid" ]; then
         since=$(docker inspect -f '{{.State.StartedAt}}' "$cid" 2>/dev/null || true)
+        # `docker logs --since ""` is NOT "no logs": the daemon treats an empty bound as no bound and
+        # returns the container's WHOLE history (measured 2026-10-22 on this host, Docker 29.7.2). An
+        # unreadable start instant must therefore yield "not certifiable", never an unbounded read.
+        [ -n "$since" ] || { pending=1; continue; }
         line=$(docker logs --since "$since" "$cid" 2>&1 | grep -aoE 'Resumed state: [0-9]+ active trades' | tail -1 || true)
       fi
       if [ -n "$line" ]; then RESUMED["$svc"]="$line"; else pending=1; fi
@@ -206,7 +210,14 @@ PY
     since=""
     if [ -n "$cid" ]; then
       since=$(docker inspect -f '{{.State.StartedAt}}' "$cid" 2>/dev/null || true)
-      perm=$(docker logs --since "$since" "$cid" 2>&1 | grep -ac "Failed to write aggregated monitor" || true)
+      if [ -n "$since" ]; then
+        perm=$(docker logs --since "$since" "$cid" 2>&1 | grep -ac "Failed to write aggregated monitor" || true)
+      else
+        # Same trap as above: no bound means the whole history, and a cumulative count would fail a
+        # healthy deploy for a failure that predates this start. Unreadable means "cannot judge".
+        perm="unreadable"
+        bad=1
+      fi
     fi
     echo "   $svc: ${resumed:-'(no Resume line yet)'} | monitor write failures: $perm | journal since: ${since:-'?'}"
     [ "$perm" = "0" ] || bad=1

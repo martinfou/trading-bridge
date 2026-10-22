@@ -84,9 +84,9 @@ class LiveStrategyRunnerStateExportTest {
         assertNotNull(root.get("savedAt"), "the save must be timestamped, not inherited from an older file");
     }
 
-    /** An in-trade strategy keeps its side across save then resume. */
+    /** An in-trade strategy keeps its side across save then resume, when the runner's book holds the trade. */
     @Test
-    void inTradeSideSurvivesSaveThenResume() throws Exception {
+    void inTradeSideSurvivesSaveThenResumeWhenBookBacksIt() throws Exception {
         Files.deleteIfExists(statePath(OPEN_STRAT));
         // The name carries a recognizable pair so the runner can resolve the instrument (and thus
         // match the book entry below) without live-config.json.
