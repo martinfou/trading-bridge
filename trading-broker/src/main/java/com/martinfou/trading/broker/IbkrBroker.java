@@ -185,7 +185,10 @@ public final class IbkrBroker implements Broker {
                 continue;
             }
             Order.Side closeSide = pos.side() == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
-            Order close = new Order(pos.symbol(), closeSide, Order.Type.MARKET, pos.quantity(), 0.0);
+            // strategyId « flatten » : le fill qui ferme portera orderRef=flatten, donc il sera classe
+            // ordre de controle dans la lane P&L, ni strategie ni leak.
+            Order close = new Order(pos.symbol(), closeSide, Order.Type.MARKET, pos.quantity(), 0.0)
+                .withStrategyId("flatten");
             OrderSubmitResult result = submitOrder(close);
             if (result.accepted()) {
                 submitted++;

@@ -42,6 +42,19 @@ class IbkrBrokerTest {
     }
 
     @Test
+    void flattenStampsTheControlRef() {
+        // Un flatten ne nomme aucune strategie : son ref doit dire « flatten », sinon le close tombe en leak.
+        var client = new RecordingClient();
+        client.positions = List.of(new IbkrPositionSnapshot("EUR_USD", Order.Side.BUY, 1000, 1.10));
+        var broker = new IbkrBroker(client);
+        broker.connect();
+
+        broker.flattenAllPositions();
+
+        assertEquals("flatten", client.lastOrderRef);
+    }
+
+    @Test
     void submitOrder_carriesTheStrategyNameAsOrderRef() {
         // Sans ce champ, le fill arrive sans nom de strategie et la lane P&L le classe en leak : c'est la
         // seule chose qui rattache une execution a la strategie qui l'a produite.
@@ -212,6 +225,7 @@ class IbkrBrokerTest {
         String lastSymbol;
         double lastQuantity;
         String lastOrderRef;
+        java.util.List<IbkrPositionSnapshot> positions = java.util.List.of();
 
         @Override
         public void connect() {}
@@ -250,7 +264,7 @@ class IbkrBrokerTest {
 
         @Override
         public List<IbkrPositionSnapshot> fetchOpenPositions() {
-            return List.of();
+            return positions;
         }
 
         @Override
