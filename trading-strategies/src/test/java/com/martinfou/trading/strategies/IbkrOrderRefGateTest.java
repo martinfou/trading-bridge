@@ -77,6 +77,23 @@ class IbkrOrderRefGateTest {
                 "chemin(s) d'ordre IBKR sans orderRef (la stratégie ne pourra pas être attribuée) : " + offenders);
     }
 
+    @Test
+    void theIbkrBrokerPassesTheStrategyNameAndTheControlRef() throws IOException {
+        // La garde precedente ne voit que les appels a l'API IB. Le broker, lui, doit transmettre
+        // order.strategyId() (strategie) et stamp « flatten » pour un ordre de controle.
+        Path broker = repositoryRoot().resolve(
+                "trading-broker/src/main/java/com/martinfou/trading/broker/IbkrBroker.java");
+        String code = Files.readString(broker)
+                .replaceAll("(?s)/\\*.*?\\*/", "")
+                .replaceAll("//[^\\n]*", "");
+
+        assertTrue(code.contains("placeMarketOrder("), "le broker n'appelle plus placeMarketOrder : adapter le test");
+        assertTrue(code.contains("order.strategyId()"),
+                "IbkrBroker doit transmettre order.strategyId() en orderRef, sinon les fills tombent en leak");
+        assertTrue(code.contains("\"flatten\""),
+                "IbkrBroker doit marquer ses ordres de flatten avec strategyId=flatten (ordre de controle)");
+    }
+
     private Path repositoryRoot() {
         Path current = Paths.get("").toAbsolutePath();
         while (current != null && !Files.isDirectory(current.resolve(".git"))) {

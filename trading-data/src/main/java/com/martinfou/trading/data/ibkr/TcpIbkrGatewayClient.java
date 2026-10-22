@@ -573,7 +573,13 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
 
     private void notifyExecution(IbkrExecution execution) {
         for (Consumer<IbkrExecution> listener : executionListeners) {
-            listener.accept(execution);
+            try {
+                listener.accept(execution);
+            } catch (RuntimeException e) {
+                // Ce callback tourne sur le thread lecteur du Gateway : une exception ici ferait perdre
+                // les executions suivantes. On la journalise et on continue.
+                log.error("IBKR execution listener failed for {}: {}", execution.execId(), e.getMessage(), e);
+            }
         }
     }
 }
