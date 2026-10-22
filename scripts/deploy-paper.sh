@@ -190,7 +190,8 @@ PY
       cid=$(docker compose ps -q "$svc" 2>/dev/null | head -1)
       line=""
       if [ -n "$cid" ]; then
-        line=$(docker logs "$cid" 2>&1 | grep -aoE 'Resumed state: [0-9]+ active trades' | tail -1 || true)
+        since=$(docker inspect -f '{{.State.StartedAt}}' "$cid" 2>/dev/null || true)
+        line=$(docker logs --since "$since" "$cid" 2>&1 | grep -aoE 'Resumed state: [0-9]+ active trades' | tail -1 || true)
       fi
       if [ -n "$line" ]; then RESUMED["$svc"]="$line"; else pending=1; fi
     done
@@ -202,10 +203,12 @@ PY
     cid=$(docker compose ps -q "$svc" 2>/dev/null | head -1)
     resumed="${RESUMED[$svc]:-}"
     perm=0
+    since=""
     if [ -n "$cid" ]; then
-      perm=$(docker logs "$cid" 2>&1 | grep -ac "Failed to write aggregated monitor" || true)
+      since=$(docker inspect -f '{{.State.StartedAt}}' "$cid" 2>/dev/null || true)
+      perm=$(docker logs --since "$since" "$cid" 2>&1 | grep -ac "Failed to write aggregated monitor" || true)
     fi
-    echo "   $svc: ${resumed:-'(no Resume line yet)'} | monitor write failures: $perm"
+    echo "   $svc: ${resumed:-'(no Resume line yet)'} | monitor write failures: $perm | journal since: ${since:-'?'}"
     [ "$perm" = "0" ] || bad=1
     n=$(printf '%s' "$resumed" | grep -oE '[0-9]+' | head -1)
     if [ -n "$n" ]; then
@@ -236,4 +239,14 @@ PY
   [ "$bad" = 0 ] && echo "${GREEN}✓ deployment verified (broker $broker = runners $local_total sur ${#RECONCILE[@]} service(s) vivant(s))${NC}" || { echo "${RED}✗ verification FAILED — inspect before trusting${NC}"; exit 1; }
 else
   echo "      [dry-run] compare each runner's 'Resumed state: N' against the broker's open trades"
+  echo "      journal window that WOULD be read (bounded to each container's current start):"
+  for svc in "${SERVICES[@]}"; do
+    cid=$(docker compose ps -q "$svc" 2>/dev/null | head -1)
+    if [ -n "$cid" ]; then
+      since=$(docker inspect -f '{{.State.StartedAt}}' "$cid" 2>/dev/null || true)
+      echo "        $svc: --since ${since:-'?'}"
+    else
+      echo "        $svc: no container"
+    fi
+  done
 fi

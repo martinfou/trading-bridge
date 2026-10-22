@@ -2488,6 +2488,37 @@ public class LiveStrategyRunner implements Runnable {
                         log.warn("State file says inTrade=true with no strategy side — restoring as flat");
                         it = false;
                     }
+                    // The runner's own book decides whether the strategy is actually in a trade at
+                    // restore time (story restore-stale-strategy-latch). A state file can claim
+                    // strat_inTrade=true WITH a textual side while activeTrades is empty — measured in
+                    // production on 2026-10-22 (consecbar: inTrade=true, direction BUY, activeTrades
+                    // []). The only path that clears the latch, syncStrategyFlatIfNoOpenPosition, runs
+                    // when a tracked trade is REMOVED, so an empty book never repairs it and the
+                    // strategy stays latched forever. Restore flat when the book holds no open trade on
+                    // the instrument; never keep the latch, never invent a side.
+                    if (it) {
+                        String instrument = root.hasNonNull("instrument")
+                            ? root.get("instrument").asText() : toOandaSymbol();
+                        boolean bookHasOpenTrade = false;
+                        synchronized (activeTrades) {
+                            for (ActiveTrade at : activeTrades) {
+                                if (instrument != null && instrument.equals(at.symbol)) {
+                                    bookHasOpenTrade = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!bookHasOpenTrade) {
+                            String savedAt = root.hasNonNull("savedAt")
+                                ? root.get("savedAt").asText() : "unknown";
+                            log.warn("⚠️ Stale strategy latch corrected at restore: state claims "
+                                + "inTrade=true (side {}) but the runner's book holds no open trade on {} "
+                                + "(state saved at {}) — restoring flat (inTrade true→false, side {}→null).",
+                                dir, instrument, savedAt, dir);
+                            it = false;
+                            dir = null;
+                        }
+                    }
                     int cd = root.get("strat_cooldownBars").asInt(0);
                     m.invoke(strategy, td, ltd, it, dir, cd);
                     log.info("♻ Strategy state restored: tradesToday={}, inTrade={}, cooldown={}", td, it, cd);
