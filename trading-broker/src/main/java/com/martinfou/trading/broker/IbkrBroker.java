@@ -126,8 +126,11 @@ public final class IbkrBroker implements Broker {
         // (via the stub or a fast venue) synchronously inside placeMarketOrder. Matching by
         // clientTag (order.id()) lets onExecution resolve it regardless of arrival order.
         pendingOrdersByClientTag.put(order.id(), order);
+        // clientTag = id d'ordre (appariement des executions) ; orderRef = nom de la strategie, SEULE chose
+        // qui permet a la lane P&L de rattacher le fill a une strategie plutot qu'a un leak. Un UUID ici
+        // creerait une fausse strategie par fill.
         IbkrMarketOrderResult result = client.placeMarketOrder(
-            symbol, order.quantity(), order.side(), order.id());
+            symbol, order.quantity(), order.side(), order.id(), order.strategyId());
 
         if (!result.success()) {
             String reason = result.errorMessage() != null ? result.errorMessage() : "IBKR order rejected";

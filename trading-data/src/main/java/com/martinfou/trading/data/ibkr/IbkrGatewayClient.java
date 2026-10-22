@@ -22,6 +22,15 @@ public interface IbkrGatewayClient {
     IbkrMarketOrderResult placeMarketOrder(String symbol, double quantity, Order.Side side, String clientTag);
 
     /**
+     * Meme ordre, avec le nom de la strategie transmis a IBKR dans `orderRef`. C'est ce champ qui permet aux
+     * fills d'etre rattaches a une strategie dans la lane P&L ; sans lui ils sont des leaks.
+     */
+    default IbkrMarketOrderResult placeMarketOrder(String symbol, double quantity, Order.Side side,
+                                                   String clientTag, String orderRef) {
+        return placeMarketOrder(symbol, quantity, side, clientTag);
+    }
+
+    /**
      * Registers a listener for asynchronous execution notifications (fills / rejects).
      * Called on the IBKR callback thread; implementations must be thread-safe.
      */

@@ -58,7 +58,9 @@ class IbkrOrderRefGateTest {
                         continue;
                     }
                     ibkrOrderPaths.add(file);
-                    if (!content.contains("orderRef")) {
+                    // Un appel reel, pas le mot dans un commentaire : c'est comme ca qu'un orderRef
+                    // jamais rempli a pu passer.
+                    if (!content.contains(".orderRef(")) {
                         offenders.add(root.relativize(file).toString());
                     }
                 }
