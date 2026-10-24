@@ -1,4 +1,4 @@
-# Revue de la semaine 19-23 oct 2026 (61e → 65e) + spec du modèle de coût horaire
+# 66e : revue de la semaine 19-23 oct 2026 (61e → 65e) + spec du modèle de coût horaire
 
 > Simons (recherche), samedi 24 octobre 2026. Harnais et chiffres rejoués dans ce run.
 > Rapport brut de la mesure du jour : `reports/2026-10-24-spread-by-hour.txt`.
