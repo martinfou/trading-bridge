@@ -31,8 +31,8 @@ avant que le mid du même instant ne soit mesuré.**
 **b) Le coût n'est pas une constante, c'est une fonction.** 4e occurrence de « le modèle de coût fabrique le
 verdict » : la table de swap 2024-26 appliquée à 20 ans (47e), le spread du cross (55e), le compteur de jours
 de rollover (56e), et maintenant **l'heure du fill**. La mesure du jour : le spread au close de barre va de
-**0,95x** la médiane du symbole en `[00,16)` ET à **5,21x** en `[17,18)` ET (USD_CHF), soit un facteur 13
-entre l'heure la moins chère et la plus chère.
+**0,95x** la médiane du symbole en `[00,16)` ET à **5,21x** en `[17,18)` ET (USD_CHF), soit **5,7x** entre
+l'heure la moins chère et la plus chère de la journée (0,92x à 5,21x sur USD_CHF).
 
 **c) La robustesse ne valide pas le mécanisme.** Le net du fade était négatif **5/5 ères, 3/3 croix, IS et
 OOS** — une stabilité parfaite. Elle disait seulement que l'artefact était stable. « Un résultat robuste peut
