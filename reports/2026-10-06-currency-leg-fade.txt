@@ -1,0 +1,190 @@
+========================================================================
+LE FADE DU VENDREDI EST-IL UN EFFET GBP ? — décomposition en JAMBES DE DEVISES (50e)
+Mardi 6 oct 2026 · variation d'une stratégie existante (37e/43e/47e) · 2006-2026
+Base : clôtures journalières sur BARRES RÉELLES (high > low), jour UTC, retour en bp.
+========================================================================
+[data] GBP_JPY    6361 jours ·  6360 rendements · 2006-01-01 → 2026-05-19 · médiane 155.0400
+[data] GBP_USD    6167 jours ·  6166 rendements · 2006-01-01 → 2026-05-19 · médiane 1.4508
+[data] AUD_USD    5956 jours ·  5955 rendements · 2006-01-01 → 2026-05-19 · médiane 0.7631
+[data] NZD_USD    6009 jours ·  6008 rendements · 2006-01-01 → 2026-05-19 · médiane 0.6975
+[data] USD_CHF    6118 jours ·  6117 rendements · 2006-01-01 → 2026-05-19 · médiane 0.9645
+[data] EUR_USD    6168 jours ·  6167 rendements · 2006-01-01 → 2026-05-19 · médiane 1.1923
+[data] USD_JPY    6114 jours ·  6113 rendements · 2006-01-01 → 2026-05-19 · médiane 109.6270
+[data] USD_CAD    6167 jours ·  6166 rendements · 2006-01-01 → 2026-05-19 · médiane 1.2515
+
+========================================================================
+A) P0 CALIBRATION — profil JOUR-DE-SEMAINE des 8 paires (retour de SESSION, clôtures UTC)
+========================================================================
+Référence à reproduire (38e, section B) : GBP_JPY −0.056 % (t −2.4) · GBP_USD −0.054 (−2.9)
+                                          AUD −0.043 (−1.7) · NZD −0.035 (−1.5) · USD_CHF −0.034 (−1.9)
+                                          EUR −0.032 (−1.8) · USD_JPY −0.017 (−0.8) · USD_CAD +0.005 (0.3)
+PAIRE     JOUR              bp       n   médiane   hit<0%       t        IS→OOS
+GBP_JPY   VEN          -5.6113    1059   -3.0989      52%   -2.39  -2.7434→-8.3782
+          MER          +2.1931    1060   +5.1194      47%   +0.97  (contrôle Mon-Jeu)
+          M-J          +1.5924    4242   +3.0059      48%   +1.34
+
+GBP_USD   VEN          -5.3390    1027   -2.6851      53%   -2.86  -2.9117→-7.8285
+          MER          +1.2823    1028   +0.9328      49%   +0.72  (contrôle Mon-Jeu)
+          M-J          +0.9059    4112   +0.0000      50%   +1.00
+
+AUD_USD   VEN          -5.0796     992   -2.8330      51%   -2.07  -2.1627→-8.2802
+          MER          -1.1403     992   +1.9449      48%   -0.46  (contrôle Mon-Jeu)
+          M-J          +1.1330    3971   +3.1688      48%   +0.94
+
+NZD_USD   VEN          -3.4304     999   -2.3775      51%   -1.45  -0.1364→-7.0063
+          MER          -0.0259    1003   +2.5695      48%   -0.01  (contrôle Mon-Jeu)
+          M-J          +0.8989    4012   +1.8559      49%   +0.73
+
+USD_CHF   VEN          -3.6173    1019   -3.6090      53%   -2.01  -1.9016→-5.4052
+          MER          -1.7215    1020   +2.1023      48%   -0.93  (contrôle Mon-Jeu)
+          M-J          -1.0181    4079   +1.4326      49%   -1.00
+
+EUR_USD   VEN          -3.0690    1027   -1.0726      51%   -1.76  -2.8431→-3.3007
+          MER          +1.1639    1028   +1.0240      49%   +0.66  (contrôle Mon-Jeu)
+          M-J          +0.8584    4112   +0.1642      50%   +0.98
+
+USD_JPY   VEN          -1.6569    1019   -2.2272      53%   -0.79  -0.3796→-2.9879
+          MER          +1.0823    1019   +5.4529      47%   +0.56  (contrôle Mon-Jeu)
+          M-J          +0.7963    4075   +2.1809      48%   +0.82
+
+USD_CAD   VEN          +0.5460    1027   +0.9029      49%   +0.32  +2.5403→-1.4994
+          MER          -0.8743    1028   -0.9218      51%   -0.49  (contrôle Mon-Jeu)
+          M-J          -0.1799    4112   -0.1585      50%   -0.22
+
+Lecture : retour NÉGATIF le vendredi = la devise de BASE perd (le fade SELL la capte).
+
+========================================================================
+B) PLANCHER DE BRUIT — résidu triangulaire (les 8 paires sont-elles cohérentes ?)
+========================================================================
+r(GBP_JPY) − [r(GBP_USD) + r(USD_JPY)] : n 6112 · moyenne -0.2715 bp · écart-type 13.8923 bp
+Vendredis : moyenne +1.0829 bp (t +1.86) · écart-type 18.6241 bp
+Comparaison : l'effet mesuré du fade sur GBP_JPY vaut ≈ 5.6 bp. Un résidu de cet ordre
+signifie que reconstruire une jambe par DIFFÉRENCE de deux paires hérite d'un bruit
+du même ordre de grandeur que le signal ⇒ les jambes doivent être estimées par
+MOINDRES CARRÉS sur les 8 équations simultanément (section C), pas par une paire unique.
+[jambes] 5718 dates communes · résidu RMS 2.9165 bp · résidu max 297.262 bp
+
+========================================================================
+C) JAMBES DE DEVISES (moindres carrés, 8 équations / 7 inconnues, USD = numéraire)
+========================================================================
+Une JAMBE positive = la devise S'APPRÉCIE vs USD le vendredi. Le fade SELL(paire) vaut leg(quote) − leg(base).
+DEVISE     VEN bp       n   médiane   hit<0%       t        IS→OOS décennies 06-09/10-14/15-19/20-26
+AUD       -4.2732     953   -2.2560      51%   -1.76  -2.163→-6.797  -2.29 +1.60 -6.62 -10.15
+GBP       -4.2088     953   -2.4874      53%   -2.22  -2.743→-5.962  -0.39 -2.13 -9.20 -4.35
+NZD       -3.3522     953   -2.2189      51%   -1.38  -0.091→-7.252  -0.91 +4.21 -7.77 -9.21
+EUR       -3.0045     953   -1.2047      51%   -1.64  -2.849→-3.190  -3.79 +0.07 -4.27 -4.37
+CAD       -0.6851     953   -0.8676      51%   -0.38  -2.562→+1.559  +3.65 -3.35 -1.41 -0.76
+JPY       +0.6781     953   +0.6916      49%   +0.32  +0.185→+1.268  -2.08 +1.98 +5.41 -3.74
+CHF       +3.2445     953   +2.8921      48%   +1.72  +1.886→+4.869  -0.25 +2.89 +4.68 +5.21
+
+DEVISE CONTRÔLE           bp       n   hit<0%       t
+AUD    Mon-Jeu       +1.1296    3817      48%   +0.91   | mer -1.8159 (t -0.71)
+GBP    Mon-Jeu       +0.7474    3817      50%   +0.81   | mer +1.3844 (t +0.78)
+NZD    Mon-Jeu       +0.6766    3817      49%   +0.54   | mer -0.5646 (t -0.20)
+EUR    Mon-Jeu       +0.9117    3817      50%   +1.00   | mer +1.2080 (t +0.65)
+CAD    Mon-Jeu       +0.1186    3817      50%   +0.14   | mer +0.8325 (t +0.44)
+JPY    Mon-Jeu       -0.4037    3817      52%   -0.40   | mer -0.8558 (t -0.42)
+CHF    Mon-Jeu       +1.0255    3817      51%   +0.96   | mer +1.5118 (t +0.78)
+
+========================================================================
+C2) LE FACTEUR — panier RISQUE (AUD+GBP+NZD+EUR) − panier REFUGE (CHF+JPY)
+========================================================================
+VENDREDI +5.6710 bp (t +3.12) · médiane +4.5523 · hit fade 55% · n 953
+IS 2006-15 +2.9971 → OOS 2016-26 +8.8686  |  Mon-Jeu -0.5554 (t -0.56)
+Décennies : +0.68 +1.50 +12.01 +7.75
+Lecture : ce facteur EST le fade. Le fade d'une paire n'est que la projection de ce facteur
+          sur son couple (jambe base, jambe quote) — d'où le classement du 37e.
+
+========================================================================
+D) ATTRIBUTION — le profil des 8 paires est-il porté par UNE jambe ?
+========================================================================
+PAIRE      obs VEN bp modèle jambes       écart modèle GBP seul
+EUR_USD       -3.0690     -3.0045     -0.0645     -0.0000
+GBP_USD       -5.3390     -4.2088     -1.1302     -4.2088
+AUD_USD       -5.0796     -4.2732     -0.8064     -0.0000
+NZD_USD       -3.4304     -3.3522     -0.0781     -0.0000
+USD_JPY       -1.6569     -0.6781     -0.9787     -0.0000
+USD_CHF       -3.6173     -3.2445     -0.3728     -0.0000
+USD_CAD       +0.5460     +0.6851     -0.1391     -0.0000
+GBP_JPY       -5.6113     -4.8869     -0.7244     -4.2088
+
+R² modèle JAMBES COMPLET = 0.9709   (résidu 3.5790 bp² — quasi nul par construction : LS linéaire)
+R² modèle « GBP SEUL » = 0.4610  (SS résiduel 66.4 vs 123.1) ⇒ LE GBP NE SUFFIT PAS
+Lecture : le modèle « GBP seul » prédit exactement 2 valeurs non nulles (GBP_USD, GBP_JPY).
+Les 6 autres paires NE CONTIENNENT PAS le GBP : leur effet appartient à leurs propres jambes.
+
+========================================================================
+E) CROSSES GBP SYNTHÉTIQUES — même jambe GBP, carry DIFFÉRENT
+========================================================================
+Construction directe depuis les paires du panel : GBP_X = GBP_USD × USD_X (quote XXX par USD)
+ou GBP_USD / X_USD (USD par XXX). Le fade SELL vendredi capte −r(GBP_X).
+Carry réel = table 3M du 47e ; 1 % de différentiel annuel = 0.274 bp/jour de retour.
+CROSS       fade bp        t   médiane  hit fade%         IS→OOS   carry bp/j   net 3 j bp   net −2.14
+GBP_CHF     +9.0754    +5.13   +8.1230        58%  +5.033→+13.288       -0.536      +7.4666     +5.3266
+AUD_CHF     +8.2675    +3.47   +5.3430        54%  +4.258→+12.742       -0.536      +6.6587     +4.5187
+GBP_JPY     +7.0300    +2.82   +3.9283        54%  +3.367→+10.848       -0.491      +5.5574     +3.4174
+AUD_JPY     +6.9982    +2.28   +2.6598        51%  +2.508→+12.009       -0.491      +5.5256     +3.3856
+NZD_CHF     +7.1041    +3.22   +7.0983        55%  +2.278→+12.433       -0.536      +5.4953     +3.3553
+EUR_CHF     +6.9309    +5.99   +5.4308        62%  +5.087→+8.853       -0.536      +5.3221     +3.1821
+GBP_CAD     +4.9379    +2.61   +3.4281        53%  +0.522→+9.467       -0.100      +4.6385     +2.4985
+EUR_JPY     +4.6064    +2.03   +3.1209        52%  +3.323→+5.943       -0.491      +3.1338     +0.9938
+NZD_JPY     +4.5749    +1.57   +3.4440        53%  +0.517→+9.055       -0.491      +3.1023     +0.9623
+GBP_NZD     +1.0033    +0.50   +1.3904        51%  +2.372→-0.482       +0.374      +2.1246     -0.0154
+GBP_EUR     +2.1787    +1.45   +1.7047        52%  -0.099→+4.515       -0.241      +1.4562     -0.6838
+GBP_AUD     -0.3247    -0.15   +0.5537        51%  +0.306→-1.017       +0.330      +0.6642     -1.4758
+
+E2) SPÉCIFICITÉ DU JOUR — profil complet du fade (le placebo est interne :
+    un cross RISQUE/RISQUE (GBP_AUD, GBP_NZD, GBP_EUR) doit s'annuler) :
+CROSS         lundi     mardi  mercredi     jeudi  VENDREDI    Mon-Jeu
+GBP_CHF     -0.2317   -1.9131   +0.6897   +2.8396   +9.0754    +0.3463
+AUD_CHF     -1.5677   -3.2773   +3.3525   +2.2813   +8.2675    +0.1968
+GBP_JPY     +0.4825   -2.6188   -2.1719   -2.4259   +7.0300    -1.6833
+AUD_JPY     -1.2732   -3.5999   +0.4626   -2.8474   +6.9982    -1.8146
+NZD_CHF     -1.8635   -0.9594   +2.2776   +2.6019   +7.1041    +0.5139
+EUR_CHF     -0.6587   -0.8902   +0.8020   +2.5108   +6.9309    +0.4412
+GBP_CAD     +0.8472   -2.0063   -0.2457   -0.8734   +4.9379    -0.5696
+EUR_JPY     +0.3967   -1.6607   -1.9307   -2.7691   +4.6064    -1.4909
+NZD_JPY     -1.2735   -1.6122   -0.3509   -2.4660   +4.5749    -1.4254
+GBP_NZD     +1.6667   -1.2189   -1.9258   +0.1432   +1.0033    -0.3341
+GBP_EUR     +0.2890   -0.9015   -0.2362   +0.2107   +2.1787    -0.1595
+GBP_AUD     +1.3628   +1.0344   -3.1822   +0.2379   -0.3247    -0.1360
+
+E3) DÉCENNIES du fade (le fade est-il une ère ou une prime ?) :
+CROSS        2006-09    2010-14    2015-19    2020-26
+GBP_CHF      +0.6716    +5.2456   +14.5917   +13.5754
+AUD_CHF      +2.3185    +1.4565   +11.4076   +16.7729
+GBP_JPY      -1.1443    +4.2867   +15.7674    +7.5172
+AUD_JPY      +0.2852    +0.5015   +12.6702   +13.2395
+NZD_CHF      +1.1091    -1.1215   +12.5834   +14.5603
+EUR_CHF      +3.9920    +3.0948    +9.1334   +10.4912
+GBP_CAD      +4.4569    -1.0556    +8.5298    +7.3608
+EUR_JPY      +2.0747    +2.0364   +10.3727    +3.5601
+NZD_JPY      -0.9290    -2.1012   +13.8719    +6.3370
+GBP_NZD      -0.9984    +6.1108    +1.8133    -3.1375
+GBP_EUR      -3.3276    +2.0784    +5.4473    +3.2541
+GBP_AUD      -2.4598    +3.5586    +2.9789    -5.7083
+
+E4) SEUIL DE RUPTURE DU CARRY (méthode du 44e/47e) : le débit supportable avant que l'edge meure.
+CROSS          edge bp     carry bp/j     seuil bp/j       marge
+GBP_CHF        +9.0754         -0.536         +3.025       5.64×
+AUD_CHF        +8.2675         -0.536         +2.756       5.14×
+GBP_JPY        +7.0300         -0.491         +2.343       4.77×
+AUD_JPY        +6.9982         -0.491         +2.333       4.75×
+NZD_CHF        +7.1041         -0.536         +2.368       4.42×
+EUR_CHF        +6.9309         -0.536         +2.310       4.31×
+GBP_CAD        +4.9379         -0.100         +1.646      16.49×
+EUR_JPY        +4.6064         -0.491         +1.535       3.13×
+NZD_JPY        +4.5749         -0.491         +1.525       3.11×
+GBP_NZD        +1.0033         +0.374         +0.334  ∞ (crédit)
+GBP_EUR        +2.1787         -0.241         +0.726       3.02×
+GBP_AUD        -0.3247         +0.330         -0.108  ∞ (crédit)
+
+⚠️ Un cross synthétique n'est PAS coté : le coût réel = 2 jambes de spread + le spread
+   du cross, soit sensiblement plus que les 2.14 bp d'une paire majeure. Lecture prudente.
+
+========================================================================
+F) VERDICT
+========================================================================
+À lire dans le rapport : l'ordre des jambes, la stabilité IS/OOS et la stabilité par décennie.
+
+DONE

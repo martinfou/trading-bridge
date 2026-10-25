@@ -1,0 +1,205 @@
+========================================================================
+LE PLANCHER DE BRUIT DU 50e EST-IL UN ARTEFACT D'ALIGNEMENT ?
+Jeudi 8 oct 2026 (52e) · INTERMARKET / CROSS-ASSET · 2006-2026
+Mètre étalon : le seul cross RÉELLEMENT coté du panel (GBP_JPY) — zéro téléchargement.
+========================================================================
+[data] GBP_JPY   126883 barres réelles ·  6361 jours · 2006-01-01 → 2026-05-19
+[data] GBP_USD   123007 barres réelles ·  6167 jours · 2006-01-01 → 2026-05-19
+[data] AUD_USD   118057 barres réelles ·  5956 jours · 2006-01-01 → 2026-05-19
+[data] NZD_USD   119925 barres réelles ·  6009 jours · 2006-01-01 → 2026-05-19
+[data] USD_CHF   122018 barres réelles ·  6118 jours · 2006-01-01 → 2026-05-19
+[data] EUR_USD   123012 barres réelles ·  6168 jours · 2006-01-01 → 2026-05-19
+[data] USD_JPY   121931 barres réelles ·  6114 jours · 2006-01-01 → 2026-05-19
+[data] USD_CAD   123006 barres réelles ·  6167 jours · 2006-01-01 → 2026-05-19
+[aligné] triangle [GBP_JPY, GBP_USD, USD_JPY] : 6113 jours, heure médiane 23:00 UTC
+[aligné] 12 crosses construits sur barres synchronisées (heure médiane 23:00 UTC)
+[aligné] part des jours à l'heure modale (23:00 UTC) — le contrôle « même heure » :
+   GBP_CHF    6117 jours ·   83% à 23:00 · médiane 23:00
+   EUR_CHF    6118 jours ·   83% à 23:00 · médiane 23:00
+   AUD_CHF    5906 jours ·   83% à 23:00 · médiane 23:00
+   GBP_JPY    6113 jours ·   83% à 23:00 · médiane 23:00
+   AUD_JPY    5902 jours ·   83% à 23:00 · médiane 23:00
+   EUR_JPY    6114 jours ·   83% à 23:00 · médiane 23:00
+   GBP_CAD    6167 jours ·   83% à 23:00 · médiane 23:00
+   AUD_CAD    5955 jours ·   83% à 23:00 · médiane 23:00
+   EUR_CAD    6167 jours ·   83% à 23:00 · médiane 23:00
+   GBP_EUR    6167 jours ·   83% à 23:00 · médiane 23:00
+   AUD_NZD    5823 jours ·   83% à 23:00 · médiane 23:00
+   NZD_CAD    6009 jours ·   83% à 23:00 · médiane 23:00
+
+========================================================================
+A) P0 CALIBRATION — profil VENDREDI du panel (retour de session, construction A)
+========================================================================
+Réf 50e : GBP_JPY −5.61 (t −2.39) · GBP_USD −5.34 (t −2.86) · EUR_USD −3.07 · USD_CAD +0.55
+PAIRE         VEN bp       n    médiane   hit<0%       t
+GBP_JPY      -5.6113    1059    -3.0989       52%   -2.39
+GBP_USD      -5.3390    1027    -2.6851       53%   -2.86
+AUD_USD      -5.0796     992    -2.8330       51%   -2.07
+NZD_USD      -3.4304     999    -2.3775       51%   -1.45
+USD_CHF      -3.6173    1019    -3.6090       53%   -2.01
+EUR_USD      -3.0690    1027    -1.0726       51%   -1.76
+USD_JPY      -1.6569    1019    -2.2272       53%   -0.79
+USD_CAD      +0.5460    1027    +0.9029       49%   +0.32
+
+CROSS       fade A bp       n  hit fd%       t
+GBP_CHF       +9.0754    1019       58%   +5.13
+EUR_CHF       +6.9309    1019       62%   +5.99
+AUD_CHF       +8.2675     984       54%   +3.47
+GBP_JPY       +7.0300    1019       54%   +2.82
+AUD_JPY       +6.9982     984       51%   +2.28
+EUR_JPY       +4.6064    1019       52%   +2.03
+GBP_CAD       +4.9379    1027       53%   +2.61
+AUD_CAD       +4.6278     992       50%   +2.46
+EUR_CAD       +2.6655    1027       54%   +1.50
+GBP_EUR       +2.1787    1027       52%   +1.45
+AUD_NZD       +0.8624     969       50%   +0.67
+NZD_CAD       +3.4181     999       51%   +1.80
+Réf 50e (crosses refuges) : GBP_CHF +9.08 (t 5.13) · AUD_CHF +8.27 · EUR_CHF +6.93 · GBP_JPY +7.03
+
+========================================================================
+B) LE PLANCHER DE BRUIT — l'identité triangle sur le cross RÉELLEMENT COTÉ (GBP_JPY)
+========================================================================
+Résidu de RETOUR = r(GBP_JPY) − [ r(GBP_USD) + r(USD_JPY) ] en bp.
+Si la cotation est cohérente, il ne reste que la FOURCHETTE d'arbitrage (~1-3 bp).
+CONSTRUCTION       résidu moy    résidu é-t     VEN moy       VEN é-t   résidu max
+A dernières barres      -0.2715       13.8923     +1.0829       18.6241       891.79
+B barre alignée       -0.0453        2.5734     +1.6458        3.7907        33.86
+
+B2) RÉSIDU DE NIVEAU (log) et de RETOUR (différences), par décennie :
+DÉCENNIE      A: é-t niveau bp  B: é-t niveau bp  A: é-t retour bp  B: é-t retour bp
+2006-2009               1.6979            1.6979            2.2949            2.2949
+2010-2014               1.3635            1.3418            1.9361            1.9014
+2015-2019               1.5700            1.5700            2.2068            2.2068
+2020-2026               2.2213            2.2197            3.2414            3.2426
+
+MÉCANISME — le résidu de construction A est-il concentré sur les dates « sales » ?
+   dates où les 3 jambes partagent la MÊME date précédente : 6107 (99.9 %) · sinon : 5 (0.1 %)
+   résidu A sur les dates PROPRES : é-t   2.5715 bp (n 6107, moyenne -0.0441)
+   résidu A sur les dates SALES   : é-t 433.8604 bp (n 5, moyenne -278.0353)
+   résidu B (toutes dates, grille partagée) : é-t   2.4974 bp
+Lecture : si le résidu A explose UNIQUEMENT sur les dates sales, le « plancher » de 13.9 bp est
+un ARTEFACT DE CALENDRIER (une jambe saute un jour, son retour porte 2 jours) et non un fait de
+marché. Une reconstruction doit donc PARTAGER la grille de dates de ses jambes.
+
+========================================================================
+C) LE CLASSEMENT DU 50e SOUS LA CONSTRUCTION ALIGNÉE — le podium tient-il ?
+========================================================================
+CROSS       fade A bp   fade B bp    t (B)  hit fd%       IS→OOS (B) décennies B 06-09/10-14/15-19/20-26
+GBP_CAD       +4.9379     +5.4396    +1.79      51%   +4.91→  +5.98   -3.801  +5.134 +10.767  +7.501
+AUD_CAD       +4.6278     +5.3424    +1.40      53%   +3.89→  +6.94   -2.992  +1.483  +7.560 +13.463
+GBP_JPY       +7.0300     +3.2860    +1.04      53%   +1.99→  +4.63   +1.720  -0.298  +3.476  +7.437
+EUR_CAD       +2.6655     +3.1739    +1.07      50%   +4.81→  +1.50   -0.681  +2.841  +5.306  +4.291
+NZD_CAD       +3.4181     +3.0969    +0.84      52%   +1.89→  +4.40   -3.853  -1.366  +8.728  +7.309
+AUD_JPY       +6.9982     +3.0504    +0.89      52%   +1.53→  +4.75   +4.123  -4.068  +0.244 +12.227
+GBP_EUR       +2.1787     +2.1815    +1.45      52%   -0.10→  +4.52   -3.328  +2.078  +5.447  +3.264
+AUD_CHF       +8.2675     +1.6148    +0.45      50%   +0.32→  +3.07   +3.117  -4.765  +1.614  +6.859
+GBP_CHF       +9.0754     +1.1514    +0.36      52%   +0.34→  +2.00   -0.022  -1.285  +4.758  +0.945
+AUD_NZD       +0.8624     +0.7924    +0.60      50%   +1.83→  -0.41   +1.074  +2.419  -1.229  +0.976
+EUR_JPY       +4.6064     +0.7150    +0.23      51%   +1.89→  -0.51   +4.851  -2.565  -2.148  +3.247
+EUR_CHF       +6.9309     -1.1378    -0.34      48%   +0.14→  -2.47   +3.008  -3.646  -0.802  -2.160
+
+C2) SPÉCIFICITÉ DU JOUR sous B (fade bp) — placebo interne = les crosses risque/risque :
+CROSS         lundi     mardi  mercredi     jeudi  VENDREDI   Mon-Jeu   ven-mer
+GBP_CHF     +1.0381   -1.9336   -3.4334   -5.6873   +1.1514   -2.5049   +4.5848
+EUR_CHF     +0.4767   -0.8539   -3.5574   -6.2196   -1.1378   -2.5393   +2.4196
+AUD_CHF     -1.3751   -2.7961   -0.9538   -6.0270   +1.6148   -2.7888   +2.5686
+GBP_JPY     -0.1778   -1.1707   -0.5771   -0.3419   +3.2860   -0.5667   +3.8630
+AUD_JPY     -2.8023   -2.3517   +2.1613   +0.1739   +3.0504   -0.7050   +0.8890
+EUR_JPY     -0.3259   -0.2974   -0.5928   -0.6909   +0.7150   -0.4768   +1.3077
+GBP_CAD     -0.3590   -1.7905   -2.6495   -1.2943   +5.4396   -1.5233   +8.0891
+AUD_CAD     -2.0690   -2.8465   -0.5518   -1.5957   +5.3424   -1.7660   +5.8942
+EUR_CAD     -0.7020   -0.9647   -2.5573   -1.6731   +3.1739   -1.4743   +5.7312
+GBP_EUR     +0.2903   -0.8787   -0.2586   +0.2107   +2.1815   -0.1591   +2.4401
+AUD_NZD     -0.7997   -2.8052   +1.0517   -0.4280   +0.7924   -0.7464   -0.2593
+NZD_CAD     -2.4366   -1.4511   -1.4616   -1.5248   +3.0969   -1.7185   +4.5585
+
+C3) CONTRÔLE APPARIÉ — vendredis où les 12 crosses utilisent LA MÊME heure de clôture :
+    (si le podium ne survit pas à cette restriction, c'est l'HEURE de mesure qui parle)
+    vendredis communs à heure identique : 839
+CROSS     fade propre bp         t       n  hit fd% vs fade B (bp)
+AUD_CAD         +8.6683     +2.17     839      45%       +3.3259
+GBP_CAD         +7.3765     +2.27     839      48%       +1.9369
+NZD_CAD         +7.0509     +1.80     839      46%       +3.9540
+EUR_CAD         +6.2126     +1.96     839      49%       +3.0387
+AUD_JPY         +5.3968     +1.51     839      47%       +2.3465
+GBP_JPY         +4.5606     +1.36     839      46%       +1.2746
+AUD_CHF         +3.5455     +0.93     839      49%       +1.9307
+EUR_JPY         +3.2711     +0.97     839      48%       +2.5561
+GBP_CHF         +2.1270     +0.61     839      48%       +0.9756
+AUD_NZD         +1.4121     +1.04     839      50%       +0.6197
+GBP_EUR         +1.0684     +0.64     839      49%       -1.1131
+EUR_CHF         +0.8945     +0.25     839      51%       +2.0323
+
+C4) CONTRÔLE FINAL — même HEURE FIXE pour les deux jambes, quatre heures de lecture (fade bp) :
+CROSS          18:00      19:00      20:00      21:00
+AUD_CAD     +10.5286    +8.9968    +9.3173    +8.7011
+AUD_JPY      +8.8129    +7.3592    +6.6934   +12.0758
+GBP_CAD      +7.6478    +6.1027    +6.5453    +7.7358
+GBP_JPY      +6.6204    +5.5227    +5.5942    +8.5037
+EUR_CAD      +5.8096    +4.4152    +4.2293    +8.0738
+AUD_CHF      +5.0247    +4.3064    +3.5743    +6.2072
+NZD_CAD      +4.5935    +3.0396    +3.3533    +9.9903
+EUR_JPY      +4.5250    +3.5634    +2.9892    +8.6066
+GBP_EUR      +1.7302    +1.5800    +2.2092    -0.5310
+GBP_CHF      +2.8718    +2.0664    +1.9980    +4.6642
+AUD_NZD      +2.6691    +2.0216    +1.3682    -2.7700
+EUR_CHF      +1.0052    +0.3372    -0.3533    +4.9572
+Lecture : le classement ne doit PAS dépendre de l'heure choisie. S'il bascule avec l'heure, c'est
+que le « podium » mesure la banque d'heures de chaque paire, pas une prime de risque.
+
+========================================================================
+E) L'HEURE DE CLÔTURE DU VENDREDI — d'où vient l'écart entre les deux constructions ?
+========================================================================
+Pour chaque paire : profil de la DERNIÈRE barre réelle du vendredi (convention A) et sensibilité
+du retour du vendredi à l'heure de lecture (17:00 → 23:00 UTC).
+GBP_USD   dernière barre 17:0% 18:0% 19:0% 20:64% 21:35% 22:0% 23:0%
+          retour vendredi    17: -3.49 18: -4.49 19: -3.78 20: -4.75 21: -5.52 22: +0.00 23: +0.00 | convention A   -5.34 (n 1027)
+
+USD_CHF   dernière barre 17:0% 18:0% 19:0% 20:65% 21:35% 22:0% 23:0%
+          retour vendredi    17: -2.32 18: -0.87 19: -1.01 20: -2.09 21: -0.15 22: +0.00 23: +0.00 | convention A   -3.62 (n 1019)
+
+USD_CAD   dernière barre 17:0% 18:0% 19:0% 20:64% 21:35% 22:0% 23:0%
+          retour vendredi    17: +3.38 18: +3.63 19: +2.75 20: +2.25 21: +2.63 22: +0.00 23: +0.00 | convention A   +0.55 (n 1027)
+
+USD_JPY   dernière barre 17:0% 18:0% 19:0% 20:65% 21:35% 22:0% 23:0%
+          retour vendredi    17: +1.60 18: +2.56 19: +2.17 20: +1.23 21: +3.76 22: +0.00 23: +0.00 | convention A   -1.66 (n 1019)
+
+EUR_USD   dernière barre 17:0% 18:0% 19:0% 20:64% 21:35% 22:0% 23:0%
+          retour vendredi    17: -1.25 18: -2.66 19: -2.10 20: -2.44 21: -5.88 22: +0.00 23: +0.00 | convention A   -3.07 (n 1027)
+
+GBP_JPY   dernière barre 17:0% 18:0% 19:0% 20:65% 21:35% 22:0% 23:0%
+          retour vendredi    17: -3.25 18: -3.23 19: -2.83 20: -3.96 21: -2.66 22: +0.00 23: +0.00 | convention A   -5.61 (n 1059)
+
+Lecture : si le retour du vendredi dépend fortement de l'heure de lecture, alors l'écart A/B est
+une banque d'heures, pas un edge — et la seule comparaison valide est à HEURE FIXE pour toutes.
+
+========================================================================
+D) LA JAMBE RÉELLEMENT TRADÉE (barres synchronisées) — session + week-end + net
+========================================================================
+Entrée = 1re barre du vendredi + 1 (fill T+1 du moteur), sortie = 1re barre du jour suivant + 1.
+NET = total + carry réel par année (3 rollovers, table 3M du 47e) − coûts 2.14 bp.
+CROSS           n   heures  session bp week-end bp  reste bp   t (net)      NET bp   PF proxy  hit net%
+GBP_CHF      1019     70.1     +1.1514     +1.2022   -1.1770     -0.29     -0.9634      0.976       49%
+EUR_CHF      1019     70.1     -1.1378     +0.3402   -1.4371     -1.23     -4.3747      0.901       48%
+AUD_CHF       984     72.5     +1.6148     +0.7845   -1.7100     -0.40     -1.4507      0.966       49%
+GBP_JPY      1019     70.1     +3.2860     +1.1560   -1.3796     +0.30     +0.9223      1.026       52%
+AUD_JPY       984     73.2     +3.0504     +1.5472   -1.7970     +0.20     +0.6607      1.017       50%
+EUR_JPY      1019     70.1     +0.7150     +0.0999   -1.5323     -0.90     -2.8575      0.927       51%
+GBP_CAD      1027     69.4     +5.4396     +2.0720   -1.0111     +1.42     +4.3606      1.131       50%
+AUD_CAD       992     71.7     +5.3424     +1.8569   -1.6297     +0.91     +3.4296      1.084       52%
+EUR_CAD      1027     69.4     +3.1739     +1.1573   -1.2508     +0.31     +0.9404      1.027       49%
+GBP_EUR      1027     69.4     +2.1815     +0.8726   +0.2258     +0.71     +1.1399      1.065       50%
+AUD_NZD       969     70.3     +0.7924     -0.1212   +0.6208     -0.69     -0.8479      0.941       49%
+NZD_CAD       999     70.1     +3.0969     +0.6263   -1.1088     +0.13     +0.4745      1.011       51%
+
+⚠️ PF proxy en bp (coûts + carry explicites), PAS un backtest moteur : il valide la
+   DIRECTION et l'ordre de grandeur, pas encore la promotion (gate 30 trades / 3-4 paires).
+
+========================================================================
+F) VERDICT
+========================================================================
+À lire dans la note Joplin : (1) le plancher de 13.9 bp est-il un fait ou une convention,
+(2) le podium des crosses refuges du 50e survit-il à la construction alignée,
+(3) la jambe tradée (avec la dérive de week-end) conserve-t-elle le signe du proxy de session.
+
+DONE

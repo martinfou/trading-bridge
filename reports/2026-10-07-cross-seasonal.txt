@@ -1,0 +1,213 @@
+========================================================================
+LA SAISONNALITÉ FX SURVIT-ELLE AU RETRAIT DU DOLLAR ? (51e)
+Mercredi 7 oct 2026 · rotation PATTERN SAISONNIER · 2006-2026
+Espace dollar-neutre : 12 crosses + 7 jambes exactes + facteur risque→refuge (50e).
+Diagnostic : série DOLLAR (moyenne des 7 jambes) pour séparer saison du dollar / saison de devise.
+Base : clôtures journalières sur BARRES RÉELLES (high > low), jour UTC.
+Contrôles du 48e : dérive appariée, IS/OOS, 4 décennies, spécificité ±1 mois.
+========================================================================
+
+=== A) DONNÉES ===
+  EUR_USD    6168 jours réels · 2006-01-01 → 2026-05-19
+  GBP_USD    6167 jours réels · 2006-01-01 → 2026-05-19
+  AUD_USD    5956 jours réels · 2006-01-01 → 2026-05-19
+  NZD_USD    6009 jours réels · 2006-01-01 → 2026-05-19
+  USD_JPY    6114 jours réels · 2006-01-01 → 2026-05-19
+  USD_CHF    6118 jours réels · 2006-01-01 → 2026-05-19
+  USD_CAD    6167 jours réels · 2006-01-01 → 2026-05-19
+  GBP_JPY    6361 jours réels · 2006-01-01 → 2026-05-19
+  21 séries construites : 12 crosses + 1 facteur + 7 jambes
+
+=== B) MATRICE MENSUELLE — ESPACE DOLLAR-NEUTRE (bp, fin de mois → fin de mois) ===
+12 crosses + 8 paires (référence 48e) + 7 jambes + 1 facteur. Marqueur * = |t| ≥ 3 ET IS/OOS de même signe.
+SÉRIE                        janv     févr     mars      avr      mai     juin     juil     août     sept      oct      nov      déc
+GBP_CHF                     68.8    -44.8    -42.8     78.5    -16.8   -108.8      0.6    -95.7     32.2      5.5      3.3   -213.5 
+AUD_CHF                    -40.4     32.0     22.8     44.0    -73.5    -46.2      6.7   -131.5     36.3     65.7    -88.3   -134.8 
+NZD_CHF                    -57.0      3.2    -12.0     16.7    -39.4    -74.3     -6.2   -155.0    117.3      1.3    -12.2    -30.3 
+EUR_CHF                    -50.5    -13.8     30.7     29.0    -48.7    -67.4    -24.1    -28.8     48.2    -22.2    -24.6    -73.5 
+GBP_JPY                     -8.4    -26.5     51.7    143.3    -24.9     30.4    -71.6   -115.6    -11.6     54.1     24.4    -45.7 
+AUD_JPY                   -115.8     49.3    126.3    121.9    -95.6     71.7    -60.7   -151.0     -2.6    106.2    -64.8     38.3 
+NZD_JPY                   -130.4     35.8     91.4     92.1    -56.0     66.4    -72.3   -192.8     70.2     23.4     25.1    144.9 
+EUR_JPY                   -121.0      2.9    127.1     95.1    -64.3     65.3    -95.5    -49.8      6.7     17.8     -5.0    103.1 
+GBP_CAD                    100.9    -56.3    -11.3    -10.1    -55.1     13.6     14.1    -47.7    -27.5     66.2     70.2    -60.6 
+GBP_EUR                    123.4    -30.8    -73.0     49.2     32.5    -41.4     26.8    -66.3    -15.5     36.4     27.8   -143.1 
+GBP_NZD                    137.3    -46.7    -26.3     64.0     38.9    -25.0     10.7     65.1    -48.4     10.7      3.3   -185.0 
+GBP_AUD                    105.1    -75.2    -65.5     32.0     72.4    -41.1      0.0     38.5      2.6    -31.2     77.8    -89.2 
+FACTEUR(refuge−risque)      41.5     -6.1    -32.1    -98.3     46.9     -8.6     43.3    100.2    -40.6    -38.0     -0.2     21.9 
+DOLLAR(force_USD)           30.6     29.1     -4.6    -84.9     58.9    -25.6    -66.9     68.2     41.2     33.1     26.0    -54.5 
+leg_EUR                    -77.2    -40.8     56.5     94.2    -83.8     31.4     41.6    -36.8    -32.4    -41.9    -22.3     99.9 
+leg_GBP                     37.7    -71.8    -19.8    142.3*   -53.6    -10.1     66.5   -102.8    -52.3     -5.1      2.0    -56.2 
+leg_JPY                     43.6    -40.9    -69.4     24.0    -36.5    -20.0    133.4      7.2    -45.0    -59.8    -18.9     -7.6 
+leg_CHF                    -42.8    -32.1     26.5     60.4    -41.5     94.3     61.8    -16.1    -88.8    -34.0    -34.4    170.1 
+leg_AUD                    -54.2      3.6     69.6    113.7   -111.4     53.6     74.7   -138.6    -40.1     36.0    -86.7     27.2 
+leg_NZD                    -84.7    -11.1     33.6     81.9    -76.1     23.2     63.3   -154.0     46.8    -24.2      5.2    138.6 
+leg_CAD                    -65.2    -18.9    -12.1    149.3     -2.8    -25.0     51.7    -60.2    -27.5    -76.9    -76.2      3.1 
+
+  -- RÉFÉRENCE PAIRES (non dollar-neutres) --
+EUR_USD                    -77.2    -40.8     56.5     94.2    -83.8     31.4     41.6    -36.8    -32.4    -41.9    -22.3     99.9 
+GBP_USD                     37.7    -71.8    -19.8    142.3*   -53.6    -10.1     66.5   -102.8    -52.3     -5.1      2.0    -56.2 
+AUD_USD                    -54.2      3.6     69.6    113.7   -111.4     53.6     74.7   -138.6    -40.1     36.0    -86.7     27.2 
+NZD_USD                    -84.7    -11.1     33.6     81.9    -76.1     23.2     63.3   -154.0     46.8    -24.2      5.2    138.6 
+USD_JPY                    -44.5     44.6     63.1    -25.1     34.1     18.5   -135.0    -12.1     41.9     57.2     24.2     10.1 
+USD_CHF                     31.8     31.3    -30.3    -57.4     43.8    -97.3    -62.0     10.3     90.5     31.0     34.8   -160.2 
+USD_CAD                     66.9     17.8     10.6   -147.1      5.3     24.1    -50.0     59.0     29.8     82.3     71.3     -4.3 
+GBP_JPY                     -4.9    -26.6     64.9    146.9    -25.6     46.4    -64.0   -111.4     -9.5     59.1     32.6    -32.2 
+
+  dérive appariée par série (hold non conditionné de même longueur, bp) — les crosses doivent être ~0 :
+    GBP_CHF                  ctrl   -28.5 bp
+    AUD_CHF                  ctrl   -18.4 bp
+    NZD_CHF                  ctrl   -22.6 bp
+    EUR_CHF                  ctrl   -20.4 bp
+    GBP_JPY                  ctrl    +8.7 bp
+    AUD_JPY                  ctrl   +21.3 bp
+    NZD_JPY                  ctrl   +16.5 bp
+    EUR_JPY                  ctrl   +17.3 bp
+    GBP_CAD                  ctrl    -1.3 bp
+    GBP_EUR                  ctrl    -7.6 bp
+    GBP_NZD                  ctrl    -0.2 bp
+    GBP_AUD                  ctrl    -5.3 bp
+    FACTEUR(refuge−risque)   ctrl    -0.6 bp
+    DOLLAR(force_USD)        ctrl    +1.9 bp
+    leg_EUR                  ctrl    +2.0 bp
+    leg_GBP                  ctrl    -7.8 bp
+    leg_JPY                  ctrl   -18.1 bp
+    leg_CHF                  ctrl   +15.9 bp
+    leg_AUD                  ctrl    +4.1 bp
+    leg_NZD                  ctrl    +0.0 bp
+    leg_CAD                  ctrl   -10.4 bp
+
+=== C) LE FACTEUR RISQUE→REFUGE (50e) — profil mensuel ===
+Facteur = moyenne(jambes CHF,JPY) − moyenne(jambes EUR,GBP,AUD,NZD). Positif = le refuge gagne.
+MOIS    n      mean bp    médiane    hit%    t       IS→OOS     décennies 06-09/10-14/15-19/20-26
+janv    19         +41.52     -22.20     47%   +0.60 +124.9→-33.5  +196.70 /  -82.91 / +147.23 /  -20.46
+févr    21          -6.07      +8.93     52%   -0.12 -63.8→+46.4   -12.36 /  -32.88 /  +64.93 /  -34.03
+mars    21         -32.10     -89.12     38%   -0.60 -73.7→ +5.7   -24.35 / -163.42 /   -4.52 /  +37.56
+avr     21         -98.26    -119.05     24%   -2.72 -150.8→-50.5  -250.61 /  -76.15 /  -18.55 /  -83.94
+mai     21         +46.87     +21.41     67%   +0.96 +72.0→+24.1  -164.33 / +260.04 / +129.89 /  -44.00
+juin    19          -8.63     +39.79     53%   -0.16  +7.3→-26.4   -87.39 /  +66.76 /  +49.14 /  -78.76
+juil    19         +43.31      +2.06     53%   +0.91  -5.9→+98.0    -9.77 /   -8.51 /  -17.46 / +198.35
+août    19        +100.16     +64.91     63%   +1.94 +147.9→+47.2  +144.48 / +132.05 / +195.95 /  -62.96
+sept    19         -40.61      +5.33     53%   -0.89 -47.3→-33.2   +21.27 / -124.51 /  -74.51 /  +27.68
+oct     19         -38.02     -91.62     37%   -0.44 -23.0→-54.7  +215.35 / -156.62 /  -88.46 /  -71.69
+nov     19          -0.23     -28.10     42%   -0.00 +55.7→-62.4  +215.11 /  -36.16 / -150.08 /  +13.30
+déc     19         +21.94     -23.91     42%   +0.45  +1.8→+44.3   -24.57 /   -7.28 /  +65.29 /  +45.02
+dérive appariée (26 j) : -0.63 bp
+
+=== D) LES 15 CELLULES LES PLUS FORTES (|t|) — tous les contrôles ===
+SÉRIE                  MOIS   n      mean bp   médiane  hit%    t       IS→OOS    ctrl     décennies              verdict 
+leg_GBP                avr    21        +142.3   +162.6     86%   +3.04 +230.2→+62.3     -7.8 +247.9/+191.5/+134.2/+52.5 (4/4+) ⚠️ porte le dollar (jambe/paire)
+GBP_USD                avr    21        +142.3   +162.6     86%   +3.04 +230.2→+62.3     -7.8 +247.9/+191.5/+134.2/+52.5 (4/4+) ⚠️ porte le dollar (jambe/paire)
+GBP_JPY                avr    21        +146.9   +147.7     81%   +2.90 +203.7→+95.1     +8.2 +285.5/+117.1/+77.0/+138.8 (4/4+) ⚪ |t|<3 (test multiple)
+USD_CAD                avr    21        -147.1   -105.5     29%   -2.86 -252.7→-51.1     +9.9 -384.6/-101.9/-117.9/-64.5 (0/4+) ⚪ |t|<3 (test multiple)
+leg_CAD                avr    21        +149.3   +101.2     71%   +2.85 +256.4→+52.0    -10.4 +392.8/+99.3/+121.3/+65.9 (4/4+) ⚪ |t|<3 (test multiple)
+USD_JPY                juil   19        -135.0   -161.1     32%   -2.76 -112.4→-160.1    +17.7 -92.0/-174.6/+2.3/-267.0 (1/4+) ⚪ |t|<3 (test multiple)
+FACTEUR(refuge−risque) avr    21         -98.3   -119.0     24%   -2.72 -150.8→-50.5     -0.6 -250.6/-76.1/-18.6/-83.9 (0/4+) ⚪ |t|<3 (test multiple)
+AUD_CHF                août   19        -131.5   -140.7     32%   -2.67 -181.7→-75.8    -18.4 -199.4/-153.2/-217.8/+30.8 (1/4+) ⚪ |t|<3 (test multiple)
+leg_JPY                juil   19        +133.4   +148.1     68%   +2.63 +110.4→+158.9    -18.1 +88.3/+174.5/-9.2/+270.8 (3/4+) ⚪ |t|<3 (test multiple)
+GBP_NZD                déc    19        -185.0    -81.8     26%   -2.43 -331.5→-22.2     -0.2 -546.5/-123.3/-187.2/+44.8 (1/4+) ⚪ |t|<3 (test multiple)
+NZD_CHF                sept   17        +117.3   +119.3     76%   +2.30 +133.3→+94.4    -22.6 +146.3/+119.1/+71.3/+152.1 (4/4+) ⚪ |t|<3 (test multiple)
+EUR_CHF                déc    19         -73.5    -49.6     32%   -2.26 -95.6→-48.8    -20.4 -72.4/-120.1/-67.2/-33.9 (0/4+) ⚪ |t|<3 (test multiple)
+EUR_JPY                mars   20        +127.1    +77.2     60%   +2.25 +180.1→+74.0    +17.3 +246.6/+238.1/-16.6/+74.6 (3/4+) ⚪ |t|<3 (test multiple)
+leg_AUD                août   19        -138.6   -142.6     21%   -2.24 -207.2→-62.3     +4.1 -299.6/-122.9/-179.8/+15.8 (1/4+) ⚪ |t|<3 (test multiple)
+AUD_USD                août   19        -138.6   -142.6     21%   -2.24 -207.2→-62.3     +4.1 -299.6/-122.9/-179.8/+15.8 (1/4+) ⚪ |t|<3 (test multiple)
+
+=== E) SPÉCIFICITÉ ±1 MOIS sur les 5 meilleures cellules DOLLAR-NEUTRES ===
+
+  FACTEUR(refuge−risque) / avr  (référence : -98.3 bp, t -2.72)
+    -1 mois (mars) :   -32.10 bp  t  -0.60  n 21
+    +0 mois (avr) :   -98.26 bp  t  -2.72  n 21   ← cellule testée
+    +1 mois (mai) :   +46.87 bp  t  +0.96  n 21
+
+  AUD_CHF / août  (référence : -131.5 bp, t -2.67)
+    -1 mois (juil) :    +6.72 bp  t  +0.09  n 18
+    +0 mois (août) :  -131.53 bp  t  -2.67  n 19   ← cellule testée
+    +1 mois (sept) :   +36.25 bp  t  +0.57  n 19
+
+  GBP_NZD / déc  (référence : -185.0 bp, t -2.43)
+    -1 mois (nov) :    +3.29 bp  t  +0.06  n 19
+    +0 mois (déc) :  -184.99 bp  t  -2.43  n 19   ← cellule testée
+    +1 mois (janv) :  +137.33 bp  t  +1.41  n 18
+
+  NZD_CHF / sept  (référence : +117.3 bp, t +2.30)
+    -1 mois (août) :  -154.99 bp  t  -1.74  n 17
+    +0 mois (sept) :  +117.29 bp  t  +2.30  n 17   ← cellule testée
+    +1 mois (oct) :    +1.26 bp  t  +0.01  n 18
+
+  EUR_CHF / déc  (référence : -73.5 bp, t -2.26)
+    -1 mois (nov) :   -24.57 bp  t  -0.58  n 18
+    +0 mois (déc) :   -73.45 bp  t  -2.26  n 19   ← cellule testée
+    +1 mois (janv) :   -50.49 bp  t  -0.62  n 19
+
+=== G) DÉCOMPOSITION MOIS PAR MOIS — un motif de PAIRES est-il un motif de DEVISE ? ===
+Si un mois bouge TOUTES les paires contre-USD dans le même sens, c'est le DOLLAR ;
+dans l'espace dollar-neutre il ne doit rester que les couples réellement concernés.
+
+--- janv ---
+  paires : 2/8 bougent dans le même sens USD (mouvement moyen -30 bp) ⇒ pas de motif dollar unanime
+  dollar-neutre — 3 plus fortes : GBP_CAD +101 bp (t +1.99)   GBP_EUR +123 bp (t +1.71)   GBP_NZD +137 bp (t +1.41)   
+
+--- févr ---
+  paires : 1/8 bougent dans le même sens USD (mouvement moyen -30 bp) ⇒ pas de motif dollar unanime
+  dollar-neutre — 3 plus fortes : GBP_AUD -75 bp (t -1.39)   GBP_CAD -56 bp (t -1.22)   GBP_NZD -47 bp (t -0.91)   
+
+--- mars ---
+  paires : 5/8 bougent dans le même sens USD (mouvement moyen +20 bp) ⇒ pas de motif dollar unanime
+  dollar-neutre — 3 plus fortes : EUR_JPY +127 bp (t +2.25)   GBP_EUR -73 bp (t -1.81)   AUD_JPY +126 bp (t +1.31)   
+
+--- avr ---
+  paires : 8/8 bougent dans le même sens USD (mouvement moyen +101 bp) ⇒ MOTIF DOLLAR PROBABLE
+  dollar-neutre — 3 plus fortes : FACTEUR(refuge−risque) -98 bp (t -2.72)   GBP_CHF +79 bp (t +1.81)   GBP_EUR +49 bp (t +1.73)   
+
+--- mai ---
+  paires : 0/8 bougent dans le même sens USD (mouvement moyen -54 bp) ⇒ pas de motif dollar unanime
+  dollar-neutre — 3 plus fortes : EUR_CHF -49 bp (t -1.60)   AUD_CHF -73 bp (t -1.37)   GBP_CAD -55 bp (t -1.27)   
+
+--- juin ---
+  paires : 5/8 bougent dans le même sens USD (mouvement moyen +25 bp) ⇒ pas de motif dollar unanime
+  dollar-neutre — 3 plus fortes : GBP_CHF -109 bp (t -1.70)   EUR_CHF -67 bp (t -1.61)   EUR_JPY +65 bp (t +0.98)   
+
+--- juil ---
+  paires : 7/8 bougent dans le même sens USD (mouvement moyen +54 bp) ⇒ MOTIF DOLLAR PROBABLE
+  dollar-neutre — 3 plus fortes : EUR_JPY -96 bp (t -1.53)   NZD_JPY -72 bp (t -1.05)   FACTEUR(refuge−risque) +43 bp (t +0.91)   
+
+--- août ---
+  paires : 1/8 bougent dans le même sens USD (mouvement moyen -75 bp) ⇒ pas de motif dollar unanime
+  dollar-neutre — 3 plus fortes : AUD_CHF -132 bp (t -2.67)   AUD_JPY -151 bp (t -2.10)   GBP_CHF -96 bp (t -2.04)   
+
+--- sept ---
+  paires : 1/8 bougent dans le même sens USD (mouvement moyen -31 bp) ⇒ pas de motif dollar unanime
+  dollar-neutre — 3 plus fortes : NZD_CHF +117 bp (t +2.30)   EUR_CHF +48 bp (t +1.27)   FACTEUR(refuge−risque) -41 bp (t -0.89)   
+
+--- oct ---
+  paires : 2/8 bougent dans le même sens USD (mouvement moyen -18 bp) ⇒ pas de motif dollar unanime
+  dollar-neutre — 3 plus fortes : GBP_CAD +66 bp (t +1.30)   GBP_EUR +36 bp (t +0.94)   AUD_JPY +106 bp (t +0.69)   
+
+--- nov ---
+  paires : 3/8 bougent dans le même sens USD (mouvement moyen -25 bp) ⇒ pas de motif dollar unanime
+  dollar-neutre — 3 plus fortes : GBP_CAD +70 bp (t +1.34)   GBP_AUD +78 bp (t +1.21)   AUD_CHF -88 bp (t -1.18)   
+
+--- déc ---
+  paires : 5/8 bougent dans le même sens USD (mouvement moyen +41 bp) ⇒ pas de motif dollar unanime
+  dollar-neutre — 3 plus fortes : GBP_NZD -185 bp (t -2.43)   EUR_CHF -73 bp (t -2.26)   AUD_CHF -135 bp (t -2.19)   
+
+=== H) LE MEILLEUR MOIS DE L'ESPACE PAIRES EST-IL UNE SAISON DE DEVISE OU DU DOLLAR ? ===
+Cellule la plus forte de tout le scan : GBP_USD / avr — +142 bp, t +3.04, hit 86%, n 21
+Force du dollar sur avr : -85 bp (moyenne des 7 jambes, signe inversé) ⇒ part dollar d'une paire X/USD = +85 bp
+PAIRE          r (bp)  part DOLLAR    part DEVISE  t du mois
+EUR_USD           +94          +85             +9      +1.74
+GBP_USD          +142          +85            +57      +3.04
+AUD_USD          +114          +85            +29      +1.68
+NZD_USD           +82          +85             -3      +1.23
+USD_JPY           -25          -85            +60      -0.40
+USD_CHF           -57          -85            +28      -0.80
+USD_CAD          -147          -85            -62      -2.86
+GBP_JPY          +147          +85            +62      +2.90
+Lecture : « part DOLLAR » est le même chiffre pour toutes les paires du mois ; si elle
+épuise le r de la paire, le motif est une SAISON DU DOLLAR, pas une saison de la devise.
+
+=== F) VERDICT ===
+DOLLAR-NEUTRE (12 crosses + facteur) : 144 cellules · 0 avec |t| ≥ 3 · 0 stable IS/OOS.
+PORTE LE DOLLAR (8 paires + 7 jambes) : 192 cellules · 2 avec |t| ≥ 3 · 2 stable IS/OOS.
+Rappel du 48e : un adage ne survit que s'il bat la dérive APPARIÉE et la spécificité ±1 mois.
+
+DONE

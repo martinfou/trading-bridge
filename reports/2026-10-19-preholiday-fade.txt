@@ -1,0 +1,183 @@
+================================================================================================================================
+61e (lundi 19 oct 2026, IDEE NOUVELLE) — LE FADE REFUGE EXISTE-T-IL LA VEILLE D'UN CONGE US ?
+FADE = SELL du cross ; fade > 0 = SELL gagnant. k=0 = derniere barre REELLE avant la cloture FX.
+Chaque session PRE est comparee aux sessions ordinaires DU MEME JOUR DE SEMAINE (controle apparie).
+================================================================================================================================
+
+--- 0. FLUX
+  GBP_CHF  CROSS (OANDA)      bars= 138789  2002-05-07 -> 2026-10-09
+  EUR_CHF  CROSS (OANDA)      bars= 138764  2002-05-06 -> 2026-10-09
+  AUD_CHF  CROSS (OANDA)      bars= 138303  2004-05-31 -> 2026-10-09
+  GBP_JPY  MAJEURE (Dukascopy) bars= 178176  2006-01-01 -> 2026-05-19
+  GBP_USD  MAJEURE (Dukascopy) bars= 172752  2006-01-01 -> 2026-05-19
+  USD_CAD  MAJEURE (Dukascopy) bars= 172752  2006-01-01 -> 2026-05-19
+
+--- 1. CALENDRIER : 194 fermetures pleines du NYSE (2006-2026)
+  par type : good_friday=21  long_weekend=123  midweek=50
+  fermetures exceptionnelles EXCLUES (transparence) : 2012-10-29 Sandy, 2012-10-30 Sandy, 2018-12-05 Bush, 2025-01-09 Carter
+
+--- 2. CENSUS DES SESSIONS PRE-CONGE (identifiees DANS les donnees)
+  SYMBOLE    PRE  POST  OTHER | repartition des PRE par jour de semaine |  gap moyen
+  GBP_CHF    192   192   5104 | LUN: 9 MAR:10 MER:30 JEU:39 VEN:104 |       3.49
+  EUR_CHF    192   192   5104 | LUN: 9 MAR:10 MER:30 JEU:39 VEN:104 |       3.49
+  AUD_CHF    192   192   5104 | LUN: 9 MAR:10 MER:30 JEU:39 VEN:104 |       3.49
+  GBP_JPY    187   187   4744 | LUN: 9 MAR:10 MER:30 JEU:34 VEN:104 |       3.57
+  GBP_USD    180   180   4603 | LUN: 9 MAR: 9 MER:27 JEU:33 VEN:102 |       3.59
+  USD_CAD    180   180   4603 | LUN: 9 MAR: 9 MER:27 JEU:33 VEN:102 |       3.59
+  Lecture : les PRE de VENDREDI viennent des conges du LUNDI (trou de 4 j) ; les PRE de
+  MAR/MER/JEU viennent des conges en semaine (trou de 2 j). Les POST sont le controle de specificite.
+
+--- 3. TEST PRINCIPAL — fade de la DERNIERE HEURE (k=0) sur les sessions PRE-CONGE
+  resid. = PRE demoyennee par la moyenne des sessions ordinaires du MEME jour de semaine.
+  SYMBOLE      n  PRE bp      t  base bp resid bp  t app
+  GBP_CHF     192   +2.43  +3.72    -0.16    +1.10  +1.75
+  EUR_CHF     192   +1.49  +4.02    -0.18    +0.78  +2.20
+  AUD_CHF     192   +4.20  +4.72    +0.16    +1.52  +1.80
+  GBP_JPY     187   +1.51  +2.24    +0.23    +0.67  +0.99
+  GBP_USD     180   +1.18  +2.18    +0.15    +0.30  +0.57
+  USD_CAD     180   +0.48  +0.80    +0.13    -0.66  -1.11
+  (rappel 59e, toutes sessions confondues : le fade de la derniere heure vaut +3.35 / +1.93 /
+   +6.16 bp sur GBP_CHF / EUR_CHF / AUD_CHF le VENDREDI, et +1.28 / +0.88 / +1.94 en Mon-Jeu)
+  ⚠️ les 750 sessions de la derniere heure sont lisibles en niveau ; ici on ne lit que l'ECART.
+
+--- 4. SEPARATION PAR JOUR DE SEMAINE — le fade pre-conge est-il un effet VENDREDI ou un effet TROU ?
+  SYMBOLE   JOUR  n PRE  PRE bp  base bp   resid      t   gap          type
+  GBP_CHF    LUN      9   +3.49    -1.11   +4.60  +1.72   2.0       midweek
+  GBP_CHF    MAR     10   -1.38    -1.16   -0.23  -0.20   2.0       midweek
+  GBP_CHF    MER     30   -1.63    -0.79   -0.84  -0.42   2.0       midweek
+  GBP_CHF    JEU     39   +0.05    -0.68   +0.73  +0.97   4.0good_friday,lo
+  GBP_CHF    VEN    104   +4.77    +3.14   +1.62  +1.76   4.0  long_weekend
+
+  EUR_CHF    LUN      9   +0.94    -0.68   +1.61  +1.56   2.0       midweek
+  EUR_CHF    MAR     10   +1.63    -0.70   +2.34  +2.12   2.0       midweek
+  EUR_CHF    MER     30   -1.19    -0.60   -0.59  -0.75   2.0       midweek
+  EUR_CHF    JEU     39   +0.22    -0.62   +0.83  +1.38   4.0good_friday,lo
+  EUR_CHF    VEN    104   +2.77    +1.83   +0.94  +1.69   4.0  long_weekend
+
+  AUD_CHF    LUN      9   +5.83    -1.15   +6.97  +2.03   2.0       midweek
+  AUD_CHF    MAR     10   +2.58    -1.45   +4.03  +2.31   2.0       midweek
+  AUD_CHF    MER     30   -4.09    -0.92   -3.17  -1.01   2.0       midweek
+  AUD_CHF    JEU     39   +0.86    -1.18   +2.04  +1.54   4.0good_friday,lo
+  AUD_CHF    VEN    104   +7.85    +5.89   +1.97  +1.80   4.0  long_weekend
+
+  GBP_JPY    LUN      9   +1.70    -0.32   +2.02  +0.61   2.3       midweek
+  GBP_JPY    MAR     10   -4.12    -0.04   -4.08  -1.27   2.3       midweek
+  GBP_JPY    MER     30   -0.42    +0.28   -0.70  -0.38   2.3long_weekend,m
+  GBP_JPY    JEU     34   +1.44    -0.22   +1.67  +1.26   4.0good_friday,lo
+  GBP_JPY    VEN    104   +2.62    +1.54   +1.08  +1.20   4.0long_weekend,m
+
+  GBP_USD    LUN      9   -2.48    -0.23   -2.25  -1.60   2.3       midweek
+  GBP_USD    MAR      9   -2.76    -0.39   -2.37  -1.03   2.2       midweek
+  GBP_USD    MER     27   -1.57    -0.09   -1.48  -1.19   2.3long_weekend,m
+  GBP_USD    JEU     33   +2.12    -0.13   +2.25  +1.89   4.0good_friday,lo
+  GBP_USD    VEN    102   +2.28    +1.67   +0.61  +0.81   4.0long_weekend,m
+
+  USD_CAD    LUN      9   +0.05    -0.32   +0.37  +0.18   2.3       midweek
+  USD_CAD    MAR      9   +0.64    -0.34   +0.98  +0.85   2.2       midweek
+  USD_CAD    MER     27   +0.34    -0.47   +0.81  +0.72   2.3long_weekend,m
+  USD_CAD    JEU     33   -1.32    -0.36   -0.96  -1.06   4.0good_friday,lo
+  USD_CAD    VEN    102   +1.12    +2.31   -1.19  -1.27   4.0long_weekend,m
+
+
+--- 5. JAMBE DEPLOYABLE (A = 13:00 UTC -> cloture reelle) ET JOURNEE PLEINE (close -> close)
+  SYMBOLE     A PRE  A base  A resid      t net cout |  FULL PRE FULL base FULL resid      t
+  GBP_CHF     +3.61   +2.03    -0.39  -0.14    +1.33 |     -3.50     +1.60      -8.46  -2.35
+  EUR_CHF     +4.02   +1.44    +1.25  +0.62    +2.32 |     +4.48     +1.06      +1.30  +0.61
+  AUD_CHF     +1.78   +4.41    -5.44  -1.71    -0.81 |     +0.43     +1.34      -5.64  -1.16
+  GBP_JPY     -1.02   -1.26    -0.77  -0.30    -2.65 |     -2.34     -0.03      -5.28  -1.18
+  GBP_USD     +0.19   -0.73    -0.08  -0.03    -1.95 |     -1.11     +0.21      -3.71  -1.08
+  USD_CAD     +3.67   +0.52    +2.61  +1.09    +1.53 |     +3.59     -0.20      +3.60  +1.02
+  net cout = A PRE - cout A/R mesure (55e). Aucun carry : hold intra-journalier.
+  ⚠️ donnee BID seule : le demi-spread A LA CLOTURE n'est pas mesurable ici (question ouverte du 59e).
+
+--- 6. SPECIFICITE — la session APRES le conge et la session AVANT la veille doivent etre plates
+  Si POST (ou N-1) porte le meme effet, ce n'est pas un effet 'veille de conge'.
+  SYMBOLE   POST n  POST bp POST resid      t   N-1 bp  N-1 resid      t
+  GBP_CHF      192    -0.71      -0.27  -0.60    -0.82      -0.20  -0.39
+  EUR_CHF      192    -0.71      -0.41  -1.27    -1.04      -0.52  -1.40
+  AUD_CHF      192    -2.55      -2.35  -2.71    -0.46      +0.38  +0.48
+  GBP_JPY      187    -0.12      -0.28  -0.25    -0.51      -0.49  -0.76
+  GBP_USD      180    -0.14      -0.10  -0.16    -1.13      -1.05  -2.31
+  USD_CAD      180    +0.54      +0.50  +0.77    +0.63      +0.87  +1.78
+
+--- 7. GRADIENT ORDONNE PAR CATEGORIE — le fade suit-il le TROU FX ou la fermeture US ?
+  1 = lun-jeu ordinaire (gap 1 j) | 2 = vendredi ordinaire (gap 3 j, week-end FX)
+  3 = veille d'un conge EN SEMAINE (gap 2 j, FX ouvert le jour du conge)
+  4 = JEUDI veille d'un conge du VENDREDI (gap 4 j, FX ouvert mais mince le vendredi)
+  5 = VENDREDI veille d'un conge du LUNDI (gap 4 j, week-end FX + lundi US ferme)
+  SYMBOLE     1 ord lun-jeu      2 ord ven  3 pre-conge sem   4 jeu->ven ferie   5 ven->lun ferie
+  GBP_CHF       -0.93(t  -7.6)     +3.14(t +10.1)     -0.64(t  -0.5)     +0.05(t  +0.1)     +4.77(t  +5.2)
+                        n=4141              n=962               n=49               n=39              n=104
+             -> 5 - 2 (vendredi ordinaire, meme jour de semaine) : +1.63 bp  t +1.67   |   5 - 3 (meme gap 4 j, autre fermeture) : +5.41 bp  t +3.28
+  EUR_CHF       -0.65(t  -9.4)     +1.84(t  +9.2)     -0.23(t  -0.4)     +0.22(t  +0.4)     +2.77(t  +5.0)
+                        n=4141              n=962               n=49               n=39              n=104
+             -> 5 - 2 (vendredi ordinaire, meme jour de semaine) : +0.93 bp  t +1.59   |   5 - 3 (meme gap 4 j, autre fermeture) : +3.00 bp  t +3.72
+  AUD_CHF       -1.17(t  -6.8)     +5.89(t +11.6)     -0.91(t  -0.4)     +0.86(t  +0.6)     +7.85(t  +7.2)
+                        n=4141              n=962               n=49               n=39              n=104
+             -> 5 - 2 (vendredi ordinaire, meme jour de semaine) : +1.97 bp  t +1.63   |   5 - 3 (meme gap 4 j, autre fermeture) : +8.76 bp  t +3.68
+  GBP_JPY       -0.07(t  -0.3)     +1.54(t  +4.2)     +0.05(t  +0.0)     +1.44(t  +1.1)     +2.25(t  +2.6)
+                        n=3851              n=892               n=40               n=34              n=101
+             -> 5 - 2 (vendredi ordinaire, meme jour de semaine) : +0.71 bp  t +0.74   |   5 - 3 (meme gap 4 j, autre fermeture) : +2.20 bp  t +1.27
+  GBP_USD       -0.21(t  -1.5)     +1.67(t  +6.1)     -1.16(t  -1.3)     +2.12(t  +1.8)     +2.42(t  +3.2)
+                        n=3735              n=866               n=37               n=33               n=99
+             -> 5 - 2 (vendredi ordinaire, meme jour de semaine) : +0.75 bp  t +0.93   |   5 - 3 (meme gap 4 j, autre fermeture) : +3.58 bp  t +3.06
+  USD_CAD       -0.37(t  -3.6)     +2.30(t  +6.0)     -0.04(t  -0.0)     -1.32(t  -1.5)     +1.12(t  +1.2)
+                        n=3735              n=866               n=37               n=33               n=99
+             -> 5 - 2 (vendredi ordinaire, meme jour de semaine) : -1.18 bp  t -1.16   |   5 - 3 (meme gap 4 j, autre fermeture) : +1.15 bp  t +0.86
+  Lecture : si SEUL 5 se detache, c'est le WEEK-END FX (marche ferme) qui porte l'effet.
+  Si 4 ET 5 se detachent, c'est la fermeture des ACTIONS US. Si 3 se detache aussi, c'est le
+  calendrier US en general. Un ordre non monotone = pas un gradient.
+
+--- 8. LOCALISATION — profil k=0..3 sur les sessions PRE (loi du 59e : localiser AVANT de conditionner)
+  SYMBOLE                k=0              k=1              k=2              k=3   (PRE puis residuel)
+  GBP_CHF      +2.43(t+3.7)    +0.26(t+0.5)    -0.40(t-0.6)    -0.45(t-0.7)
+               +1.10(t+1.8)    +0.67(t+1.2)    -0.76(t-1.1)    -0.64(t-0.9)
+  EUR_CHF      +1.49(t+4.0)    +0.10(t+0.3)    +0.37(t+0.8)    -0.43(t-0.9)
+               +0.78(t+2.2)    +0.37(t+1.0)    +0.27(t+0.6)    -0.71(t-1.5)
+  AUD_CHF      +4.20(t+4.7)    +0.82(t+1.0)    +0.31(t+0.4)    -0.31(t-0.4)
+               +1.52(t+1.8)    +0.61(t+0.7)    +0.13(t+0.2)    -0.99(t-1.2)
+  GBP_JPY      +1.51(t+2.2)    -1.14(t-2.1)    -1.01(t-1.6)    -0.02(t-0.0)
+               +0.67(t+1.0)    -0.37(t-0.7)    -0.75(t-1.2)    -0.13(t-0.2)
+  GBP_USD      +1.18(t+2.2)    -0.34(t-0.8)    -0.36(t-0.7)    -0.34(t-0.6)
+               +0.30(t+0.6)    +0.27(t+0.6)    -0.51(t-0.9)    -0.37(t-0.6)
+  USD_CAD      +0.48(t+0.8)    +0.04(t+0.1)    +1.25(t+2.1)    +0.73(t+1.1)
+               -0.66(t-1.1)    -0.35(t-0.7)    +1.21(t+2.0)    +0.22(t+0.3)
+
+--- 9. STABILITE DU RESIDU (k=0) — IS 2006-2015 / OOS 2016-2026, eres, mediane, hit, TRIM 5%
+  SYMBOLE      FULL      IS     OOS  mediane  hit>0   TRIM5    n | eres (4)
+  GBP_CHF     +1.10   +0.53   +1.61    +0.58    56%   +1.13  192 |  -2.95  +2.09  +4.10  +0.86
+  EUR_CHF     +0.78   +0.21   +1.30    +0.52    55%   +0.70  192 |  -0.53  +0.81  +1.95  +0.82
+  AUD_CHF     +1.52   +1.15   +1.86    +1.43    57%   +1.46  192 |  -3.21  +2.20  +6.32  +0.42
+  GBP_JPY     +0.67   +0.21   +1.10    +1.07    55%   +0.86  187 |  -0.72  +0.02  +2.84  +0.37
+  GBP_USD     +0.30   -0.94   +1.55    +0.66    55%   +0.35  180 |  -0.27  -2.21  +1.62  +1.68
+  USD_CAD     -0.66   -1.17   -0.15    -0.17    48%   -0.59  180 |  -1.47  -1.22  +1.11  -1.13
+
+--- 9b. STABILITE DE L'INCREMENT « vendredi avant lundi ferie » - « vendredi ordinaire »
+  C'est le SEUL chiffre qui repond a 'un jour de fermeture US en plus change-t-il le fade ?'
+  SYMBOLE              FULL        IS 06-15       OOS 16-26 | eres (diff bp / t)
+  GBP_CHF      +1.63(t+1.7)    +1.86(t+1.1)    +1.09(t+1.0) |  +0.38/+0.15  +1.99/+1.08  +2.70/+1.14  +0.82/+0.80
+  EUR_CHF      +0.93(t+1.6)    +0.75(t+0.8)    +0.91(t+1.3) |  +0.03/+0.02  +1.79/+1.45  +0.19/+0.13  +1.12/+1.48
+  AUD_CHF      +1.97(t+1.6)    +3.76(t+1.6)    +0.01(t+0.0) |  -0.17/-0.06  +3.80/+1.35  +3.59/+1.41  -0.59/-0.47
+  GBP_JPY      +0.71(t+0.7)    -0.46(t-0.3)    +1.61(t+1.5) |  +1.57/+0.56  -3.34/-1.55  +2.78/+1.35  +1.41/+1.43
+  GBP_USD      +0.75(t+0.9)    +0.30(t+0.2)    +0.96(t+1.1) |  +2.24/+0.84  -2.00/-1.32  +1.33/+0.84  +1.14/+1.26
+  USD_CAD      -1.18(t-1.2)    -2.30(t-1.2)    -0.24(t-0.3) |  -2.06/-0.56  -3.17/-1.44  +1.29/+0.77  -1.10/-1.02
+  Lecture : un increment qui change de signe entre les eres est un artefact d'ere, pas un edge.
+
+--- 10. DE QUOI EST FAIT L'ECHANTILLON (par nom de conge, crosses GBP_CHF)
+  New Year       n= 21  brut   -1.81 bp  t -0.59  jours=['JEU', 'LUN', 'MAR', 'MER', 'VEN']
+  MLK            n= 21  brut   +4.93 bp  t +2.74  jours=['VEN']
+  Presidents     n= 21  brut   +4.23 bp  t +2.19  jours=['VEN']
+  GoodFriday     n= 21  brut   +0.37 bp  t +0.55  jours=['JEU']
+  Memorial       n= 21  brut   +4.08 bp  t +1.52  jours=['VEN']
+  July4          n= 21  brut   +2.88 bp  t +1.71  jours=['JEU', 'LUN', 'MAR', 'MER', 'VEN']
+  Labor          n= 21  brut   +5.82 bp  t +4.07  jours=['VEN']
+  Thanksgiving   n= 20  brut   -0.75 bp  t -0.41  jours=['MER']
+  Christmas      n= 20  brut   +1.75 bp  t +1.18  jours=['JEU', 'LUN', 'MAR', 'MER', 'VEN']
+  Juneteenth     n=  5  brut   +3.14 bp  t +0.93  jours=['JEU', 'MAR', 'MER', 'VEN']
+
+--- 11. LECTURE
+  Tableau 3 : le fade de la derniere heure est-il different la veille d'un conge ?
+  Tableau 4 : l'effet vit-il le VENDREDI (donc long week-end) ou tous les jours de semaine ?
+  Tableau 6 : POST et N-1 plats = specificite ; sinon effet de calendrier generique.
+  Tableau 7 : l'ORDRE des buckets dit si c'est la LONGUEUR du trou qui porte l'effet.
+  Tableau 9 : un residu positif FULL mais negatif en IS ou en OOS = late-bloomer, pas un edge.

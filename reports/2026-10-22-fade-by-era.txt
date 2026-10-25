@@ -1,0 +1,42 @@
+============================================================================================
+GBP_CHF — n=1131 vendredis
+  ERE           n   fade 13h      t  dont k=0      t spread sortie      net
+  2005-2009    259      +3.15  +1.13     -1.28  -2.58          9.70    -6.55
+  2010-2013    208      +5.20  +1.91     +1.63  +3.11         12.08    -6.87
+  2014-2017    207     +10.91  +4.03     +7.44 +10.85         17.21    -6.30
+  2018-2021    207      +8.85  +4.05     +5.65  +9.04         12.87    -4.02
+  2022-2026    250      +1.62  +0.87     +3.87  +9.80          9.74    -8.12
+  FULL         1131      +5.65  +5.07     +3.26 +12.59         12.10    -6.45
+      net de la SEULE jambe k=0 (derniere heure) 2005-2009 :  -10.98 bp  t -21.79  n=259
+      net de la SEULE jambe k=0 (derniere heure) 2010-2013 :  -10.45 bp  t -18.57  n=208
+      net de la SEULE jambe k=0 (derniere heure) 2014-2017 :   -9.76 bp  t -15.30  n=207
+      net de la SEULE jambe k=0 (derniere heure) 2018-2021 :   -7.22 bp  t -11.40  n=207
+      net de la SEULE jambe k=0 (derniere heure) 2022-2026 :   -5.87 bp  t -15.23  n=250
+============================================================================================
+EUR_CHF — n=1131 vendredis
+  ERE           n   fade 13h      t  dont k=0      t spread sortie      net
+  2005-2009    259      +4.14  +2.84     -0.46  -1.37          6.43    -2.29
+  2010-2013    208      +2.41  +1.10     +0.69  +2.04          7.59    -5.19
+  2014-2017    207      +7.98  +4.32     +3.96  +8.65         11.87    -3.89
+  2018-2021    207      +6.12  +5.23     +3.98 +11.38          9.07    -2.95
+  2022-2026    250      +0.73  +0.48     +1.52  +5.00          5.72    -4.99
+  FULL         1131      +4.13  +5.56     +1.81 +10.78          7.97    -3.83
+      net de la SEULE jambe k=0 (derniere heure) 2005-2009 :   -6.89 bp  t -20.39  n=259
+      net de la SEULE jambe k=0 (derniere heure) 2010-2013 :   -6.90 bp  t -19.92  n=208
+      net de la SEULE jambe k=0 (derniere heure) 2014-2017 :   -7.91 bp  t -14.67  n=207
+      net de la SEULE jambe k=0 (derniere heure) 2018-2021 :   -5.10 bp  t -14.66  n=207
+      net de la SEULE jambe k=0 (derniere heure) 2022-2026 :   -4.19 bp  t -13.88  n=250
+============================================================================================
+AUD_CHF — n=1131 vendredis
+  ERE           n   fade 13h      t  dont k=0      t spread sortie      net
+  2005-2009    259      +3.95  +1.12     +0.83  +0.61         10.24    -6.28
+  2010-2013    208      +6.16  +1.93     +3.22  +4.58         19.88   -13.72
+  2014-2017    207     +15.55  +5.39    +11.14 +14.04         26.02   -10.46
+  2018-2021    207     +12.60  +5.49     +9.36 +14.27         21.87    -9.27
+  2022-2026    250      +8.24  +3.47     +6.23 +12.37         14.91    -6.68
+  FULL         1131      +9.01  +6.83     +5.91 +14.12         18.06    -9.05
+      net de la SEULE jambe k=0 (derniere heure) 2005-2009 :   -9.41 bp  t -6.85  n=259
+      net de la SEULE jambe k=0 (derniere heure) 2010-2013 :  -16.67 bp  t -22.00  n=208
+      net de la SEULE jambe k=0 (derniere heure) 2014-2017 :  -14.88 bp  t -21.81  n=207
+      net de la SEULE jambe k=0 (derniere heure) 2018-2021 :  -12.51 bp  t -19.47  n=207
+      net de la SEULE jambe k=0 (derniere heure) 2022-2026 :   -8.69 bp  t -15.76  n=250

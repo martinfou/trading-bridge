@@ -1,0 +1,223 @@
+====================================================================================================================================
+65e (ven 23 oct 2026) — LA BRANCHE SURVIVANTE (61e) SURVIT-ELLE AU MID ?  Sortie dans le CORPS de la journee.
+FADE = SELL. Unite bp. NET = fade_mid - (spread_entree + spread_sortie)/2, spreads MESURES a l'instant de chaque jambe.
+====================================================================================================================================
+
+--- 0. FLUX (OANDA H1 BID+ASK)
+  GBP_CHF  bars= 138167  sessions= 5655  2005-01-02 -> 2026-10-22   PRE=200
+  EUR_CHF  bars= 138133  sessions= 5655  2005-01-02 -> 2026-10-22   PRE=200
+  AUD_CHF  bars= 138327  sessions= 5655  2005-01-02 -> 2026-10-22   PRE=200
+
+--- P0. IDENTITE COMPTABLE (controle de non-regression du 64e)
+  realise(bid) = (bid0-bid1) - s_sortie   |   realise(mid) = (mid0-mid1) - (s_in+s_out)/2
+  Les deux doivent donner le MEME net a 0.02 bp pres sur chaque ligne de sortie.
+  GBP_CHF  n= 22617  ecart max=1.2337 bp  moyen=0.0043 bp
+  EUR_CHF  n= 22619  ecart max=1.4111 bp  moyen=0.0020 bp
+  AUD_CHF  n= 22614  ecart max=1.2025 bp  moyen=0.0055 bp
+
+--- A. LE SPREAD, PAR CATEGORIE (le point qui explique le 61e sans effet de prix)
+  CROIX    CATEGORIE               n spread 13h spread H-1 spread close close/H-1
+  GBP_CHF  FRI ordinaire        1021       2.34       3.35        12.09      3.61
+  GBP_CHF  PRE-FRI (lun ferie)   110       2.35       3.29        12.10      3.68
+  GBP_CHF  PRE-JEU (ven ferie)    40       2.44       9.84         5.97      0.61
+  GBP_CHF  PRE mar/mer            41       2.43       9.70         5.73      0.59
+  GBP_CHF  lun-jeu ordinaire    4433       2.31       9.33         3.09      0.33
+
+  EUR_CHF  FRI ordinaire        1021       1.71       2.23         7.94      3.56
+  EUR_CHF  PRE-FRI (lun ferie)   110       1.76       2.17         8.11      3.74
+  EUR_CHF  PRE-JEU (ven ferie)    40       1.75       6.55         4.35      0.66
+  EUR_CHF  PRE mar/mer            41       1.74       6.43         3.95      0.61
+  EUR_CHF  lun-jeu ordinaire    4433       1.66       6.14         2.29      0.37
+
+  AUD_CHF  FRI ordinaire        1021       3.33       4.48        18.02      4.02
+  AUD_CHF  PRE-FRI (lun ferie)   110       3.28       4.23        18.35      4.34
+  AUD_CHF  PRE-JEU (ven ferie)    40       3.46      11.47         6.93      0.60
+  AUD_CHF  PRE mar/mer            41       3.26      11.49         6.88      0.60
+  AUD_CHF  lun-jeu ordinaire    4433       3.27      10.33         3.70      0.36
+
+
+--- B. FADE PAR CATEGORIE ET PAR SORTIE : bid / mid / spread de sortie / NET (mid) / t
+
+  GBP_CHF
+  CATEGORIE           SORTIE      n  fade BID  fade MID   s_in  s_out     NET  t(net)
+  FRI ordinaire       H-3      1021     +1.35     +1.21   2.34   2.63   -1.27   -1.31
+  FRI ordinaire       H-2      1020     +1.09     +0.94   2.34   2.66   -1.57   -1.53
+  FRI ordinaire       H-1      1020     +1.50     +1.00   2.34   3.35   -1.85   -1.69
+  FRI ordinaire       close    1021     +5.43     +0.56   2.34  12.09   -6.66   -5.74
+
+  PRE-FRI (lun ferie) H-3       110     +3.66     +3.55   2.35   2.58   +1.09   +0.28
+  PRE-FRI (lun ferie) H-2       110     +2.44     +2.31   2.35   2.61   -0.17   -0.05
+  PRE-FRI (lun ferie) H-1       110     +2.00     +1.53   2.35   3.29   -1.29   -0.34
+  PRE-FRI (lun ferie) close     110     +7.69     +2.81   2.35  12.10   -4.41   -1.12
+
+  PRE-JEU (ven ferie) H-3        40     -5.39     -5.72   2.44   3.09   -8.49   -2.13
+  PRE-JEU (ven ferie) H-2        40     -3.43     -6.63   2.44   8.84  -12.27   -3.10
+  PRE-JEU (ven ferie) H-1        40     -2.09     -5.79   2.44   9.84  -11.92   -2.78
+  PRE-JEU (ven ferie) close      40     -3.16     -4.93   2.44   5.97   -9.13   -2.15
+
+  PRE mar/mer         H-3        41     -5.21     -5.62   2.43   3.23   -8.44   -1.87
+  PRE mar/mer         H-2        41     -4.71     -6.38   2.43   5.75  -10.46   -2.40
+  PRE mar/mer         H-1        41     -2.68     -6.32   2.43   9.70  -12.39   -2.74
+  PRE mar/mer         close      41     -3.55     -5.21   2.43   5.73   -9.29   -1.93
+
+  lun-jeu ordinaire   H-3      4433     +0.37     +0.23   2.31   2.59   -2.22   -4.37
+  lun-jeu ordinaire   H-2      4432     +2.98     +0.11   2.31   8.04   -5.06   -9.73
+  lun-jeu ordinaire   H-1      4433     +3.93     +0.42   2.31   9.33   -5.40  -10.15
+  lun-jeu ordinaire   close    4433     +1.11     +0.72   2.31   3.09   -1.98   -3.71
+
+
+  EUR_CHF
+  CATEGORIE           SORTIE      n  fade BID  fade MID   s_in  s_out     NET  t(net)
+  FRI ordinaire       H-3      1021     +1.20     +1.12   1.71   1.87   -0.67   -0.99
+  FRI ordinaire       H-2      1021     +1.24     +1.13   1.71   1.93   -0.69   -0.98
+  FRI ordinaire       H-1      1021     +1.39     +1.13   1.71   2.23   -0.84   -1.16
+  FRI ordinaire       close    1021     +3.86     +0.74   1.71   7.94   -4.09   -5.36
+
+  PRE-FRI (lun ferie) H-3       110     +4.30     +4.21   1.76   1.93   +2.36   +0.88
+  PRE-FRI (lun ferie) H-2       110     +3.13     +3.02   1.76   1.97   +1.16   +0.48
+  PRE-FRI (lun ferie) H-1       110     +3.03     +2.83   1.76   2.17   +0.86   +0.31
+  PRE-FRI (lun ferie) close     110     +6.72     +3.55   1.76   8.11   -1.38   -0.52
+
+  PRE-JEU (ven ferie) H-3        40     -4.82     -5.01   1.75   2.14   -6.96   -1.65
+  PRE-JEU (ven ferie) H-2        40     -2.23     -5.11   1.75   7.51   -9.74   -2.32
+  PRE-JEU (ven ferie) H-1        40     -1.40     -3.80   1.75   6.55   -7.95   -1.80
+  PRE-JEU (ven ferie) close      40     -2.19     -3.49   1.75   4.35   -6.54   -1.46
+
+  PRE mar/mer         H-3        41     +0.11     -0.18   1.74   2.33   -2.21   -0.94
+  PRE mar/mer         H-2        41     +0.82     -0.48   1.74   4.33   -3.51   -1.36
+  PRE mar/mer         H-1        41     +2.51     +0.16   1.74   6.43   -3.92   -2.00
+  PRE mar/mer         close      41     +1.18     +0.07   1.74   3.95   -2.78   -1.17
+
+  lun-jeu ordinaire   H-3      4433     +0.31     +0.20   1.66   1.88   -1.57   -4.51
+  lun-jeu ordinaire   H-2      4432     +2.26     +0.31   1.66   5.57   -3.31   -9.17
+  lun-jeu ordinaire   H-1      4433     +2.78     +0.54   1.66   6.14   -3.36   -8.89
+  lun-jeu ordinaire   close    4433     +0.77     +0.46   1.66   2.29   -1.52   -4.07
+
+
+  AUD_CHF
+  CATEGORIE           SORTIE      n  fade BID  fade MID   s_in  s_out     NET  t(net)
+  FRI ordinaire       H-3      1021     +1.92     +1.83   3.33   3.52   -1.60   -1.32
+  FRI ordinaire       H-2      1020     +2.06     +1.92   3.33   3.61   -1.55   -1.25
+  FRI ordinaire       H-1      1017     +1.54     +0.97   3.33   4.48   -2.94   -2.18
+  FRI ordinaire       close    1021     +8.98     +1.63   3.33  18.02   -9.04   -6.47
+
+  PRE-FRI (lun ferie) H-3       110     +2.53     +2.46   3.28   3.41   -0.89   -0.22
+  PRE-FRI (lun ferie) H-2       110     +1.68     +1.60   3.28   3.44   -1.76   -0.47
+  PRE-FRI (lun ferie) H-1       110     +0.70     +0.23   3.28   4.23   -3.52   -0.95
+  PRE-FRI (lun ferie) close     110     +9.25     +1.72   3.28  18.35   -9.09   -2.52
+
+  PRE-JEU (ven ferie) H-3        40    -14.45    -14.69   3.46   3.93  -18.39   -3.57
+  PRE-JEU (ven ferie) H-2        40    -11.01    -14.98   3.46  11.38  -22.40   -4.26
+  PRE-JEU (ven ferie) H-1        40     -9.64    -13.65   3.46  11.47  -21.11   -3.92
+  PRE-JEU (ven ferie) close      40     -9.65    -11.38   3.46   6.93  -16.58   -2.92
+
+  PRE mar/mer         H-3        41    -13.37    -13.76   3.26   4.03  -17.40   -1.89
+  PRE mar/mer         H-2        41    -14.15    -15.68   3.26   6.31  -20.47   -1.92
+  PRE mar/mer         H-1        41     -9.50    -13.62   3.26  11.49  -20.99   -2.13
+  PRE mar/mer         close      41     -9.33    -11.14   3.26   6.88  -16.22   -1.85
+
+  lun-jeu ordinaire   H-3      4433     +1.19     +1.10   3.27   3.45   -2.26   -3.41
+  lun-jeu ordinaire   H-2      4432     +4.25     +1.28   3.27   9.19   -4.95   -7.12
+  lun-jeu ordinaire   H-1      4433     +5.74     +2.21   3.27  10.33   -4.59   -6.47
+  lun-jeu ordinaire   close    4433     +2.97     +2.75   3.27   3.70   -0.73   -1.02
+
+
+--- B2. LE k=0 DU 61e (derniere barre reelle SEULE), BID vs MID — le controle decisif
+  Le 61e publiait +4.77/+2.77/+7.85 bp (PRE-FRI) et +3.14/+1.84/+5.89 (FRI ordinaire) en BID.
+  Si le MID est nul et le BID positif, l'effet du 61e est le MEME artefact que le 64e.
+  CROIX    CATEGORIE               n   k0 BID      t   k0 MID      t  s_open s_close     NET      t
+  GBP_CHF  FRI ordinaire        1021    +3.23 +10.62    -0.02  -0.08    5.59   12.09   -8.86 -30.17
+  GBP_CHF  PRE-FRI (lun ferie)   110    +4.69  +5.34    +1.47  +1.86    5.66   12.10   -7.41  -9.48
+  GBP_CHF  PRE-JEU (ven ferie)    40    -0.15  -0.20    +0.16  +0.23    6.59    5.97   -6.12  -6.83
+  GBP_CHF  PRE mar/mer            41    -1.42  -0.94    -0.58  -0.38    7.42    5.73   -7.15  -3.67
+  GBP_CHF  lun-jeu ordinaire    4433    -0.97  -8.34    -0.00  -0.00    5.02    3.09   -4.05 -35.23
+
+  EUR_CHF  FRI ordinaire        1021    +1.84  +9.32    -0.22  -1.23    3.82    7.94   -6.10 -31.08
+  EUR_CHF  PRE-FRI (lun ferie)   110    +2.68  +5.07    +0.58  +1.10    3.91    8.11   -5.43  -7.68
+  EUR_CHF  PRE-JEU (ven ferie)    40    +0.08  +0.14    +0.25  +0.46    4.69    4.35   -4.27  -5.74
+  EUR_CHF  PRE mar/mer            41    -0.49  -0.74    -0.07  -0.14    4.78    3.95   -4.44  -6.18
+  EUR_CHF  lun-jeu ordinaire    4433    -0.66  -9.73    -0.09  -1.43    3.42    2.29   -2.95 -43.31
+
+  AUD_CHF  FRI ordinaire        1021    +5.81 +12.04    +0.55  +1.23    7.49   18.02  -12.21 -25.59
+  AUD_CHF  PRE-FRI (lun ferie)   110    +7.40  +6.98    +1.91  +2.18    7.37   18.35  -10.95 -11.81
+  AUD_CHF  PRE-JEU (ven ferie)    40    +0.55  +0.42    +1.04  +0.83    7.90    6.93   -6.37  -4.34
+  AUD_CHF  PRE mar/mer            41    -2.47  -1.04    -1.84  -0.81    8.13    6.88   -9.35  -3.66
+  AUD_CHF  lun-jeu ordinaire    4433    -1.27  -7.54    -0.31  -1.89    5.61    3.70   -4.97 -29.13
+
+
+--- C. STABILITE (IS 2005-2015 / OOS 2016-2026 + 5 eres) des cellules |t| >= 2 en NET
+  CROIX    CATEGORIE           SORTIE      n     NET      t      IS     OOS | eres
+  GBP_CHF  FRI ordinaire       close    1021   -6.66  -5.74   -7.88   -5.41 |  -7.34  -8.82  -6.67  -3.85  -7.44
+  GBP_CHF  PRE-JEU (ven ferie) H-3        40   -8.49  -2.13  -15.03   -1.26 |   n/a    n/a    n/a    n/a    n/a 
+  GBP_CHF  PRE-JEU (ven ferie) H-2        40  -12.27  -3.10  -16.32   -7.80 |   n/a    n/a    n/a    n/a    n/a 
+  GBP_CHF  PRE-JEU (ven ferie) H-1        40  -11.92  -2.78  -16.00   -7.42 |   n/a    n/a    n/a    n/a    n/a 
+  GBP_CHF  PRE-JEU (ven ferie) close      40   -9.13  -2.15  -13.42   -4.39 |   n/a    n/a    n/a    n/a    n/a 
+  GBP_CHF  PRE mar/mer         H-2        41  -10.46  -2.40   -9.82  -11.08 |   n/a    n/a    n/a    n/a   -9.11
+  GBP_CHF  PRE mar/mer         H-1        41  -12.39  -2.74  -10.17  -14.50 |   n/a    n/a    n/a    n/a  -11.57
+  GBP_CHF  lun-jeu ordinaire   H-3      4433   -2.22  -4.37   -1.81   -2.64 |  -0.82  -0.80  -2.47  -3.11  -2.34
+  GBP_CHF  lun-jeu ordinaire   H-2      4432   -5.06  -9.73   -2.77   -7.41 |  -1.37  -1.00  -5.33  -6.91  -8.25
+  GBP_CHF  lun-jeu ordinaire   H-1      4433   -5.40 -10.15   -2.42   -8.43 |  -0.94  -0.81  -5.32  -7.86  -9.81
+  GBP_CHF  lun-jeu ordinaire   close    4433   -1.98  -3.71   -1.37   -2.60 |  +0.58  -0.71  -2.98  -3.47  -2.14
+  EUR_CHF  FRI ordinaire       close    1021   -4.09  -5.36   -4.08   -4.09 |  -2.82  -4.60  -5.05  -3.41  -5.83
+  EUR_CHF  PRE-JEU (ven ferie) H-2        40   -9.74  -2.32  -11.35   -7.95 |   n/a    n/a    n/a    n/a    n/a 
+  EUR_CHF  PRE mar/mer         H-1        41   -3.92  -2.00   -6.11   -1.83 |   n/a    n/a    n/a    n/a   -2.86
+  EUR_CHF  lun-jeu ordinaire   H-3      4433   -1.57  -4.51   -1.56   -1.59 |  -1.75  -0.13  -3.81  -1.24  -1.47
+  EUR_CHF  lun-jeu ordinaire   H-2      4432   -3.31  -9.17   -2.07   -4.57 |  -1.74  -0.42  -5.54  -3.70  -5.29
+  EUR_CHF  lun-jeu ordinaire   H-1      4433   -3.36  -8.89   -1.68   -5.07 |  -1.51  +0.04  -5.24  -4.21  -5.55
+  EUR_CHF  lun-jeu ordinaire   close    4433   -1.52  -4.07   -1.21   -1.83 |  -0.94  +0.32  -3.89  -1.43  -1.70
+  AUD_CHF  FRI ordinaire       H-1      1017   -2.94  -2.18   -6.48   +0.67 |  -1.20 -12.31  -0.75  -1.35  +0.91
+  AUD_CHF  FRI ordinaire       close    1021   -9.04  -6.47  -11.53   -6.50 |  -6.84 -15.51 -10.17 -10.01  -5.33
+  AUD_CHF  PRE-FRI (lun ferie) close     110   -9.09  -2.52   -1.36  -16.29 |  -5.85  -9.88  -8.37 -11.82 -16.95
+  AUD_CHF  PRE-JEU (ven ferie) H-3        40  -18.39  -3.57  -21.01  -15.48 |   n/a    n/a    n/a    n/a    n/a 
+  AUD_CHF  PRE-JEU (ven ferie) H-2        40  -22.40  -4.26  -21.73  -23.14 |   n/a    n/a    n/a    n/a    n/a 
+  AUD_CHF  PRE-JEU (ven ferie) H-1        40  -21.11  -3.92  -21.70  -20.47 |   n/a    n/a    n/a    n/a    n/a 
+  AUD_CHF  PRE-JEU (ven ferie) close      40  -16.58  -2.92  -18.42  -14.54 |   n/a    n/a    n/a    n/a    n/a 
+  AUD_CHF  PRE mar/mer         H-1        41  -20.99  -2.13  -26.29  -15.95 |   n/a    n/a    n/a    n/a  -22.54
+  AUD_CHF  lun-jeu ordinaire   H-3      4433   -2.26  -3.41   -1.29   -3.24 |  -0.66  -2.02  -2.92  -3.59  -2.26
+  AUD_CHF  lun-jeu ordinaire   H-2      4432   -4.95  -7.12   -2.00   -7.95 |  -0.52  -2.48  -5.60  -7.73  -8.06
+  AUD_CHF  lun-jeu ordinaire   H-1      4433   -4.59  -6.47   -0.70   -8.56 |  +1.17  -1.57  -4.79  -8.35  -8.55
+  Lecture : un NET positif FULL mais negatif en IS ou en OOS = late-bloomer, pas un edge.
+
+--- D. HORIZON PLUS LONG — 13:00 -> 13:00 de la session SUIVANTE (mid, spreads mesures)
+  ⚠️ hold de 24 h a 96 h : le carry N'EST PAS compte ici (table de taux par annee requise).
+  CROIX    CATEGORIE               n  fade MID   s_in  s_out     NET      t  hold h
+  GBP_CHF  FRI ordinaire        1021     +0.87   2.34   2.29   -1.45  -0.76      72
+  GBP_CHF  PRE-FRI (lun ferie)   110     +2.89   2.35   2.53   +0.45  +0.10      74
+  GBP_CHF  PRE-JEU (ven ferie)    40     +0.84   2.44   3.57   -2.17  -0.51      35
+  GBP_CHF  PRE mar/mer            41     -5.09   2.43   2.51   -7.56  -1.06      31
+  GBP_CHF  lun-jeu ordinaire    4433     +1.02   2.31   2.31   -1.29  -1.40      24
+
+  EUR_CHF  FRI ordinaire        1021     +0.07   1.71   1.63   -1.59  -1.35      72
+  EUR_CHF  PRE-FRI (lun ferie)   110     +3.37   1.76   1.88   +1.55  +0.56      74
+  EUR_CHF  PRE-JEU (ven ferie)    40     -6.89   1.75   2.83   -9.18  -1.95      35
+  EUR_CHF  PRE mar/mer            41     -2.49   1.74   1.81   -4.27  -1.30      31
+  EUR_CHF  lun-jeu ordinaire    4433     +1.00   1.66   1.67   -0.66  -1.00      24
+
+  AUD_CHF  FRI ordinaire        1021     -1.11   3.33   3.24   -4.39  -1.92      72
+  AUD_CHF  PRE-FRI (lun ferie)   110    -11.71   3.28   3.62  -15.16  -2.98      74
+  AUD_CHF  PRE-JEU (ven ferie)    40     -9.28   3.46   5.17  -13.60  -1.70      35
+  AUD_CHF  PRE mar/mer            41    -19.67   3.26   3.39  -22.99  -2.49      31
+  AUD_CHF  lun-jeu ordinaire    4433     +1.41   3.27   3.26   -1.85  -1.60      24
+
+
+--- E. PROFIL HORAIRE DU SPREAD (heure ET de FIN de barre) — le modele de cout est une CONSTANTE
+  RealCostModel utilise un demi-spread mesure GLOBAL par symbole. S'il existe une structure horaire,
+  toute fenetre qui touche les heures larges est SOUS-COSTEE d'un facteur mesurable.
+
+  GBP_CHF  spread median (toutes barres) = 2.53 bp   n=132722
+   h ET :     0     1     2     3     4     5     6     7     8     9    10    11    12    13    14    15    16    17    18    19    20    21    22    23
+   bp   :  2.86  2.86  3.00  2.47  2.37  2.44  2.35  2.52  2.26  2.34  3.41  2.23  2.23  2.49  2.86  2.56  3.15  6.89  8.67  3.44  3.11  2.94  2.91  2.87
+   x med:  1.13  1.13  1.18  0.97  0.93  0.96  0.93  1.00  0.89  0.92  1.35  0.88  0.88  0.98  1.13  1.01  1.24  2.72  3.42  1.36  1.23  1.16  1.15  1.13
+
+  EUR_CHF  spread median (toutes barres) = 1.81 bp   n=132653
+   h ET :     0     1     2     3     4     5     6     7     8     9    10    11    12    13    14    15    16    17    18    19    20    21    22    23
+   bp   :  2.13  2.14  2.11  1.82  1.82  1.94  1.68  1.64  1.63  1.68  2.34  1.61  1.62  1.77  2.03  1.84  2.26  4.52  5.69  2.53  2.33  2.20  2.15  2.14
+   x med:  1.18  1.18  1.17  1.01  1.01  1.08  0.93  0.91  0.90  0.93  1.29  0.89  0.90  0.98  1.12  1.02  1.25  2.50  3.14  1.40  1.29  1.22  1.19  1.18
+
+  AUD_CHF  spread median (toutes barres) = 3.35 bp   n=132710
+   h ET :     0     1     2     3     4     5     6     7     8     9    10    11    12    13    14    15    16    17    18    19    20    21    22    23
+   bp   :  3.52  3.53  3.54  3.33  3.25  3.29  3.18  3.18  3.16  3.32  4.72  3.17  3.20  3.28  3.79  3.44  4.23  9.25  9.63  4.09  3.78  3.65  3.61  3.54
+   x med:  1.05  1.05  1.06  1.00  0.97  0.98  0.95  0.95  0.94  0.99  1.41  0.95  0.96  0.98  1.13  1.03  1.26  2.76  2.88  1.22  1.13  1.09  1.08  1.06
+
+  Lecture : h ET = heure de FIN de la barre. Un facteur 5x sur une heure d'entree/sortie suffit a
+  inverser le signe d'un net ; c'est le mecanisme du 64e, generalise a toutes les heures.
