@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.function.BiFunction;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * Replays the five deployed strategies (FULL / IS / OOS1 / OOS2) and prints PF + the two
@@ -55,7 +56,10 @@ class FiveStrategiesDailySharpeReplayTest {
 
     @Test
     void replayFiveStrategies() throws Exception {
-        Path dukascopy = resolveDukascopyDir();
+        Path dukascopy = findDukascopyDir();
+        assumeTrue(dukascopy != null,
+            "data/historical/dukascopy absent (donnees non versionnees) : harnais de reporting ignore, "
+                + "pas en echec. Pour l'executer : -Dtb.dataRoot=/chemin/vers/le/repo");
         int rows = 0;
 
         for (Strat s : STRATS) {
@@ -81,16 +85,34 @@ class FiveStrategiesDailySharpeReplayTest {
 
     // ------------------------------------------------------------------ data
 
-    /** Finds the dukascopy CSV dir by walking up from the working dir (robust to maven module cwd). */
-    static Path resolveDukascopyDir() {
+    /**
+     * Finds the dukascopy CSV dir by walking up from the working dir (robust to maven module cwd).
+     *
+     * <p>Returns {@code null} when the directory is absent, or present but without any per-year
+     * bid CSV. {@code data/historical/*} is gitignored, so a fresh CI checkout has neither: this
+     * harness must skip there instead of failing the build. Use {@code -Dtb.dataRoot=/path/to/repo}
+     * to point at a machine that has the data.</p>
+     */
+    static Path findDukascopyDir() {
         String override = System.getProperty("tb.dataRoot");
         Path start = override != null ? Path.of(override) : Path.of(System.getProperty("user.dir")).toAbsolutePath();
         for (Path p = start; p != null; p = p.getParent()) {
             Path candidate = p.resolve("data/historical/dukascopy");
-            if (Files.isDirectory(candidate)) return candidate;
+            if (Files.isDirectory(candidate) && hasPerYearBidCsv(candidate)) return candidate;
         }
-        throw new IllegalStateException("data/historical/dukascopy not found from " + start
-            + " (run with -Dtb.dataRoot=/path/to/repo)");
+        return null;
+    }
+
+    /** True when the dir holds at least one per-year bid CSV the replay can actually load. */
+    static boolean hasPerYearBidCsv(Path dukascopy) {
+        try (var stream = Files.list(dukascopy)) {
+            return stream.anyMatch(p -> {
+                String n = p.getFileName().toString().toLowerCase();
+                return n.contains("-h1-bid-") && n.contains("-01-01-");
+            });
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /** Loads a symbol's full history from its per-year dukascopy bid CSVs. */
