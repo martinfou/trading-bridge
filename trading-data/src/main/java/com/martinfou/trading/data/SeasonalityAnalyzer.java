@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.Month;
+import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.*;
@@ -175,29 +176,41 @@ public class SeasonalityAnalyzer {
         }
 
         ZoneId utc = ZoneId.of("UTC");
-        ZoneId ny = ZoneId.of("America/New_York");
 
-        // Process bar-to-bar returns
-        for (int i = 1; i < bars.size(); i++) {
-            Bar prev = bars.get(i - 1);
-            Bar curr = bars.get(i);
+        // ── Barres RÉELLES seulement ──
+        // Une barre de carry (week-end, marché fermé) est plate par construction : high == low.
+        // Les inclure gonfle le décompte et écrase les rendements (filtre documenté : high > low).
+        List<Bar> real = realBars(bars);
 
+        // ── Rendements mensuels VRAIS : clôture de fin de mois → clôture de fin de mois ──
+        // (l'ancienne implémentation ajoutait le rendement d'UNE SEULE barre à la bascule de mois)
+        Map<YearMonth, Double> monthEnd = monthEndCloses(real);
+        YearMonth prevYm = null;
+        for (var entry : monthEnd.entrySet()) {
+            YearMonth ym = entry.getKey();
+            if (prevYm != null && prevYm.plusMonths(1).equals(ym)) {
+                double a = monthEnd.get(prevYm), c = entry.getValue();
+                if (a > 0) {
+                    double ret = (c - a) / a * 100.0;
+                    monthlyReturns.get(ym.getMonth().name()).add(ret);
+                    monthlyWins.get(ym.getMonth().name()).add(ret > 0);
+                }
+            }
+            prevYm = ym;
+        }
+
+        // ── Effets jour / heure : rendements barre à barre sur barres réelles, en UTC ──
+        for (int i = 1; i < real.size(); i++) {
+            Bar prev = real.get(i - 1);
+            Bar curr = real.get(i);
+            if (prev.close() <= 0) continue;
             double ret = (curr.close() - prev.close()) / prev.close() * 100;
 
-            ZonedDateTime prevTime = ZonedDateTime.ofInstant(prev.timestamp(), ny);
-            ZonedDateTime currTime = ZonedDateTime.ofInstant(curr.timestamp(), ny);
-
-            String month = currTime.getMonth().name();
+            ZonedDateTime currTime = ZonedDateTime.ofInstant(curr.timestamp(), utc);
             String dayName = currTime.getDayOfWeek().name();
             int hour = currTime.getHour();
 
-            // Monthly aggregation (use end-of-month bars)
-            if (currTime.getMonth() != prevTime.getMonth()) {
-                monthlyReturns.get(month).add(ret);
-                monthlyWins.get(month).add(ret > 0);
-            }
-
-            dayOfWeekReturns.get(dayName).add(ret);
+            if (dayOfWeekReturns.containsKey(dayName)) dayOfWeekReturns.get(dayName).add(ret);
             hourReturns.get(hour).add(ret);
         }
 
@@ -219,19 +232,21 @@ public class SeasonalityAnalyzer {
             avgHourRet.put(String.format("%02d", entry.getKey()), safeAvg(entry.getValue()));
         }
 
-        // Yearly aggregation
-        Map<Integer, List<Double>> yearlyReturns = new LinkedHashMap<>();
-        for (int i = 1; i < bars.size(); i++) {
-            Bar prev = bars.get(i - 1);
-            Bar curr = bars.get(i);
-            int year = ZonedDateTime.ofInstant(curr.timestamp(), ny).getYear();
-            yearlyReturns.computeIfAbsent(year, k -> new ArrayList<>())
-                .add((curr.close() - prev.close()) / prev.close() * 100);
+        // ── Rendement annuel VRAI : clôture de fin d'année → clôture de fin d'année ──
+        Map<Integer, Double> yearEnd = new TreeMap<>();
+        for (Bar b : real) {
+            yearEnd.put(ZonedDateTime.ofInstant(b.timestamp(), utc).getYear(), b.close());
         }
-
-        double avgYearly = yearlyReturns.values().stream()
-            .mapToDouble(rets -> rets.stream().mapToDouble(Double::doubleValue).sum())
-            .average().orElse(0);
+        List<Double> yearlyRets = new ArrayList<>();
+        Integer prevYear = null;
+        for (var entry : yearEnd.entrySet()) {
+            if (prevYear != null && prevYear + 1 == entry.getKey()) {
+                double a = yearEnd.get(prevYear), c = entry.getValue();
+                if (a > 0) yearlyRets.add((c - a) / a * 100.0);
+            }
+            prevYear = entry.getKey();
+        }
+        double avgYearly = yearlyRets.isEmpty() ? 0 : yearlyRets.stream().mapToDouble(Double::doubleValue).average().orElse(0);
 
         double totalMonthlyAvg = avgMonthlyRet.values().stream()
             .mapToDouble(Double::doubleValue).average().orElse(0);
@@ -244,9 +259,9 @@ public class SeasonalityAnalyzer {
         String worstMonth = avgMonthlyRet.entrySet().stream()
             .min(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse("JANUARY");
         String bestDay = avgDayRet.entrySet().stream()
-            .max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse("Monday");
+            .max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse("MONDAY");
         String worstDay = avgDayRet.entrySet().stream()
-            .min(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse("Friday");
+            .min(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse("FRIDAY");
         int bestHour = Integer.parseInt(avgHourRet.entrySet().stream()
             .max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse("00"));
         int worstHour = Integer.parseInt(avgHourRet.entrySet().stream()
@@ -260,7 +275,41 @@ public class SeasonalityAnalyzer {
             Math.round(avgYearly * 100.0) / 100.0,
             Math.round(totalMonthlyAvg * 100.0) / 100.0,
             Math.round(monthlyVol * 100.0) / 100.0,
-            yearlyReturns.size());
+            yearlyRets.size());
+    }
+
+    /** Barres RÉELLES : une barre de carry (marché fermé) est plate par construction (high == low). */
+    static List<Bar> realBars(List<Bar> bars) {
+        List<Bar> out = new ArrayList<>(bars.size());
+        for (Bar b : bars) {
+            if (b.high() > b.low()) out.add(b);
+        }
+        return out;
+    }
+
+    /** Clôtures de fin de mois sur barres réelles (UTC). */
+    static Map<YearMonth, Double> monthEndCloses(List<Bar> realBars) {
+        Map<YearMonth, Double> m = new TreeMap<>();
+        for (Bar b : realBars) {
+            m.put(YearMonth.from(ZonedDateTime.ofInstant(b.timestamp(), ZoneId.of("UTC"))), b.close());
+        }
+        return m;
+    }
+
+    /** Rendements mensuels vrais (%) par mois calendaire — exposition pour tests. */
+    static Map<Integer, List<Double>> monthlyReturnsFromBars(List<Bar> realBars) {
+        Map<YearMonth, Double> me = monthEndCloses(realBars);
+        Map<Integer, List<Double>> out = new LinkedHashMap<>();
+        YearMonth prev = null;
+        for (var e : me.entrySet()) {
+            if (prev != null && prev.plusMonths(1).equals(e.getKey())) {
+                double a = me.get(prev), c = e.getValue();
+                if (a > 0) out.computeIfAbsent(e.getKey().getMonthValue(), k -> new ArrayList<>())
+                    .add((c - a) / a * 100.0);
+            }
+            prev = e.getKey();
+        }
+        return out;
     }
 
     // ── Bar loading ──
@@ -278,10 +327,7 @@ public class SeasonalityAnalyzer {
 
         for (int i = 0; i < count; i++) {
             int pos = i * BAR_SIZE;
-            long rawTs = bytesToLong(raw, pos);
-            long ts;
-            if (rawTs > 100_000_000_000L) { ts = rawTs / 1_000_000; }
-            else { ts = rawTs; }
+            long ts = decodeEpochSeconds(bytesToLong(raw, pos));
 
             double o = bytesToDouble(raw, pos + 8);
             double h = bytesToDouble(raw, pos + 16);
@@ -292,6 +338,22 @@ public class SeasonalityAnalyzer {
             bars.add(new Bar(instrument, java.time.Instant.ofEpochSecond(ts), o, h, l, c, v));
         }
         return bars;
+    }
+
+    /**
+     * Décode l'horodatage brut d'une barre en SECONDES epoch.
+     *
+     * <p>Convention du repo : {@code BarStore} écrit {@code Instant.toEpochMilli()} et relit
+     * {@code Instant.ofEpochMilli(raw)} dès que {@code raw > 1e12} — l'unité est la MILLISECONDE.
+     * L'ancienne implémentation divisait par 1 000 000 (convention nanosecondes) : les 693 600
+     * barres d'EUR_USD tombaient toutes entre le 14 et le 21 janvier 1970, ce qui vidait
+     * {@code monthlyReturns}, {@code dayOfWeekReturns} et {@code hourOfDayReturns} (best = worst =
+     * JANUARY, tous les hit rates à 0) — sortie silencieusement dégénérée pour tous les appelants.
+     */
+    static long decodeEpochSeconds(long raw) {
+        if (raw > 100_000_000_000_000_000L) return raw / 1_000_000_000L; // nanosecondes
+        if (raw > 100_000_000_000L) return raw / 1_000L;                 // millisecondes (cas réel)
+        return raw;                                                      // secondes
     }
 
     private long bytesToLong(byte[] data, int offset) {

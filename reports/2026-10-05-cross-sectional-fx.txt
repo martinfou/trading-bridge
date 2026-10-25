@@ -1,0 +1,303 @@
+=====================================================================
+CROSS-SECTIONAL FX MOMENTUM CHECK — lundi 5 oct 2026 (49e, idée NOUVELLE)
+La dimension jamais testée : le RANG RELATIF des 8 paires.
+Le momentum de change franchit-il la borne d'amplitude du pipeline ?
+=====================================================================
+[load] GBP_JPY   2006-01-01 → 2026-05-19 (7424 jours)
+[load] GBP_USD   2006-01-01 → 2026-05-19 (7198 jours)
+[load] AUD_USD   2006-01-01 → 2026-05-19 (6954 jours)
+[load] NZD_USD   2006-01-01 → 2026-05-19 (7015 jours)
+[load] EUR_USD   2006-01-01 → 2026-05-19 (7198 jours)
+[load] USD_CHF   2006-01-01 → 2026-05-19 (7139 jours)
+[load] USD_JPY   2006-01-01 → 2026-05-19 (7136 jours)
+[load] USD_CAD   2006-01-01 → 2026-05-19 (7198 jours)
+[load-open] GBP_JPY   2006-01-01 → 2026-05-19 (7424 jours)
+[load-open] GBP_USD   2006-01-01 → 2026-05-19 (7198 jours)
+[load-open] AUD_USD   2006-01-01 → 2026-05-19 (6954 jours)
+[load-open] NZD_USD   2006-01-01 → 2026-05-19 (7015 jours)
+[load-open] EUR_USD   2006-01-01 → 2026-05-19 (7198 jours)
+[load-open] USD_CHF   2006-01-01 → 2026-05-19 (7139 jours)
+[load-open] USD_JPY   2006-01-01 → 2026-05-19 (7136 jours)
+[load-open] USD_CAD   2006-01-01 → 2026-05-19 (7198 jours)
+
+[panel] axe commun : 2006-01-01 → 2026-05-19 (6681 jours × 8 paires)
+
+##################################################################
+# P0 — CALIBRATION (doit reproduire le 37e/42e AU BP)
+##################################################################
+Référence 42e : EUR −0.032 % | GBP −0.054 % | GBP_JPY −0.056 % | USD_CAD +0.005 %
+PAIRE         n      avg ven      hit      méd ven        t
+GBP_JPY    1061     -0.0563%      48%     -0.0310%   -2.40
+            (tous jours : n=7423 avg +0.2870 bp t  0.37)
+GBP_USD    1029     -0.0536%      47%     -0.0269%   -2.87
+            (tous jours : n=7197 avg -0.2246 bp t -0.38)
+AUD_USD     995     -0.0432%      49%     -0.0236%   -1.69
+NZD_USD    1001     -0.0349%      49%     -0.0243%   -1.48
+EUR_USD    1029     -0.0320%      49%     -0.0109%   -1.84
+            (tous jours : n=7197 avg +0.0877 bp t  0.15)
+USD_CHF    1021     -0.0344%      47%     -0.0339%   -1.91
+USD_JPY    1021     -0.0166%      47%     -0.0223%   -0.79
+USD_CAD    1029     +0.0049%      51%     +0.0087%    0.29
+            (tous jours : n=7197 avg +0.3372 bp t  0.63)
+>> Loader et définition du close quotidien validés si EUR/GBP/GBP_JPY/CAD collent au bp.
+
+##################################################################
+# P1 — LA STRUCTURE CROSS-SECTIONNELLE EXISTE-T-ELLE ?
+##################################################################
+À chaque date, dispersion (écart-type) des rendements traînants sur L jours, en %.
+Si la dispersion est ~0, il n'y a rien à ranger ; si elle est large, le rang porte de l'info.
+L       disp moy%   disp p10   disp p90 ratio p90/p10
+5           1.036      0.438      1.751       4.00
+21          2.144      0.978      3.681       3.76
+63          3.739      1.678      6.151       3.67
+126         5.342      2.339      8.977       3.84
+252         7.507      2.858     12.674       4.44
+>> La dispersion du momentum 63 j est l'échelle dans laquelle le rang doit produire du bp.
+
+##################################################################
+# P2 — TABLE PRINCIPALE : LONG top-k / SHORT bottom-k (dollar-neutre, buckets NON chevauchants)
+##################################################################
+avg = rendement du panier en bp par rebalancement (PRIX seul, avant coûts et swap).
+Signe POSITIF = momentum ; NÉGATIF = réversion. IS ≤2015 / OOS ≥2016.
+
+================ HOLD H = 5 jours ================
+L      k         n     avg bp       t     hit     IS bp    OOS bp  WF
+5      1      1335      -0.00   -0.00     53%     +2.90     -3.49  MEURT EN OOS
+5      2      1335      -3.81   -0.78     50%     -2.39     -5.51  NÉGATIF 2 CÔTÉS
+5      3      1335      -3.14   -0.76     49%     -1.50     -5.11  NÉGATIF 2 CÔTÉS
+21     1      1331      +1.25    0.20     51%     +5.91     -4.33  MEURT EN OOS
+21     2      1331      -1.51   -0.30     51%     -0.45     -2.78  NÉGATIF 2 CÔTÉS
+21     3      1331      -2.77   -0.65     51%     -1.94     -3.77  NÉGATIF 2 CÔTÉS
+63     1      1323      +0.05    0.01     50%     +2.32     -2.63  MEURT EN OOS
+63     2      1323      +3.05    0.60     51%     +8.71     -3.63  MEURT EN OOS
+63     3      1323      +2.19    0.52     51%     +4.93     -1.05  MEURT EN OOS
+126    1      1310      +1.21    0.18     51%     +8.84     -7.66  MEURT EN OOS
+126    2      1310      +1.51    0.28     50%     +9.22     -7.45  MEURT EN OOS
+126    3      1310      +1.15    0.26     49%     +8.30     -7.17  MEURT EN OOS
+252    1      1285      +3.01    0.47     50%     +7.71     -2.25  MEURT EN OOS
+252    2      1285      +2.09    0.39     49%     +6.73     -3.10  MEURT EN OOS
+252    3      1285      +2.63    0.59     50%     +6.13     -1.28  MEURT EN OOS
+
+================ HOLD H = 21 jours ================
+L      k         n     avg bp       t     hit     IS bp    OOS bp  WF
+5      1       317     +14.20    0.56     54%     -7.89    +41.07  LATE-BLOOMER
+5      2       317     +10.89    0.53     53%    -12.76    +39.68  LATE-BLOOMER
+5      3       317      +7.45    0.44     48%     -2.74    +19.85  LATE-BLOOMER
+21     1       317     -11.65   -0.47     50%    -16.87     -5.37  NÉGATIF 2 CÔTÉS
+21     2       317      -4.46   -0.22     51%     -9.46     +1.54  LATE-BLOOMER
+21     3       317      -6.69   -0.40     51%     -6.37     -7.07  NÉGATIF 2 CÔTÉS
+63     1       315     -24.06   -0.99     49%    -18.44    -30.73  NÉGATIF 2 CÔTÉS
+63     2       315     -10.63   -0.54     46%     +5.31    -29.56  MEURT EN OOS
+63     3       315      -1.55   -0.09     48%     +9.68    -14.88  MEURT EN OOS
+126    1       312     -12.12   -0.47     48%    +15.39    -44.21  MEURT EN OOS
+126    2       312      -5.90   -0.29     49%    +21.93    -38.36  MEURT EN OOS
+126    3       312      +1.20    0.07     50%    +31.66    -34.34  MEURT EN OOS
+252    1       306      -0.34   -0.01     47%    +25.81    -29.76  MEURT EN OOS
+252    2       306      +2.58    0.12     49%    +35.57    -34.54  MEURT EN OOS
+252    3       306     +12.77    0.72     53%    +32.55     -9.47  MEURT EN OOS
+
+>> Seuil mémoire : 3.4 bp par rebalancement est le seuil de SURVIE d'un edge journalier FX.
+>> Un edge de momentum doit être lu sur PLUSIEURS horizons à la fois (plateau = signal).
+
+##################################################################
+# P2b — MOMENTUM EN ESPACE DEVISES (le test canonique, dollar-neutre PAR CONSTRUCTION)
+##################################################################
+Le rang au niveau PAIRE (P2) n'est PAS dollar-neutre : toute paire porte une jambe USD,
+donc la sélection peut être un pari DOLLAR déguisé (le pipeline sait que le dollar n'est
+pas tradeable). Le test canonique (Menkhoff et al. 2012) range les 8 DEVISES.
+
+Exposition USD NETTE moyenne du panier de PAIRES (diagnostic du biais) :
+L      k     |USD| moy   n(USD>0)   n(USD<0)
+21     1        -0.009        120        123
+21     2        -0.038        125        139
+63     2        -0.038        126        136
+63     3        -0.014        126        140
+252    2        +0.008        132        140
+Lecture : |USD| = exposition dollar nette en unités de la taille brute (1.0 = 100 % long USD).
+
+=== PANIER DE DEVISES (LONG top-k / SHORT bottom-k des 8 devises vs USD) ===
+L      H    k         n     avg bp       t     hit     IS bp    OOS bp  WF
+5      5    1      1335      -9.52   -2.17     51%    -12.14     -6.38  NÉGATIF 2 CÔTÉS
+5      5    2      1335      -5.79   -1.79     50%     -6.82     -4.54  NÉGATIF 2 CÔTÉS
+5      5    3      1335      -4.20   -1.57     50%     -5.01     -3.23  NÉGATIF 2 CÔTÉS
+21     5    1      1331      -0.81   -0.17     49%     +2.85     -5.18  MEURT EN OOS
+21     5    2      1331      -3.10   -0.88     50%     -1.17     -5.41  NÉGATIF 2 CÔTÉS
+21     5    3      1331      -2.82   -1.00     50%     -2.80     -2.83  NÉGATIF 2 CÔTÉS
+63     5    1      1323      -5.15   -1.13     49%     -4.73     -5.64  NÉGATIF 2 CÔTÉS
+63     5    2      1323      -2.28   -0.66     49%     +0.56     -5.63  MEURT EN OOS
+63     5    3      1323      -1.85   -0.65     49%     +0.76     -4.93  MEURT EN OOS
+126    5    1      1310      -3.32   -0.67     49%     +1.48     -8.88  MEURT EN OOS
+126    5    2      1310      -2.30   -0.61     49%     +0.44     -5.48  MEURT EN OOS
+126    5    3      1310      -1.37   -0.47     50%     +0.83     -3.94  MEURT EN OOS
+252    5    1      1285      -2.39   -0.50     50%     -4.24     -0.33  NÉGATIF 2 CÔTÉS
+252    5    2      1285      -1.89   -0.53     49%     -0.12     -3.88  NÉGATIF 2 CÔTÉS
+252    5    3      1285      -0.78   -0.26     50%     +0.44     -2.13  MEURT EN OOS
+5      21   1       317      -8.30   -0.41     51%    -31.04    +19.37  LATE-BLOOMER
+5      21   2       317      -9.96   -0.70     47%    -26.94    +10.69  LATE-BLOOMER
+5      21   3       317     -12.96   -1.16     48%    -28.53     +6.00  LATE-BLOOMER
+21     21   1       317      -0.13   -0.01     48%     +4.17     -5.29  MEURT EN OOS
+21     21   2       317     -14.82   -1.20     46%    -11.80    -18.44  NÉGATIF 2 CÔTÉS
+21     21   3       317     -10.46   -1.05     48%     -5.04    -16.98  NÉGATIF 2 CÔTÉS
+63     21   1       315     -25.74   -1.50     47%     -3.89    -51.68  NÉGATIF 2 CÔTÉS
+63     21   2       315     -16.44   -1.23     48%     -2.99    -32.41  NÉGATIF 2 CÔTÉS
+63     21   3       315     -11.15   -1.08     47%     +0.61    -25.11  MEURT EN OOS
+126    21   1       312     -15.03   -0.87     49%     +1.67    -34.52  MEURT EN OOS
+126    21   2       312     -12.54   -0.97     44%     +1.77    -29.24  MEURT EN OOS
+126    21   3       312      -4.70   -0.48     48%     +9.84    -21.66  MEURT EN OOS
+252    21   1       306      -6.28   -0.36     50%     -6.27     -6.30  NÉGATIF 2 CÔTÉS
+252    21   2       306     -12.46   -0.90     46%     -0.75    -25.62  NÉGATIF 2 CÔTÉS
+252    21   3       306      -2.56   -0.24     47%    +10.02    -16.71  MEURT EN OOS
+
+Diagnostic : USD retenu dans les 2 extrêmes sur 173 / 315 rebalancements (55 %).
+>> Si l'espace DEVISES est vide lui aussi, ce n'est pas la construction du panier le problème.
+
+##################################################################
+# P2c — CONTRÔLE MICRO-STRUCTURE : clôture→clôture vs OUVERTURE→OUVERTURE
+##################################################################
+Une réversion hebdomadaire mesurée sur les CLÔTURES est le candidat-type d'un artefact de
+rebond bid-ask. Le même test en OUVERTURE→OUVERTURE (première barre UTC de chaque jour)
+élimine le prix de clôture : si le signal disparaît, il vivait dans la clôture.
+ESPACE    L      H    k       close bp       t  p-value     open bp       t
+PAIRES    5      5    1          -0.00   -0.00    0.998       -1.92   -0.33
+PAIRES    5      5    2          -3.81   -0.78    0.274       -3.49   -0.72
+PAIRES    21     21   2          -4.46   -0.22    0.760       +3.44    0.17
+PAIRES    63     21   2         -10.63   -0.54    0.488       +5.71    0.27
+PAIRES    252    21   2          +2.58    0.12    0.890       +8.03    0.37
+DEVISES   5      5    1          -9.52   -2.17    0.000       -8.36   -1.85
+DEVISES   5      5    2          -5.79   -1.79    0.030       -7.47   -2.30
+DEVISES   21     21   2         -14.82   -1.20    0.154       -4.91   -0.37
+DEVISES   63     21   2         -16.44   -1.23    0.076       -7.82   -0.59
+DEVISES   252    21   2         -12.46   -0.90    0.212       -0.79   -0.05
+>> Un edge qui survit aux deux ancrages est robuste ; un edge qui meurt en ouverture est un artefact.
+
+##################################################################
+# P3 — MONOTONIE DE L'ORDRE DES QUARTILES (leçon du 29 sept : un U donne un contrapositif gratuit)
+##################################################################
+Paires rangées par rendement traînant décroissant ; Q1 = les 2 plus FORTES … Q4 = les 2 plus FAIBLES.
+Rendement AVANT (bp) de chaque quartile. On veut un ORDRE, pas deux queues qui battent le milieu.
+
+--- L = 21 jours ---
+  H= 5 : Q1    +2.57 (t  1.03) | Q2    -3.89 | Q3    -1.14 | Q4    +4.08 (t  1.50)  U (contrapositif gratuit)
+  H=21 : Q1    +1.59 (t  0.15) | Q2    -8.83 | Q3    +6.67 | Q4    +6.05 (t  0.55)  CROISÉ / NON MONOTONE
+
+--- L = 63 jours ---
+  H= 5 : Q1    +1.19 (t  0.48) | Q2    -0.31 | Q3    +2.52 | Q4    -1.86 (t -0.69)  CROISÉ / NON MONOTONE
+  H=21 : Q1    -0.69 (t -0.07) | Q2    +4.14 | Q3    -7.41 | Q4    +9.95 (t  0.93)  CROISÉ / NON MONOTONE
+
+--- L = 126 jours ---
+  H= 5 : Q1    +1.54 (t  0.61) | Q2    +0.14 | Q3    -0.02 | Q4    +0.03 (t  0.01)  CROISÉ / NON MONOTONE
+  H=21 : Q1    -1.31 (t -0.12) | Q2    +2.67 | Q3    -0.33 | Q4    +4.59 (t  0.42)  CROISÉ / NON MONOTONE
+
+--- L = 252 jours ---
+  H= 5 : Q1    +3.38 (t  1.29) | Q2    -1.22 | Q3    -2.11 | Q4    +1.29 (t  0.46)  CROISÉ / NON MONOTONE
+  H=21 : Q1    +6.46 (t  0.58) | Q2    +2.93 | Q3    -8.94 | Q4    +3.88 (t  0.35)  CROISÉ / NON MONOTONE
+
+>> ORDRE MONOTONE ⇒ gradient réel. U ou croisements ⇒ partition bruitée (rejet).
+
+##################################################################
+# P4 — TEST DE PERMUTATION (500 tirages, rangs mélangés DANS chaque date — les DEUX espaces)
+##################################################################
+Contrôle non paramétrique : la valeur observée est-elle extrême dans la distribution nulle ?
+Le mélange préserve la dispersion de chaque date et détruit le lien rang → rendement futur.
+ESPACE    L      H    k        obs bp |null| p95  p-value
+PAIRES    5      5    1         -0.00       8.09    0.998
+PAIRES    21     5    2         -1.51       5.46    0.652
+PAIRES    63     5    2         +3.05       5.60    0.374
+PAIRES    63     21   2        -10.63      25.63    0.488
+PAIRES    126    21   2         -5.90      22.74    0.678
+PAIRES    252    21   2         +2.58      24.98    0.890
+PAIRES    63     21   3         -1.55      19.60    0.880
+DEVISES   5      5    1         -9.52       5.49    0.000
+DEVISES   21     5    2         -3.10       4.40    0.250
+DEVISES   63     5    2         -2.28       4.41    0.388
+DEVISES   63     21   2        -16.44      15.52    0.076
+DEVISES   126    21   2        -12.54      17.06    0.206
+DEVISES   252    21   2        -12.46      16.38    0.212
+DEVISES   63     21   3        -11.15      12.52    0.174
+>> p-value = fraction de tirages nuls AUSSI extrêmes que l'observé. < 0.05 = hors du bruit.
+
+##################################################################
+# P5 — ÈRES, DÉCENNIES ET HORS-CRISES (la dérive d'ère est l'artefact #1 du pipeline)
+##################################################################
+Configuration de référence : L=63, H=21, k=2 (le momentum mensuel canonique).
+FULL   : n=315    -10.63 bp  t -0.54  hit 46%
+IS≤15  : n=171     +5.31 bp  t  0.18
+OOS≥16 : n=144    -29.56 bp  t -1.20
+
+DÉCENNIE       n     avg bp        t
+2000-2009      67     +12.88     0.22
+2010-2019     173     -13.08    -0.57
+2020-2029      75     -25.98    -0.71
+hors 2008/11/15/20/22 : n=251   -31.23 bp  t -1.61
+
+MÊME CONFIG EN ESPACE DEVISES :
+FULL   : n=315    -16.44 bp  t -1.23  hit 48%
+IS≤15  : n=171     -2.99 bp  t -0.14
+OOS≥16 : n=144    -32.41 bp  t -2.24
+
+RÉVERSION EN ESPACE DEVISES — STABILITÉ PAR DÉCENNIE (le signal le plus fort du run) :
+  L=5   H=5  k=1 | 2000s  -26.86 (t -2.22, n 291)  2010s   -6.35 (t -1.13, n 728)  2020s   -0.86 (t -0.12, n 316)  
+  L=63  H=21 k=1 | 2000s  +30.05 (t  0.60, n  67)  2010s  -32.01 (t -1.54, n 173)  2020s  -61.12 (t -2.06, n  75)  
+  L=5   H=5  k=2 | 2000s  -13.99 (t -1.46, n 291)  2010s   -5.23 (t -1.31, n 728)  2020s   +0.49 (t  0.10, n 316)  
+  L=63  H=21 k=2 | 2000s  +10.13 (t  0.24, n  67)  2010s  -22.88 (t -1.45, n 173)  2020s  -25.30 (t -1.30, n  75)  
+>> Un signe qui change de décennie n'est pas un facteur (artefact d'ère #1 du pipeline).
+
+>> Si l'effet vit dans UNE décennie ou meurt hors crises, ce n'est pas un facteur, c'est une ère.
+
+##################################################################
+# P6 — BUDGET DE COÛT ET DE CARRY (le panier est-il chargé en carry ?)
+##################################################################
+Le momentum FX est documenté comme corrélé au carry : si les gagnants sont les devises à
+haut taux, le panier encaisse une prime de carry qui n'est PAS du momentum.
+Carry réel par année (table du 47e), 0.274 pip/lot/jour par 1 % de différentiel BASE−QUOTE.
+L      H       brut bp     carry bp    brut−coût brut−coût+carry
+21     5         -1.51        +0.06        -3.65        -3.59
+63     5         +3.05        +0.07        +0.91        +0.98
+63     21       -10.63        +0.54       -12.77       -12.24
+126    21        -5.90        +0.21        -8.04        -7.83
+252    21        +2.58        +1.73        +0.44        +2.16
+
+Coût fixe mémoire : 2.14 bp par rebalancement (A/R sur 1 unité brute).
+
+DIAGNOSTIC — carry d'une position LONGUE de 1 unité, bp/jour (valide la table et le signe) :
+PAIRE       bp/j moy bp/j 06-15 bp/j 16-26
+GBP_JPY       +0.260     +0.244     +0.279
+GBP_USD       +0.006     +0.101     -0.108
+AUD_USD       +0.445     +0.877     -0.073
+NZD_USD       +0.638     +1.102     +0.080
+EUR_USD       -0.174     +0.014     -0.400
+USD_CHF       +0.488     +0.248     +0.777
+USD_JPY       +0.364     +0.267     +0.480
+USD_CAD       +0.042     -0.011     +0.106
+>> Lecture : somme des poids signés × ces valeurs × H = le carry du panier ci-dessus.
+>> Le carry est mesuré sur les jambes RÉELLEMENT sélectionnées, à la date du rebalancement.
+>> Règle du 28 sept : aucune conclusion 'net' sans les trois hypothèses de swap.
+
+##################################################################
+# P7 — SPÉCIFICITÉ DU JOUR D'ANCRAGE (contrôle de dérive du jour)
+##################################################################
+Configuration L=63, H=21, k=2. Si l'effet n'existe que pour un jour d'ancrage, c'est un artefact.
+
+  --- L=63 H=21 k=2 ---
+    ancrage LUNDI     PAIRES n=309    +1.94 bp t  0.10  |  DEVISES n=309   -16.79 bp t -1.24
+    ancrage MARDI     PAIRES n=309    +6.26 bp t  0.31  |  DEVISES n=309   -17.39 bp t -1.31
+    ancrage MERCREDI  PAIRES n=309    -4.23 bp t -0.20  |  DEVISES n=309   -22.05 bp t -1.62
+    ancrage JEUDI     PAIRES n=309    +5.05 bp t  0.25  |  DEVISES n=309   -19.95 bp t -1.56
+    ancrage VENDREDI  PAIRES n=309   +20.61 bp t  0.96  |  DEVISES n=309    -7.78 bp t -0.59
+
+  --- L=5 H=5 k=1 ---
+    ancrage LUNDI     PAIRES n=951    +7.13 bp t  0.94  |  DEVISES n=951    -9.38 bp t -1.53
+    ancrage MARDI     PAIRES n=952    +8.61 bp t  1.22  |  DEVISES n=952    +1.64 bp t  0.32
+    ancrage MERCREDI  PAIRES n=952    +2.24 bp t  0.35  |  DEVISES n=952    +3.29 bp t  0.68
+    ancrage JEUDI     PAIRES n=951    -2.00 bp t -0.33  |  DEVISES n=951    -0.37 bp t -0.08
+    ancrage VENDREDI  PAIRES n=953    -4.66 bp t -0.72  |  DEVISES n=953    -6.73 bp t -1.37
+
+  --- L=5 H=5 k=2 ---
+    ancrage LUNDI     PAIRES n=951    +4.32 bp t  0.69  |  DEVISES n=951    -7.41 bp t -1.64
+    ancrage MARDI     PAIRES n=952    +3.40 bp t  0.59  |  DEVISES n=952    -1.30 bp t -0.36
+    ancrage MERCREDI  PAIRES n=952    -0.79 bp t -0.16  |  DEVISES n=952    +0.00 bp t  0.00
+    ancrage JEUDI     PAIRES n=951    -5.95 bp t -1.21  |  DEVISES n=951    -0.45 bp t -0.14
+    ancrage VENDREDI  PAIRES n=953    -4.34 bp t -0.83  |  DEVISES n=953    -2.53 bp t -0.74
+>> Un facteur réel ne dépend pas du calendrier de rebalancement.
+
+DONE

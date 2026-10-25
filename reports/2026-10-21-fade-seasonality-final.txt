@@ -1,0 +1,92 @@
+======================================================================================================================================
+63e (mercredi 21 oct 2026, PATTERN SAISONNIER) — LE FADE REFUGE EST-IL SAISONNIER ?
+Ancre = barre qui SE TERMINE a 17:00 ET (20:00 UTC en EDT, 21:00 en EST). fade>0 = SELL gagnant.
+Increment D = fade(vendredi) - fade(lun-jeu meme semaine). Test primaire = ANOVA mois + demeanage annee.
+======================================================================================================================================
+
+  GBPCHF   n_barres= 143284  2002-05-07 -> 2026-10-09  jours_ancre=5644
+  EURCHF   n_barres= 138764  2002-05-06 -> 2026-10-09  jours_ancre=5642
+  AUDCHF   n_barres= 138303  2004-05-31 -> 2026-10-09  jours_ancre=5641
+  EURUSD   n_barres= 172752  2006-01-01 -> 2026-05-19  jours_ancre=5121
+
+======================================================================================================================================
+SECTION 1 — CONTROLE DE DONNEES : la grille est 24x7 remplie, et ou se situe la DERNIERE barre reelle ?
+--------------------------------------------------------------------------------------------------------------------------------------
+  SERIE      sam/dim  barres 23UTC  ven dernier reelle
+  GBPCHF        9492          4646   [(20, 688), (21, 407), (22, 34)]
+  EURCHF        5303          4548   [(20, 705), (21, 399), (22, 26)]
+  AUDCHF        5342          4551   [(20, 686), (21, 405), (22, 36)]
+  EURUSD       49368          5141   [(20, 662), (21, 363), (7, 2)]
+  Lecture : des barres de samedi/dimanche = grille REMPLIE. La 'derniere barre reelle du jour UTC'
+  tombe alors apres la cloture du vendredi -> l'ancre doit etre la barre 17:00 ET, pas l'heure fixe.
+
+======================================================================================================================================
+SECTION 2 — L'ANCRE CHANGE-T-ELLE LE FADE ? comparaison barre 17:00 ET vs derniere barre reelle du jour
+--------------------------------------------------------------------------------------------------------------------------------------
+  SERIE     n ven (17ET)   fade VEN 17ET  fade VEN dern.reelle   ecart
+  GBPCHF            1130    +3.56(t+12.0)                 +3.45   +0.11
+  EURCHF            1130    +1.87(t +9.6)                 +1.93   -0.05
+  AUDCHF            1130    +6.20(t+13.5)                 +5.98   +0.21
+  Si l'ecart est ~0, l'ancre n'est pas le probleme et les runs 59e->62e ne sont pas invalides par elle.
+
+======================================================================================================================================
+SECTION 3 — SAISONNALITE DE L'INCREMENT (D), pool 3 crosses refuge
+--------------------------------------------------------------------------------------------------------------------------------------
+  Cellules annee-mois : 262 | retenues : 262
+  ANOVA INCREMENT : F(11,250) = 0.67  p = 0.7699  -> AUCUNE structure
+  ANOVA DRIFT (controle) : F(11,250) = 1.40  p = 1.73e-01
+
+  MOIS    n  X incr (bp)       t   D brut     >0     X drift
+  JAN    22        -1.25   -1.18    +1.29  14/22      +1.23
+  FEV    22        -0.52   -1.01    +2.02  18/22      +0.16
+  MAR    22        +0.53   +0.59    +3.07  17/22      +0.30
+  AVR    22        +0.15   +0.22    +2.69  15/22      -0.55
+  MAI    22        -0.09   -0.14    +2.45  17/22      -0.19
+  JUN    22        -0.06   -0.07    +2.49  15/22      +0.25
+  JUL    22        +1.03   +1.38    +3.57  15/22      -0.59
+  AOU    22        +0.87   +0.73    +3.42  16/22      -0.10
+  SEP    22        +0.39   +0.49    +2.93  16/22      -0.68
+  OCT    22        -0.85   -1.05    +1.69  16/22      +0.01
+  NOV    21        +0.22   +0.32    +2.74  15/21      +0.17
+  DEC    21        -0.43   -0.50    +2.08  17/21      +0.01
+  Bonferroni 0.05/12 -> 0 mois franchissent. Pic : JUL (t +1.38).
+  Mois le plus FAIBLE en D brut : JAN (+1.29 bp) | mois NEGATIFS : aucun
+  PLACEBO permutation (2000 tirages, mois melanges dans chaque annee) : max|t| q95=3.14 q99=3.86 vs observe 1.38 -> DANS le bruit de selection
+
+======================================================================================================================================
+SECTION 4 — MIROIR : la saison de l'increment n'est-elle que la saison du DRIFT ?
+--------------------------------------------------------------------------------------------------------------------------------------
+  r(effet mois increment, effet mois drift) = -0.646
+  2006-2015 : r = -0.504 | pic increment JAN | pic drift JAN
+  2016-2026 : r = -0.316 | pic increment JUL | pic drift JAN
+  r fortement negatif = la saison de D est le miroir mecanique de celle du drift.
+
+======================================================================================================================================
+SECTION 5 — STABILITE : eres, et OANDA PRE-2006 (annees jamais utilisees par le pipeline)
+--------------------------------------------------------------------------------------------------------------------------------------
+  PERIODE       n ven   D moyen       t  mois D>0      OCT  nOCT
+  PRE-2006        156     +0.62   +1.28   7/12       -0.92    12
+  2006-2015      1536     +1.69   +4.36  68/120      +0.95   135
+  2016-2026      1680     +3.45  +17.93 116/130      +2.84   135
+  FULL           3372     +2.52  +12.43 191/262      +1.78   282
+
+======================================================================================================================================
+SECTION 6 — PAR CROSS + CONTROLE CROSS-SECTION (EUR_USD : pas de jambe refuge)
+--------------------------------------------------------------------------------------------------------------------------------------
+  SERIE     n ven   D moyen       t      OCT   NOV-FEV   MAI-AOU
+  GBPCHF     1124     +2.16   +6.95    +2.05     +1.40     +2.51
+  EURCHF     1124     +0.95   +4.33    +0.51     +0.47     +1.16
+  AUDCHF     1124     +4.46   +9.49    +2.77     +4.10     +5.22
+  EURUSD     1018     +0.24   +1.00    -1.01     +0.73     +0.23
+
+======================================================================================================================================
+SECTION 7 — DECISIONNEL : les vendredis d'OCTOBRE par semaine du mois (pool 3 crosses)
+--------------------------------------------------------------------------------------------------------------------------------------
+  SEMAINE       n   D moyen       t
+  S1 d'octobre   66     +2.07   +2.13
+  S2 d'octobre   66     +1.85   +1.24
+  S3 d'octobre   63     +1.37   +0.85
+  S4 d'octobre   63     +2.91   +2.70
+  S5 d'octobre   24     -1.10   -0.35
+  Repère : moyenne FULL de D = +2.54 bp (cellules annee-mois).
+

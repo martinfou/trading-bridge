@@ -1,0 +1,70 @@
+--- a/trading-backtest/src/main/java/com/martinfou/trading/backtest/SwapCalculator.java
++++ b/trading-backtest/src/main/java/com/martinfou/trading/backtest/SwapCalculator.java
+@@ -199,10 +199,13 @@
+ 
+         double total = 0.0;
+         while (current.isBefore(toNY)) {
+-            int weight = current.getDayOfWeek() == DayOfWeek.WEDNESDAY ? 3 : 1;
++            // Meme regle que countRollovers : pas de rollover le week-end.
++            DayOfWeek dow = current.getDayOfWeek();
++            int weight = dow == DayOfWeek.WEDNESDAY ? 3
++                : (dow == DayOfWeek.SATURDAY || dow == DayOfWeek.SUNDAY) ? 0 : 1;
+             double[] r = byYear.get(current.getYear());
+             if (r == null) r = byYear.get(-1);           // repli : dernière année connue
+-            if (r != null) {
++            if (r != null && weight > 0) {
+                 double pipRate = side == Order.Side.BUY ? r[0] : r[1];
+                 total += pipRate * pipValueInUSD * weight;
+             }
+@@ -229,10 +232,12 @@
+ 
+         while (current.isBefore(toNY)) {
+             DayOfWeek dow = current.getDayOfWeek();
+-            // Wednesday = triple swap
++            // Le marche FX est FERME le week-end : aucun rollover samedi/dimanche. Le week-end
++            // est porte par le rollover du MERCREDI (spot T+2 : value date vendredi -> lundi
++            // = 3 jours). Compter aussi samedi et dimanche facturait 9 jours pour 7.
+             if (dow == DayOfWeek.WEDNESDAY) {
+                 totalDays += 3;
+-            } else {
++            } else if (dow != DayOfWeek.SATURDAY && dow != DayOfWeek.SUNDAY) {
+                 totalDays += 1;
+             }
+             current = current.plusDays(1);
+--- a/trading-backtest/src/test/java/com/martinfou/trading/backtest/SwapCalculatorTest.java
++++ b/trading-backtest/src/test/java/com/martinfou/trading/backtest/SwapCalculatorTest.java
+@@ -107,4 +107,28 @@
+             SwapCalculator.clearRateOverride();
+         }
+     }
++
++    @Test
++    void weekendRolloverIsNotCounted() {
++        // Vendredi 16:00 ET -> lundi 04:00 ET : le marche ne facture QUE le roll de vendredi
++        // (value date ven -> mer). L'ancien compteur en facturait 3 (ven + sam + dim).
++        assertEquals(1, SwapCalculator.countRollovers(
++            Instant.parse("2024-05-03T20:00:00Z"), Instant.parse("2024-05-06T08:00:00Z")));
++    }
++
++    @Test
++    void fullWeekIsSevenDaysNotNine() {
++        // 4 charges ordinaires + 1 triple (mercredi) = 7 nuits, pas 9.
++        assertEquals(7, SwapCalculator.countRollovers(
++            Instant.parse("2024-05-06T00:00:00Z"), Instant.parse("2024-05-13T00:00:00Z")));
++    }
++
++    @Test
++    void weekdayRolloversAreUnchanged() {
++        // Non-regression : lundi -> mardi = 1, mercredi -> jeudi = 3 (triple).
++        assertEquals(1, SwapCalculator.countRollovers(
++            Instant.parse("2024-05-06T12:00:00Z"), Instant.parse("2024-05-07T12:00:00Z")));
++        assertEquals(3, SwapCalculator.countRollovers(
++            Instant.parse("2024-05-08T12:00:00Z"), Instant.parse("2024-05-09T12:00:00Z")));
++    }
+ }
+# Correctif propose — SwapCalculator : le week-end n'a pas de rollover
+# Mesure du 13 oct 2026 (56e) : scripts/rollover-daycount.py
+# Appliquer depuis la racine de trading-bridge :
+#   git apply docs/patches/2026-10-13-swap-weekend-rollovers.patch
+#   ./mvnw -pl trading-backtest test -Dtest=SwapCalculatorTest
+

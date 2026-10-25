@@ -1,0 +1,36 @@
+================================================================================
+LES CROSSES REFUGE EN MOTEUR — coût MESURÉ, carry RÉEL par année
+Lundi 12 octobre 2026 (55e) · rotation IDÉE NOUVELLE · fenêtre 2006-01-01 → 2026-05-19
+SUITE 13 OCT 2026 (56e, variation) : carry = convention du moteur (le week-end est facturé 2x au lieu d'être porté par le mercredi)
+================================================================================
+[data] GBP_CHF <- gbpchf-h1-bid-oanda-2002-05-07-2026-10-09.csv
+[data] GBP_CHF   138789 barres  2002-05-07T20:00:00Z -> 2026-10-09T20:00:00Z
+[data] EUR_CHF <- eurchf-h1-bid-oanda-2002-05-06-2026-10-09.csv
+[data] EUR_CHF   138764 barres  2002-05-06T20:00:00Z -> 2026-10-09T20:00:00Z
+[data] AUD_CHF <- audchf-h1-bid-oanda-2004-05-31-2026-10-09.csv
+[data] AUD_CHF   138303 barres  2004-05-31T20:00:00Z -> 2026-10-09T20:00:00Z
+[data] GBP_JPY   178176 barres  2006-01-01T00:00:00Z -> 2026-05-19T23:00:00Z
+[data] GBP_USD   172752 barres  2006-01-01T00:00:00Z -> 2026-05-19T23:00:00Z
+[data] USD_CAD   172752 barres  2006-01-01T00:00:00Z -> 2026-05-19T23:00:00Z
+
+--- 0. COUT REEL MESURE (OANDA practice -014, 12 oct 2026, 1000 bougies H1 price=BA)
+SYMBOLE   SPREAD pip   HALF/jambe     A/R (bp)          MID
+GBP_CHF             2.50     0.000125        2.278      1.09766
+EUR_CHF             1.60     0.000080        1.702      0.93991
+AUD_CHF             1.50     0.000075        2.584      0.58055
+GBP_JPY             3.30     0.016500        1.573    209.85025
+GBP_USD             1.80     0.000090        1.334      1.34935
+USD_CAD             1.80     0.000090        1.295      1.39037
+
+Rappel 54e : chaque cross etait facture '2 jambes de majeures' = 4.28 bp A/R.
+Un cross COTE se paie son propre spread : la question est de savoir si ca change le verdict.
+
+--- 1. LE FADE (SELL vendredi, sortie lundi) vs MIROIR LONG — coût mesuré + carry réel par année
+          | SELL FRI (la config du 50e/53e/54e)      | LONG FRI (miroir = contrôle)      
+SYMBOLE   |     PF   WR%    DD%  TRADES       NET$      PRIX$ |     PF   WR%       NET$
+GBP_CHF   |   1.20   50%  5.26%    1058    3778.91    5778.30 |   0.70   46%   -9068.91
+EUR_CHF   |   1.09   48%  3.44%    1058     331.11    1432.40 |   0.75   46%   -3716.71
+AUD_CHF   |   1.05   49%  7.95%    1058   -2256.94    1023.10 |   0.83   48%    -917.06
+GBP_JPY   |   1.18   50%  4.38%    1061    4274.55    5306.00 |   0.73   46%   -8942.95
+GBP_USD   |   1.17   53%  4.39%    1029    5339.65    5406.10 |   0.77   45%   -9044.05
+USD_CAD   |   0.82   46% 12.18%    1029   -5131.47   -4916.50 |   1.05   50%    1427.07
