@@ -29,6 +29,8 @@ public final class IbkrBroker implements Broker {
     private final List<Consumer<BrokerEvent>> listeners = new CopyOnWriteArrayList<>();
     private final java.util.Map<String, Order> pendingOrdersByClientTag = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.Map<String, Order> pendingOrdersByBrokerId = new java.util.concurrent.ConcurrentHashMap<>();
+    // Quantite deja remplie par commande : IBKR peut livrer plusieurs executions pour un seul ordre.
+    private final java.util.Map<String, Double> filledQuantityByOrderId = new java.util.concurrent.ConcurrentHashMap<>();
     private final long flattenConfirmAttempts;
     private final long flattenConfirmIntervalMs;
     private volatile boolean connected;
@@ -56,20 +58,24 @@ public final class IbkrBroker implements Broker {
         if (order == null && execution.orderId() != null) {
             order = pendingOrdersByBrokerId.get(execution.orderId());
         }
-        // Purge the order from both registries once a terminal execution (fill/reject) arrives.
-        // Without this, the maps leak on every order AND a duplicate fill/reject callback
-        // (IBKR can redeliver execDetails) would re-emit a fill/reject for an already-settled order.
-        if (order != null) {
-            pendingOrdersByClientTag.remove(order.id());
-            if (execution.orderId() != null) {
-                pendingOrdersByBrokerId.remove(execution.orderId());
-            }
+        if (order != null && execution.isRejected()) {
+            purge(order, execution.orderId());
         }
         if (execution.isFill()) {
             if (order != null) {
-                log.info("IBKR fill {} {} qty={} @ {} (execId={})",
-                    execution.symbol(), execution.side(), execution.quantity(), execution.fillPrice(), execution.execId());
-                emit(BrokerEvent.fill(order.fill(), execution.fillPrice()));
+                // Un ordre peut etre rempli en plusieurs executions. La premiere ne doit pas purger la
+                // commande : les partiels suivants tomberaient en « unknown order » et seraient perdus.
+                double partial = execution.quantity();
+                double cumulative = filledQuantityByOrderId.merge(order.id(), partial, Double::sum);
+                log.info("IBKR fill {} {} qty={} (cumul {} / {}) @ {} (execId={})",
+                    execution.symbol(), execution.side(), partial, cumulative, order.quantity(),
+                    execution.fillPrice(), execution.execId());
+                // L'evenement porte la quantite DU PARTIEL : additionner les fills donne la position reelle.
+                emit(BrokerEvent.fill(order.id(), order.symbol(), order.side().name(), partial,
+                    execution.fillPrice(), order.stopLoss(), order.takeProfit(), order.correlationId()));
+                if (cumulative + 1e-9 >= order.quantity()) {
+                    purge(order, execution.orderId());
+                }
             } else {
                 log.warn("IBKR fill for unknown order {} (execId={}) — reconciliation needed",
                     execution.orderId(), execution.execId());
@@ -81,6 +87,15 @@ public final class IbkrBroker implements Broker {
             } else {
                 log.warn("IBKR reject for unknown order {}: {}", execution.orderId(), reason);
             }
+        }
+    }
+
+    /** Retire la commande des registres une fois reglee (remplie en totalite ou rejetee). */
+    private void purge(Order order, String brokerOrderId) {
+        pendingOrdersByClientTag.remove(order.id());
+        filledQuantityByOrderId.remove(order.id());
+        if (brokerOrderId != null) {
+            pendingOrdersByBrokerId.remove(brokerOrderId);
         }
     }
 
@@ -125,9 +140,17 @@ public final class IbkrBroker implements Broker {
         // Register the order BEFORE placing it: IBKR may deliver the execution callback
         // (via the stub or a fast venue) synchronously inside placeMarketOrder. Matching by
         // clientTag (order.id()) lets onExecution resolve it regardless of arrival order.
+        if (order.strategyId() == null || order.strategyId().isBlank()) {
+            // Pas de refus : un ordre manuel reste permis. Mais on le dit, parce que son fill sera un leak.
+            log.error("IBKR order {} sans strategyId : son fill sera classe leak (aucune attribution possible)",
+                order.id());
+        }
         pendingOrdersByClientTag.put(order.id(), order);
+        // clientTag = id d'ordre (appariement des executions) ; orderRef = nom de la strategie, SEULE chose
+        // qui permet a la lane P&L de rattacher le fill a une strategie plutot qu'a un leak. Un UUID ici
+        // creerait une fausse strategie par fill.
         IbkrMarketOrderResult result = client.placeMarketOrder(
-            symbol, order.quantity(), order.side(), order.id());
+            symbol, order.quantity(), order.side(), order.id(), order.strategyId());
 
         if (!result.success()) {
             String reason = result.errorMessage() != null ? result.errorMessage() : "IBKR order rejected";
@@ -182,7 +205,10 @@ public final class IbkrBroker implements Broker {
                 continue;
             }
             Order.Side closeSide = pos.side() == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
-            Order close = new Order(pos.symbol(), closeSide, Order.Type.MARKET, pos.quantity(), 0.0);
+            // strategyId « flatten » : le fill qui ferme portera orderRef=flatten, donc il sera classe
+            // ordre de controle dans la lane P&L, ni strategie ni leak.
+            Order close = new Order(pos.symbol(), closeSide, Order.Type.MARKET, pos.quantity(), 0.0)
+                .withStrategyId("flatten");
             OrderSubmitResult result = submitOrder(close);
             if (result.accepted()) {
                 submitted++;
@@ -268,8 +294,13 @@ public final class IbkrBroker implements Broker {
     }
 
     private void emit(BrokerEvent event) {
+        // Un listener qui leve sur le thread lecteur d'IBKR peut faire perdre des callbacks : on l'isole.
         for (Consumer<BrokerEvent> listener : listeners) {
-            listener.accept(event);
+            try {
+                listener.accept(event);
+            } catch (RuntimeException e) {
+                log.error("IBKR listener failed on {}: {}", event.type(), e.getMessage(), e);
+            }
         }
     }
 }

@@ -19,6 +19,16 @@ surdéclaration ~×108, aucune correction ultérieure (la transaction était ret
 réconciliation), et **double comptage** quand la réconciliation asynchrone complétait la même
 transaction. La valeur contaminée était persistée puis rechargée à chaque redémarrage.
 
+## Attribution IBKR : orderRef obligatoire (D69)
+
+Tout ordre envoyé à IBKR doit porter `orderRef` = nom de la stratégie. C'est la seule chose qui relie un fill à
+la stratégie qui l'a produit : sans lui, le publisher P&L classe le fill comme **leak**, indistinguable d'un
+ordre manuel ou d'un smoke test, et les résultats d'une stratégie deviennent inexploitables.
+
+- `TcpIbkrGatewayClient.buildMarketOrder(..., orderRef)` le transmet à IBKR.
+- `IbkrOrderRefGateTest` refuse la construction si un chemin d'ordre IBKR de nos modules apparaît sans
+  `orderRef`. L'API IB vendorisée (`com/ib/`) est exclue : c'est de la plomberie, pas un de nos ordres.
+
 ## Les cinq couches
 
 | # | Couche | Ce qu'elle empêche | État |

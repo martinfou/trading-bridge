@@ -117,6 +117,20 @@ class TcpIbkrGatewayClientTest {
     }
 
     @Test
+    void buildMarketOrder_carriesTheOrderRef() {
+        // Le nom de la strategie doit voyager jusqu'aux fills, sinon la lane P&L le compte comme un leak.
+        com.ib.client.Order order = TcpIbkrGatewayClient.buildMarketOrder(1235, 1, Order.Side.SELL, "DU12345",
+                "mesbreakout");
+        org.junit.jupiter.api.Assertions.assertEquals("mesbreakout", order.orderRef());
+    }
+
+    @Test
+    void buildMarketOrder_withoutOrderRefLeavesItEmpty() {
+        com.ib.client.Order order = TcpIbkrGatewayClient.buildMarketOrder(1236, 1, Order.Side.BUY, "DU12345");
+        org.junit.jupiter.api.Assertions.assertTrue(order.orderRef() == null || order.orderRef().isEmpty());
+    }
+
+    @Test
     void buildMarketOrder_buyMktTransmit() {
         com.ib.client.Order order = TcpIbkrGatewayClient.buildMarketOrder(1234, 1.5, Order.Side.BUY, "DU12345");
         assertEquals(1234, order.orderId());
@@ -177,5 +191,56 @@ class TcpIbkrGatewayClientTest {
         assertEquals("5", TcpIbkrGatewayClient.formatMultiplier(5.0));
         assertEquals("50", TcpIbkrGatewayClient.formatMultiplier(50.0));
         assertEquals("0.1", TcpIbkrGatewayClient.formatMultiplier(0.1));
+    }
+
+    // ------------------------------------------------------------------
+    // orderStatus fills: IBKR repeats the status, a fill must be counted once
+    // ------------------------------------------------------------------
+
+    /** The wrapper is a private inner class created in the constructor: reach it by reflection. */
+    private Object gatewayWrapper() throws Exception {
+        java.lang.reflect.Field field = TcpIbkrGatewayClient.class.getDeclaredField("wrapper");
+        field.setAccessible(true);
+        return field.get(client);
+    }
+
+    private void fireOrderStatus(Object wrapper, int orderId, String status, double filled,
+                                 double avgFillPrice) throws Exception {
+        java.lang.reflect.Method method = wrapper.getClass().getDeclaredMethod("orderStatus",
+            int.class, String.class, com.ib.client.Decimal.class, com.ib.client.Decimal.class,
+            double.class, long.class, int.class, double.class, int.class, String.class, double.class);
+        method.setAccessible(true);
+        com.ib.client.Decimal filledDec = com.ib.client.Decimal.get(java.math.BigDecimal.valueOf(filled));
+        com.ib.client.Decimal remainingDec = com.ib.client.Decimal.get(java.math.BigDecimal.ZERO);
+        method.invoke(wrapper, orderId, status, filledDec, remainingDec, avgFillPrice, 0L, 0, avgFillPrice, 1,
+            null, 0.0);
+    }
+
+    @Test
+    void orderStatus_repeatedFilledIsPublishedOnce() throws Exception {
+        List<IbkrExecution> seen = new java.util.ArrayList<>();
+        client.addExecutionListener(seen::add);
+        Object wrapper = gatewayWrapper();
+
+        fireOrderStatus(wrapper, 77, "Filled", 2.0, 5000.5);
+        fireOrderStatus(wrapper, 77, "Filled", 2.0, 5000.5);
+
+        assertEquals(1, seen.size(), "un statut Filled repete ne doit produire qu'une seule execution");
+        assertTrue(seen.get(0).isFill());
+        assertEquals(2.0, seen.get(0).quantity(), 1e-9);
+        assertEquals(5000.5, seen.get(0).fillPrice(), 1e-9);
+    }
+
+    @Test
+    void orderStatus_partialFillIsNotPublishedAsACompleteFill() throws Exception {
+        List<IbkrExecution> seen = new java.util.ArrayList<>();
+        client.addExecutionListener(seen::add);
+        Object wrapper = gatewayWrapper();
+
+        // Un statut partiel ne doit pas passer pour un fill complet: les fills partiels
+        // arrivent par execDetails, ou ils sont conserves un par un.
+        fireOrderStatus(wrapper, 78, "Partially filled", 1.0, 4999.0);
+
+        assertTrue(seen.isEmpty(), "un partiel ne doit pas etre publie comme un fill complet");
     }
 }

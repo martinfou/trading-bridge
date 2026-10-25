@@ -163,6 +163,12 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
 
     @Override
     public IbkrMarketOrderResult placeMarketOrder(String symbol, double quantity, Order.Side side, String clientTag) {
+        return placeMarketOrder(symbol, quantity, side, clientTag, null);
+    }
+
+    @Override
+    public IbkrMarketOrderResult placeMarketOrder(String symbol, double quantity, Order.Side side, String clientTag,
+                                                  String orderRef) {
         OrderTripwire.checkOrderAllowed(symbol, String.valueOf(quantity), "TcpIbkrGatewayClient.placeMarketOrder",
                 config.host() + ":" + config.port());
         if (!isConnected()) {
@@ -178,7 +184,7 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
         int orderId = generateOrderId();
         trackOrder(orderId, clientTag);
         Contract contract = buildContract(symbol);
-        com.ib.client.Order order = buildMarketOrder(orderId, quantity, side, config.accountId());
+        com.ib.client.Order order = buildMarketOrder(orderId, quantity, side, config.accountId(), orderRef);
         try {
             client.placeOrder(orderId, contract, order);
         } catch (RuntimeException e) {
@@ -339,6 +345,16 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
     }
 
     static com.ib.client.Order buildMarketOrder(int orderId, double quantity, Order.Side side, String accountId) {
+        return buildMarketOrder(orderId, quantity, side, accountId, null);
+    }
+
+    /**
+     * L'orderRef porte le nom de la strategie jusqu'aux fills : c'est la seule chose qui permet a la lane P&L
+     * de rattacher une execution a une strategie plutot qu'a un leak. Sans lui, un fill automatique est
+     * indistinguable d'un ordre manuel.
+     */
+    static com.ib.client.Order buildMarketOrder(int orderId, double quantity, Order.Side side, String accountId,
+                                                String orderRef) {
         com.ib.client.Order order = new com.ib.client.Order();
         order.orderId(orderId);
         order.action(side == Order.Side.BUY ? "BUY" : "SELL");
@@ -347,6 +363,9 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
         order.transmit(true);
         if (accountId != null && !accountId.isBlank()) {
             order.account(accountId);
+        }
+        if (orderRef != null && !orderRef.isBlank()) {
+            order.orderRef(orderRef);
         }
         return order;
     }
@@ -535,9 +554,11 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
             if (upper.contains("CANCELLED") || upper.contains("CANCELED") || upper.contains("REJECTED")) {
                 String reason = whyHeld != null && !whyHeld.isBlank() ? whyHeld : status;
                 notifyExecution(IbkrExecution.rejected(Integer.toString(orderId), clientTag, null, reason));
-            } else if (upper.contains("FILLED") && !filledOrderIds.contains(orderId)) {
+            } else if ("FILLED".equals(upper) && !filledOrderIds.contains(orderId)) {
                 // Rare: orderStatus reports Filled without a preceding execDetails. Emit the fill
                 // from orderStatus data so the broker is not left waiting on a phantom execution.
+                // IB renvoie souvent ce statut plusieurs fois : on le marque pour ne pas compter deux fois.
+                filledOrderIds.add(orderId);
                 double qty = toDouble(filled);
                 notifyExecution(IbkrExecution.filled(
                     Integer.toString(orderId), null, clientTag, null, null, qty, avgFillPrice));
@@ -554,7 +575,13 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
 
     private void notifyExecution(IbkrExecution execution) {
         for (Consumer<IbkrExecution> listener : executionListeners) {
-            listener.accept(execution);
+            try {
+                listener.accept(execution);
+            } catch (RuntimeException e) {
+                // Ce callback tourne sur le thread lecteur du Gateway : une exception ici ferait perdre
+                // les executions suivantes. On la journalise et on continue.
+                log.error("IBKR execution listener failed for {}: {}", execution.execId(), e.getMessage(), e);
+            }
         }
     }
 }
