@@ -55,6 +55,9 @@ WINDOW_START = "2026-10-01T00:00:00Z"
 EXCHANGE_TZ = ZoneInfo("America/New_York")     # les heures d'exécution IBKR sont à l'heure du Gateway
 MONTREAL = ZoneInfo("America/Montreal")
 UNAVAILABLE = 1.7976931348623157e308
+STATE_PATH = Path.home() / ".local/share/hermes-ibkr/pnl_state.json"
+LEDGER_DAYS = 120                # profondeur du registre local
+HOME_ENV = Path.home() / ".hermes/.env"
 BENIGN_ERRORS = (2104, 2106, 2107, 2158, 2100, 2108, 2119, 2103, 2105, 2157)
 FATAL_CODES = (326, 502, 504, 1100, 2110)
 
@@ -103,6 +106,17 @@ def latest_revisions(executions: list[dict]) -> list[dict]:
         if current is None or revision > base_exec_id(current["exec_id"])[1]:
             kept[key] = execution
     return list(kept.values())
+
+
+CONTROL_REFS = {"killswitch", "flatten", "flatten-all", "control"}
+
+UUID_SHAPE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
+
+
+def looks_like_strategy(ref: str) -> bool:
+    """Un nom de strategie, pas un identifiant technique : un UUID en orderRef creerait une fausse strategie
+    par fill (mesure : IbkrBroker passait order.id() la ou le nom de strategie etait attendu)."""
+    return bool(ref) and not UUID_SHAPE.match(ref) and re.match(r"^[A-Za-z][A-Za-z0-9_-]{1,63}$", ref) is not None
 
 
 def is_close(report: dict | None) -> bool:
@@ -240,14 +254,22 @@ def build_payload(account_id: str, environment: str, executions: list[dict],
 
         order_ref = (execution.get("order_ref") or "").strip()
         tag = order_ref or f"IBKR-ORDER-{execution['order_id']}"
-        is_strategy = bool(order_ref) and order_ref.replace("-", "").replace("_", "").isalnum()
+        # Trois natures, jamais confondues : une strategie, un ordre de controle (kill-switch, flatten
+        # declenche a la main), ou un fill non attribue.
+        ref_lower = order_ref.lower()
+        if ref_lower in CONTROL_REFS:
+            kind, strategy_name = "control", None
+        elif looks_like_strategy(order_ref):
+            kind, strategy_name = "strategy", order_ref
+        else:
+            kind, strategy_name = "leak", None
         local = closed_at.astimezone(MONTREAL)
 
         entries.append({
             # Base de l'execId : une correction arrivee plus tard ecrase la ligne au lieu de la doubler.
             "fill_ref": base_exec_id(execution["exec_id"])[0],
-            "kind": "strategy" if is_strategy else "leak",
-            "strategy": order_ref if is_strategy else None,
+            "kind": kind,
+            "strategy": strategy_name,
             "tag": tag,
             "instrument": execution["symbol"] or str(execution["con_id"]),
             "direction": "BUY" if execution["side"] == "BOT" else "SELL",
@@ -446,6 +468,90 @@ def collect(host: str, port: int, client_id: int, account: str, since: datetime,
     return {"executions": client.executions, "snapshot": snapshot}
 
 
+# --------------------------------------------------------------------------- registre local
+
+
+def load_state() -> dict:
+    """Registre local : derniere reussite + executions deja vues, pour ne rien perdre entre deux cycles."""
+    if not STATE_PATH.exists():
+        return {"last_success_utc": None, "executions": {}}
+    try:
+        state = json.loads(STATE_PATH.read_text())
+    except (json.JSONDecodeError, OSError) as exc:
+        alert(f"registre local illisible ({exc}) : il repart a vide, les fills deja publies restent dans le hub")
+        return {"last_success_utc": None, "executions": {}}
+    state.setdefault("executions", {})
+    state.setdefault("last_success_utc", None)
+    return state
+
+
+def save_state(state: dict) -> None:
+    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=LEDGER_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    kept = {}
+    for exec_id, execution in state["executions"].items():
+        try:
+            if parse_ibkr_time(execution["time"]).strftime("%Y-%m-%dT%H:%M:%SZ") >= cutoff:
+                kept[exec_id] = execution
+        except (ValueError, KeyError, TypeError):
+            kept[exec_id] = execution              # illisible : on le garde, il sera refuse explicitement
+    state["executions"] = kept
+    temporary = STATE_PATH.with_suffix(".tmp")
+    temporary.write_text(json.dumps(state, indent=1, default=str))
+    temporary.replace(STATE_PATH)
+
+
+def backfill_since(state: dict, fallback_days: int = 7) -> datetime:
+    """Depuis quand demander les executions : la derniere reussite, sinon une fenetre de repli."""
+    last = state.get("last_success_utc")
+    if last:
+        try:
+            return datetime.fromisoformat(last.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+    return datetime.now(timezone.utc) - timedelta(days=fallback_days)
+
+
+# --------------------------------------------------------------------------- alerte
+
+
+def telegram_token_and_chat() -> tuple[str | None, str | None]:
+    """Token et canal lus dans ~/.hermes/.env sans charger tout le fichier dans l'environnement."""
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat = os.environ.get("TELEGRAM_HOME_CHANNEL")
+    if (not token or not chat) and HOME_ENV.exists():
+        try:
+            lines = HOME_ENV.read_text().splitlines()
+        except OSError:
+            lines = []
+        for line in lines:
+            key, _, value = line.strip().partition("=")
+            value = value.split("#")[0].strip().strip('"').strip("'")
+            if key == "TELEGRAM_BOT_TOKEN" and not token:
+                token = value
+            elif key == "TELEGRAM_HOME_CHANNEL" and not chat:
+                chat = value
+    return token, chat
+
+
+def alert(text: str) -> None:
+    """Une alerte qui ne casse jamais le cycle : si Telegram ne repond pas, on l'ecrit et on continue."""
+    token, chat = telegram_token_and_chat()
+    print(f"ALERTE: {text}", file=sys.stderr)
+    if not token or not chat:
+        print("  (pas de token/canal Telegram : alerte seulement dans le journal)", file=sys.stderr)
+        return
+    payload = urllib.parse.urlencode({"chat_id": chat, "text": f"IBKR P&L: {text}",
+                                      "disable_web_page_preview": "true"}).encode()
+    try:
+        with urllib.request.urlopen(
+            f"https://api.telegram.org/bot{token}/sendMessage", data=payload, timeout=15
+        ) as response:
+            response.read()
+    except Exception as exc:                        # noqa: BLE001 - une alerte ratee ne doit pas casser le run
+        print(f"  (Telegram injoignable: {exc})", file=sys.stderr)
+
+
 # --------------------------------------------------------------------------- IO
 
 
@@ -461,6 +567,9 @@ def post(url: str, token: str, body: dict, timeout: int = 30) -> tuple[int, str]
             return response.status, response.read().decode()
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read().decode()
+    except (urllib.error.URLError, OSError) as exc:
+        # Hub injoignable : un code 0 plutot qu'une trace, pour que l'appelant alerte au lieu de planter.
+        return 0, str(exc)
 
 
 def selftest() -> int:
@@ -506,6 +615,18 @@ def selftest() -> int:
     entry = payload["entries"][0]
     checks["pl natif = realizedPNL (net des commissions)"] = entry["pl_native"] == -2.47
     checks["sans ordre nommé : leak"] = entry["kind"] == "leak"
+    # Un UUID en orderRef ne doit jamais devenir un nom de strategie.
+    uuid_ref = dict(execution, order_ref="3f2b8c1e-9a4d-4b7c-8e15-2d6f0a9c4b71")
+    uuid_entry = build_payload("DU123", "practice", [uuid_ref], {"currency": "CAD"}, FxRates(None))[0]["entries"][0]
+    checks["orderRef en UUID : leak, pas strategie"] = uuid_entry["kind"] == "leak"
+    named = dict(execution, order_ref="mesbreakout")
+    named_entry = build_payload("DU123", "practice", [named], {"currency": "CAD"}, FxRates(None))[0]["entries"][0]
+    checks["orderRef nomme : strategie"] = named_entry["kind"] == "strategy" and named_entry["strategy"] == "mesbreakout"
+    control = dict(execution, order_ref="killswitch")
+    control_entry = build_payload("DU123", "practice", [control], {"currency": "CAD"}, FxRates(None))[0]["entries"][0]
+    checks["kill-switch : controle, ni strategie ni leak"] = (
+        control_entry["kind"] == "control" and control_entry["strategy"] is None
+    )
     checks["units = taille exécutée"] = entry["units"] == 1.0
     checks["devise CAD : pas de conversion"] = entry["pl"] == -2.47
     checks["prix d'entrée non inventé"] = entry["entry_price"] is None
@@ -604,10 +725,23 @@ def main() -> int:
         print("HERMES_WEB_URL et HERMES_WEB_TOKEN requis", file=sys.stderr)
         return 2
 
+    state = load_state()
+    since = backfill_since(state)
+    # Une execution sans rapport de commission doit etre redemandee : sinon son close est refuse a vie.
+    for execution in state["executions"].values():
+        if execution.get("report") is None:
+            try:
+                oldest = parse_ibkr_time(execution["time"])
+            except (ValueError, KeyError, TypeError):
+                continue
+            since = min(since, oldest)
+
+    cycle_started = datetime.now(timezone.utc)
     try:
         data = collect(host, port, client_id, account, since, args.timeout)
     except Exception as exc:                     # noqa: BLE001 - Gateway muet ou mauvais compte
         print(f"Gateway: {exc}", file=sys.stderr)
+        alert(f"cycle echoue, Gateway: {exc}")
         if args.dry_run:
             return 1
         degraded = {
@@ -629,21 +763,47 @@ def main() -> int:
     fx = FxRates(oanda_key())
     if not data["snapshot"].get("currency"):
         print("devise du compte inconnue (accountSummary sans devise) : rien n'est publie", file=sys.stderr)
+        alert("cycle sans devise de compte : rien n'est publie")
         return 1
-    payload, refused = build_payload(account, environment, data["executions"], data["snapshot"], fx)
+
+    # Fusion registre + nouvelles executions : un fill vu par un cycle precedent mais jamais publie
+    # (echec, refus, coupure) repart dans le payload au lieu d'etre perdu.
+    for execution in data["executions"]:
+        stored = state["executions"].get(execution["exec_id"])
+        # Une ligne deja vue AVEC son rapport ne doit jamais etre remplacee par la meme sans rapport : le
+        # fill resterait refuse a chaque cycle et son P&L ne serait plus jamais corrige.
+        if stored is not None and stored.get("report") is not None and execution.get("report") is None:
+            continue
+        state["executions"][execution["exec_id"]] = execution
+    save_state(state)                  # vu = conserve, meme si l'envoi echoue ensuite
+    merged = list(state["executions"].values())
+    payload, refused = build_payload(account, environment, merged, data["snapshot"], fx)
 
     if args.dry_run:
         print(json.dumps({"entries": payload["entries"], "refused": refused, "fx_errors": fx.errors,
-                          "window_start_utc": payload["window_start_utc"]}, indent=1, default=str))
+                          "window_start_utc": payload["window_start_utc"],
+                          "since": since.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                          "ledger": len(state["executions"])}, indent=1, default=str))
         return 1 if (refused or fx.errors) else 0
 
     status, body = post(base + PNL_PATH, token, payload)
     print(json.dumps({"http": status, "response": body[:300], "sent": len(payload["entries"]),
                       "refused": refused, "fx_errors": fx.errors}))
     if not 200 <= status < 300:
+        excerpt = re.sub(r"(?i)(bearer|token|authorization)[^\s,;\"]*", "[masque]", body[:160])
+        alert(f"le hub a refuse le payload (HTTP {status}) : {excerpt}")
         return 1
-    # Un fill refuse n'est pas un detail : le Gateway ne garde qu'une fenetre courte, donc il est perdu.
-    return 1 if (refused or fx.errors) else 0
+
+    # Registre ecrit seulement apres un envoi accepte : sinon le prochain cycle rejouerait les memes fills.
+    # Debut de la collecte : sinon un fill arrive entre la requete et le POST resterait hors de la prochaine.
+    state["last_success_utc"] = cycle_started.strftime("%Y-%m-%dT%H:%M:%SZ")
+    save_state(state)
+
+    if refused or fx.errors:
+        # Un fill refuse n'est pas un detail : sans alerte, il disparaitrait en silence.
+        alert("fills non publies: " + "; ".join((refused + fx.errors)[:3]))
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
