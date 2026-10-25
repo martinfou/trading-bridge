@@ -75,6 +75,7 @@ public class BacktestEngine {
     private MarginTracker marginTracker = new MarginTracker();
     private boolean rolloverEnabled = false;
     private FillMode fillMode = FillMode.TOUCH;
+    private final Set<String> completedRollovers = new HashSet<>();
 
 
 
@@ -598,9 +599,14 @@ public class BacktestEngine {
         java.time.LocalDate barDate = bar.timestamp().atZone(java.time.ZoneOffset.UTC).toLocalDate();
         CmeFuturesCalendar.ContractSpec activeSpec = CmeFuturesCalendar.activeContract(bar.symbol(), barDate);
         if (CmeFuturesCalendar.isRolloverDue(activeSpec, barDate)) {
+            CmeFuturesCalendar.ContractSpec nextSpec = CmeFuturesCalendar.nextContract(activeSpec);
+            String rolloverKey = bar.symbol() + "_" + activeSpec.contractCode() + "->" + nextSpec.contractCode();
+            if (completedRollovers.contains(rolloverKey)) {
+                return;
+            }
+            completedRollovers.add(rolloverKey);
             List<Position> posList = positions(bar.symbol());
             if (!posList.isEmpty()) {
-                CmeFuturesCalendar.ContractSpec nextSpec = CmeFuturesCalendar.nextContract(activeSpec);
                 String rolloverGroupId = java.util.UUID.randomUUID().toString();
                 log.info("FUTURES ROLLOVER: Rolling {} from {} to {} at {}", bar.symbol(), activeSpec.contractCode(), nextSpec.contractCode(), bar.timestamp());
                 List<Position> toRoll = new ArrayList<>(posList);
