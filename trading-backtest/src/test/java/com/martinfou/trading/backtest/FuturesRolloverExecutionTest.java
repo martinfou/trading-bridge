@@ -74,4 +74,22 @@ class FuturesRolloverExecutionTest {
         assertEquals(5010.0, rollTrade.entryPrice(), 1e-6);
         assertEquals(5020.0, rollTrade.exitPrice(), 1e-6); // Rolled at t2 open
     }
+
+    @Test
+    void testFuturesPositionDoesNotRolloverMultipleTimesInSameWindow() {
+        // Provide multiple hourly bars within the rollover window (March 5 to March 8)
+        List<Bar> bars = new ArrayList<>();
+        Instant start = Instant.parse("2024-03-04T10:00:00Z");
+        for (int i = 0; i < 48; i++) {
+            bars.add(new Bar("MES", start.plus(i, ChronoUnit.HOURS), 5000.0 + i, 5010.0 + i, 4990.0 + i, 5005.0 + i, 100));
+        }
+
+        BacktestEngine engine = new BacktestEngine(new HoldStrategy(), bars, 10_000.0)
+            .withRollover(true);
+
+        BacktestResult result = engine.run();
+
+        // Must only be 1 rollover trade + 1 final close at last bar = 2 trades total
+        assertEquals(2, result.totalTrades(), "Position should only roll once across the entire rollover window");
+    }
 }
