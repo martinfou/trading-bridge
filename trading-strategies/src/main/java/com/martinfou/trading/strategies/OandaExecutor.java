@@ -59,13 +59,35 @@ public class OandaExecutor {
         }
     }
 
-    /** Ajoute des clientExtensions pour identifier la stratégie dans OANDA. */
+    /** Les clientExtensions de l'ORDRE (valides sur tous les ordres, y compris reduce-only). */
     private java.util.Map<String, Object> clientExtensions(String tag) {
+        java.util.Map<String, Object> ext = new java.util.HashMap<>() {{
+            put("tag", tag);
+            put("comment", "Stratégie: " + tag);
+        }};
         return new java.util.HashMap<>() {{
-            put("clientExtensions", new java.util.HashMap<>() {{
-                put("tag", tag);
-                put("comment", "Stratégie: " + tag);
-            }});
+            put("clientExtensions", ext);
+        }};
+    }
+
+    /**
+     * Les clientExtensions du TRADE. C'est ce que {@code GET /openTrades} renvoie comme
+     * {@code clientExtensions} du trade, donc la seule forme qui rend une position attribuable
+     * à une stratégie après coup (story 50.1 L1.4).
+     *
+     * <p>À n'envoyer QUE sur un ordre capable d'ouvrir un trade. Sur un ordre
+     * {@code positionFill: REDUCE_ONLY} aucun trade n'est créé, et OANDA refuse alors le champ :
+     * l'envoyer sur les fermetures ferait échouer des closes, ce qui est pire que le défaut
+     * d'origine. Vérifié au code : les closes passent par {@code placeMarketOrder(..., true)}
+     * (LiveStrategyRunner:1516 et :1897).
+     */
+    private java.util.Map<String, Object> tradeClientExtensions(String tag) {
+        java.util.Map<String, Object> ext = new java.util.HashMap<>() {{
+            put("tag", tag);
+            put("comment", "Stratégie: " + tag);
+        }};
+        return new java.util.HashMap<>() {{
+            put("tradeClientExtensions", ext);
         }};
     }
 
@@ -78,6 +100,10 @@ public class OandaExecutor {
             put("units", units);
             put("timeInForce", "FOK");
             putAll(clientExtensions(tag));
+            if (!reduceOnly) {
+                // Only an order that can open a trade carries trade-level extensions.
+                putAll(tradeClientExtensions(tag));
+            }
             if (reduceOnly) {
                 put("positionFill", "REDUCE_ONLY");
             }
@@ -154,6 +180,9 @@ public class OandaExecutor {
 
     public record StopOrderResult(String orderId, String status, String price) {}
 
+    /** A single open trade from {@code GET /openTrades}: id, instrument, currentUnits, and the trade-level tag. */
+    public record TradeView(String id, String instrument, String units, String tag) {}
+
     public StopOrderResult placeStopOrder(String instrument, String units, String price, String tag) throws Exception {
         return placeStopOrder(instrument, units, price, tag, false, null, null);
     }
@@ -168,6 +197,10 @@ public class OandaExecutor {
         orderBody.put("price", price);
         orderBody.put("timeInForce", "GTC");
         orderBody.putAll(clientExtensions(tag));
+        if (!reduceOnly) {
+            // Only an order that can open a trade carries trade-level extensions.
+            orderBody.putAll(tradeClientExtensions(tag));
+        }
         if (reduceOnly) {
             orderBody.put("positionFill", "REDUCE_ONLY");
         }
@@ -267,6 +300,39 @@ public class OandaExecutor {
             }
         }
         return ids;
+    }
+
+    /**
+     * {@code GET /openTrades} as a list of {@link TradeView}, exposing id/instrument/units/tag. The
+     * tag comes from the trade's {@code clientExtensions} (what the order body's
+     * {@code tradeClientExtensions} produces). Used by the orphan detector (story 50.1).
+     */
+    public java.util.List<TradeView> getOpenTradesDetailed() throws Exception {
+        var req = HttpRequest.newBuilder()
+            .uri(URI.create(baseUrl + "accounts/" + accountId + "/openTrades"))
+            .header("Authorization", "Bearer " + apiKey)
+            .timeout(Duration.ofSeconds(10))
+            .GET()
+            .build();
+
+        com.martinfou.trading.data.oanda.OandaRateLimiter.GLOBAL.acquire(true);
+        var resp = client.send(req, HttpResponse.BodyHandlers.ofString());
+        if (resp.statusCode() != 200) {
+            throw new RuntimeException("Failed to fetch open trades: status " + resp.statusCode() + ", body " + resp.body());
+        }
+
+        var json = mapper.readTree(resp.body());
+        java.util.List<TradeView> views = new java.util.ArrayList<>();
+        if (json.has("trades")) {
+            for (var trade : json.get("trades")) {
+                String id = trade.hasNonNull("id") ? trade.get("id").asText() : null;
+                String instrument = trade.hasNonNull("instrument") ? trade.get("instrument").asText() : null;
+                String units = trade.hasNonNull("currentUnits") ? trade.get("currentUnits").asText() : null;
+                String tag = trade.path("clientExtensions").path("tag").asText(null);
+                views.add(new TradeView(id, instrument, units, tag));
+            }
+        }
+        return views;
     }
 
     /**
