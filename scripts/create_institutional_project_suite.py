@@ -310,15 +310,17 @@ def build_project(spec):
             bm_conds.clear()
 
     # G. Acceptance Conditions (Step 1 Capture Gate into Databank)
-    # Filter on In-Sample (sampleType=10) to collect all viable candidates into Databank
+    # Require profitability across entire sample AND Out-of-Sample to eliminate curve-fitting
     rankings = root.find(".//Rankings")
     if rankings is not None:
         conds = rankings.find("Conditions")
         if conds is not None:
             conds.clear()
-            add_condition(conds, "ProfitFactor", 10, ">", "1.05")
-            add_condition(conds, "NumberOfTrades", 10, ">", "20", fmt="Integer")
-            add_condition(conds, "NetProfit", 10, ">", "0", fmt="Decimal2PL")
+            add_condition(conds, "NetProfit", 0, ">", "0", fmt="Decimal2PL")
+            add_condition(conds, "ProfitFactor", 0, ">", "1.05")
+            add_condition(conds, "ProfitFactor", 10, ">", "1.10")
+            add_condition(conds, "ProfitFactor", 20, ">", "1.00")
+            add_condition(conds, "NumberOfTrades", 0, ">", "30", fmt="Integer")
 
     # 3. Stage and Package
     staging_dir = Path(f"/Volumes/T7/src/trading-bridge/target/staging_{proj_name.replace(' ', '_')}")
