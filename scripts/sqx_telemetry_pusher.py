@@ -76,6 +76,9 @@ def get_databank_strategies(proj_name):
         for p in results_dir.glob("*.sqx"):
             stat = p.stat()
             bt = extract_backtest_data(p)
+            net_profit = bt.get("net_profit", 0.0)
+            if net_profit <= 0:
+                continue
             strategies.append({
                 "filename": p.name,
                 "strategy_name": p.stem,
