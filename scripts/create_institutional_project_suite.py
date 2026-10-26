@@ -118,6 +118,14 @@ PROJECT_SPECS = [
         "spread": "1",
         "description": "Micro Gold Futures (MGC) M30 Volatility Compression into London Open Breakout",
     },
+    {
+        "name": "M2K H1 Small-Cap Momentum",
+        "symbol": "USSC2000IDXUSD",
+        "timeframe": "H1",
+        "market_side": "both",
+        "spread": "1",
+        "description": "Micro E-mini Russell 2000 (M2K) H1 Small-Cap Trend & Cyclical Momentum",
+    },
 ]
 
 
@@ -139,7 +147,7 @@ def build_project(spec):
     for db in databanks:
         (project_dir / "databanks" / db).mkdir(parents=True, exist_ok=True)
 
-    # 1. Update config.xml (Keep Build task active, disable retest/clear tasks)
+    # 1. Update config.xml (Keep Build task active, disable retest/clear tasks, auto-sync databanks)
     cfg_tree = ET.parse(TEMPLATE_DIR / "config.xml")
     cfg_root = cfg_tree.getroot()
     cfg_root.attrib["name"] = proj_name
@@ -148,10 +156,19 @@ def build_project(spec):
             t.attrib["active"] = "true"
         else:
             t.attrib["active"] = "false"
+    for db_elem in cfg_root.iter("Databank"):
+        db_elem.attrib["syncType"] = "Auto-sync on change"
 
     # 2. Parse and upgrade Build-Task1.xml
     tree = ET.parse(TEMPLATE_DIR / "Build-Task1.xml")
     root = tree.getroot()
+
+    # Disable legacy CrossChecks from template (prevent 60-pip spread suppression)
+    cc = root.find("CrossChecks")
+    if cc is not None:
+        cc.attrib["use"] = "false"
+        for child in cc:
+            child.attrib["use"] = "false"
 
     # A. Market Side
     for ms in root.iter("MarketSides"):

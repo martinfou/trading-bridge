@@ -31,6 +31,7 @@ INSTITUTIONAL_PROJECTS = [
     "MGC H1 Mean Reversion",
     "MNQ H1 Trend",
     "MGC M30 Breakout",
+    "M2K H1 Small-Cap Momentum",
 ]
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
