@@ -60,12 +60,17 @@ KEPT_BLOCKS = {
     'Stop/Limit Price Levels.EMA',
     'Stop/Limit Price Levels.HighD',
     'Stop/Limit Price Levels.LowD',
-    # Order Types (Breakout Stop Orders)
+    # Order Types (Market, Stop, Limit)
+    'EnterAtMarket',
     'EnterAtStop',
-    # Discipline Exits (Mandatory ATR Stop, Target, Trailing, Bar-limit)
+    'EnterAtLimit',
+    # Discipline Exits (Mandatory ATR Stop, Target, Trailing, Bar-limit, Breakeven)
     'StopLoss.StopLoss',
     'ProfitTarget.ProfitTarget',
     'TrailingStop.TrailingStop',
+    'TrailingStop.TrailingActivation',
+    'MoveSL2BE.MoveSL2BE',
+    'MoveSL2BE.SL2BEAddPips',
     'ExitAfterBars.ExitAfterBars'
 }
 
@@ -124,6 +129,9 @@ PROJECT_SPECS = [
         "timeframe": "H1",
         "market_side": "both",
         "spread": "1",
+        "date_from": "2019.04.01",
+        "date_to": "2026.01.23",
+        "oos_from": "2023.01.01",
         "description": "Micro E-mini Russell 2000 (M2K) H1 Small-Cap Trend & Cyclical Momentum",
     },
 ]
@@ -135,6 +143,9 @@ def build_project(spec):
     timeframe = spec["timeframe"]
     market_side = spec["market_side"]
     spread = spec["spread"]
+    date_from = spec.get("date_from", "2014.01.01")
+    date_to = spec.get("date_to", "2026.10.23")
+    oos_from = spec.get("oos_from", "2023.01.01")
 
     project_dir = SQ_HOME / "user/projects" / proj_name
     project_dir.mkdir(parents=True, exist_ok=True)
@@ -157,7 +168,7 @@ def build_project(spec):
         else:
             t.attrib["active"] = "false"
     for db_elem in cfg_root.iter("Databank"):
-        db_elem.attrib["syncType"] = "Auto-sync on change"
+        db_elem.attrib["syncType"] = "Immediately (not recommended, very slow)"
 
     # 2. Parse and upgrade Build-Task1.xml
     tree = ET.parse(TEMPLATE_DIR / "Build-Task1.xml")
@@ -174,12 +185,48 @@ def build_project(spec):
     for ms in root.iter("MarketSides"):
         ms.attrib["type"] = market_side
 
-    # B. Building blocks pruning
+    # B. Sizing: Fixed 1 Contract
+    for mm in root.iter("MoneyManagement"):
+        for m in mm.iter("Method"):
+            if m.attrib.get("type") == "FixedSize":
+                m.attrib["use"] = "true"
+                p = m.find(".//Param[@key='Size']")
+                if p is not None:
+                    p.text = "1"
+
+    # C. Dynamic Volatility Stops & Targets (ATR-based, not hardcoded 8,000 pips)
+    slpt = root.find(".//SLPTOptions")
+    if slpt is not None:
+        def set_node(tag, val):
+            el = slpt.find(tag)
+            if el is not None:
+                el.text = str(val)
+            else:
+                el = ET.SubElement(slpt, tag)
+                el.text = str(val)
+        set_node("SLRequired", "true")
+        set_node("SLFixedPips", "false")
+        set_node("SLATR", "true")
+        set_node("MinSLATRMultiple", "1.5")
+        set_node("MaxSLATRMultiple", "3.5")
+        set_node("MinSLATRPeriod", "14")
+        set_node("MaxSLATRPeriod", "28")
+        set_node("PTRequired", "true")
+        set_node("PTFixedPips", "false")
+        set_node("PTATR", "true")
+        set_node("MinPTATRMultiple", "2.0")
+        set_node("MaxPTATRMultiple", "5.0")
+        set_node("MinPTATRPeriod", "14")
+        set_node("MaxPTATRPeriod", "28")
+        set_node("SLValueType", "atr")
+        set_node("PTValueType", "atr")
+
+    # D. Building blocks pruning
     for block in root.iter("Block"):
         key = block.attrib.get("key")
         block.attrib["use"] = "true" if key in KEPT_BLOCKS else "false"
 
-    # C. Data Setup & Out-Of-Sample Partition
+    # E. Data Setup & Out-Of-Sample Partition
     data_elem = root.find("Data")
     if data_elem is not None:
         setups = data_elem.find("Setups")
@@ -189,8 +236,8 @@ def build_project(spec):
             setups = ET.SubElement(data_elem, "Setups")
 
         setup = ET.SubElement(setups, "Setup", {
-            "dateFrom": "2014.01.01",
-            "dateTo": "2026.10.23",
+            "dateFrom": date_from,
+            "dateTo": date_to,
             "testPrecision": "1",
             "session": "No Session",
             "slippage": "1",
@@ -221,14 +268,14 @@ def build_project(spec):
             "tripleSwapOn": "WEDNESDAY"
         })
 
-        # Add strict blind Out-of-Sample Partition (2023.01.01 - 2026.10.23)
+        # Add blind Out-of-Sample Partition
         oos_elem = data_elem.find("OutOfSample")
         if oos_elem is not None:
             data_elem.remove(oos_elem)
         oos = ET.SubElement(data_elem, "OutOfSample", {"showGraph": "false"})
         ET.SubElement(oos, "Range", {
-            "dateFrom": "2023.01.01",
-            "dateTo": "2026.10.23"
+            "dateFrom": oos_from,
+            "dateTo": date_to
         })
 
     def add_condition(conds_parent, col, sample_type, comparator, val, fmt="Decimal2"):
@@ -248,31 +295,30 @@ def build_project(spec):
             "pctRatio": "0",
             "class": col
         })
+        # IMPORTANT: comparator must be raw character (e.g. ">"), NOT HTML entity ("&gt;")
+        # Passing ">" will cause ElementTree to write &gt; in XML, which SQX parses back to ">".
         ET.SubElement(c, "Comparator", {"value": comparator})
         rs = ET.SubElement(c, "Right-Side", {"valueType": "numeric"})
         ET.SubElement(rs, "Numeric-Value", {"value": str(val)})
 
-    # D. Initial Population Filter (Only viable seeds admitted into genetic islands)
-    bm_conds = root.find(".//BuildMode/Conditions")
-    if bm_conds is not None:
-        bm_conds.clear()
-        add_condition(bm_conds, "ProfitFactor", 10, "&gt;", "1.00")
+    # F. Generation Mode: Random Search (explore entire space without genetic island stagnation)
+    bm = root.find(".//BuildMode")
+    if bm is not None:
+        bm.attrib["generationType"] = "random-generation"
+        bm_conds = bm.find("Conditions")
+        if bm_conds is not None:
+            bm_conds.clear()
 
-    # E. Acceptance Conditions (Quality Gates into Databank)
+    # G. Acceptance Conditions (Step 1 Capture Gate into Databank)
+    # Filter on In-Sample (sampleType=10) to collect all viable candidates into Databank
     rankings = root.find(".//Rankings")
     if rankings is not None:
         conds = rankings.find("Conditions")
         if conds is not None:
             conds.clear()
-            # 1. In-Sample Quality Gates (sampleType=10, 2014-2022)
-            add_condition(conds, "ProfitFactor", 10, "&gt;", "1.20")
-            add_condition(conds, "AvgTradesPerMonth", 10, "&gt;", "1.5")
-            add_condition(conds, "ReturnDDRatio", 10, "&gt;", "2.5")
-            add_condition(conds, "NumberOfTrades", 10, "&gt;", "40", fmt="Integer")
-
-            # 2. Blind Out-of-Sample Quality Gates (sampleType=20, 2023-2026)
-            add_condition(conds, "ProfitFactor", 20, "&gt;", "1.15")
-            add_condition(conds, "NetProfit", 20, "&gt;", "0", fmt="Decimal2PL")
+            add_condition(conds, "ProfitFactor", 10, ">", "1.05")
+            add_condition(conds, "NumberOfTrades", 10, ">", "20", fmt="Integer")
+            add_condition(conds, "NetProfit", 10, ">", "0", fmt="Decimal2PL")
 
     # 3. Stage and Package
     staging_dir = Path(f"/Volumes/T7/src/trading-bridge/target/staging_{proj_name.replace(' ', '_')}")
