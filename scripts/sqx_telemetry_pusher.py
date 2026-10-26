@@ -87,7 +87,9 @@ def get_databank_strategies(proj_name):
                 "status": "QUALIFIED",
                 "asset": "MES H1",
                 "side": "SHORT" if "SHORT" in proj_name.upper() else "LONG",
+                "initial_capital": bt.get("initial_capital", 10000.0),
                 "net_profit": bt.get("net_profit", 0.0),
+                "net_profit_pct": bt.get("net_profit_pct", 0.0),
                 "profit_factor": bt.get("profit_factor", 1.0),
                 "win_rate": bt.get("win_rate", 0.0),
                 "trades": bt.get("trades", 0),
@@ -99,12 +101,15 @@ def get_databank_strategies(proj_name):
                 "sharpe_ratio": bt.get("sharpe_ratio", 0.0),
                 "is_trades": bt.get("is_trades", 0),
                 "is_profit": bt.get("is_profit", 0.0),
+                "is_profit_pct": bt.get("is_profit_pct", 0.0),
                 "is_pf": bt.get("is_pf", 1.0),
                 "oos_trades": bt.get("oos_trades", 0),
                 "oos_profit": bt.get("oos_profit", 0.0),
+                "oos_profit_pct": bt.get("oos_profit_pct", 0.0),
                 "oos_pf": bt.get("oos_pf", 1.0),
                 "rules_summary": bt.get("rules_summary", ""),
                 "sparkline": bt.get("sparkline", []),
+                "curve": bt.get("curve", []),
             })
     # Sort top performers first by Out-Of-Sample PF and Net Profit
     strategies.sort(key=lambda x: (x.get("oos_pf", 0), x.get("net_profit", 0)), reverse=True)
