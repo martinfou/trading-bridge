@@ -210,5 +210,5 @@ def create_institutional_project(project_name, market_side):
     print(f"  -> Active Blocks: {len(KEPT_BLOCKS)} orthogonal blocks")
 
 if __name__ == "__main__":
-    create_institutional_project("MES H1 LONG - ZeroMartingale", "long")
-    create_institutional_project("MES H1 SHORT - ZeroMartingale", "short")
+    create_institutional_project("MES H1 Long", "long")
+    create_institutional_project("MES H1 Short", "short")
