@@ -94,6 +94,8 @@ services:
       - STRATEGY_PAIR=${COMP_PAIR:-USD_JPY}
       - GRANULARITY=${COMP_GRANULARITY:-H1}
       - INTERVAL_SEC=${COMP_INTERVAL:-60}
+      - HERMES_WEB_URL=${HERMES_WEB_URL:-}
+      - HERMES_WEB_TOKEN=${HERMES_WEB_TOKEN:-}
     command: ["$${OANDA_API_KEY}", "$${OANDA_ACCOUNT_ID}", "$${STRATEGY}", "$${GRANULARITY}", "$${INTERVAL_SEC}"]
     volumes:
       - ./data:/app/data
@@ -121,6 +123,8 @@ services:
       - STRATEGY_PAIR=${MWP_PAIR:-USD_JPY}
       - GRANULARITY=${MWP_GRANULARITY:-H1}
       - INTERVAL_SEC=${MWP_INTERVAL:-60}
+      - HERMES_WEB_URL=${HERMES_WEB_URL:-}
+      - HERMES_WEB_TOKEN=${HERMES_WEB_TOKEN:-}
     command: ["$${OANDA_API_KEY}", "$${OANDA_ACCOUNT_ID}", "$${STRATEGY}", "$${GRANULARITY}", "$${INTERVAL_SEC}"]
     volumes:
       - ./data:/app/data
@@ -148,6 +152,8 @@ services:
       - STRATEGY_PAIR=${LTRSI3_PAIR:-EUR_USD}
       - GRANULARITY=${LTRSI3_GRANULARITY:-H1}
       - INTERVAL_SEC=${LTRSI3_INTERVAL:-60}
+      - HERMES_WEB_URL=${HERMES_WEB_URL:-}
+      - HERMES_WEB_TOKEN=${HERMES_WEB_TOKEN:-}
     command: ["$${OANDA_API_KEY}", "$${OANDA_ACCOUNT_ID}", "$${STRATEGY}", "$${GRANULARITY}", "$${INTERVAL_SEC}"]
     volumes:
       - ./data:/app/data
