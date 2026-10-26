@@ -30,6 +30,15 @@ class IbkrContractResolverTest {
         var emdDetails = IbkrContractResolver.resolve("EMD", date);
         assertEquals("EMD", emdDetails.symbol());
         assertEquals(100.0, emdDetails.multiplier(), 1e-6);
+
+        var mgcDetails = IbkrContractResolver.resolve("MGC", date);
+        assertEquals("MGC", mgcDetails.symbol());
+        assertEquals(IbkrContractResolver.SecType.FUT, mgcDetails.secType());
+        assertEquals("COMEX", mgcDetails.exchange());
+        assertNull(mgcDetails.primaryExchange());
+        assertEquals("USD", mgcDetails.currency());
+        assertEquals(10.0, mgcDetails.multiplier(), 1e-6);
+        assertEquals("202403", mgcDetails.lastTradeDateOrContractMonth());
     }
 
     @Test

@@ -71,4 +71,20 @@ class AtrFuturesPositionSizerTest {
         assertEquals(0.0, result.requiredInitialMarginUsd(), 1e-6);
         assertFalse(result.marginFeasible());
     }
+
+    @Test
+    void testPositionSizingMgc() {
+        // Account = $10,000, Risk = 1.5% ($150 risk budget)
+        // Stop = 15.0 dollars on MGC -> Dollar risk per contract = 15.0 * $10.0 = $150.00
+        // Contracts = floor(150 / 150) = 1 contract
+        AtrFuturesPositionSizer.SizingResult result = AtrFuturesPositionSizer.calculatePositionSize(
+            "MGC", 10_000.0, 0.015, 15.0
+        );
+
+        assertEquals(1, result.contracts());
+        assertEquals(15.0, result.stopDistancePoints(), 1e-6);
+        assertEquals(150.0, result.riskAmountUsd(), 1e-6);
+        assertEquals(1_400.0, result.requiredInitialMarginUsd(), 1e-6);
+        assertTrue(result.marginFeasible());
+    }
 }

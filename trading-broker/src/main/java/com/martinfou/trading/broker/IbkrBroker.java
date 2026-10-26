@@ -174,23 +174,51 @@ public final class IbkrBroker implements Broker {
 
     @Override
     public OrderSubmitResult cancelOrder(String brokerOrderId) {
-        // The current IBKR gateway client has no cancel/cancelAll capability. Returning
-        // "filled" here (the previous behaviour) silently claimed a cancel had completed
-        // when nothing happened on the venue — a kill-switch / liquidation hazard.
-        // Honest rejection: the caller (kill switch / flatten) must treat this as a failure
-        // and escalate instead of assuming the order was cancelled.
-        String reason = "IBKR order cancellation not implemented in current gateway client";
-        log.warn("IBKR cancelOrder requested for {} but unsupported: {}", brokerOrderId, reason);
+        if (!connected) {
+            String reason = "Broker not connected";
+            log.warn("IBKR cancelOrder failed for {}: {}", brokerOrderId, reason);
+            return OrderSubmitResult.rejected(reason);
+        }
+        if (brokerOrderId == null || brokerOrderId.isBlank()) {
+            return OrderSubmitResult.rejected("brokerOrderId is required");
+        }
+        boolean ok = client.cancelOrder(brokerOrderId);
+        if (ok) {
+            Order order = pendingOrdersByBrokerId.get(brokerOrderId);
+            if (order != null) {
+                emit(BrokerEvent.reject(order.id(), order.symbol(), order.side().name(), order.quantity(),
+                    order.price(), "CANCELLED", order.stopLoss(), order.takeProfit(), order.correlationId()));
+                purge(order, brokerOrderId);
+            } else {
+                emit(BrokerEvent.reject(brokerOrderId, "", "", 0.0, 0.0, "CANCELLED", null, null));
+            }
+            log.info("IBKR cancelOrder dispatched to venue for brokerOrderId={}", brokerOrderId);
+            return OrderSubmitResult.filled(brokerOrderId);
+        }
+        String reason = "Failed to cancel order on IBKR venue";
+        log.warn("IBKR cancelOrder failed for {}: {}", brokerOrderId, reason);
         return OrderSubmitResult.rejected(reason);
     }
 
     @Override
     public int cancelAllOrders() {
-        // No working-order surface exists in the current gateway client (the stub fills
-        // market orders synchronously; the TCP client places nothing). Honest no-op rather
-        // than a fabricated "all cancelled".
-        log.warn("IBKR cancelAllOrders: no working-order cancellation in current gateway client (no-op).");
-        return 0;
+        if (!connected) {
+            log.warn("IBKR cancelAllOrders rejected: Broker not connected");
+            return 0;
+        }
+        int venueCancelled = client.cancelAllOrders();
+        int localCount = 0;
+        for (java.util.Map.Entry<String, Order> entry : List.copyOf(pendingOrdersByBrokerId.entrySet())) {
+            String brokerOrderId = entry.getKey();
+            Order order = entry.getValue();
+            emit(BrokerEvent.reject(order.id(), order.symbol(), order.side().name(), order.quantity(),
+                order.price(), "CANCELLED", order.stopLoss(), order.takeProfit(), order.correlationId()));
+            purge(order, brokerOrderId);
+            localCount++;
+        }
+        int total = Math.max(venueCancelled, localCount);
+        log.info("IBKR cancelAllOrders dispatched: {} order(s) cancelled", total);
+        return total;
     }
 
     @Override

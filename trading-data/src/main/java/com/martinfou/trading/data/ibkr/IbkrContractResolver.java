@@ -49,14 +49,14 @@ public final class IbkrContractResolver {
         if (futOpt.isPresent()) {
             FuturesContract contract = futOpt.get();
             CmeFuturesCalendar.ContractSpec spec = CmeFuturesCalendar.activeContract(contract.symbol(), tradeDate);
-            // IBKR resolves CME futures with the EXCHANGE THE CONTRACT METADATA CARRIES, which is "CME",
-            // never GLOBEX: measured on Gateway 1050 (paper, 2026-10-21), a request with GLOBEX answers
-            // "error 200 No security definition has been found", while CME returns MESZ6/MNQZ6/M2KZ6 with
-            // the right multipliers. Read it from the registry rather than hardcoding one venue, so a
-            // non-CME instrument works the day it is registered.
-            // Use the full YYYYMMDD last-trade-date so the contract is unambiguous (3rd-Friday expiry).
-            String yyyymmdd = String.format("%04d%02d%02d",
-                spec.expiryDate().getYear(), spec.expiryDate().getMonthValue(), spec.expiryDate().getDayOfMonth());
+            // CME equity index contracts expire on the 3rd Friday (YYYYMMDD).
+            // Commodity futures (e.g. COMEX metals like MGC) have exchange-specific delivery dates;
+            // IBKR resolves them cleanly using contract month (YYYYMM).
+            String expiryOrMonth = "CME".equalsIgnoreCase(contract.exchange())
+                ? String.format("%04d%02d%02d",
+                    spec.expiryDate().getYear(), spec.expiryDate().getMonthValue(), spec.expiryDate().getDayOfMonth())
+                : String.format("%04d%02d",
+                    spec.expiryDate().getYear(), spec.expiryDate().getMonthValue());
             return new IbkrContractDetails(
                 contract.symbol(),
                 SecType.FUT,
@@ -64,7 +64,7 @@ public final class IbkrContractResolver {
                 null,
                 "USD",
                 contract.multiplier(),
-                yyyymmdd
+                expiryOrMonth
             );
         }
 

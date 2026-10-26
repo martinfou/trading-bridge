@@ -26,6 +26,7 @@ public final class FuturesRegistry {
         register(new FuturesContract("M2K", "Micro E-mini Russell 2000", "CME", "USD", 5.0, 0.10, 0.50, 800.0, 650.0));
         register(new FuturesContract("EMD", "E-mini S&P MidCap 400", "CME", "USD", 100.0, 0.10, 10.0, 4500.0, 3800.0));
         register(new FuturesContract("MNQ", "Micro E-mini Nasdaq 100", "CME", "USD", 2.0, 0.25, 0.50, 1800.0, 1500.0));
+        register(new FuturesContract("MGC", "Micro Gold", "COMEX", "USD", 10.0, 0.10, 1.00, 1400.0, 1200.0));
     }
 
     public static void register(FuturesContract contract) {

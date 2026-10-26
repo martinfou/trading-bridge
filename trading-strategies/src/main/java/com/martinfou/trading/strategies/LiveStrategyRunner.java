@@ -897,6 +897,13 @@ public class LiveStrategyRunner implements Runnable {
             // Long-term strategies
             map.put("ltrsi3", Class.forName("com.martinfou.trading.strategies.longterm.LtRSI3Momentum")
                 .asSubclass(Strategy.class));
+            // SQ Imported & Futures strategies
+            map.put("sq-gold-m30", Class.forName("com.martinfou.trading.strategies.sqimported.Strategy_Gold_Breakout_M30")
+                .asSubclass(Strategy.class));
+            map.put("sq_gold_m30", Class.forName("com.martinfou.trading.strategies.sqimported.Strategy_Gold_Breakout_M30")
+                .asSubclass(Strategy.class));
+            map.put("gold_breakout_m30", Class.forName("com.martinfou.trading.strategies.sqimported.Strategy_Gold_Breakout_M30")
+                .asSubclass(Strategy.class));
             // The week-of-12-October news entries were retired on 2026-10-21 (D67, executed as D68 in
             // docs/paper-window-log.md): the classes stay in newsweekly/ as an archive, but nothing
             // registers them any more, so no container can be started on an expired, hard-coded week.
@@ -1922,6 +1929,7 @@ public class LiveStrategyRunner implements Runnable {
         if (name.contains("AUDUSD") || name.contains("AUD_USD")) return "AUD_USD";
         if (name.contains("NZDUSD") || name.contains("NZD_USD")) return "NZD_USD";
         if (name.contains("USDCHF") || name.contains("USD_CHF")) return "USD_CHF";
+        if (name.contains("GOLD_BREAKOUT") || name.contains("MGC")) return "MGC";
         if (name.contains("XAUUSD") || name.contains("XAU_USD") || name.contains("GOLD")) return "XAU_USD";
         if (name.contains("EURJPY") || name.contains("EUR_JPY")) return "EUR_JPY";
         // Creative lab strategies — match by short name

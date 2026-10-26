@@ -68,6 +68,31 @@ class StrategyMapCoverageTest {
         }
     }
 
+    @Test
+    @DisplayName("Gold breakout strategy entries resolve and instantiate for all registered aliases")
+    void goldBreakoutStrategiesResolveAndInstantiate() throws Exception {
+        JsonNode config = MAPPER.readTree(Files.readString(locateLiveConfig()));
+        var map = LiveStrategyRunner.getStrategyMap();
+
+        for (String alias : java.util.List.of("sq-gold-m30", "sq_gold_m30", "gold_breakout_m30")) {
+            Class<? extends Strategy> clazz = map.get(alias);
+            assertNotNull(clazz, alias + " must be present in getStrategyMap()");
+            Strategy strategy = clazz.getDeclaredConstructor().newInstance();
+            assertEquals("SQ_Gold_Breakout_M30_1_10_110", strategy.name());
+
+            var resolution = LiveStrategyRunner.resolveInstrument(alias, strategy, config);
+            assertEquals("MGC", resolution.instrument, alias + " must resolve to MGC");
+
+            assertPinnedPair(alias, strategy, "MGC", "before reconciliation", true);
+            strategy.reconcileInstrument(resolution.instrument);
+            assertPinnedPair(alias, strategy, "MGC", "after reconciliation", false);
+
+            assertDoesNotThrow(() ->
+                LiveStrategyRunner.verifyInstrumentConsistency(alias, resolution.instrument,
+                    resolution.source, config));
+        }
+    }
+
     /**
      * Assert every instrument field the strategy carries ({@code symbol}, {@code oandaSymbol}) equals the pair
      * the runner resolved. A blank value is a value still to be set, not a mismatch, so it is skipped; the test
