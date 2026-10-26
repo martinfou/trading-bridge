@@ -22,6 +22,8 @@ services:
       - OANDA_ENV=practice
       - LOG_LEVEL=INFO
       - TB_ALLOW_ORDERS=1
+      # Persistent per-strategy state directory (story 50.1): survives container recreation.
+      - TB_STATE_DIR=/app/data/state
       # Strategy selection (override via env):
       # vwp → VWPReversionStrategy, consecbar → ConsecutiveBarExhaustionStrategy
       # nymid → NYMidSessionMomentumStrategy, gobig → GoBigStrategy
@@ -63,6 +65,8 @@ services:
       - OANDA_ENV=practice
       - LOG_LEVEL=INFO
       - TB_ALLOW_ORDERS=1
+      # Persistent per-strategy state directory (story 50.1): survives container recreation.
+      - TB_STATE_DIR=/app/data/state
       - STRATEGY=${NFP_STRATEGY:-nfpweek}
       - STRATEGY_PAIR=${NFP_PAIR:-EUR_USD}
       - GRANULARITY=${NFP_GRANULARITY:-H1}
@@ -90,6 +94,8 @@ services:
       - OANDA_ENV=practice
       - LOG_LEVEL=INFO
       - TB_ALLOW_ORDERS=1
+      # Persistent per-strategy state directory (story 50.1): survives container recreation.
+      - TB_STATE_DIR=/app/data/state
       - STRATEGY=${COMP_STRATEGY:-compmomentum}
       - STRATEGY_PAIR=${COMP_PAIR:-USD_JPY}
       - GRANULARITY=${COMP_GRANULARITY:-H1}
@@ -119,6 +125,8 @@ services:
       - OANDA_ENV=practice
       - LOG_LEVEL=INFO
       - TB_ALLOW_ORDERS=1
+      # Persistent per-strategy state directory (story 50.1): survives container recreation.
+      - TB_STATE_DIR=/app/data/state
       - STRATEGY=${MWP_STRATEGY:-monthweekphase}
       - STRATEGY_PAIR=${MWP_PAIR:-USD_JPY}
       - GRANULARITY=${MWP_GRANULARITY:-H1}
@@ -148,6 +156,8 @@ services:
       - OANDA_ENV=practice
       - LOG_LEVEL=INFO
       - TB_ALLOW_ORDERS=1
+      # Persistent per-strategy state directory (story 50.1): survives container recreation.
+      - TB_STATE_DIR=/app/data/state
       - STRATEGY=${LTRSI3_STRATEGY:-ltrsi3}
       - STRATEGY_PAIR=${LTRSI3_PAIR:-EUR_USD}
       - GRANULARITY=${LTRSI3_GRANULARITY:-H1}

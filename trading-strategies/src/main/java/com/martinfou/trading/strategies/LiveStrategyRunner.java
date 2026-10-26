@@ -16,6 +16,8 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -118,6 +120,8 @@ public class LiveStrategyRunner implements Runnable {
     private static final Map<String, Double> STRATEGY_RISK_PCT = new ConcurrentHashMap<>();
 
     // ---- Per-instance paths ----
+    /** Default state directory when neither {@code TB_STATE_DIR} nor {@code config stateDir} override it. */
+    private static final Path DEFAULT_STATE_DIR = Paths.get("/tmp");
     private final Path stateFile;
     private final Path monitorFile;
 
@@ -146,6 +150,11 @@ public class LiveStrategyRunner implements Runnable {
     private volatile Instant lastHeartbeatTime = Instant.now();
     private volatile int totalEntries = 0;
     private volatile int totalExits = 0;
+    /** Provenance of the in-memory state: {@code resumed}, {@code fresh}, {@code stale-instrument}, or {@code resume-failed}. */
+    private volatile String stateSource = "fresh";
+    /** Broker trades this runner does not track (orphans it owns by tag, plus untagged trades) — alert only. */
+    private final List<OandaExecutor.TradeView> untrackedBrokerTrades = new ArrayList<>();
+    private Instant lastOrphanCheck = Instant.MIN;
     /** Entries refused by the story 1.4 guard (a live entry that carried no protective stop). */
     private volatile int rejectedNoStopEntries = 0;
     /** Realized-P&L ledger — the ONLY writer of realized P&L (account currency, broker-sourced, once per trade). */
@@ -244,6 +253,21 @@ public class LiveStrategyRunner implements Runnable {
     public LiveStrategyRunner(String apiKey, String accountId, Strategy strategy,
                               String strategyShortName, String granularity, int intervalSec) {
         this(apiKey, accountId, strategy, strategyShortName, granularity, intervalSec,
+            DEFAULT_STATE_DIR,
+            new OandaExecutor(apiKey, accountId, true),
+            new OandaPriceClient(apiKey, accountId, true));
+    }
+
+    /**
+     * Production entry point: the state directory is resolved OUTSIDE the runner (see
+     * {@link #resolveStateDir()}) and injected, because {@code System.getenv()} is not modifiable
+     * in-process and a constructor that read it would be intestable. Called from {@code main()}.
+     */
+    LiveStrategyRunner(String apiKey, String accountId, Strategy strategy,
+                       String strategyShortName, String granularity, int intervalSec,
+                       Path stateDir) {
+        this(apiKey, accountId, strategy, strategyShortName, granularity, intervalSec,
+            stateDir,
             new OandaExecutor(apiKey, accountId, true),
             new OandaPriceClient(apiKey, accountId, true));
     }
@@ -255,6 +279,14 @@ public class LiveStrategyRunner implements Runnable {
     LiveStrategyRunner(String apiKey, String accountId, Strategy strategy,
                        String strategyShortName, String granularity, int intervalSec,
                        OandaExecutor executor, OandaPriceClient priceClient) {
+        this(apiKey, accountId, strategy, strategyShortName, granularity, intervalSec,
+            DEFAULT_STATE_DIR, executor, priceClient);
+    }
+
+    /** Full seam: also inject the resolved state directory (used by the state-durability tests). */
+    LiveStrategyRunner(String apiKey, String accountId, Strategy strategy,
+                       String strategyShortName, String granularity, int intervalSec,
+                       Path stateDir, OandaExecutor executor, OandaPriceClient priceClient) {
         this.runId = java.util.UUID.randomUUID().toString();
         this.apiKey = apiKey;
         this.accountId = accountId;
@@ -264,14 +296,57 @@ public class LiveStrategyRunner implements Runnable {
         this.intervalSec = intervalSec;
         this.priceClient = priceClient;
         this.executor = executor;
-        // Per-strategy state files
-        this.stateFile = Paths.get("/tmp/live-strategy-state-" + strategyShortName + ".json");
+        // Create the directory before the first write, so a bad mount is visible at startup.
+        try {
+            Files.createDirectories(stateDir);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Cannot create state directory " + stateDir, e);
+        }
+        log.info("📁 State directory for '{}': {}", strategyShortName, stateDir);
+        // Per-strategy state files: the STATE lives on the resolved dir; the MONITOR stays in /tmp.
+        this.stateFile = stateDir.resolve("live-strategy-state-" + strategyShortName + ".json");
         this.monitorFile = Paths.get("/tmp/paper-status-" + strategyShortName + ".json");
+    }
+
+    /**
+     * Resolves the state directory: {@code TB_STATE_DIR} (env) &gt; {@code stateDir} in
+     * {@code live-config.json} &gt; {@code /tmp}. Resolution lives here, OUTSIDE the runner
+     * constructor, because {@code System.getenv()} is not modifiable in-process: {@code main()}
+     * resolves once and injects the {@code Path}.
+     */
+    static Path resolveStateDir() {
+        return resolveStateDir(System.getenv("TB_STATE_DIR"), LIVE_CONFIG);
+    }
+
+    /** Pure, injectable resolution (tests pass the env value directly since env is immutable in-process). */
+    static Path resolveStateDir(String envValue, JsonNode liveConfig) {
+        if (envValue != null && !envValue.isBlank()) {
+            return Paths.get(envValue.trim());
+        }
+        if (liveConfig != null && liveConfig.hasNonNull("stateDir")) {
+            String configured = liveConfig.get("stateDir").asText("").trim();
+            if (!configured.isEmpty()) {
+                return Paths.get(configured);
+            }
+        }
+        return DEFAULT_STATE_DIR;
     }
 
     /** Entries counted since start; only a confirmed fill increments it. */
     public int getTotalEntries() {
         return totalEntries;
+    }
+
+    /** Provenance of the in-memory state: resumed / fresh / stale-instrument / resume-failed. */
+    public String getStateSource() {
+        return stateSource;
+    }
+
+    /** Broker trades this runner does not track (orphans it owns by tag + untagged trades), a copy. */
+    List<OandaExecutor.TradeView> getUntrackedBrokerTrades() {
+        synchronized (untrackedBrokerTrades) {
+            return new ArrayList<>(untrackedBrokerTrades);
+        }
     }
 
     // ========================================================================
@@ -394,11 +469,15 @@ public class LiveStrategyRunner implements Runnable {
         // Load risk config
         loadConfig();
 
+        // Resolve the persistent state directory OUTSIDE the runner (env > config > /tmp) and inject
+        // it, so the runner constructor stays free of System.getenv() reads (story 50.1).
+        Path stateDir = resolveStateDir();
+
         // Launch each strategy in its own thread
         List<Thread> threads = new ArrayList<>();
         for (var entry : resolved) {
             var runner = new LiveStrategyRunner(apiKey, accountId, entry.getValue(),
-                entry.getKey(), granularity, intervalSec);
+                entry.getKey(), granularity, intervalSec, stateDir);
             ACTIVE_RUNNERS.put(entry.getKey(), runner);
             Thread t = new Thread(runner, "strat-" + entry.getKey());
             t.setDaemon(false);
@@ -748,6 +827,15 @@ public class LiveStrategyRunner implements Runnable {
                 sn.put("signalCount", r.signalCount);
                 sn.put("barCount", r.barCount);
                 sn.put("liveness", r.getLivenessStatus());
+                sn.put("stateSource", r.getStateSource());
+                ArrayNode untracked = sn.putArray("untrackedBrokerTrades");
+                for (OandaExecutor.TradeView tv : r.getUntrackedBrokerTrades()) {
+                    ObjectNode un = untracked.addObject();
+                    un.put("id", tv.id());
+                    un.put("instrument", tv.instrument());
+                    un.put("units", tv.units());
+                    un.put("tag", tv.tag());
+                }
             }
 
             // Enrichment is telemetry: a failure here must never stop the health
@@ -1025,6 +1113,15 @@ public class LiveStrategyRunner implements Runnable {
 
         // Restore the saved state AFTER the replay, so it has the last word on the position
         resumeState();
+        // Story 50.1: raise the orphan signal at STARTUP, not only on the first throttled tick.
+        // A restart is precisely the moment a broker position can be left untracked.
+        try {
+            detectOrphans();
+            // Keep the loop from re-firing the same REST read on the very first tick.
+            lastOrphanCheck = TimeConventions.now();
+        } catch (Exception e) {
+            log.warn("⚠ Orphan detection at startup skipped for '{}': {}", strategyShortName, e.getMessage());
+        }
         if (warmedUpTo != null && (lastBarTime == null || lastBarTime.isBefore(warmedUpTo))) {
             log.info("Bar cursor kept at the warm-up end ({} instead of the saved {}): those bars were "
                 + "already replayed and must not be processed twice.", warmedUpTo, lastBarTime);
@@ -1062,6 +1159,7 @@ public class LiveStrategyRunner implements Runnable {
                 tick(oandaSymbol);
                 saveStatePeriodic();
                 runIntegrityCheck();
+                runOrphanDetection();
 
                 // Sleep for the remaining interval
                 long elapsedMs = Duration.between(loopStart, TimeConventions.now()).toMillis();
@@ -1487,6 +1585,10 @@ public class LiveStrategyRunner implements Runnable {
                     TimeConventions.now()
                 ));
             }
+            // Story 50.1: persist the entry IMMEDIATELY after the confirmed fill, not up to 60s
+            // later in saveStatePeriodic(). A container recreation in that window is exactly how
+            // trade 504 was orphaned on 2026-10-26.
+            saveStateNow();
 
         } catch (Exception e) {
             log.error("❌ TRADE EXECUTION FAILED: {} {} @ {} — {}",
@@ -1814,6 +1916,75 @@ public class LiveStrategyRunner implements Runnable {
     }
 
     // ========================================================================
+    // Orphan detection (story 50.1 — alert only, no entry blocking)
+    // ========================================================================
+
+    /**
+     * Reads the broker's open trades once and classifies them against the local book. A trade whose
+     * tag starts with {@code <strategyShortName>_} and whose id is NOT in {@code activeTrades} is an
+     * ORPHAN — logged at ERROR and surfaced in {@link #getUntrackedBrokerTrades()}. A trade with no
+     * tag (placed before the trade-level tag fix) is never an orphan: it is counted without
+     * attribution, which avoids cross false-positives (compmomentum and monthweekphase both trade
+     * USD_JPY on the same account). A trade tagged for a DIFFERENT strategy is ignored entirely.
+     * Never throws: a broker-read failure logs WARN and leaves the last known view.
+     */
+    void detectOrphans() {
+        try {
+            List<OandaExecutor.TradeView> open = executor.getOpenTradesDetailed();
+            Set<String> trackedIds;
+            synchronized (activeTrades) {
+                trackedIds = activeTrades.stream()
+                    .map(t -> t.tradeId)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toSet());
+            }
+            String prefix = strategyShortName + "_";
+            // Exact expected tag for THIS runner's pair. Comparing the whole tag rather than the
+            // prefix avoids a future strategy named "comp" matching "compmomentum_USDJPY".
+            String ownTag = resolvedInstrument == null ? null : prefix + resolvedInstrument.replace("_", "");
+            List<OandaExecutor.TradeView> untracked = new ArrayList<>();
+            for (OandaExecutor.TradeView tv : open) {
+                String tag = tv.tag();
+                boolean ours = tag != null
+                    && (ownTag != null ? ownTag.equals(tag) : tag.startsWith(prefix));
+                if (tag == null || tag.isBlank()) {
+                    // Untagged: cannot be attributed, never an orphan. But an untagged position on OUR
+                    // instrument is exactly the shape of the 2026-10-26 incident (the trade predated
+                    // trade-level tags), so it still has to be loud, just not attributed.
+                    untracked.add(tv);
+                    if (resolvedInstrument != null && resolvedInstrument.equals(tv.instrument())
+                        && !trackedIds.contains(tv.id())) {
+                        log.error("🧹 UNTAGGED broker trade {} ({}) {} units on our instrument, "
+                            + "absent from the local book of '{}' — operator review required; no entry is blocked.",
+                            tv.id(), tv.instrument(), tv.units(), strategyShortName);
+                    }
+                } else if (ours && !trackedIds.contains(tv.id())) {
+                    // Our tag, but not tracked locally: an orphan.
+                    untracked.add(tv);
+                    log.error("🧹 ORPHAN broker trade {} ({}) {} units (tag {}) has no matching active trade in '{}' — "
+                        + "operator review required; no entry is blocked.",
+                        tv.id(), tv.instrument(), tv.units(), tv.tag(), strategyShortName);
+                }
+                // else: tagged for a different strategy → not ours, ignored.
+            }
+            synchronized (untrackedBrokerTrades) {
+                untrackedBrokerTrades.clear();
+                untrackedBrokerTrades.addAll(untracked);
+            }
+        } catch (Exception e) {
+            log.warn("⚠ Orphan detection skipped for '{}': {}", strategyShortName, e.getMessage());
+        }
+    }
+
+    /** Throttled caller for the main loop — at most once per 60s, off the critical path. */
+    private void runOrphanDetection() {
+        Instant now = TimeConventions.now();
+        if (Duration.between(lastOrphanCheck, now).toSeconds() < 60) return;
+        lastOrphanCheck = now;
+        detectOrphans();
+    }
+
+    // ========================================================================
     // Instrument Resolution
     // ========================================================================
 
@@ -2079,12 +2250,30 @@ public class LiveStrategyRunner implements Runnable {
         }
     }
 
-    /** Writes JSON to {@code file + ".tmp"} then atomically moves it over the target. */
+    /**
+     * First-attempt atomic move, isolated so a test can simulate a filesystem that rejects
+     * {@code ATOMIC_MOVE} (story 50.1 L1.7). Never overridden in production.
+     */
+    void moveAtomically(Path tmp, Path file) throws IOException {
+        Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    /**
+     * Writes JSON to {@code file + ".tmp"} then atomically moves it over the target. When the
+     * filesystem refuses {@code ATOMIC_MOVE}, it degrades to a plain replace-move (logged WARN)
+     * instead of failing the whole state write — a filesystem without atomic move must not make the
+     * state unwritable. Any other {@code IOException} still propagates.
+     */
     private void writeJsonAtomic(Path file, ObjectNode node) throws IOException {
         Path tmp = file.resolveSibling(file.getFileName().toString() + ".tmp");
         try {
             MAPPER.writerWithDefaultPrettyPrinter().writeValue(tmp.toFile(), node);
-            Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            try {
+                moveAtomically(tmp, file);
+            } catch (AtomicMoveNotSupportedException e) {
+                log.warn("⚠ Atomic move not supported on this filesystem ({}): falling back to a plain move.", file);
+                Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+            }
         } catch (IOException e) {
             try {
                 Files.deleteIfExists(tmp);
@@ -2522,6 +2711,9 @@ public class LiveStrategyRunner implements Runnable {
                     savedStrategy, strategyShortName);
                 return;
             }
+            // A successfully parsed state belonging to this strategy is "resumed" unless the
+            // instrument check below downgrades it to "stale-instrument".
+            stateSource = "resumed";
 
             if (root.has("totalEntries")) totalEntries = root.get("totalEntries").asInt();
             if (root.has("totalExits")) totalExits = root.get("totalExits").asInt();
@@ -2574,7 +2766,29 @@ public class LiveStrategyRunner implements Runnable {
                 }
             }
 
-            if (root.has("activeTrades")) {
+            // Story 50.1 L1.3: the state file now outlives the container, so it also outlives a
+            // STRATEGY_PAIR change. Never restore activeTrades across an instrument boundary — a
+            // position on the OLD pair must not be managed as if it were on the NEW pair. When the
+            // current instrument is unresolvable (only possible outside a live run(), which refuses
+            // to start without one) there is nothing to compare, so the saved trades are restored as-is.
+            String resolvedInstrument = toOandaSymbol();
+            String savedInstrument = root.hasNonNull("instrument") ? root.get("instrument").asText() : null;
+            // Three cases, and they are not symmetric:
+            //  - resolved == null : only possible outside a live run() (which refuses to start without
+            //    an instrument). Nothing to compare against, so restore as-is; treating it as stale
+            //    would silently drop a book in every path that does not go through run().
+            //  - resolved known, saved null : the file cannot be trusted to belong to this pair.
+            //  - both known : they must be equal.
+            boolean instrumentMatches = resolvedInstrument == null
+                || (savedInstrument != null && resolvedInstrument.equals(savedInstrument));
+            if (!instrumentMatches) {
+                stateSource = "stale-instrument";
+                log.warn("⚠️ Saved state instrument '{}' does not match the resolved instrument '{}' for '{}' — "
+                    + "NOT restoring active trades (stale-instrument). Counters and the ledger are kept.",
+                    savedInstrument, resolvedInstrument, strategyShortName);
+            }
+
+            if (instrumentMatches && root.has("activeTrades")) {
                 for (JsonNode tn : root.get("activeTrades")) {
                     ActiveTrade t = new ActiveTrade();
                     t.tradeId = tn.get("tradeId").asText();
@@ -2596,7 +2810,11 @@ public class LiveStrategyRunner implements Runnable {
                 }
             }
 
-            if (root.has("pendingStops")) {
+            // Story 50.1 review: pendingStops and unreconciledTrades are POSITION state too. Restoring
+            // them across an instrument boundary would rewrite ghost stops for the OLD pair into the
+            // state file on the next save, and the monitor would report pendingStops for a pair this
+            // runner no longer trades. Everything position-shaped lives under the same guard.
+            if (instrumentMatches && root.has("pendingStops")) {
                 for (JsonNode pn : root.get("pendingStops")) {
                     PendingStop p = new PendingStop();
                     p.orderId = pn.get("orderId").asText();
@@ -2610,7 +2828,7 @@ public class LiveStrategyRunner implements Runnable {
                 }
             }
 
-            if (root.has("unreconciledTrades")) {
+            if (instrumentMatches && root.has("unreconciledTrades")) {
                 for (JsonNode un : root.get("unreconciledTrades")) {
                     unreconciledTrades.add(new UnreconciledTrade(
                         un.get("tradeId").asText(),
@@ -2690,7 +2908,12 @@ public class LiveStrategyRunner implements Runnable {
                 String.format("%.2f", ledger.total()));
 
         } catch (Exception e) {
-            log.warn("Failed to resume state (corrupted?): {}", e.getMessage());
+            // Story 50.1: a corrupt/unreadable state file must NOT read as a clean start — that
+            // silence is exactly how a live broker position is left unmanaged. ERROR, not WARN.
+            stateSource = "resume-failed";
+            log.error("❌ Failed to resume state for '{}' (corrupted?): {}. Starting with a fresh book; "
+                + "a broker position held during downtime would now be untracked.",
+                strategyShortName, e.getMessage());
         }
     }
 
