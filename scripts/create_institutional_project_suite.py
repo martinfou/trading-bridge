@@ -320,6 +320,7 @@ def build_project(spec):
             add_condition(conds, "ProfitFactor", 0, ">", "1.05")
             add_condition(conds, "ProfitFactor", 10, ">", "1.10")
             add_condition(conds, "ProfitFactor", 20, ">", "1.00")
+            add_condition(conds, "NetProfit", 20, ">", "0", fmt="Decimal2PL")
             add_condition(conds, "NumberOfTrades", 0, ">", "30", fmt="Integer")
 
     # 3. Stage and Package
