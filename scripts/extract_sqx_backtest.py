@@ -134,10 +134,15 @@ def parse_daily_equity(zip_file: zipfile.ZipFile) -> Dict[str, Any]:
     oos_pf = (oos_gw / oos_gl) if oos_gl > 0 else (99.0 if oos_gw > 0 else 0.0)
     oos_profit = sum(c[1] for c in oos_trades)
 
+    initial_cap = initial_equity if initial_equity > 0 else 10000.0
+    net_profit_pct = round((net_profit / initial_cap) * 100.0, 2)
+    is_profit_pct = round((is_profit / initial_cap) * 100.0, 2)
+    oos_profit_pct = round((oos_profit / initial_cap) * 100.0, 2)
+
     # Downsampled sparkline points (24 points for mini sparkline chart)
     sparkline = []
-    step = max(1, len(entries) // 24)
-    for i in range(0, len(entries), step):
+    step_spark = max(1, len(entries) // 24)
+    for i in range(0, len(entries), step_spark):
         sparkline.append(round(entries[i][1], 2))
     if sparkline and sparkline[-1] != round(final_equity, 2):
         sparkline.append(round(final_equity, 2))
@@ -145,8 +150,42 @@ def parse_daily_equity(zip_file: zipfile.ZipFile) -> Dict[str, Any]:
     start_date = datetime.datetime.fromtimestamp(entries[0][0] / 1000.0, datetime.timezone.utc).strftime("%Y-%m-%d")
     end_date = datetime.datetime.fromtimestamp(entries[-1][0] / 1000.0, datetime.timezone.utc).strftime("%Y-%m-%d")
 
+    # High-fidelity sampled equity and drawdown curve (~60 points) for interactive charts
+    curve = []
+    step_curve = max(1, len(entries) // 60)
+    p_peak = entries[0][1] if entries else 0.0
+    for i in range(0, len(entries), step_curve):
+        ts, eq = entries[i]
+        if eq > p_peak:
+            p_peak = eq
+        dd = eq - p_peak
+        d_str = datetime.datetime.fromtimestamp(ts / 1000.0, datetime.timezone.utc).strftime("%Y-%m-%d")
+        curve.append({
+            "d": d_str,
+            "pnl": round(eq, 2),
+            "pnl_pct": round((eq / initial_cap) * 100.0, 2),
+            "dd": round(dd, 2),
+            "dd_pct": round((dd / initial_cap) * 100.0, 2),
+            "oos": ts >= OOS_TIMESTAMP_MS,
+        })
+    if entries and (not curve or curve[-1]["d"] != end_date):
+        ts, eq = entries[-1]
+        if eq > p_peak:
+            p_peak = eq
+        dd = eq - p_peak
+        curve.append({
+            "d": end_date,
+            "pnl": round(eq, 2),
+            "pnl_pct": round((eq / initial_cap) * 100.0, 2),
+            "dd": round(dd, 2),
+            "dd_pct": round((dd / initial_cap) * 100.0, 2),
+            "oos": ts >= OOS_TIMESTAMP_MS,
+        })
+
     return {
+        "initial_capital": initial_cap,
         "net_profit": round(net_profit, 2),
+        "net_profit_pct": net_profit_pct,
         "profit_factor": round(pf, 2),
         "win_rate": round(win_rate, 1),
         "trades": len(changes),
@@ -158,13 +197,16 @@ def parse_daily_equity(zip_file: zipfile.ZipFile) -> Dict[str, Any]:
         "sharpe_ratio": round(sharpe, 2),
         "is_trades": len(is_trades),
         "is_profit": round(is_profit, 2),
+        "is_profit_pct": is_profit_pct,
         "is_pf": round(is_pf, 2),
         "oos_trades": len(oos_trades),
         "oos_profit": round(oos_profit, 2),
+        "oos_profit_pct": oos_profit_pct,
         "oos_pf": round(oos_pf, 2),
         "start_date": start_date,
         "end_date": end_date,
         "sparkline": sparkline,
+        "curve": curve,
     }
 
 
