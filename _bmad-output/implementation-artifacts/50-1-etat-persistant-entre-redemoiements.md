@@ -1,6 +1,12 @@
 # Story 50.1 — Le fichier d'état survit à un redéploiement (v2, lot 1)
 
-- **Status :** draft v2 (Phase 3, corrigée après Party Mode, en attente de l'approbation de Martin)
+- **Status :** done — déployé le 2026-10-27 à 19h37 EDT (image reconstruite, 4 services redémarrés, zéro
+  position ouverte au moment du déploiement). Preuves : `State directory for 'vwpreversion': /app/data/state`,
+  fichiers `data/state/live-strategy-state-*.json` présents sur l'hôte, `stateSource: resumed` après redémarrage
+  du conteneur `comp-momentum` (`♻ Resumed state: 0 active trades...`), 152 tests verts sur 4 modules, revue
+  indépendante en 2 passes APPROVED. Commit `084ebf42`.
+- **Reste hors périmètre :** le lot 2 (blocage d'entrées) n'est pas ouvert. Le hub doit encore apprendre à
+  lire `strategies[].untrackedBrokerTrades` pour l'afficher.
 - **Date :** 2026-10-26
 - **Propriétaire :** Martin
 - **baseline_commit :** `2509b1e` (HEAD master après `git pull` du 2026-10-26 18h)
