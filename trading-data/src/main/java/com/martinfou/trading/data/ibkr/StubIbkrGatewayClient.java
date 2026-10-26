@@ -15,6 +15,8 @@ public final class StubIbkrGatewayClient implements IbkrGatewayClient {
     private final List<Consumer<IbkrExecution>> executionListeners = new CopyOnWriteArrayList<>();
     private IbkrAccountSnapshot account = new IbkrAccountSnapshot(100_000, 100_000, "USD");
     private final java.util.concurrent.atomic.AtomicLong nextOrderId = new java.util.concurrent.atomic.AtomicLong(1);
+    private final java.util.Set<String> cancelledOrderIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final java.util.Set<String> workingOrderIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private volatile boolean connected;
     private volatile boolean asyncFills = true;
     /** Defaults to true: the stub always "answers" unless a test says otherwise. */
@@ -81,6 +83,7 @@ public final class StubIbkrGatewayClient implements IbkrGatewayClient {
         }
         double price = symbol != null && symbol.contains("JPY") ? 150.0 : 1.10;
         String orderId = String.valueOf(nextOrderId.getAndIncrement());
+        workingOrderIds.add(orderId);
         String execId = "E-" + orderId;
         netPosition(symbol, side, quantity, price);
         IbkrMarketOrderResult result = IbkrMarketOrderResult.success(orderId, execId, price);
@@ -93,6 +96,35 @@ public final class StubIbkrGatewayClient implements IbkrGatewayClient {
             }
         }
         return result;
+    }
+
+    @Override
+    public boolean cancelOrder(String brokerOrderId) {
+        if (!connected) {
+            return false;
+        }
+        cancelledOrderIds.add(brokerOrderId);
+        workingOrderIds.remove(brokerOrderId);
+        return true;
+    }
+
+    @Override
+    public int cancelAllOrders() {
+        if (!connected) {
+            return 0;
+        }
+        int count = workingOrderIds.size();
+        cancelledOrderIds.addAll(workingOrderIds);
+        workingOrderIds.clear();
+        return count;
+    }
+
+    public boolean isOrderCancelled(String brokerOrderId) {
+        return cancelledOrderIds.contains(brokerOrderId);
+    }
+
+    public java.util.Set<String> cancelledOrderIds() {
+        return java.util.Set.copyOf(cancelledOrderIds);
     }
 
     @Override

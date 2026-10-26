@@ -51,6 +51,22 @@ class FuturesTickQuantizationTest {
     }
 
     @Test
+    void testMgcTickQuantization() {
+        FuturesContract mgc = FuturesRegistry.find("MGC").orElseThrow();
+        assertEquals("COMEX", mgc.exchange());
+        assertEquals(0.10, mgc.minTick(), 1e-6);
+        assertEquals(1.00, mgc.tickValue(), 1e-6);
+        assertEquals(10.0, mgc.multiplier(), 1e-6);
+        assertEquals(1400.0, mgc.initialMargin(), 1e-6);
+
+        assertTrue(mgc.isValidTick(2730.10));
+        assertFalse(mgc.isValidTick(2730.15));
+
+        assertEquals(2730.20, mgc.quantizePrice(2730.16), 1e-6);
+        assertEquals(2730.10, mgc.quantizePrice(2730.14), 1e-6);
+    }
+
+    @Test
     void testFuturesRegistryQuantizeHelper() {
         assertEquals(5010.25, FuturesRegistry.quantizePrice("MES", 5010.30), 1e-6);
         assertEquals(5010.25, FuturesRegistry.quantizePrice("MES_202412", 5010.28), 1e-6);

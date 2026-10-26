@@ -46,10 +46,10 @@ public final class PaperMesSmokeTest {
             System.exit(2);
         }
 
-        // Toujours paper: port 7497. 7496 (live) est refusé.
+        // Toujours paper: port 7497 ou 4002. Les ports live (7496 / 4001) sont refusés par sécurité.
         int port = Integer.parseInt(System.getenv().getOrDefault("IBKR_GATEWAY_PORT", "7497"));
-        if (port == 7496) {
-            log.error("Refus: port 7496 = LIVE. Paper uniquement (7497).");
+        if (port == 7496 || port == 4001) {
+            log.error("Refus: port {} = LIVE. Paper uniquement (7497 / 4002).", port);
             System.exit(2);
         }
         String host = System.getenv().getOrDefault("IBKR_GATEWAY_HOST", "127.0.0.1");
@@ -71,8 +71,9 @@ public final class PaperMesSmokeTest {
             broker.connect();
             log.info("Connected. Account: {}", broker.getAccountState());
 
-            Order order = new Order("MES", Order.Side.BUY, Order.Type.MARKET, 1.0, 0.0);
-            log.info("Place 1 MES MARKET BUY...");
+            Order order = new Order("MES", Order.Side.BUY, Order.Type.MARKET, 1.0, 0.0)
+                .withStrategyId("hermes-smoke");
+            log.info("Place 1 MES MARKET BUY (strategyId=hermes-smoke)...");
             var result = broker.submitOrder(order);
             log.info("submitOrder -> accepted={} orderId={} reason={}",
                 result.accepted(), result.brokerOrderId(), result.rejectReason());

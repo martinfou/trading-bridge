@@ -19,6 +19,7 @@ public final class SqImportedStrategyCatalog {
         register("Strategy_2_32_120_Converted", Strategy_2_32_120_Converted::new);
         register("Strategy_2_36_190_Converted", Strategy_2_36_190_Converted::new);
         register("Strategy_2_38_112_Converted", Strategy_2_38_112_Converted::new);
+        register("Strategy_Gold_Breakout_M30", Strategy_Gold_Breakout_M30::new);
     }
 
     private SqImportedStrategyCatalog() {}
@@ -42,6 +43,9 @@ public final class SqImportedStrategyCatalog {
     public static String defaultSymbol(String key) {
         if (!FACTORIES.containsKey(key)) {
             throw new IllegalArgumentException("Unknown sqimported strategy: " + key);
+        }
+        if (key.contains("Gold") || key.contains("MGC")) {
+            return "MGC";
         }
         return "GBP_JPY";
     }

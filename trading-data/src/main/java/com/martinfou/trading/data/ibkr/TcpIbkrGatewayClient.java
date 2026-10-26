@@ -7,6 +7,7 @@ import com.ib.client.EClientSocket;
 import com.ib.client.EJavaSignal;
 import com.ib.client.EReader;
 import com.ib.client.Execution;
+import com.ib.client.OrderCancel;
 import com.martinfou.trading.core.FuturesRegistry;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.core.guardrails.OrderTripwire;
@@ -193,6 +194,51 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
         }
         // Accepted, not filled: the fill (execDetails) arrives asynchronously on the reader thread.
         return new IbkrMarketOrderResult(true, Integer.toString(orderId), null, null, null);
+    }
+
+    @Override
+    public boolean cancelOrder(String brokerOrderId) {
+        EClientSocket socket = this.client;
+        if (!isConnected() || socket == null) {
+            log.warn("IBKR cancelOrder rejected: client not connected");
+            return false;
+        }
+        if (brokerOrderId == null || brokerOrderId.isBlank()) {
+            log.warn("IBKR cancelOrder rejected: brokerOrderId is required");
+            return false;
+        }
+        try {
+            int orderId = Integer.parseInt(brokerOrderId.trim());
+            socket.cancelOrder(orderId, new OrderCancel());
+            orderIdToClientTag.remove(orderId);
+            log.info("IBKR cancelOrder sent for orderId={}", orderId);
+            return true;
+        } catch (NumberFormatException e) {
+            log.error("IBKR cancelOrder failed: invalid integer brokerOrderId '{}'", brokerOrderId);
+            return false;
+        } catch (RuntimeException e) {
+            log.error("IBKR cancelOrder failed for orderId {}: {}", brokerOrderId, e.getMessage(), e);
+            return false;
+        }
+    }
+
+    @Override
+    public int cancelAllOrders() {
+        EClientSocket socket = this.client;
+        if (!isConnected() || socket == null) {
+            log.warn("IBKR cancelAllOrders rejected: client not connected");
+            return 0;
+        }
+        try {
+            socket.reqGlobalCancel(new OrderCancel());
+            int tracked = orderIdToClientTag.size();
+            orderIdToClientTag.clear();
+            log.info("IBKR reqGlobalCancel sent (tracked working orders: {})", tracked);
+            return tracked;
+        } catch (RuntimeException e) {
+            log.error("IBKR reqGlobalCancel failed: {}", e.getMessage(), e);
+            return 0;
+        }
     }
 
     @Override

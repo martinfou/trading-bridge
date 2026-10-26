@@ -109,6 +109,52 @@ class IbkrBrokerTest {
     }
 
     @Test
+    void cancelOrder_whenClientSucceeds_returnsAcceptedAndEmitsCancelledEvent() {
+        var client = new StubIbkrGatewayClient();
+        client.asyncFills(false); // keep order working
+        var broker = new IbkrBroker(client);
+        broker.connect();
+
+        List<BrokerEvent> events = new ArrayList<>();
+        broker.addEventListener(events::add);
+
+        var order = new Order("MES", Order.Side.BUY, Order.Type.MARKET, 1.0, 0.0);
+        OrderSubmitResult submitResult = broker.submitOrder(order);
+        assertTrue(submitResult.accepted());
+        String brokerOrderId = submitResult.brokerOrderId();
+
+        OrderSubmitResult cancelResult = broker.cancelOrder(brokerOrderId);
+        assertTrue(cancelResult.accepted());
+        assertTrue(client.isOrderCancelled(brokerOrderId));
+
+        assertTrue(events.stream().anyMatch(e -> e.type() == BrokerEventType.REJECT && "CANCELLED".equals(e.message())));
+    }
+
+    @Test
+    void cancelAllOrders_delegatesToClientAndPurgesPendingOrders() {
+        var client = new StubIbkrGatewayClient();
+        client.asyncFills(false);
+        var broker = new IbkrBroker(client);
+        broker.connect();
+
+        List<BrokerEvent> events = new ArrayList<>();
+        broker.addEventListener(events::add);
+
+        var order1 = new Order("MES", Order.Side.BUY, Order.Type.MARKET, 1.0, 0.0);
+        var order2 = new Order("MNQ", Order.Side.BUY, Order.Type.MARKET, 1.0, 0.0);
+        broker.submitOrder(order1);
+        broker.submitOrder(order2);
+
+        int cancelled = broker.cancelAllOrders();
+        assertEquals(2, cancelled);
+
+        long cancelEventCount = events.stream()
+            .filter(e -> e.type() == BrokerEventType.REJECT && "CANCELLED".equals(e.message()))
+            .count();
+        assertEquals(2, cancelEventCount);
+    }
+
+    @Test
     void asyncFill_emitsSingleFillAndPurgesPendingOrder() {
         var client = new ListenerCapturingClient();
         var broker = new IbkrBroker(client);

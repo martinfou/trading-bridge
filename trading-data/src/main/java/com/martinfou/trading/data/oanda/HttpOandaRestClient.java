@@ -1,6 +1,5 @@
 package com.martinfou.trading.data.oanda;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.martinfou.trading.core.Order;
@@ -489,7 +488,8 @@ public class HttpOandaRestClient implements OandaRestClient {
             List<Map<String, Object>> list = new ArrayList<>();
             if (json.has("transactions")) {
                 for (JsonNode txNode : json.get("transactions")) {
-                    Map<String, Object> tx = mapper.convertValue(txNode, new TypeReference<Map<String, Object>>() {});
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> tx = mapper.convertValue(txNode, Map.class);
                     list.add(tx);
                     if (list.size() >= limit) {
                         break;
@@ -561,7 +561,9 @@ public class HttpOandaRestClient implements OandaRestClient {
     public Map<String, Object> fetchOrderBook(String instrument) {
         try {
             JsonNode json = get("/instruments/" + instrument + "/orderBook");
-            return mapper.convertValue(json, new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+            @SuppressWarnings("unchecked")
+            Map<String, Object> result = mapper.convertValue(json, Map.class);
+            return result;
         } catch (Exception e) {
             log.warn("Failed to fetch OANDA order book for {}: {}", instrument, e.getMessage());
             return Map.of();

@@ -209,6 +209,51 @@
         "source": "20y H1 backtest report"
       },
       "computedRiskPct": 0.5
+    },
+    "sq-gold-m30": {
+      "instrument": "MGC",
+      "granularity": "M30",
+      "positionSizeUnits": 1,
+      "backtestMetrics": {
+        "sharpe": 1.84,
+        "maxDrawdown": 8.38,
+        "winRate": 44.4,
+        "avgWinLoss": 2.91,
+        "totalReturn": 42.43,
+        "trades": 27,
+        "source": "1y M30 real COMEX IBKR backtest (zero-martingale)"
+      },
+      "computedRiskPct": 0.5
+    },
+    "gold_breakout_m30": {
+      "instrument": "MGC",
+      "granularity": "M30",
+      "positionSizeUnits": 1,
+      "backtestMetrics": {
+        "sharpe": 1.84,
+        "maxDrawdown": 8.38,
+        "winRate": 44.4,
+        "avgWinLoss": 2.91,
+        "totalReturn": 42.43,
+        "trades": 27,
+        "source": "1y M30 real COMEX IBKR backtest (zero-martingale)"
+      },
+      "computedRiskPct": 0.5
+    },
+    "sq_gold_m30": {
+      "instrument": "MGC",
+      "granularity": "M30",
+      "positionSizeUnits": 1,
+      "backtestMetrics": {
+        "sharpe": 1.84,
+        "maxDrawdown": 8.38,
+        "winRate": 44.4,
+        "avgWinLoss": 2.91,
+        "totalReturn": 42.43,
+        "trades": 27,
+        "source": "1y M30 real COMEX IBKR backtest (zero-martingale)"
+      },
+      "computedRiskPct": 0.5
     }
   }
 }

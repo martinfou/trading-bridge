@@ -41,6 +41,25 @@ public interface IbkrGatewayClient {
     List<IbkrPositionSnapshot> fetchOpenPositions();
 
     /**
+     * Cancels a working order by its broker order ID.
+     *
+     * @param brokerOrderId the ID returned when the order was placed
+     * @return true if the cancellation request was dispatched to the venue
+     */
+    default boolean cancelOrder(String brokerOrderId) {
+        return false;
+    }
+
+    /**
+     * Cancels all working orders across the account (global cancel).
+     *
+     * @return number of orders requested cancelled
+     */
+    default int cancelAllOrders() {
+        return 0;
+    }
+
+    /**
      * Whether the LAST {@link #fetchOpenPositions()} call was actually answered by the venue.
      *
      * <p>An empty position list is ambiguous on its own: it means "flat" only if the venue answered.
