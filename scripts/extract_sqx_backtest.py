@@ -150,6 +150,32 @@ def parse_daily_equity(zip_file: zipfile.ZipFile) -> Dict[str, Any]:
     start_date = datetime.datetime.fromtimestamp(entries[0][0] / 1000.0, datetime.timezone.utc).strftime("%Y-%m-%d")
     end_date = datetime.datetime.fromtimestamp(entries[-1][0] / 1000.0, datetime.timezone.utc).strftime("%Y-%m-%d")
 
+    # Time period calculations (Years for IS, OOS, and Full Backtest)
+    start_ts = entries[0][0]
+    end_ts = entries[-1][0]
+    total_days = max(1.0, (end_ts - start_ts) / (1000.0 * 86400.0))
+    total_years = round(total_days / 365.25, 2)
+
+    # In-Sample period (start_date through 2022-12-31)
+    is_end_ts = min(end_ts, OOS_TIMESTAMP_MS)
+    is_days = max(1.0, (is_end_ts - start_ts) / (1000.0 * 86400.0)) if is_end_ts > start_ts else 1.0
+    is_years = round(is_days / 365.25, 2)
+
+    # Out-Of-Sample period (2023-01-01 through end_date)
+    oos_start_ts = max(start_ts, OOS_TIMESTAMP_MS)
+    oos_days = max(0.0, (end_ts - oos_start_ts) / (1000.0 * 86400.0)) if end_ts > OOS_TIMESTAMP_MS else 0.0
+    oos_years = round(oos_days / 365.25, 2)
+
+    # Average Yearly Profits ($ and %)
+    is_annual_profit = round(is_profit / is_years, 2) if is_years > 0 else 0.0
+    is_annual_profit_pct = round((is_annual_profit / initial_cap) * 100.0, 2)
+
+    oos_annual_profit = round(oos_profit / oos_years, 2) if oos_years > 0 else 0.0
+    oos_annual_profit_pct = round((oos_annual_profit / initial_cap) * 100.0, 2)
+
+    total_annual_profit = round(net_profit / total_years, 2) if total_years > 0 else 0.0
+    total_annual_profit_pct = round((total_annual_profit / initial_cap) * 100.0, 2)
+
     # High-fidelity sampled equity and drawdown curve (~60 points) for interactive charts
     curve = []
     step_curve = max(1, len(entries) // 60)
@@ -199,10 +225,19 @@ def parse_daily_equity(zip_file: zipfile.ZipFile) -> Dict[str, Any]:
         "is_profit": round(is_profit, 2),
         "is_profit_pct": is_profit_pct,
         "is_pf": round(is_pf, 2),
+        "is_years": is_years,
+        "is_annual_profit": is_annual_profit,
+        "is_annual_profit_pct": is_annual_profit_pct,
         "oos_trades": len(oos_trades),
         "oos_profit": round(oos_profit, 2),
         "oos_profit_pct": oos_profit_pct,
         "oos_pf": round(oos_pf, 2),
+        "oos_years": oos_years,
+        "oos_annual_profit": oos_annual_profit,
+        "oos_annual_profit_pct": oos_annual_profit_pct,
+        "total_years": total_years,
+        "total_annual_profit": total_annual_profit,
+        "total_annual_profit_pct": total_annual_profit_pct,
         "start_date": start_date,
         "end_date": end_date,
         "sparkline": sparkline,
