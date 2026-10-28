@@ -185,14 +185,15 @@ def build_project(spec):
     for ms in root.iter("MarketSides"):
         ms.attrib["type"] = market_side
 
-    # B. Sizing: Fixed 1 Contract
+    # B. Sizing: Fixed 1 Micro Contract (0.1 for 100-oz XAUUSD or 100k FX standard lot; 1 for index CFDs)
+    fixed_lot_size = "0.1" if any(k in symbol.upper() for k in ("XAUUSD", "EURUSD", "GBPUSD", "USDJPY", "GBPJPY")) else "1"
     for mm in root.iter("MoneyManagement"):
         for m in mm.iter("Method"):
             if m.attrib.get("type") == "FixedSize":
                 m.attrib["use"] = "true"
                 p = m.find(".//Param[@key='Size']")
                 if p is not None:
-                    p.text = "1"
+                    p.text = fixed_lot_size
 
     # C. Dynamic Volatility Stops & Targets (ATR-based, not hardcoded 8,000 pips)
     slpt = root.find(".//SLPTOptions")
@@ -310,18 +311,25 @@ def build_project(spec):
             bm_conds.clear()
 
     # G. Acceptance Conditions (Step 1 Capture Gate into Databank)
-    # Require profitability across entire sample AND Out-of-Sample to eliminate curve-fitting
+    # Require institutional profitability across entire sample AND Out-of-Sample + 500-slot databank
+    for max_s in root.iter("MaxStrategies"):
+        max_s.text = "500"
+    for stop_c in root.iter("StopCondition"):
+        stop_c.attrib["passedStrategies"] = "5000"
+        stop_c.attrib["restartCount"] = "50"
+
     rankings = root.find(".//Rankings")
     if rankings is not None:
         conds = rankings.find("Conditions")
         if conds is not None:
             conds.clear()
             add_condition(conds, "NetProfit", 0, ">", "0", fmt="Decimal2PL")
-            add_condition(conds, "ProfitFactor", 0, ">", "1.05")
-            add_condition(conds, "ProfitFactor", 10, ">", "1.10")
-            add_condition(conds, "ProfitFactor", 20, ">", "1.00")
+            add_condition(conds, "ProfitFactor", 0, ">", "1.25")
+            add_condition(conds, "ProfitFactor", 10, ">", "1.30")
+            add_condition(conds, "ProfitFactor", 20, ">", "1.20")
             add_condition(conds, "NetProfit", 20, ">", "0", fmt="Decimal2PL")
-            add_condition(conds, "NumberOfTrades", 0, ">", "30", fmt="Integer")
+            add_condition(conds, "ReturnDDRatio", 0, ">", "3.0")
+            add_condition(conds, "NumberOfTrades", 0, ">", "60", fmt="Integer")
 
     # 3. Stage and Package
     staging_dir = Path(f"/Volumes/T7/src/trading-bridge/target/staging_{proj_name.replace(' ', '_')}")
