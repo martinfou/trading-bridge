@@ -93,6 +93,42 @@ class StrategyMapCoverageTest {
         }
     }
 
+    @Test
+    @DisplayName("Newly rewritten SQX futures and forex strategies resolve and instantiate in runner map and live-config.json")
+    void newlyRewrittenSqxStrategiesResolveAndInstantiate() throws Exception {
+        JsonNode config = MAPPER.readTree(Files.readString(locateLiveConfig()));
+        var map = LiveStrategyRunner.getStrategyMap();
+        java.util.Map<String, String> expectedPairs = java.util.Map.of(
+            "sq-mnq-m15-momentum-0-4248", "MNQ",
+            "sq-mnq-m15-breakout-0-1499", "MNQ",
+            "sq-mes-h1-meanrev-0-3553", "MES",
+            "sq-mes-h1-pullback-0-2700", "MES",
+            "sq-gbpjpy-h1-breakout-3-39-125", "GBP_JPY",
+            "sq-gbpjpy-h1-breakout-2-20-102", "GBP_JPY",
+            "sq-mgc-m30-breakout-1-29-102", "MGC"
+        );
+        for (var entry : expectedPairs.entrySet()) {
+            String alias = entry.getKey();
+            String expectedInstrument = entry.getValue();
+            Class<? extends Strategy> clazz = map.get(alias);
+            assertNotNull(clazz, alias + " must be present in getStrategyMap()");
+            Strategy strategy = clazz.getDeclaredConstructor().newInstance();
+            assertEquals(expectedInstrument, LiveStrategyRunner.toOandaSymbolFromName(strategy));
+
+            var resolution = LiveStrategyRunner.resolveInstrument(alias, strategy, config);
+            assertEquals(expectedInstrument, resolution.instrument, alias + " must resolve from live-config.json");
+            assertEquals(LiveStrategyRunner.SOURCE_CONFIG + alias + ".instrument", resolution.source);
+
+            assertPinnedPair(alias, strategy, expectedInstrument, "before reconciliation", true);
+            strategy.reconcileInstrument(resolution.instrument);
+            assertPinnedPair(alias, strategy, expectedInstrument, "after reconciliation", false);
+
+            assertDoesNotThrow(() ->
+                LiveStrategyRunner.verifyInstrumentConsistency(alias, resolution.instrument,
+                    resolution.source, config));
+        }
+    }
+
     /**
      * Assert every instrument field the strategy carries ({@code symbol}, {@code oandaSymbol}) equals the pair
      * the runner resolved. A blank value is a value still to be set, not a mismatch, so it is skipped; the test

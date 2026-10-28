@@ -86,7 +86,19 @@ public class RunBacktest {
     /** Shared backtest execution for legacy RunPropBacktest --all. */
     public static BacktestResult runStrategy(Strategy strategy, List<Bar> bars, double capital) {
         String symbol = bars.isEmpty() ? "" : bars.getFirst().symbol();
-        return RunContext.forStrategy(null, null, strategy, symbol, RunMode.BACKTEST, bars, capital, null, RealCostModel::costFor).run();
+        return RunContext.forStrategy(
+            null,
+            null,
+            strategy,
+            symbol,
+            RunMode.BACKTEST,
+            bars,
+            capital,
+            null,
+            sym -> com.martinfou.trading.core.FuturesRegistry.isFutures(sym)
+                ? RunContexts.executionCostFor(sym)
+                : RealCostModel.costFor(sym)
+        ).run();
     }
 
     public static List<Bar> generateSampleBars(String symbol, int count) {
@@ -144,13 +156,17 @@ public class RunBacktest {
             System.exit(1);
         }
 
-        double capital = LotSizing.DEFAULT_STARTING_CAPITAL;
+        String defaultSym = StrategyCatalog.defaultSymbol(strategyId);
+        String strategyTf = RunContexts.inferTimeframe(strategyId);
+        double capital = com.martinfou.trading.core.FuturesRegistry.isFutures(defaultSym)
+            ? 10_000.0
+            : LotSizing.DEFAULT_STARTING_CAPITAL;
         List<Bar> bars;
         String symbol;
 
         try {
             if (args.length >= 2 && args[1].equals("--sample")) {
-                symbol = StrategyCatalog.defaultSymbol(strategyId);
+                symbol = defaultSym;
                 bars = generateSampleBars(symbol, SAMPLE_BARS);
                 logStatus(flags, sampleLabel(flags, symbol, bars.size()));
             } else if (args.length >= 2) {
@@ -164,14 +180,12 @@ public class RunBacktest {
                     }
                 }
                 if (isFilePath(dataArgs[0])) {
-                    var loaded = HistoricalDataLoader.loadFile(Path.of(dataArgs[0]),
-                        StrategyCatalog.defaultSymbol(strategyId));
+                    var loaded = HistoricalDataLoader.loadFile(Path.of(dataArgs[0]), defaultSym);
                     bars = loaded.bars();
                     symbol = loaded.symbol();
                     logStatus(flags, loadLabel(flags, loaded.source(), symbol, bars.size()));
                 } else {
-                    var loaded = HistoricalDataLoader.loadFromArgs(
-                        StrategyCatalog.defaultSymbol(strategyId), dataArgs);
+                    var loaded = HistoricalDataLoader.loadFromArgsWithTimeframe(defaultSym, strategyTf, dataArgs);
                     bars = loaded.bars();
                     symbol = loaded.symbol();
                     logStatus(flags, loadLabel(flags, loaded.source(), symbol, bars.size()));

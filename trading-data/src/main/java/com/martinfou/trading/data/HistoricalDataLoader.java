@@ -36,6 +36,10 @@ public final class HistoricalDataLoader {
      * </ul>
      */
     public static LoadResult loadFromArgs(String defaultSymbol, String... dataArgs) throws IOException {
+        return loadFromArgsWithTimeframe(defaultSymbol, "H1", dataArgs);
+    }
+
+    public static LoadResult loadFromArgsWithTimeframe(String defaultSymbol, String strategyTimeframe, String... dataArgs) throws IOException {
         if (dataArgs.length == 0) {
             throw new IOException("Provide --sample, SYMBOL YEAR, or a file path");
         }
@@ -58,8 +62,39 @@ public final class HistoricalDataLoader {
             throw new IOException("Usage: " + symbol + " <YEAR> or " + symbol + " <START-END>");
         }
         String yearSpec = dataArgs[1];
-        List<Bar> bars = loadYearSpec(symbol, yearSpec, DEFAULT_BARS_DIR);
-        return new LoadResult(bars, symbol, describeYearSpecSource(symbol, yearSpec, DEFAULT_BARS_DIR));
+        String tf = strategyTimeframe != null && !strategyTimeframe.isBlank() ? strategyTimeframe.toUpperCase() : "H1";
+        List<Bar> bars = loadYearSpecWithFallback(symbol, yearSpec, tf, DEFAULT_BARS_DIR);
+        return new LoadResult(bars, symbol, describeYearSpecSource(symbol, yearSpec, tf, DEFAULT_BARS_DIR));
+    }
+
+    private static List<Bar> loadYearSpecWithFallback(String symbol, String spec, String tf, Path barsDir) throws IOException {
+        if ("H1".equalsIgnoreCase(tf) || "M1".equalsIgnoreCase(tf)) {
+            return loadYearSpec(symbol, spec, tf, barsDir);
+        }
+        try {
+            return loadYearSpec(symbol, spec, tf, barsDir);
+        } catch (IOException ignored) {
+            // Fall through to CSV or M1 aggregation
+        }
+        // Check for direct CSV in data/historical/csv/<SYMBOL>_<TF>_<SPEC>.csv
+        Path directCsv = Path.of("data/historical/csv", symbol.toUpperCase() + "_" + tf.toUpperCase() + "_" + spec + ".csv");
+        if (Files.isRegularFile(directCsv)) {
+            return DataLoader.loadAutoCSV(directCsv, symbol);
+        }
+        // Fallback: load M1 and aggregate to target timeframe (e.g., M15 or M30)
+        List<Bar> m1Bars = loadYearSpec(symbol, spec, "M1", barsDir);
+        com.martinfou.trading.core.BarAggregator agg = new com.martinfou.trading.core.BarAggregator(symbol, tf);
+        List<Bar> aggregated = new ArrayList<>();
+        for (Bar b : m1Bars) {
+            boolean newPeriod = agg.isNewPeriod(b);
+            agg.add(b);
+            if (newPeriod) {
+                agg.getLastCompletedBar().ifPresent(aggregated::add);
+            }
+        }
+        agg.completePeriod();
+        agg.getLastCompletedBar().ifPresent(aggregated::add);
+        return aggregated;
     }
 
     /** Loads bars from a file path (.bars or CSV). */
@@ -157,6 +192,10 @@ public final class HistoricalDataLoader {
             return name.substring(0, name.indexOf("_h1_")).toUpperCase();
         } else if (name.contains("_m1_")) {
             return name.substring(0, name.indexOf("_m1_")).toUpperCase();
+        } else if (name.contains("_m15_")) {
+            return name.substring(0, name.indexOf("_m15_")).toUpperCase();
+        } else if (name.contains("_m30_")) {
+            return name.substring(0, name.indexOf("_m30_")).toUpperCase();
         }
         return fallback;
     }
@@ -164,11 +203,14 @@ public final class HistoricalDataLoader {
     private static List<Bar> loadBarStoreFile(Path path, String symbol) throws IOException {
         String filename = path.getFileName().toString();
         String tf = "H1";
-        if (filename.contains("_M1_")) {
-            tf = "M1";
+        for (String candidate : List.of("M15", "M30", "M1", "H1", "H4", "D1")) {
+            if (filename.contains("_" + candidate + "_")) {
+                tf = candidate;
+                break;
+            }
         }
         int idx = filename.indexOf("_" + tf + "_");
-        String storeKey = idx > 0 ? filename.substring(idx + 4, filename.length() - 5) : tf;
+        String storeKey = idx > 0 ? filename.substring(idx + tf.length() + 2, filename.length() - 5) : tf;
         var store = new BarStore(symbol, tf + "_" + storeKey, path.getParent());
         store.open();
         return store.toList();
@@ -176,12 +218,11 @@ public final class HistoricalDataLoader {
 
     private static String symbolFromBarStorePath(Path path, String fallback) {
         String name = path.getFileName().toString();
-        int idx = name.indexOf("_H1_");
-        if (idx <= 0) {
-            idx = name.indexOf("_M1_");
-        }
-        if (idx > 0) {
-            return name.substring(0, idx);
+        for (String candidate : List.of("_H1_", "_M15_", "_M30_", "_M1_", "_H4_", "_D1_")) {
+            int idx = name.indexOf(candidate);
+            if (idx > 0) {
+                return name.substring(0, idx);
+            }
         }
         return inferSymbol(path, fallback);
     }

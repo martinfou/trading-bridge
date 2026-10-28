@@ -68,7 +68,7 @@ public final class StrategyCatalog {
         }
         if (defaultSymbol != null) {
             String sym = defaultSymbol.toUpperCase();
-            if (sym.startsWith("MES") || sym.startsWith("MNQ") || sym.startsWith("M2K") || sym.startsWith("EMD") || sym.contains("FUT")) {
+            if (sym.startsWith("MES") || sym.startsWith("MNQ") || sym.startsWith("MGC") || sym.startsWith("M2K") || sym.startsWith("EMD") || sym.contains("FUT")) {
                 return List.of("FUTURES");
             }
             if (sym.equals("IJR") || sym.equals("VB") || sym.equals("SCHA") || sym.equals("PLTR") || sym.equals("TSLA") || sym.equals("SOXL") || sym.equals("AAPL")) {

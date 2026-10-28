@@ -28,8 +28,8 @@ services:
       # vwp → VWPReversionStrategy, consecbar → ConsecutiveBarExhaustionStrategy
       # nymid → NYMidSessionMomentumStrategy, gobig → GoBigStrategy
       # casino → CasinoStrategy, all → all strategies sequentially
-      # Or any sqimported: 2_31_177, 2_14_147, 2_15_195, etc.
-      - STRATEGY=${STRATEGY:-vwpreversion consecbar}
+      # Or any sqimported: sq-gbpjpy-h1-breakout-3-39-125, sq-gbpjpy-h1-breakout-2-20-102, etc.
+      - STRATEGY=${STRATEGY:-vwpreversion consecbar sq-gbpjpy-h1-breakout-3-39-125 sq-gbpjpy-h1-breakout-2-20-102}
       - STRATEGY_PAIR=${STRATEGY_PAIR:-USD_CHF}
       - GRANULARITY=${GRANULARITY:-H1}
       - INTERVAL_SEC=${INTERVAL_SEC:-60}

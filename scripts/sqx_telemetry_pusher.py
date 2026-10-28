@@ -44,15 +44,20 @@ INSTITUTIONAL_PROJECTS = [
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 
+LAST_KNOWN_PROJECT = "MNQ M15 Momentum"
+BACKTEST_CACHE = {}
+
+
 def get_sqx_process_info():
     """Returns (running, pid, cpu, mem, time_str, project_name)"""
+    global LAST_KNOWN_PROJECT
     try:
         out = subprocess.check_output(
             ["ps", "-A", "-o", "pid,%cpu,%mem,time,command"],
             universal_newlines=True
         )
         for line in out.splitlines():
-            if "sqcli" in line and "action=start" in line and "grep" not in line:
+            if "sqcli" in line and "action=start" in line and "grep" not in line and "sqx_ctrl" not in line:
                 parts = line.strip().split()
                 if len(parts) >= 5:
                     pid = int(parts[0])
@@ -60,69 +65,150 @@ def get_sqx_process_info():
                     mem = f"{float(parts[2]):.1f}%"
                     cpu_time = parts[3]
                     cmd = " ".join(parts[4:])
-                    proj = "MES H1 Long"
+                    proj = LAST_KNOWN_PROJECT
                     if "name=" in cmd:
                         proj = cmd.split("name=")[1].strip().strip('"\'')
+                    LAST_KNOWN_PROJECT = proj
                     return True, pid, cpu, mem, cpu_time, proj
     except Exception as e:
         logging.error(f"Error querying ps: {e}")
-    return False, None, "0.0%", "0.0%", "00:00", "MES H1 Long"
+    return False, None, "0.0%", "0.0%", "00:00", LAST_KNOWN_PROJECT
+
+
+def classify_strategy(p):
+    """Derives asset label and trade side from project name and file path."""
+    s = str(p).upper()
+    if "GOLD" in s or "MGC" in s or "XAU" in s:
+        asset = "Micro Gold (MGC) M30" if "M30" in s else "Micro Gold (MGC) H1"
+        side = "LONG & SHORT"
+    elif "GBPJPY" in s:
+        asset = "GBPJPY H1"
+        side = "LONG & SHORT"
+    elif "MNQ" in s or "NQ" in s:
+        asset = "Micro Nasdaq (MNQ) M15" if "M15" in s else "Micro Nasdaq (MNQ) H1"
+        side = "LONG"
+    elif "MES" in s or "SP" in s:
+        asset = "Micro S&P 500 (MES) H1"
+        side = "SHORT" if "SHORT" in s else "LONG"
+    elif "EURUSD" in s:
+        asset = "EURUSD M15"
+        side = "LONG & SHORT"
+    elif "M2K" in s:
+        asset = "Micro Russell (M2K) H1"
+        side = "LONG"
+    else:
+        asset = "Multi-Asset"
+        side = "LONG & SHORT"
+    return asset, side
 
 
 def get_databank_strategies(proj_name):
-    strategies = []
-    results_dir = SQX_BASE / f"user/projects/{proj_name}/databanks/Results"
-    if results_dir.exists():
-        for p in results_dir.glob("*.sqx"):
-            stat = p.stat()
-            bt = extract_backtest_data(p)
-            net_profit = bt.get("net_profit", 0.0)
-            if net_profit <= 0:
+    candidate_sources = [
+        # Active project results (picks up newly generated strategies in real-time)
+        SQX_BASE / f"user/projects/{proj_name}/databanks/Results",
+        # Curated top performer databanks
+        SQX_BASE / "user/projects/GOLD BREAKOUT M30 - Dukascopy/databanks/Final strategies",
+        SQX_BASE / "user/projects/GBPJPY BREAKOUT H1 - Dukascopy/databanks/Final",
+        SQX_BASE / "user/projects/MES H1 Long/databanks/Results",
+        SQX_BASE / "user/projects/MNQ M15 Momentum/databanks/Results",
+        SQX_BASE / "user/projects/MGC H1 Mean Reversion/databanks/Results",
+        SQX_BASE / "user/projects/MGC M30 Breakout/databanks/Results",
+    ]
+
+    all_found = []
+    seen = set()
+
+    for s_dir in candidate_sources:
+        if not s_dir.exists():
+            continue
+        for p in s_dir.glob("*.sqx"):
+            # Deduplicate strategies with duplicate suffixes like '(1)'
+            clean_name = p.stem.replace("(1)", "").strip()
+            if clean_name in seen:
                 continue
-            strategies.append({
-                "filename": p.name,
-                "strategy_name": p.stem,
-                "filesize_kb": round(stat.st_size / 1024, 1),
-                "created_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(stat.st_mtime)),
-                "status": "QUALIFIED",
-                "asset": "MES H1",
-                "side": "SHORT" if "SHORT" in proj_name.upper() else "LONG",
-                "initial_capital": bt.get("initial_capital", 10000.0),
-                "net_profit": bt.get("net_profit", 0.0),
-                "net_profit_pct": bt.get("net_profit_pct", 0.0),
-                "profit_factor": bt.get("profit_factor", 1.0),
-                "win_rate": bt.get("win_rate", 0.0),
-                "trades": bt.get("trades", 0),
-                "wins": bt.get("wins", 0),
-                "losses": bt.get("losses", 0),
-                "max_drawdown": bt.get("max_drawdown", 0.0),
-                "max_drawdown_pct": bt.get("max_drawdown_pct", 0.0),
-                "ret_dd_ratio": bt.get("ret_dd_ratio", 0.0),
-                "sharpe_ratio": bt.get("sharpe_ratio", 0.0),
-                "is_trades": bt.get("is_trades", 0),
-                "is_profit": bt.get("is_profit", 0.0),
-                "is_profit_pct": bt.get("is_profit_pct", 0.0),
-                "is_pf": bt.get("is_pf", 1.0),
-                "is_years": bt.get("is_years", 9.2),
-                "is_annual_profit": bt.get("is_annual_profit", 0.0),
-                "is_annual_profit_pct": bt.get("is_annual_profit_pct", 0.0),
-                "oos_trades": bt.get("oos_trades", 0),
-                "oos_profit": bt.get("oos_profit", 0.0),
-                "oos_profit_pct": bt.get("oos_profit_pct", 0.0),
-                "oos_pf": bt.get("oos_pf", 1.0),
-                "oos_years": bt.get("oos_years", 3.8),
-                "oos_annual_profit": bt.get("oos_annual_profit", 0.0),
-                "oos_annual_profit_pct": bt.get("oos_annual_profit_pct", 0.0),
-                "total_years": bt.get("total_years", 13.0),
-                "total_annual_profit": bt.get("total_annual_profit", 0.0),
-                "total_annual_profit_pct": bt.get("total_annual_profit_pct", 0.0),
-                "rules_summary": bt.get("rules_summary", ""),
-                "sparkline": bt.get("sparkline", []),
-                "curve": bt.get("curve", []),
-            })
-    # Sort top performers first by Out-Of-Sample PF and Net Profit
-    strategies.sort(key=lambda x: (x.get("oos_pf", 0), x.get("net_profit", 0)), reverse=True)
-    return strategies
+
+            try:
+                stat = p.stat()
+                mtime = stat.st_mtime
+                cache_key = str(p)
+
+                if cache_key in BACKTEST_CACHE and BACKTEST_CACHE[cache_key]["mtime"] == mtime:
+                    bt = BACKTEST_CACHE[cache_key]["data"]
+                else:
+                    bt = extract_backtest_data(p)
+                    BACKTEST_CACHE[cache_key] = {"mtime": mtime, "data": bt}
+
+                net_profit = bt.get("net_profit", 0.0)
+                oos_profit = bt.get("oos_profit", 0.0)
+                trades = bt.get("trades", 0)
+
+                # High-conviction threshold: net positive, positive OOS, statistical significance
+                if net_profit <= 0 or oos_profit <= 0 or trades < 30:
+                    continue
+
+                seen.add(clean_name)
+                asset_label, default_side = classify_strategy(p)
+
+                all_found.append({
+                    "filename": p.name,
+                    "strategy_name": clean_name,
+                    "filesize_kb": round(stat.st_size / 1024, 1),
+                    "created_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(stat.st_mtime)),
+                    "status": "QUALIFIED",
+                    "asset": asset_label,
+                    "side": default_side,
+                    "initial_capital": bt.get("initial_capital", 10000.0),
+                    "net_profit": bt.get("net_profit", 0.0),
+                    "net_profit_pct": bt.get("net_profit_pct", 0.0),
+                    "profit_factor": bt.get("profit_factor", 1.0),
+                    "win_rate": bt.get("win_rate", 0.0),
+                    "trades": bt.get("trades", 0),
+                    "wins": bt.get("wins", 0),
+                    "losses": bt.get("losses", 0),
+                    "max_drawdown": bt.get("max_drawdown", 0.0),
+                    "max_drawdown_pct": bt.get("max_drawdown_pct", 0.0),
+                    "ret_dd_ratio": bt.get("ret_dd_ratio", 0.0),
+                    "sharpe_ratio": bt.get("sharpe_ratio", 0.0),
+                    "is_trades": bt.get("is_trades", 0),
+                    "is_profit": bt.get("is_profit", 0.0),
+                    "is_profit_pct": bt.get("is_profit_pct", 0.0),
+                    "is_pf": bt.get("is_pf", 1.0),
+                    "is_years": bt.get("is_years", 9.2),
+                    "is_annual_profit": bt.get("is_annual_profit", 0.0),
+                    "is_annual_profit_pct": bt.get("is_annual_profit_pct", 0.0),
+                    "oos_trades": bt.get("oos_trades", 0),
+                    "oos_profit": bt.get("oos_profit", 0.0),
+                    "oos_profit_pct": bt.get("oos_profit_pct", 0.0),
+                    "oos_pf": bt.get("oos_pf", 1.0),
+                    "oos_years": bt.get("oos_years", 3.8),
+                    "oos_annual_profit": bt.get("oos_annual_profit", 0.0),
+                    "oos_annual_profit_pct": bt.get("oos_annual_profit_pct", 0.0),
+                    "total_years": bt.get("total_years", 13.0),
+                    "total_annual_profit": bt.get("total_annual_profit", 0.0),
+                    "total_annual_profit_pct": bt.get("total_annual_profit_pct", 0.0),
+                    "rules_summary": bt.get("rules_summary", ""),
+                    "sparkline": bt.get("sparkline", []),
+                    "curve": bt.get("curve", []),
+                })
+            except Exception:
+                continue
+
+    # Group by asset and pick top 3 from each asset family + any from active project
+    by_asset = {}
+    for c in all_found:
+        a = c["asset"]
+        if a not in by_asset:
+            by_asset[a] = []
+        by_asset[a].append(c)
+
+    selected = []
+    for a, clist in by_asset.items():
+        clist.sort(key=lambda x: (x.get("ret_dd_ratio", 0), x.get("oos_profit", 0)), reverse=True)
+        selected.extend(clist[:3])
+
+    # Rank overall candidates by Return/DD ratio & Out-Of-Sample profit
+    selected.sort(key=lambda x: (x.get("ret_dd_ratio", 0), x.get("oos_profit", 0)), reverse=True)
+    return selected[:10]
 
 
 def get_all_projects(running_proj, running):
@@ -204,10 +290,18 @@ def main():
                 asset = "Micro E-mini Nasdaq 100 (MNQ)"
                 ds = "NQ_M1_dukas (14+ Years M1 Precision)"
                 tf = "M15" if "M15" in proj_name else "H1"
-            elif "MGC" in proj_name:
+            elif "MGC" in proj_name or "GOLD" in proj_name:
                 asset = "Micro Gold Futures (MGC)"
                 ds = "XAUUSD_M1_dukas (23+ Years M1 Precision)"
                 tf = "M30" if "M30" in proj_name else "H1"
+            elif "GBPJPY" in proj_name:
+                asset = "British Pound / Japanese Yen (GBPJPY)"
+                ds = "GBPJPY_M1_dukas (14+ Years M1 Precision)"
+                tf = "H1"
+            elif "M2K" in proj_name:
+                asset = "Micro Russell 2000 (M2K)"
+                ds = "USSC2000IDXUSD (14+ Years Precision)"
+                tf = "H1"
 
             # Build exact structure matching StrategyCreationController.php
             # Keep running=True in cache so cloud dashboard renders the Mac telemetry even when between runs
@@ -275,6 +369,14 @@ def main():
                         "timeframe": "M1 (1-Minute)",
                         "range": "2003.05.05 - 2026.10.23",
                         "bars": "8,364,018",
+                        "status": "UP TO DATE"
+                    },
+                    {
+                        "symbol": "GBPJPY_M1_dukas",
+                        "name": "British Pound / Japanese Yen (GBPJPY)",
+                        "timeframe": "M1 (1-Minute)",
+                        "range": "2012.01.19 - 2026.10.23",
+                        "bars": "4,115,200",
                         "status": "UP TO DATE"
                     }
                 ],

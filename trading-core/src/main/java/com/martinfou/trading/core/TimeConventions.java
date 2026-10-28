@@ -66,6 +66,12 @@ public final class TimeConventions {
     public static Instant parseCsvTimestamp(String isoDateTime) {
         Objects.requireNonNull(isoDateTime, "isoDateTime");
         String s = isoDateTime.trim();
+        if (s.endsWith(" US/Eastern")) {
+            String clean = s.replace(" US/Eastern", "").trim().replaceAll("\\s+", " ");
+            return LocalDateTime.parse(clean, DateTimeFormatter.ofPattern("yyyyMMdd HH:mm:ss"))
+                .atZone(ZoneId.of("America/New_York"))
+                .toInstant();
+        }
         if (s.endsWith("Z") || s.contains("+") || hasExplicitOffset(s)) {
             return Instant.parse(s);
         }

@@ -992,6 +992,20 @@ public class LiveStrategyRunner implements Runnable {
                 .asSubclass(Strategy.class));
             map.put("gold_breakout_m30", Class.forName("com.martinfou.trading.strategies.sqimported.Strategy_Gold_Breakout_M30")
                 .asSubclass(Strategy.class));
+            map.put("sq-mnq-m15-momentum-0-4248", Class.forName("com.martinfou.trading.strategies.sqimported.SqMnqM15Momentum04248")
+                .asSubclass(Strategy.class));
+            map.put("sq-mnq-m15-breakout-0-1499", Class.forName("com.martinfou.trading.strategies.sqimported.SqMnqM15Breakout01499")
+                .asSubclass(Strategy.class));
+            map.put("sq-mes-h1-meanrev-0-3553", Class.forName("com.martinfou.trading.strategies.sqimported.SqMesH1MeanRev03553")
+                .asSubclass(Strategy.class));
+            map.put("sq-mes-h1-pullback-0-2700", Class.forName("com.martinfou.trading.strategies.sqimported.SqMesH1Pullback02700")
+                .asSubclass(Strategy.class));
+            map.put("sq-gbpjpy-h1-breakout-3-39-125", Class.forName("com.martinfou.trading.strategies.sqimported.SqGbpJpyH1Breakout339125")
+                .asSubclass(Strategy.class));
+            map.put("sq-gbpjpy-h1-breakout-2-20-102", Class.forName("com.martinfou.trading.strategies.sqimported.SqGbpJpyH1Breakout220102")
+                .asSubclass(Strategy.class));
+            map.put("sq-mgc-m30-breakout-1-29-102", Class.forName("com.martinfou.trading.strategies.sqimported.SqMgcM30Breakout129102")
+                .asSubclass(Strategy.class));
             // The week-of-12-October news entries were retired on 2026-10-21 (D67, executed as D68 in
             // docs/paper-window-log.md): the classes stay in newsweekly/ as an archive, but nothing
             // registers them any more, so no container can be started on an expired, hard-coded week.
@@ -2101,6 +2115,8 @@ public class LiveStrategyRunner implements Runnable {
         if (name.contains("NZDUSD") || name.contains("NZD_USD")) return "NZD_USD";
         if (name.contains("USDCHF") || name.contains("USD_CHF")) return "USD_CHF";
         if (name.contains("GOLD_BREAKOUT") || name.contains("MGC")) return "MGC";
+        if (name.contains("MNQ")) return "MNQ";
+        if (name.contains("MES")) return "MES";
         if (name.contains("XAUUSD") || name.contains("XAU_USD") || name.contains("GOLD")) return "XAU_USD";
         if (name.contains("EURJPY") || name.contains("EUR_JPY")) return "EUR_JPY";
         // Creative lab strategies — match by short name
