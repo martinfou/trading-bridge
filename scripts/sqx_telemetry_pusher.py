@@ -75,6 +75,87 @@ def get_sqx_process_info():
     return False, None, "0.0%", "0.0%", "00:00", LAST_KNOWN_PROJECT
 
 
+CATALOG_NAME_OVERRIDES = {
+    "3.39.125": "GBPJPY H1 Volatility Breakout (3.39.125)",
+    "2.20.102": "GBPJPY H1 Trend Breakout (2.20.102)",
+    "0.4248": "MNQ M15 SuperTrend Momentum (0.4248)",
+    "0.1499": "MNQ M15 Ichimoku Breakout (0.1499)",
+    "0.3553": "MES H1 Bollinger MeanRev (0.3553)",
+    "0.2700": "MES H1 Prev-Day Low Pullback (0.2700)",
+    "1.29.102": "MGC M30 Gold Channel Breakout (1.29.102)",
+}
+
+
+def format_strategy_display_name(raw_stem: str, p: Path, asset_label: str, rules_summary: str) -> str:
+    """Converts generic SQX 'Strategy 0.13583' into an institutional descriptive name."""
+    import re
+    is_wfa = "WF Matrix" in raw_stem or "WF " in raw_stem
+    id_match = re.search(r"(\d+(?:\.\d+)+)", raw_stem)
+    strat_id = id_match.group(1) if id_match else raw_stem.replace("Strategy", "").strip()
+
+    if strat_id in CATALOG_NAME_OVERRIDES and not is_wfa:
+        return CATALOG_NAME_OVERRIDES[strat_id]
+
+    # Short symbol + timeframe prefix
+    if "MGC" in asset_label or "Gold" in asset_label:
+        prefix = "MGC M30" if "M30" in asset_label else "MGC H1"
+    elif "MNQ" in asset_label or "Nasdaq" in asset_label:
+        prefix = "MNQ M15" if "M15" in asset_label else "MNQ H1"
+    elif "MES" in asset_label or "S&P" in asset_label:
+        prefix = "MES H1"
+    elif "M2K" in asset_label or "Russell" in asset_label:
+        prefix = "M2K H1"
+    elif "GBPJPY" in asset_label:
+        prefix = "GBPJPY H1"
+    else:
+        prefix = asset_label.split("(")[0].strip()
+
+    # Primary indicator / signal mechanism from XML rules
+    r = rules_summary or ""
+    if "SuperTrend" in r:
+        mech = "SuperTrend"
+    elif "Ichimoku" in r:
+        mech = "Ichimoku Kumo"
+    elif "Bollinger" in r:
+        mech = "Bollinger"
+    elif "Keltner" in r:
+        mech = "Keltner"
+    elif "Average Directional" in r or "ADX" in r:
+        mech = "ADX Trend"
+    elif "Relative Strength" in r or "RSI" in r:
+        mech = "RSI Confluence"
+    elif "Commodity Channel" in r or "CCI" in r:
+        mech = "CCI Pulse"
+    elif "Exponential Moving Average" in r or "EMA" in r:
+        mech = "EMA Channel"
+    elif "Weighted Moving Average" in r or "WMA" in r:
+        mech = "WMA Channel"
+    elif "Simple Moving Average" in r or "SMA" in r:
+        mech = "SMA Filter"
+    elif "Highest" in r or "Lowest" in r:
+        mech = "Donchian"
+    elif "Daily High" in r or "Daily Low" in r:
+        mech = "Daily Range"
+    else:
+        mech = "Price Action"
+
+    # Style from project directory
+    proj_str = str(p.parent.parent.parent.name).upper()
+    if "MEAN" in proj_str or "REV" in proj_str:
+        style = "MeanRev"
+    elif "MOMENTUM" in proj_str:
+        style = "Momentum"
+    elif "TREND" in proj_str:
+        style = "Trend"
+    elif "SHORT" in proj_str:
+        style = "Short Breakout"
+    else:
+        style = "Breakout"
+
+    wfa_tag = "WFA " if is_wfa else ""
+    return f"{prefix} {wfa_tag}{mech} {style} ({strat_id})"
+
+
 def classify_strategy(p):
     """Derives asset label and trade side from project name and file path."""
     s = str(p).upper()
@@ -126,8 +207,8 @@ def get_databank_strategies(proj_name):
         if not s_dir.exists():
             continue
         for p in s_dir.glob("*.sqx"):
-            # Deduplicate strategies with duplicate suffixes like '(1)'
-            clean_name = p.stem.replace("(1)", "").strip()
+            # Deduplicate strategies with duplicate suffixes like '(1)' or 'WF Matrix - '
+            clean_name = p.stem.replace("WF Matrix - ", "").replace("(1)", "").strip()
             if clean_name in seen:
                 continue
 
@@ -153,10 +234,14 @@ def get_databank_strategies(proj_name):
 
                 seen.add(clean_name)
                 asset_label, default_side = classify_strategy(p)
+                display_name = format_strategy_display_name(
+                    clean_name, p, asset_label, bt.get("rules_summary", "")
+                )
 
                 all_found.append({
                     "filename": p.name,
-                    "strategy_name": clean_name,
+                    "strategy_name": display_name,
+                    "raw_strategy_name": clean_name,
                     "filesize_kb": round(stat.st_size / 1024, 1),
                     "created_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(stat.st_mtime)),
                     "status": "QUALIFIED",
