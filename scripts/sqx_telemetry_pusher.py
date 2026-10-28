@@ -204,11 +204,11 @@ def get_databank_strategies(proj_name):
     selected = []
     for a, clist in by_asset.items():
         clist.sort(key=lambda x: (x.get("ret_dd_ratio", 0), x.get("oos_profit", 0)), reverse=True)
-        selected.extend(clist[:3])
+        selected.extend(clist[:4])
 
     # Rank overall candidates by Return/DD ratio & Out-Of-Sample profit
     selected.sort(key=lambda x: (x.get("ret_dd_ratio", 0), x.get("oos_profit", 0)), reverse=True)
-    return selected[:10]
+    return selected[:16]
 
 
 def get_all_projects(running_proj, running):
