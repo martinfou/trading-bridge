@@ -192,6 +192,9 @@ def get_databank_strategies(proj_name):
     candidate_sources = [
         # Active project results (picks up newly generated strategies in real-time)
         SQX_BASE / f"user/projects/{proj_name}/databanks/Results",
+        # Curated Final databanks (highest-conviction champions)
+        SQX_BASE / "user/projects/GBPJPY BREAKOUT H1 - Dukascopy/databanks/Final",
+        SQX_BASE / "user/projects/GOLD BREAKOUT M30 - Dukascopy/databanks/Final strategies",
         # Institutional CME & FX databanks (already quarantine-filtered, fast <0.5s scan)
         SQX_BASE / "user/projects/MGC M30 Breakout/databanks/Results",
         SQX_BASE / "user/projects/MGC H1 Mean Reversion/databanks/Results",
@@ -244,13 +247,40 @@ def get_databank_strategies(proj_name):
                     clean_name, p, asset_label, bt.get("rules_summary", ""), used_names
                 )
 
+                r2 = bt.get("r_squared", 0.0)
+                upi_val = bt.get("upi", 0.0)
+                sharpe_val = bt.get("sharpe_ratio", 0.0)
+                oos_pf_val = bt.get("oos_pf", 1.0)
+
+                # Composite Smoothness & Robustness Score (0 - 100)
+                score_r2 = min(35.0, max(0.0, r2) * 35.0)
+                score_upi = min(25.0, max(0.0, upi_val / 3.0) * 25.0)
+                score_sharpe = min(15.0, max(0.0, sharpe_val / 1.2) * 15.0)
+                score_oos = min(15.0, max(0.0, (oos_pf_val - 1.0) / 0.6) * 15.0)
+                score_sample = min(10.0, (trades / 250.0) * 10.0)
+                quality_score = round(score_r2 + score_upi + score_sharpe + score_oos + score_sample, 1)
+
+                # Quality Tier classification
+                if r2 >= 0.85 and upi_val >= 1.20 and sharpe_val >= 0.70 and oos_pf_val >= 1.15 and trades >= 100 and max_dd_pct <= 20.0:
+                    tier = "ELITE"
+                    tier_rank = 3
+                elif r2 >= 0.70 and oos_pf_val >= 1.15 and trades >= 60 and max_dd_pct <= 25.0:
+                    tier = "QUALIFIED"
+                    tier_rank = 2
+                else:
+                    tier = "EXPERIMENTAL"
+                    tier_rank = 1
+
                 all_found.append({
                     "filename": p.name,
                     "strategy_name": display_name,
                     "raw_strategy_name": clean_name,
                     "filesize_kb": round(stat.st_size / 1024, 1),
                     "created_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(stat.st_mtime)),
-                    "status": "QUALIFIED",
+                    "status": tier,
+                    "tier": tier,
+                    "tier_rank": tier_rank,
+                    "quality_score": quality_score,
                     "asset": asset_label,
                     "side": default_side,
                     "initial_capital": bt.get("initial_capital", 10000.0),
@@ -304,14 +334,14 @@ def get_databank_strategies(proj_name):
 
     selected = []
     for a, clist in by_asset.items():
-        clist.sort(key=lambda x: (x.get("oos_pf", 0), x.get("ret_dd_ratio", 0), x.get("oos_profit", 0)), reverse=True)
+        clist.sort(key=lambda x: (x.get("tier_rank", 1), x.get("quality_score", 0), x.get("oos_pf", 0)), reverse=True)
         if a == active_asset:
             selected.extend(clist[:40])
         else:
-            selected.extend(clist[:5])
+            selected.extend(clist[:10])
 
-    # Rank overall candidates by OOS PF & Return/DD ratio, then deduplicate by display name (keeping the highest-ranked variant of each archetype)
-    selected.sort(key=lambda x: (x.get("oos_pf", 0), x.get("ret_dd_ratio", 0), x.get("oos_profit", 0)), reverse=True)
+    # Rank overall candidates by Tier & Composite Smoothness Score, then deduplicate by display name (keeping the highest-ranked variant of each archetype)
+    selected.sort(key=lambda x: (x.get("tier_rank", 1), x.get("quality_score", 0), x.get("oos_pf", 0)), reverse=True)
     unique_archetypes = []
     seen_display = set()
     for c in selected:
@@ -319,7 +349,7 @@ def get_databank_strategies(proj_name):
         if dname not in seen_display:
             seen_display.add(dname)
             unique_archetypes.append(c)
-    return unique_archetypes[:30]
+    return unique_archetypes[:35]
 
 
 def get_all_projects(running_proj, running):
