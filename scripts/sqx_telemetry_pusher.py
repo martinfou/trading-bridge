@@ -106,13 +106,17 @@ def get_databank_strategies(proj_name):
     candidate_sources = [
         # Active project results (picks up newly generated strategies in real-time)
         SQX_BASE / f"user/projects/{proj_name}/databanks/Results",
-        # Curated top performer databanks
-        SQX_BASE / "user/projects/GOLD BREAKOUT M30 - Dukascopy/databanks/Final strategies",
-        SQX_BASE / "user/projects/GBPJPY BREAKOUT H1 - Dukascopy/databanks/Final",
-        SQX_BASE / "user/projects/MES H1 Long/databanks/Results",
-        SQX_BASE / "user/projects/MNQ M15 Momentum/databanks/Results",
-        SQX_BASE / "user/projects/MGC H1 Mean Reversion/databanks/Results",
+        # Institutional CME & FX databanks (already quarantine-filtered, fast <0.5s scan)
         SQX_BASE / "user/projects/MGC M30 Breakout/databanks/Results",
+        SQX_BASE / "user/projects/MGC H1 Mean Reversion/databanks/Results",
+        SQX_BASE / "user/projects/MNQ M15 Momentum/databanks/Results",
+        SQX_BASE / "user/projects/MNQ H1 Trend/databanks/Results",
+        SQX_BASE / "user/projects/MES H1 Long/databanks/Results",
+        SQX_BASE / "user/projects/MES H1 Short/databanks/Results",
+        SQX_BASE / "user/projects/M2K H1 Small-Cap Momentum/databanks/Results",
+        SQX_BASE / "user/projects/Optimizer/databanks/Results",
+        SQX_BASE / "user/projects/Retester/databanks/Results",
+        SQX_BASE / "user/projects/GBPJPY BREAKOUT H1 - Dukascopy/databanks/Results",
     ]
 
     all_found = []
@@ -141,9 +145,10 @@ def get_databank_strategies(proj_name):
                 net_profit = bt.get("net_profit", 0.0)
                 oos_profit = bt.get("oos_profit", 0.0)
                 trades = bt.get("trades", 0)
+                max_dd_pct = bt.get("max_drawdown_pct", 0.0)
 
-                # High-conviction threshold: net positive, positive OOS, statistical significance
-                if net_profit <= 0 or oos_profit <= 0 or trades < 30:
+                # High-conviction threshold: net positive, positive OOS, statistical significance, sane drawdown (<= 30%)
+                if net_profit <= 0 or oos_profit <= 0 or trades < 30 or max_dd_pct > 30.0:
                     continue
 
                 seen.add(clean_name)
@@ -196,7 +201,9 @@ def get_databank_strategies(proj_name):
             except Exception:
                 continue
 
-    # Group by asset and pick top 3 from each asset family + any from active project
+    # Include ALL qualified candidates from the active project so the live counter grows as strategies are created,
+    # plus the top 5 from each other asset family.
+    active_asset, _ = classify_strategy(proj_name)
     by_asset = {}
     for c in all_found:
         a = c["asset"]
@@ -206,12 +213,15 @@ def get_databank_strategies(proj_name):
 
     selected = []
     for a, clist in by_asset.items():
-        clist.sort(key=lambda x: (x.get("ret_dd_ratio", 0), x.get("oos_profit", 0)), reverse=True)
-        selected.extend(clist[:4])
+        clist.sort(key=lambda x: (x.get("oos_pf", 0), x.get("ret_dd_ratio", 0), x.get("oos_profit", 0)), reverse=True)
+        if a == active_asset:
+            selected.extend(clist[:40])
+        else:
+            selected.extend(clist[:5])
 
-    # Rank overall candidates by Return/DD ratio & Out-Of-Sample profit
-    selected.sort(key=lambda x: (x.get("ret_dd_ratio", 0), x.get("oos_profit", 0)), reverse=True)
-    return selected[:16]
+    # Rank overall candidates by OOS PF & Return/DD ratio
+    selected.sort(key=lambda x: (x.get("oos_pf", 0), x.get("ret_dd_ratio", 0), x.get("oos_profit", 0)), reverse=True)
+    return selected[:60]
 
 
 def get_all_projects(running_proj, running):

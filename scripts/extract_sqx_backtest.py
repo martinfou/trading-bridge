@@ -47,6 +47,33 @@ def _unwrap_java_block_data(data: bytes) -> bytearray:
     return raw
 
 
+def _get_micro_normalization_scale(zip_file: zipfile.ZipFile, equity_entry_name: str) -> float:
+    """
+    Normalizes full-lot Dukascopy simulations to 1 Micro / Mini baseline ($10,000 account):
+      - XAUUSD_dukascopy has pointValue=100.0 (100 oz standard Gold lot).
+        1 Micro Gold (MGC) is 10 oz ($10/pt = 0.1 lot). If FixedSize=1.0 was used, scale by 0.1.
+      - FX pairs (EURUSD/GBPUSD/USDJPY/GBPJPY) use 0.1 lot (10,000 units mini lot) as baseline.
+        If FixedSize=1.0 (100,000 standard lot) was used, scale by 0.1.
+    """
+    if "lastSettings.xml" not in zip_file.namelist():
+        return 1.0
+    try:
+        import re
+        ls = zip_file.read("lastSettings.xml").decode("utf-8", errors="ignore")
+        sz_match = re.search(r'<Param key="Size" className="FixedSize">([^<]+)</Param>', ls)
+        if not sz_match:
+            return 1.0
+        fixed_size = float(sz_match.group(1).strip())
+        if fixed_size <= 0.15:
+            return 1.0
+        upper_name = equity_entry_name.upper()
+        if any(sym in upper_name for sym in ("XAUUSD", "GOLD", "EURUSD", "GBPUSD", "USDJPY", "GBPJPY")):
+            return 0.1 / fixed_size
+    except Exception:
+        pass
+    return 1.0
+
+
 def parse_daily_equity(zip_file: zipfile.ZipFile) -> Dict[str, Any]:
     """Parses dailyEquity.bin from SQX zip."""
     equity_entry_name = None
@@ -67,10 +94,14 @@ def parse_daily_equity(zip_file: zipfile.ZipFile) -> Dict[str, Any]:
     if count <= 0 or len(raw) < 4 + count * 16:
         return {}
 
-    entries = []
+    scale = _get_micro_normalization_scale(zip_file, equity_entry_name)
+    raw_entries = []
     for i in range(count):
         ts, eq = struct.unpack(">qd", raw[4 + i * 16 : 4 + (i + 1) * 16])
-        entries.append((ts, eq))
+        raw_entries.append((ts, eq))
+
+    raw_initial = raw_entries[0][1]
+    entries = [(ts, raw_initial + (eq - raw_initial) * scale) for ts, eq in raw_entries]
 
     initial_equity = entries[0][1]
     final_equity = entries[-1][1]
