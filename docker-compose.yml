@@ -26,9 +26,9 @@ services:
       # Persistent per-strategy state directory (story 50.1): survives container recreation.
       - TB_STATE_DIR=/app/data/state
       # Strategy selection (override via env):
-      # Paper lane (-014): healthy SQX strategies promoted automatically after Java parity check.
-      # Bleeders (vwpreversion, consecbar) moved to trading-dev (-012) for rehabilitation.
-      - STRATEGY=${STRATEGY:-sq-gbpjpy-h1-breakout-3-39-125 sq-gbpjpy-h1-breakout-2-20-102}
+      # Paper lane (-014): 4 ELITE SQX strategies (Score 93.3 - 95.1, R2 >= 0.96, UPI >= 3.08).
+      # Bleeders & non-SQX strategies moved to trading-dev (-012) for rehabilitation.
+      - STRATEGY=${STRATEGY:-sq-gbpjpy-h1-breakout-4-5-173 sq-gbpjpy-h1-breakout-3-39-125 sq-gbpjpy-h1-breakout-4-19-179 sq-gbpjpy-h1-breakout-2-20-102}
       - STRATEGY_PAIR=${STRATEGY_PAIR:-GBP_JPY}
       - GRANULARITY=${GRANULARITY:-H1}
       - INTERVAL_SEC=${INTERVAL_SEC:-60}

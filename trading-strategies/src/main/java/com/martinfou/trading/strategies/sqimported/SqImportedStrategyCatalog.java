@@ -26,7 +26,11 @@ public final class SqImportedStrategyCatalog {
         register("SqMesH1Pullback02700", SqMesH1Pullback02700::new);
         register("SqGbpJpyH1Breakout339125", SqGbpJpyH1Breakout339125::new);
         register("SqGbpJpyH1Breakout220102", SqGbpJpyH1Breakout220102::new);
+        register("SqGbpJpyH1Breakout45173", SqGbpJpyH1Breakout45173::new);
+        register("SqGbpJpyH1Breakout419179", SqGbpJpyH1Breakout419179::new);
         register("SqMgcM30Breakout129102", SqMgcM30Breakout129102::new);
+        register("SqMgcM30Breakout024542", SqMgcM30Breakout024542::new);
+        register("SqMgcM30Breakout032921", SqMgcM30Breakout032921::new);
     }
 
     private SqImportedStrategyCatalog() {}
