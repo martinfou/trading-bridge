@@ -158,11 +158,7 @@ def format_strategy_display_name(raw_stem: str, p: Path, asset_label: str, rules
         style = "Breakout"
 
     base_name = f"{prefix} {mech} {style}"
-    count = used_names.get(base_name, 0) + 1
-    used_names[base_name] = count
-    if count == 1:
-        return base_name
-    return f"{base_name} #{count}"
+    return base_name
 
 
 def classify_strategy(p):
@@ -314,9 +310,16 @@ def get_databank_strategies(proj_name):
         else:
             selected.extend(clist[:5])
 
-    # Rank overall candidates by OOS PF & Return/DD ratio
+    # Rank overall candidates by OOS PF & Return/DD ratio, then deduplicate by display name (keeping the highest-ranked variant of each archetype)
     selected.sort(key=lambda x: (x.get("oos_pf", 0), x.get("ret_dd_ratio", 0), x.get("oos_profit", 0)), reverse=True)
-    return selected[:60]
+    unique_archetypes = []
+    seen_display = set()
+    for c in selected:
+        dname = c["strategy_name"]
+        if dname not in seen_display:
+            seen_display.add(dname)
+            unique_archetypes.append(c)
+    return unique_archetypes[:30]
 
 
 def get_all_projects(running_proj, running):
