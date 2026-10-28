@@ -76,25 +76,26 @@ def get_sqx_process_info():
 
 
 CATALOG_NAME_OVERRIDES = {
-    "3.39.125": "GBPJPY H1 Volatility Breakout (3.39.125)",
-    "2.20.102": "GBPJPY H1 Trend Breakout (2.20.102)",
-    "0.4248": "MNQ M15 SuperTrend Momentum (0.4248)",
-    "0.1499": "MNQ M15 Ichimoku Breakout (0.1499)",
-    "0.3553": "MES H1 Bollinger MeanRev (0.3553)",
-    "0.2700": "MES H1 Prev-Day Low Pullback (0.2700)",
-    "1.29.102": "MGC M30 Gold Channel Breakout (1.29.102)",
+    "3.39.125": "GBPJPY H1 Volatility Compression Breakout",
+    "2.20.102": "GBPJPY H1 Donchian Trend Breakout",
+    "0.4248": "MNQ M15 SuperTrend ATR Momentum",
+    "0.1499": "MNQ M15 Ichimoku Kumo Breakout",
+    "0.3553": "MES H1 Bollinger Band Mean Reversion",
+    "0.2700": "MES H1 Prev-Day Low Sweep Pullback",
+    "1.29.102": "MGC M30 WMA Channel Breakout",
 }
 
 
-def format_strategy_display_name(raw_stem: str, p: Path, asset_label: str, rules_summary: str) -> str:
-    """Converts generic SQX 'Strategy 0.13583' into an institutional descriptive name."""
+def format_strategy_display_name(raw_stem: str, p: Path, asset_label: str, rules_summary: str, used_names: dict) -> str:
+    """Converts generic SQX 'Strategy 0.13583' into a clean institutional name without (x.y.z) IDs."""
     import re
-    is_wfa = "WF Matrix" in raw_stem or "WF " in raw_stem
     id_match = re.search(r"(\d+(?:\.\d+)+)", raw_stem)
     strat_id = id_match.group(1) if id_match else raw_stem.replace("Strategy", "").strip()
 
-    if strat_id in CATALOG_NAME_OVERRIDES and not is_wfa:
-        return CATALOG_NAME_OVERRIDES[strat_id]
+    if strat_id in CATALOG_NAME_OVERRIDES:
+        base_name = CATALOG_NAME_OVERRIDES[strat_id]
+        used_names[base_name] = used_names.get(base_name, 0) + 1
+        return base_name
 
     # Short symbol + timeframe prefix
     if "MGC" in asset_label or "Gold" in asset_label:
@@ -110,39 +111,43 @@ def format_strategy_display_name(raw_stem: str, p: Path, asset_label: str, rules
     else:
         prefix = asset_label.split("(")[0].strip()
 
-    # Primary indicator / signal mechanism from XML rules
+    # Extract up to 2 distinct indicator qualifiers from rules_summary
     r = rules_summary or ""
-    if "SuperTrend" in r:
-        mech = "SuperTrend"
-    elif "Ichimoku" in r:
-        mech = "Ichimoku Kumo"
-    elif "Bollinger" in r:
-        mech = "Bollinger"
-    elif "Keltner" in r:
-        mech = "Keltner"
-    elif "Average Directional" in r or "ADX" in r:
-        mech = "ADX Trend"
-    elif "Relative Strength" in r or "RSI" in r:
-        mech = "RSI Confluence"
-    elif "Commodity Channel" in r or "CCI" in r:
-        mech = "CCI Pulse"
-    elif "Exponential Moving Average" in r or "EMA" in r:
-        mech = "EMA Channel"
-    elif "Weighted Moving Average" in r or "WMA" in r:
-        mech = "WMA Channel"
-    elif "Simple Moving Average" in r or "SMA" in r:
-        mech = "SMA Filter"
-    elif "Highest" in r or "Lowest" in r:
-        mech = "Donchian"
-    elif "Daily High" in r or "Daily Low" in r:
-        mech = "Daily Range"
-    else:
-        mech = "Price Action"
+    tokens = []
+    indicator_map = [
+        ("SuperTrend", "SuperTrend"),
+        ("Ichimoku", "Ichimoku Kumo"),
+        ("Bollinger", "Bollinger"),
+        ("Keltner", "Keltner"),
+        ("Average Directional", "ADX"),
+        ("ADX", "ADX"),
+        ("Relative Strength", "RSI"),
+        ("RSI", "RSI"),
+        ("Commodity Channel", "CCI"),
+        ("CCI", "CCI"),
+        ("Exponential Moving Average", "EMA"),
+        ("Weighted Moving Average", "WMA"),
+        ("Simple Moving Average", "SMA"),
+        ("Highest", "Donchian High"),
+        ("Lowest", "Donchian Low"),
+        ("Daily High", "PDH"),
+        ("Daily Low", "PDL"),
+        ("Daily Open", "Session Open"),
+        ("Daily Close", "Prev Close"),
+        ("True Range", "ATR"),
+    ]
+    for needle, label in indicator_map:
+        if needle in r and label not in tokens:
+            tokens.append(label)
+        if len(tokens) >= 2:
+            break
+
+    mech = " ".join(tokens) if tokens else "Price Action"
 
     # Style from project directory
     proj_str = str(p.parent.parent.parent.name).upper()
     if "MEAN" in proj_str or "REV" in proj_str:
-        style = "MeanRev"
+        style = "Mean Reversion"
     elif "MOMENTUM" in proj_str:
         style = "Momentum"
     elif "TREND" in proj_str:
@@ -152,8 +157,12 @@ def format_strategy_display_name(raw_stem: str, p: Path, asset_label: str, rules
     else:
         style = "Breakout"
 
-    wfa_tag = "WFA " if is_wfa else ""
-    return f"{prefix} {wfa_tag}{mech} {style} ({strat_id})"
+    base_name = f"{prefix} {mech} {style}"
+    count = used_names.get(base_name, 0) + 1
+    used_names[base_name] = count
+    if count == 1:
+        return base_name
+    return f"{base_name} #{count}"
 
 
 def classify_strategy(p):
@@ -202,6 +211,7 @@ def get_databank_strategies(proj_name):
 
     all_found = []
     seen = set()
+    used_names = {}
 
     for s_dir in candidate_sources:
         if not s_dir.exists():
@@ -235,7 +245,7 @@ def get_databank_strategies(proj_name):
                 seen.add(clean_name)
                 asset_label, default_side = classify_strategy(p)
                 display_name = format_strategy_display_name(
-                    clean_name, p, asset_label, bt.get("rules_summary", "")
+                    clean_name, p, asset_label, bt.get("rules_summary", ""), used_names
                 )
 
                 all_found.append({
