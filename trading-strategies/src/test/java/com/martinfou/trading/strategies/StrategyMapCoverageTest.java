@@ -98,14 +98,18 @@ class StrategyMapCoverageTest {
     void newlyRewrittenSqxStrategiesResolveAndInstantiate() throws Exception {
         JsonNode config = MAPPER.readTree(Files.readString(locateLiveConfig()));
         var map = LiveStrategyRunner.getStrategyMap();
-        java.util.Map<String, String> expectedPairs = java.util.Map.of(
-            "sq-mnq-m15-momentum-0-4248", "MNQ",
-            "sq-mnq-m15-breakout-0-1499", "MNQ",
-            "sq-mes-h1-meanrev-0-3553", "MES",
-            "sq-mes-h1-pullback-0-2700", "MES",
-            "sq-gbpjpy-h1-breakout-3-39-125", "GBP_JPY",
-            "sq-gbpjpy-h1-breakout-2-20-102", "GBP_JPY",
-            "sq-mgc-m30-breakout-1-29-102", "MGC"
+        java.util.Map<String, String> expectedPairs = java.util.Map.ofEntries(
+            java.util.Map.entry("sq-mnq-m15-momentum-0-4248", "MNQ"),
+            java.util.Map.entry("sq-mnq-m15-breakout-0-1499", "MNQ"),
+            java.util.Map.entry("sq-mes-h1-meanrev-0-3553", "MES"),
+            java.util.Map.entry("sq-mes-h1-pullback-0-2700", "MES"),
+            java.util.Map.entry("sq-gbpjpy-h1-breakout-3-39-125", "GBP_JPY"),
+            java.util.Map.entry("sq-gbpjpy-h1-breakout-2-20-102", "GBP_JPY"),
+            java.util.Map.entry("sq-gbpjpy-h1-breakout-4-5-173", "GBP_JPY"),
+            java.util.Map.entry("sq-gbpjpy-h1-breakout-4-19-179", "GBP_JPY"),
+            java.util.Map.entry("sq-mgc-m30-breakout-1-29-102", "MGC"),
+            java.util.Map.entry("sq-mgc-m30-breakout-0-24542", "MGC"),
+            java.util.Map.entry("sq-mgc-m30-breakout-0-32921", "MGC")
         );
         for (var entry : expectedPairs.entrySet()) {
             String alias = entry.getKey();

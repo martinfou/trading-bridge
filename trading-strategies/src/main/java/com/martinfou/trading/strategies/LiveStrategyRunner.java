@@ -1048,7 +1048,15 @@ public class LiveStrategyRunner implements Runnable {
                 .asSubclass(Strategy.class));
             map.put("sq-gbpjpy-h1-breakout-2-20-102", Class.forName("com.martinfou.trading.strategies.sqimported.SqGbpJpyH1Breakout220102")
                 .asSubclass(Strategy.class));
+            map.put("sq-gbpjpy-h1-breakout-4-5-173", Class.forName("com.martinfou.trading.strategies.sqimported.SqGbpJpyH1Breakout45173")
+                .asSubclass(Strategy.class));
+            map.put("sq-gbpjpy-h1-breakout-4-19-179", Class.forName("com.martinfou.trading.strategies.sqimported.SqGbpJpyH1Breakout419179")
+                .asSubclass(Strategy.class));
             map.put("sq-mgc-m30-breakout-1-29-102", Class.forName("com.martinfou.trading.strategies.sqimported.SqMgcM30Breakout129102")
+                .asSubclass(Strategy.class));
+            map.put("sq-mgc-m30-breakout-0-24542", Class.forName("com.martinfou.trading.strategies.sqimported.SqMgcM30Breakout024542")
+                .asSubclass(Strategy.class));
+            map.put("sq-mgc-m30-breakout-0-32921", Class.forName("com.martinfou.trading.strategies.sqimported.SqMgcM30Breakout032921")
                 .asSubclass(Strategy.class));
             // The week-of-12-October news entries were retired on 2026-10-21 (D67, executed as D68 in
             // docs/paper-window-log.md): the classes stay in newsweekly/ as an archive, but nothing

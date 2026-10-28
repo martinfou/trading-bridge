@@ -94,7 +94,7 @@
         "trades": 250,
         "source": "paper — Sharpe>1.0 post look-ahead fix (docker-compose note; no full walk-forward report)"
       },
-      "computedRiskPct": 0.3
+      "computedRiskPct": 0.15
     },
     "nfpweek": {
       "instrument": "EUR_USD",
@@ -349,7 +349,7 @@
         "trades": 1976,
         "source": "20y H1 GBP_JPY Dukascopy SQX + 2025-2026 Blind OOS"
       },
-      "computedRiskPct": 0.3
+      "computedRiskPct": 0.2
     },
     "sq-gbpjpy-h1-breakout-2-20-102": {
       "instrument": "GBP_JPY",
@@ -367,7 +367,43 @@
         "trades": 3449,
         "source": "20y H1 GBP_JPY Dukascopy SQX + 2025-2026 Blind OOS"
       },
-      "computedRiskPct": 0.3
+      "computedRiskPct": 0.2
+    },
+    "sq-gbpjpy-h1-breakout-4-5-173": {
+      "instrument": "GBP_JPY",
+      "granularity": "H1",
+      "lane": "paper",
+      "maxDrawdownDollar": 107.0,
+      "maxConsecutiveLosses": 5,
+      "positionSizeUnits": 1000,
+      "backtestMetrics": {
+        "sharpe": 1.02,
+        "maxDrawdown": 7.14,
+        "winRate": 47.0,
+        "avgWinLoss": 1.62,
+        "totalReturn": 124.21,
+        "trades": 2471,
+        "source": "20y H1 GBP_JPY Dukascopy SQX + 2025-2026 Blind OOS (ELITE 95.1)"
+      },
+      "computedRiskPct": 0.2
+    },
+    "sq-gbpjpy-h1-breakout-4-19-179": {
+      "instrument": "GBP_JPY",
+      "granularity": "H1",
+      "lane": "paper",
+      "maxDrawdownDollar": 162.0,
+      "maxConsecutiveLosses": 5,
+      "positionSizeUnits": 1000,
+      "backtestMetrics": {
+        "sharpe": 1.15,
+        "maxDrawdown": 10.77,
+        "winRate": 50.8,
+        "avgWinLoss": 1.42,
+        "totalReturn": 135.42,
+        "trades": 2641,
+        "source": "20y H1 GBP_JPY Dukascopy SQX + 2025-2026 Blind OOS (ELITE 94.2)"
+      },
+      "computedRiskPct": 0.2
     },
     "sq-mgc-m30-breakout-1-29-102": {
       "instrument": "MGC",
@@ -384,6 +420,42 @@
         "totalReturn": 94.57,
         "trades": 1052,
         "source": "M30 Gold Dukascopy SQX + 2025-2026 Blind OOS (zero-martingale)"
+      },
+      "computedRiskPct": 0.5
+    },
+    "sq-mgc-m30-breakout-0-24542": {
+      "instrument": "MGC",
+      "granularity": "M30",
+      "lane": "paper",
+      "maxDrawdownDollar": 841.0,
+      "maxConsecutiveLosses": 5,
+      "positionSizeUnits": 1,
+      "backtestMetrics": {
+        "sharpe": 1.06,
+        "maxDrawdown": 8.41,
+        "winRate": 51.3,
+        "avgWinLoss": 1.58,
+        "totalReturn": 123.38,
+        "trades": 896,
+        "source": "M30 Gold Dukascopy SQX + 2025-2026 Blind OOS (ELITE 96.0 #1 Overall)"
+      },
+      "computedRiskPct": 0.5
+    },
+    "sq-mgc-m30-breakout-0-32921": {
+      "instrument": "MGC",
+      "granularity": "M30",
+      "lane": "paper",
+      "maxDrawdownDollar": 391.0,
+      "maxConsecutiveLosses": 5,
+      "positionSizeUnits": 1,
+      "backtestMetrics": {
+        "sharpe": 0.93,
+        "maxDrawdown": 3.91,
+        "winRate": 46.0,
+        "avgWinLoss": 1.88,
+        "totalReturn": 100.78,
+        "trades": 561,
+        "source": "M30 Gold Dukascopy SQX + 2025-2026 Blind OOS (ELITE 92.6)"
       },
       "computedRiskPct": 0.5
     }

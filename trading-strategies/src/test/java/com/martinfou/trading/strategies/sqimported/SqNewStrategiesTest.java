@@ -18,24 +18,32 @@ class SqNewStrategiesTest {
 
   @Test
   void testAllSevenStrategiesRegisteredInCatalogsAndAutoClassified() {
-    Map<String, String> expectedDefaults = Map.of(
-        "SqMnqM15Momentum04248", "MNQ",
-        "SqMnqM15Breakout01499", "MNQ",
-        "SqMesH1MeanRev03553", "MES",
-        "SqMesH1Pullback02700", "MES",
-        "SqGbpJpyH1Breakout339125", "GBP_JPY",
-        "SqGbpJpyH1Breakout220102", "GBP_JPY",
-        "SqMgcM30Breakout129102", "MGC"
+    Map<String, String> expectedDefaults = Map.ofEntries(
+        Map.entry("SqMnqM15Momentum04248", "MNQ"),
+        Map.entry("SqMnqM15Breakout01499", "MNQ"),
+        Map.entry("SqMesH1MeanRev03553", "MES"),
+        Map.entry("SqMesH1Pullback02700", "MES"),
+        Map.entry("SqGbpJpyH1Breakout339125", "GBP_JPY"),
+        Map.entry("SqGbpJpyH1Breakout220102", "GBP_JPY"),
+        Map.entry("SqGbpJpyH1Breakout45173", "GBP_JPY"),
+        Map.entry("SqGbpJpyH1Breakout419179", "GBP_JPY"),
+        Map.entry("SqMgcM30Breakout129102", "MGC"),
+        Map.entry("SqMgcM30Breakout024542", "MGC"),
+        Map.entry("SqMgcM30Breakout032921", "MGC")
     );
 
-    Map<String, String> expectedStyles = Map.of(
-        "SqMnqM15Momentum04248", "MOMENTUM",
-        "SqMnqM15Breakout01499", "BREAKOUT",
-        "SqMesH1MeanRev03553", "MEAN_REVERSION",
-        "SqMesH1Pullback02700", "TREND_FOLLOWING",
-        "SqGbpJpyH1Breakout339125", "BREAKOUT",
-        "SqGbpJpyH1Breakout220102", "BREAKOUT",
-        "SqMgcM30Breakout129102", "BREAKOUT"
+    Map<String, String> expectedStyles = Map.ofEntries(
+        Map.entry("SqMnqM15Momentum04248", "MOMENTUM"),
+        Map.entry("SqMnqM15Breakout01499", "BREAKOUT"),
+        Map.entry("SqMesH1MeanRev03553", "MEAN_REVERSION"),
+        Map.entry("SqMesH1Pullback02700", "TREND_FOLLOWING"),
+        Map.entry("SqGbpJpyH1Breakout339125", "BREAKOUT"),
+        Map.entry("SqGbpJpyH1Breakout220102", "BREAKOUT"),
+        Map.entry("SqGbpJpyH1Breakout45173", "BREAKOUT"),
+        Map.entry("SqGbpJpyH1Breakout419179", "BREAKOUT"),
+        Map.entry("SqMgcM30Breakout129102", "BREAKOUT"),
+        Map.entry("SqMgcM30Breakout024542", "BREAKOUT"),
+        Map.entry("SqMgcM30Breakout032921", "BREAKOUT")
     );
 
     for (var entry : expectedDefaults.entrySet()) {
