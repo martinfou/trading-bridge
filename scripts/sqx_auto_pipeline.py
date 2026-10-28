@@ -131,7 +131,9 @@ def main() -> int:
     for c in candidates[:12]:
         print(
             f"  • [{c.get('asset', '')}] {c.get('strategy_name', '')}: "
-            f"Net=${c.get('net_profit', 0):.2f} | PF={c.get('profit_factor', 0):.2f} | Ret/DD={c.get('ret_dd_ratio', 0):.2f} | Trades={c.get('trades', 0)}"
+            f"Net=${c.get('net_profit', 0):.2f} | PF={c.get('profit_factor', 0):.2f} | "
+            f"R²={c.get('r_squared', 0):.3f} | Sharpe={c.get('sharpe_ratio', 0):.2f} | "
+            f"UPI={c.get('upi', 0):.2f} | Ret/DD={c.get('ret_dd_ratio', 0):.2f} | Trades={c.get('trades', 0)}"
         )
 
     if args.scan_only:

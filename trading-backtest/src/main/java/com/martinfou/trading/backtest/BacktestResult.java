@@ -81,9 +81,12 @@ public record BacktestResult(
         System.out.println("Winners:       " + winningTrades + " | Losers: " + losingTrades);
         System.out.println("Win Rate:      " + String.format("%.1f", winRatePct) + "%");
         System.out.println("Avg Trade:     $" + String.format("%.2f", avgTradePnl));
-        System.out.println("─── Risk ───────────────────────────────────");
+        System.out.println("─── Risk & Smoothness ──────────────────────");
         System.out.println("Max DD:        " + String.format("%.2f", maxDrawdownPct) + "%");
+        System.out.println("R² (Linear):   " + String.format("%.4f", rSquared()));
         System.out.println("Sharpe:        " + String.format("%.2f", sharpeRatio));
+        System.out.println("UPI (Martin):  " + String.format("%.2f", ulcerPerformanceIndex())
+            + " (UI: " + String.format("%.2f", ulcerIndex()) + "%)");
         System.out.println("Sortino:       " + String.format("%.2f", sortinoRatio));
         System.out.println("Profit Fact:   " + String.format("%.2f", profitFactor));
         System.out.println("Calmar:        " + String.format("%.2f", calmarRatio));
@@ -127,6 +130,22 @@ public record BacktestResult(
     public List<Double> tradePnlList() {
         if (trades == null) return List.of();
         return trades.stream().map(Trade::pnl).toList();
+    }
+
+    /** Coefficient of Determination (\(R^2\)) of the equity curve (0.0 to 1.0). */
+    public double rSquared() {
+        return PerformanceMetrics.rSquared(equityCurve);
+    }
+
+    /** Ulcer Index (RMS of percentage drawdowns across the equity curve). */
+    public double ulcerIndex() {
+        return PerformanceMetrics.ulcerIndex(equityCurve);
+    }
+
+    /** Ulcer Performance Index (UPI / Martin Ratio). */
+    public double ulcerPerformanceIndex() {
+        double ppy = periodsPerYear > 0 ? periodsPerYear : PerformanceMetrics.PERIODS_PER_YEAR;
+        return PerformanceMetrics.ulcerPerformanceIndex(equityCurve, ppy);
     }
 
     // ---------------------------------------------------------------

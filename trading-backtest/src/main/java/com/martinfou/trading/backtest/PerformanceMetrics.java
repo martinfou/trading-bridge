@@ -505,6 +505,86 @@ public final class PerformanceMetrics {
     }
 
     // ---------------------------------------------------------------
+    //  Core Linearity & Smoothness Metrics (R², Ulcer Index, UPI / Martin Ratio)
+    // ---------------------------------------------------------------
+
+    /**
+     * Coefficient of Determination (\(R^2\)) of the equity curve against a linear time trend.
+     *
+     * <p>Measures how closely the equity curve fits a straight upward-sloping line:
+     * a value near {@code 1.0} indicates exceptionally consistent, steady pace. If the overall
+     * slope is negative (losing curve), returns {@code 0.0} so a steady losing line never passes
+     * a smoothness gate.</p>
+     *
+     * @param equityCurve equity values over time
+     * @return \(R^2 \in [0.0, 1.0]\)
+     */
+    public static double rSquared(List<Double> equityCurve) {
+        if (equityCurve == null || equityCurve.size() < 2) return 0.0;
+        int n = equityCurve.size();
+        double tMean = (n - 1) / 2.0;
+        double eqMean = mean(equityCurve);
+        double cov = 0.0;
+        double varT = 0.0;
+        double varEq = 0.0;
+        for (int i = 0; i < n; i++) {
+            double dt = i - tMean;
+            double deq = equityCurve.get(i) - eqMean;
+            cov += dt * deq;
+            varT += dt * dt;
+            varEq += deq * deq;
+        }
+        if (varT <= 0.0 || varEq <= 0.0 || cov <= 0.0) return 0.0;
+        double r2 = (cov * cov) / (varT * varEq);
+        return Double.isFinite(r2) ? Math.min(1.0, Math.max(0.0, r2)) : 0.0;
+    }
+
+    /**
+     * Ulcer Index (UI) — root-mean-square of percentage drawdowns across every point of the
+     * equity curve. Penalises both the depth AND duration (stagnation time) of drawdowns.
+     *
+     * @param equityCurve equity values over time
+     * @return Ulcer Index in percentage points (e.g. 2.5 means 2.5% RMS drawdown)
+     */
+    public static double ulcerIndex(List<Double> equityCurve) {
+        if (equityCurve == null || equityCurve.size() < 2) return 0.0;
+        double peak = Double.NEGATIVE_INFINITY;
+        double sumSqDdPct = 0.0;
+        int count = 0;
+        for (double e : equityCurve) {
+            if (e > peak) peak = e;
+            if (peak > 0.0) {
+                double ddPct = ((peak - e) / peak) * 100.0;
+                sumSqDdPct += ddPct * ddPct;
+                count++;
+            }
+        }
+        if (count == 0) return 0.0;
+        double ui = Math.sqrt(sumSqDdPct / count);
+        return Double.isFinite(ui) ? ui : 0.0;
+    }
+
+    /**
+     * Ulcer Performance Index (UPI / Martin Ratio) = (Annualised Return % - Risk-Free Rate %) / Ulcer Index.
+     *
+     * <p>Measures risk-adjusted return using drawdown depth and duration (Ulcer Index) as the
+     * denominator instead of return standard deviation, so upward volatility is never penalised.</p>
+     *
+     * @param equityCurve    equity values over time
+     * @param periodsPerYear detected trading periods per year
+     * @return UPI (Martin Ratio), or 0.0 if undefined
+     */
+    public static double ulcerPerformanceIndex(List<Double> equityCurve, double periodsPerYear) {
+        if (equityCurve == null || equityCurve.size() < 2) return 0.0;
+        double ui = ulcerIndex(equityCurve);
+        if (ui <= 0.0) return 0.0;
+        double annRetPct = annualisedReturn(equityCurve, periodsPerYear) * 100.0;
+        double rfPct = DEFAULT_RISK_FREE_RATE * 100.0;
+        double upi = (annRetPct - rfPct) / ui;
+        return Double.isFinite(upi) ? upi : 0.0;
+    }
+
+    // ---------------------------------------------------------------
     //  Internal helpers
     // ---------------------------------------------------------------
 
