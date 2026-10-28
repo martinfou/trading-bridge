@@ -165,8 +165,9 @@ class LiveStrategyRunnerInstrumentTest {
     // Story 1.9 — the live config declares all deployed strategies, risk sum <= 3%
     // ========================================================================
 
-    /** The six strategies that actually run in containers (docker-compose.yml). The 7 {@code 2_*} keys are not deployed. */
+    /** The eight strategies that actually run in containers (docker-compose.yml: paper -014 + dev -012). */
     static final List<String> DEPLOYED = List.of(
+        "sq-gbpjpy-h1-breakout-3-39-125", "sq-gbpjpy-h1-breakout-2-20-102",
         "vwpreversion", "consecbar", "compmomentum", "monthweekphase", "ltrsi3", "nfpweek");
 
     /**
@@ -296,5 +297,27 @@ class LiveStrategyRunnerInstrumentTest {
             dir = dir.getParent();
         }
         throw new AssertionError("config/live-config.json not found from " + Paths.get("").toAbsolutePath());
+    }
+
+    @Test
+    @DisplayName("circuit breaker trips on 5 consecutive losses and blocks new entries")
+    void circuitBreakerTripsOnConsecutiveLosses() throws IOException {
+        Path tmpState = Files.createTempDirectory("cb-test");
+        LiveStrategyRunner runner = new LiveStrategyRunner(
+            "dummy-key", "101-002-4729622-014", new ConsecutiveBarExhaustionStrategy(),
+            "consecbar", "H1", 60, tmpState);
+
+        assertFalse(runner.isKilled());
+        for (int i = 1; i <= 4; i++) {
+            runner.completeReconciliation("t-" + i, -5.0);
+            assertFalse(runner.isKilled(), "should not trip before 5th loss");
+        }
+        runner.completeReconciliation("t-5", -5.0);
+        assertTrue(runner.isKilled(), "5th consecutive loss must trip circuit breaker");
+        assertTrue(runner.getKillReason().contains("CONSECUTIVE_LOSSES_BREACH"));
+
+        runner.resumeStrategy();
+        assertFalse(runner.isKilled());
+        assertEquals(0, runner.getConsecutiveLosses());
     }
 }

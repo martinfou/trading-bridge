@@ -88,6 +88,15 @@ public final class OperationsSnapshotPusher {
      * @return {@code true} when the hub acknowledged (2xx), {@code false} otherwise
      */
     public boolean push(String jsonBody) {
+        return pushAndReadResponse(jsonBody) != null;
+    }
+
+    /**
+     * Pushes one snapshot and returns the raw HTTP response body when the hub
+     * acknowledges with 2xx (so the caller can inspect {@code desired_states} for
+     * 1-click kill/pause/promote actions), or {@code null} on failure.
+     */
+    public String pushAndReadResponse(String jsonBody) {
         try {
             HttpRequest request = HttpRequest.newBuilder(URI.create(endpoint))
                 .timeout(timeout)
@@ -98,20 +107,20 @@ public final class OperationsSnapshotPusher {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             int status = response.statusCode();
             if (status >= 200 && status < 300) {
-                return true;
+                return response.body() != null ? response.body() : "{}";
             }
             log.warn("Operations snapshot push rejected by hub: HTTP {} ({})", status, truncate(response.body()));
-            return false;
+            return null;
         } catch (InterruptedException e) {
             // Never swallow an interrupt: the monitor thread must be able to stop.
             Thread.currentThread().interrupt();
             log.warn("Operations snapshot push interrupted");
-            return false;
+            return null;
         } catch (Exception e) {
             // toString(), not getMessage(): an NPE or an HTTP/2 protocol error has no
             // message, and "push failed: null" hides the class that failed.
             log.warn("Operations snapshot push failed: {}", e.toString());
-            return false;
+            return null;
         }
     }
 

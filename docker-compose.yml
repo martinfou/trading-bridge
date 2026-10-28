@@ -22,15 +22,14 @@ services:
       - OANDA_ENV=practice
       - LOG_LEVEL=INFO
       - TB_ALLOW_ORDERS=1
+      - TB_LANE=paper
       # Persistent per-strategy state directory (story 50.1): survives container recreation.
       - TB_STATE_DIR=/app/data/state
       # Strategy selection (override via env):
-      # vwp → VWPReversionStrategy, consecbar → ConsecutiveBarExhaustionStrategy
-      # nymid → NYMidSessionMomentumStrategy, gobig → GoBigStrategy
-      # casino → CasinoStrategy, all → all strategies sequentially
-      # Or any sqimported: sq-gbpjpy-h1-breakout-3-39-125, sq-gbpjpy-h1-breakout-2-20-102, etc.
-      - STRATEGY=${STRATEGY:-vwpreversion consecbar sq-gbpjpy-h1-breakout-3-39-125 sq-gbpjpy-h1-breakout-2-20-102}
-      - STRATEGY_PAIR=${STRATEGY_PAIR:-USD_CHF}
+      # Paper lane (-014): healthy SQX strategies promoted automatically after Java parity check.
+      # Bleeders (vwpreversion, consecbar) moved to trading-dev (-012) for rehabilitation.
+      - STRATEGY=${STRATEGY:-sq-gbpjpy-h1-breakout-3-39-125 sq-gbpjpy-h1-breakout-2-20-102}
+      - STRATEGY_PAIR=${STRATEGY_PAIR:-GBP_JPY}
       - GRANULARITY=${GRANULARITY:-H1}
       - INTERVAL_SEC=${INTERVAL_SEC:-60}
       # Operations snapshot push to the web hub (absent = push disabled).
@@ -43,11 +42,76 @@ services:
     volumes:
       - ./data:/app/data        # Trade persistence
       - ./logs:/app/logs        # Logs
+      - ./config/live-config.json:/app/config/live-config.json:ro
     deploy:
       resources:
         limits:
           cpus: '1'
           memory: 512M
+
+  # Dev / Rehab Lane (-012) — Experimental & Benched Strategies
+  trading-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading-dev
+    restart: unless-stopped
+    env_file:
+      - ./.env.dev
+    environment:
+      - OANDA_ENV=practice
+      - LOG_LEVEL=INFO
+      - TB_ALLOW_ORDERS=1
+      - TB_LANE=dev
+      - TB_STATE_DIR=/app/data/state/dev
+      - STRATEGY=${DEV_STRATEGY:-vwpreversion consecbar}
+      - STRATEGY_PAIR=${DEV_PAIR:-USD_CHF}
+      - GRANULARITY=${DEV_GRANULARITY:-H1}
+      - INTERVAL_SEC=${DEV_INTERVAL:-60}
+      - HERMES_WEB_URL=${HERMES_WEB_URL:-}
+      - HERMES_WEB_TOKEN=${HERMES_WEB_TOKEN:-}
+    command: ["$${OANDA_API_KEY}", "$${OANDA_ACCOUNT_ID}", "$${STRATEGY}", "$${GRANULARITY}", "$${INTERVAL_SEC}"]
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config/live-config.json:/app/config/live-config.json:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 384M
+
+  # Prod Lane (-005) — 1-Click Approved on Hermes (uncommented/activated on promotion)
+  # trading-prod:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: trading-prod
+  #   restart: unless-stopped
+  #   env_file:
+  #     - ./.env.prod
+  #   environment:
+  #     - OANDA_ENV=practice
+  #     - LOG_LEVEL=INFO
+  #     - TB_ALLOW_ORDERS=1
+  #     - TB_LANE=prod
+  #     - TB_STATE_DIR=/app/data/state/prod
+  #     - STRATEGY=${PROD_STRATEGY:-sq-gbpjpy-h1-breakout-3-39-125 sq-gbpjpy-h1-breakout-2-20-102}
+  #     - STRATEGY_PAIR=${PROD_PAIR:-GBP_JPY}
+  #     - GRANULARITY=${PROD_GRANULARITY:-H1}
+  #     - INTERVAL_SEC=${PROD_INTERVAL:-60}
+  #     - HERMES_WEB_URL=${HERMES_WEB_URL:-}
+  #     - HERMES_WEB_TOKEN=${HERMES_WEB_TOKEN:-}
+  #   command: ["$${OANDA_API_KEY}", "$${OANDA_ACCOUNT_ID}", "$${STRATEGY}", "$${GRANULARITY}", "$${INTERVAL_SEC}"]
+  #   volumes:
+  #     - ./data:/app/data
+  #     - ./logs:/app/logs
+  #     - ./config/live-config.json:/app/config/live-config.json:ro
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: '1'
+  #         memory: 512M
 
   # NFP Week — Short EUR/USD macro play during NFP release week
   # Runs June 1-5, 2026. Volatility-aware trailing stop with NFP-day widening.
