@@ -138,3 +138,7 @@ logs-dev/
 
 # OANDA BA (bid+ask) raw data — regenerable via scripts/oanda-ba-fetch.py
 data/oanda-ba/
+
+# Runtime live strategy state
+data/state/*.json
+data/state/*.tmp
