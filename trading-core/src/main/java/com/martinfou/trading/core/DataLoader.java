@@ -92,7 +92,7 @@ public class DataLoader {
             if (h.startsWith("timestamp")) {
                 return loadDukascopyCSV(path, symbol);
             }
-            if (h.contains("datetime")) {
+            if (h.contains("datetime") || h.startsWith("date,open")) {
                 return loadCSV(path, symbol);
             }
             if (h.startsWith("date,time") || h.split(",").length >= 7) {

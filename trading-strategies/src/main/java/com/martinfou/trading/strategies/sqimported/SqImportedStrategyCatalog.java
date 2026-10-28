@@ -20,6 +20,13 @@ public final class SqImportedStrategyCatalog {
         register("Strategy_2_36_190_Converted", Strategy_2_36_190_Converted::new);
         register("Strategy_2_38_112_Converted", Strategy_2_38_112_Converted::new);
         register("Strategy_Gold_Breakout_M30", Strategy_Gold_Breakout_M30::new);
+        register("SqMnqM15Momentum04248", SqMnqM15Momentum04248::new);
+        register("SqMnqM15Breakout01499", SqMnqM15Breakout01499::new);
+        register("SqMesH1MeanRev03553", SqMesH1MeanRev03553::new);
+        register("SqMesH1Pullback02700", SqMesH1Pullback02700::new);
+        register("SqGbpJpyH1Breakout339125", SqGbpJpyH1Breakout339125::new);
+        register("SqGbpJpyH1Breakout220102", SqGbpJpyH1Breakout220102::new);
+        register("SqMgcM30Breakout129102", SqMgcM30Breakout129102::new);
     }
 
     private SqImportedStrategyCatalog() {}
@@ -44,8 +51,15 @@ public final class SqImportedStrategyCatalog {
         if (!FACTORIES.containsKey(key)) {
             throw new IllegalArgumentException("Unknown sqimported strategy: " + key);
         }
-        if (key.contains("Gold") || key.contains("MGC")) {
+        String upper = key.toUpperCase();
+        if (upper.contains("GOLD") || upper.contains("MGC")) {
             return "MGC";
+        }
+        if (upper.contains("MNQ")) {
+            return "MNQ";
+        }
+        if (upper.contains("MES")) {
+            return "MES";
         }
         return "GBP_JPY";
     }
