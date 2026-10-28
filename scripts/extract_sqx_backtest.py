@@ -116,6 +116,36 @@ def parse_daily_equity(zip_file: zipfile.ZipFile) -> Dict[str, Any]:
     else:
         sharpe = 0.0
 
+    # R-squared (Linearity / Stability of equity curve) & Ulcer Performance Index (UPI / Martin Ratio)
+    n_pts = len(entries)
+    r_squared = 0.0
+    ulcer_index = 0.0
+    upi = 0.0
+    if n_pts >= 2:
+        t_mean = (n_pts - 1) / 2.0
+        eq_vals = [ initial_equity + (e[1] if initial_equity == 0 else (e[1] - initial_equity)) for e in entries ]
+        eq_mean = sum(eq_vals) / n_pts
+        cov = sum((i - t_mean) * (eq_vals[i] - eq_mean) for i in range(n_pts))
+        var_t = sum((i - t_mean) ** 2 for i in range(n_pts))
+        var_eq = sum((eq_vals[i] - eq_mean) ** 2 for i in range(n_pts))
+        if var_t > 0 and var_eq > 0 and cov > 0:
+            r_squared = (cov ** 2) / (var_t * var_eq)
+
+        # Ulcer Index (RMS of % drawdown across all points, penalizing both depth and duration)
+        base_cap = initial_equity if initial_equity > 0 else 10000.0
+        run_peak = base_cap
+        sq_dd_sum = 0.0
+        for _, eq_raw in entries:
+            nav = base_cap + eq_raw if initial_equity == 0 else eq_raw
+            if nav > run_peak:
+                run_peak = nav
+            dd_pct_pt = ((run_peak - nav) / run_peak) * 100.0 if run_peak > 0 else 0.0
+            sq_dd_sum += dd_pct_pt ** 2
+        ulcer_index = (sq_dd_sum / n_pts) ** 0.5
+        span_years = max(0.1, (entries[-1][0] - entries[0][0]) / (1000.0 * 86400.0 * 365.25))
+        ann_return_pct = ((net_profit / base_cap) * 100.0) / span_years
+        upi = (ann_return_pct / ulcer_index) if ulcer_index > 0 else 0.0
+
     # In-Sample (IS) vs Out-of-Sample (OOS) breakdown
     is_trades = [c for c in changes if c[0] < OOS_TIMESTAMP_MS]
     oos_trades = [c for c in changes if c[0] >= OOS_TIMESTAMP_MS]
@@ -221,6 +251,9 @@ def parse_daily_equity(zip_file: zipfile.ZipFile) -> Dict[str, Any]:
         "max_drawdown_pct": round(max_dd_pct, 1),
         "ret_dd_ratio": round(ret_dd, 2),
         "sharpe_ratio": round(sharpe, 2),
+        "r_squared": round(r_squared, 4),
+        "ulcer_index": round(ulcer_index, 2),
+        "upi": round(upi, 2),
         "is_trades": len(is_trades),
         "is_profit": round(is_profit, 2),
         "is_profit_pct": is_profit_pct,
