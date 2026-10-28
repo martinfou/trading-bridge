@@ -18,6 +18,9 @@
     "vwpreversion": {
       "instrument": "USD_CHF",
       "granularity": "H1",
+      "lane": "dev",
+      "maxDrawdownDollar": 50.0,
+      "maxConsecutiveLosses": 5,
       "positionSizeUnits": 1000,
       "backtestMetrics": {
         "sharpe": 4.47,
@@ -33,6 +36,9 @@
     "consecbar": {
       "instrument": "GBP_JPY",
       "granularity": "H1",
+      "lane": "dev",
+      "maxDrawdownDollar": 50.0,
+      "maxConsecutiveLosses": 5,
       "positionSizeUnits": 1000,
       "backtestMetrics": {
         "sharpe": 2.5,
@@ -258,6 +264,9 @@
     "sq-mnq-m15-momentum-0-4248": {
       "instrument": "MNQ",
       "granularity": "M15",
+      "lane": "paper",
+      "maxDrawdownDollar": 879.0,
+      "maxConsecutiveLosses": 5,
       "positionSizeUnits": 1,
       "backtestMetrics": {
         "sharpe": 1.45,
@@ -273,6 +282,9 @@
     "sq-mnq-m15-breakout-0-1499": {
       "instrument": "MNQ",
       "granularity": "M15",
+      "lane": "paper",
+      "maxDrawdownDollar": 1191.0,
+      "maxConsecutiveLosses": 5,
       "positionSizeUnits": 1,
       "backtestMetrics": {
         "sharpe": 1.38,
@@ -288,6 +300,9 @@
     "sq-mes-h1-meanrev-0-3553": {
       "instrument": "MES",
       "granularity": "H1",
+      "lane": "paper",
+      "maxDrawdownDollar": 317.0,
+      "maxConsecutiveLosses": 5,
       "positionSizeUnits": 1,
       "backtestMetrics": {
         "sharpe": 1.42,
@@ -303,6 +318,9 @@
     "sq-mes-h1-pullback-0-2700": {
       "instrument": "MES",
       "granularity": "H1",
+      "lane": "paper",
+      "maxDrawdownDollar": 578.0,
+      "maxConsecutiveLosses": 5,
       "positionSizeUnits": 1,
       "backtestMetrics": {
         "sharpe": 1.25,
@@ -318,6 +336,9 @@
     "sq-gbpjpy-h1-breakout-3-39-125": {
       "instrument": "GBP_JPY",
       "granularity": "H1",
+      "lane": "paper",
+      "maxDrawdownDollar": 107.0,
+      "maxConsecutiveLosses": 5,
       "positionSizeUnits": 1000,
       "backtestMetrics": {
         "sharpe": 0.99,
@@ -328,11 +349,14 @@
         "trades": 1976,
         "source": "20y H1 GBP_JPY Dukascopy SQX + 2025-2026 Blind OOS"
       },
-      "computedRiskPct": 0.5
+      "computedRiskPct": 0.3
     },
     "sq-gbpjpy-h1-breakout-2-20-102": {
       "instrument": "GBP_JPY",
       "granularity": "H1",
+      "lane": "paper",
+      "maxDrawdownDollar": 149.0,
+      "maxConsecutiveLosses": 5,
       "positionSizeUnits": 1000,
       "backtestMetrics": {
         "sharpe": 1.0,
@@ -343,11 +367,14 @@
         "trades": 3449,
         "source": "20y H1 GBP_JPY Dukascopy SQX + 2025-2026 Blind OOS"
       },
-      "computedRiskPct": 0.5
+      "computedRiskPct": 0.3
     },
     "sq-mgc-m30-breakout-1-29-102": {
       "instrument": "MGC",
       "granularity": "M30",
+      "lane": "paper",
+      "maxDrawdownDollar": 1296.0,
+      "maxConsecutiveLosses": 5,
       "positionSizeUnits": 1,
       "backtestMetrics": {
         "sharpe": 1.65,

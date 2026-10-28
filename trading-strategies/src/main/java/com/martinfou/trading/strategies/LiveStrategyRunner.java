@@ -118,6 +118,11 @@ public class LiveStrategyRunner implements Runnable {
     /** Upper bound on how many previously-unreconciled trades the watchdog re-attempts per pass. */
     private static final int MAX_REATTEMPT_PER_PASS = 50;
     private static final Map<String, Double> STRATEGY_RISK_PCT = new ConcurrentHashMap<>();
+    private static final Map<String, Double> STRATEGY_MAX_DRAWDOWN_DOLLAR = new ConcurrentHashMap<>();
+    private static final Map<String, Integer> STRATEGY_MAX_CONSECUTIVE_LOSSES = new ConcurrentHashMap<>();
+    private static final Map<String, String> STRATEGY_LANE = new ConcurrentHashMap<>();
+    static final double DEFAULT_MAX_DRAWDOWN_DOLLAR = 150.0;
+    static final int DEFAULT_MAX_CONSECUTIVE_LOSSES = 5;
 
     // ---- Per-instance paths ----
     /** Default state directory when neither {@code TB_STATE_DIR} nor {@code config stateDir} override it. */
@@ -170,6 +175,15 @@ public class LiveStrategyRunner implements Runnable {
     /** Trades whose broker P&L could not be reconciled after retries — re-attempted by the watchdog. */
     private final List<UnreconciledTrade> unreconciledTrades = new ArrayList<>();
     private Instant lastBarTime = null;
+    // ---- Circuit-breaker & lifecycle state ----
+    private volatile double peakRealizedPnl = 0.0;
+    private volatile int consecutiveLosses = 0;
+    private volatile boolean paused = false;
+    private volatile boolean killed = false;
+    private volatile String killReason = null;
+    private volatile String lane = System.getenv("TB_LANE") != null && !System.getenv("TB_LANE").isBlank()
+        ? System.getenv("TB_LANE").trim()
+        : "paper";
 
     // ---- Shared orchestrator state ----
     /** All running runners (for aggregated monitor). Populated by main(). */
@@ -502,20 +516,24 @@ public class LiveStrategyRunner implements Runnable {
                     if (pusher != null) {
                         if (snapshotJson == null) {
                             log.warn("Aggregated monitor snapshot unavailable this cycle; hub push skipped.");
-                        } else if (pusher.push(snapshotJson)) {
-                            if (consecutivePushFailures > 0) {
-                                log.info("Operations snapshot push recovered after {} failed cycle(s).",
-                                    consecutivePushFailures);
-                            }
-                            consecutivePushFailures = 0;
                         } else {
-                            consecutivePushFailures++;
-                            // The pusher warns on every failed cycle; escalate once when
-                            // the hub has been blind for a while, so a broken token is not
-                            // only visible in a stream of per-cycle warnings.
-                            if (consecutivePushFailures == 5) {
-                                log.error("Operations snapshot push has failed {} consecutive cycles: the hub is not receiving this trader's state.",
-                                    consecutivePushFailures);
+                            String responseBody = pusher.pushAndReadResponse(snapshotJson);
+                            if (responseBody != null) {
+                                if (consecutivePushFailures > 0) {
+                                    log.info("Operations snapshot push recovered after {} failed cycle(s).",
+                                        consecutivePushFailures);
+                                }
+                                consecutivePushFailures = 0;
+                                applyDesiredStates(responseBody);
+                            } else {
+                                consecutivePushFailures++;
+                                // The pusher warns on every failed cycle; escalate once when
+                                // the hub has been blind for a while, so a broken token is not
+                                // only visible in a stream of per-cycle warnings.
+                                if (consecutivePushFailures == 5) {
+                                    log.error("Operations snapshot push has failed {} consecutive cycles: the hub is not receiving this trader's state.",
+                                        consecutivePushFailures);
+                                }
                             }
                         }
                     }
@@ -582,10 +600,24 @@ public class LiveStrategyRunner implements Runnable {
                         riskPct = deriveRiskFromMetrics(s.get("backtestMetrics"));
                     }
                     STRATEGY_RISK_PCT.put(name, riskPct);
+                    if (s.has("maxDrawdownDollar")) {
+                        STRATEGY_MAX_DRAWDOWN_DOLLAR.put(name, s.get("maxDrawdownDollar").asDouble());
+                    }
+                    if (s.has("maxConsecutiveLosses")) {
+                        STRATEGY_MAX_CONSECUTIVE_LOSSES.put(name, s.get("maxConsecutiveLosses").asInt());
+                    }
+                    if (s.hasNonNull("lane")) {
+                        STRATEGY_LANE.put(name, s.get("lane").asText("paper"));
+                    }
                     String src = s.has("backtestMetrics")
                         ? s.get("backtestMetrics").get("source").asText("unknown")
                         : "default";
-                    log.info("📋 {} → risk {}% (source: {})", name, riskPct, src);
+                    log.info("📋 {} → risk {}% | maxDD ${} | maxConsecLosses {} | lane {} (source: {})",
+                        name, riskPct,
+                        STRATEGY_MAX_DRAWDOWN_DOLLAR.getOrDefault(name, DEFAULT_MAX_DRAWDOWN_DOLLAR),
+                        STRATEGY_MAX_CONSECUTIVE_LOSSES.getOrDefault(name, DEFAULT_MAX_CONSECUTIVE_LOSSES),
+                        STRATEGY_LANE.getOrDefault(name, "paper"),
+                        src);
                 });
             }
         } catch (Exception e) {
@@ -828,6 +860,18 @@ public class LiveStrategyRunner implements Runnable {
                 sn.put("barCount", r.barCount);
                 sn.put("liveness", r.getLivenessStatus());
                 sn.put("stateSource", r.getStateSource());
+                sn.put("lane", r.getLane());
+                sn.put("paused", r.isPaused());
+                sn.put("killed", r.isKilled());
+                if (r.getKillReason() != null) {
+                    sn.put("killReason", r.getKillReason());
+                } else {
+                    sn.putNull("killReason");
+                }
+                sn.put("consecutiveLosses", r.getConsecutiveLosses());
+                sn.put("peakRealizedPnl", r.getPeakRealizedPnl());
+                sn.put("maxDrawdownDollar", r.getMaxDrawdownDollar());
+                sn.put("maxConsecutiveLosses", r.getMaxConsecutiveLosses());
                 ArrayNode untracked = sn.putArray("untrackedBrokerTrades");
                 for (OandaExecutor.TradeView tv : r.getUntrackedBrokerTrades()) {
                     ObjectNode un = untracked.addObject();
@@ -1408,6 +1452,16 @@ public class LiveStrategyRunner implements Runnable {
     boolean refuseEntryOrder(Order order, String oandaSymbol) {
         if (order.isCloseOnly()) {
             return false;
+        }
+        if (killed) {
+            log.warn("⛔ Entry refused for '{}' ({} {}): circuit breaker KILLED ({})",
+                strategyShortName, oandaSymbol, order.side(), killReason != null ? killReason : "operator kill");
+            return true;
+        }
+        if (paused) {
+            log.warn("⏸ Entry refused for '{}' ({} {}): strategy is PAUSED ({})",
+                strategyShortName, oandaSymbol, order.side(), killReason != null ? killReason : "operator pause");
+            return true;
         }
         return rejectEntryWithoutStop(order, oandaSymbol);
     }
@@ -2185,6 +2239,16 @@ public class LiveStrategyRunner implements Runnable {
             root.put("savedAt", TimeConventions.now().toString());
             if (lastBarTime != null) root.put("lastBarTime", lastBarTime.toString());
             root.put("inTrade", !activeTrades.isEmpty());
+            root.put("lane", getLane());
+            root.put("paused", paused);
+            root.put("killed", killed);
+            if (killReason != null) {
+                root.put("killReason", killReason);
+            } else {
+                root.putNull("killReason");
+            }
+            root.put("consecutiveLosses", consecutiveLosses);
+            root.put("peakRealizedPnl", peakRealizedPnl);
 
             // Save strategy internal state (crash recovery) via reflection
             try {
@@ -2500,8 +2564,19 @@ public class LiveStrategyRunner implements Runnable {
             }
         }
         if (counted) {
-            log.info("Reconciliation complete. Removed trade ID {} from activeTrades. Total exits: {}, Total realized PnL: ${}",
-                tradeId, totalExits, String.format("%.2f", ledger.total()));
+            double totalPnl = ledger.total();
+            if (totalPnl > peakRealizedPnl) {
+                peakRealizedPnl = totalPnl;
+            }
+            if (realizedPL < -0.001) {
+                consecutiveLosses++;
+            } else if (realizedPL > 0.001) {
+                consecutiveLosses = 0;
+            }
+            log.info("Reconciliation complete. Removed trade ID {} from activeTrades. Total exits: {}, Total realized PnL: ${} (peak: ${}, consecLosses: {})",
+                tradeId, totalExits, String.format("%.2f", totalPnl),
+                String.format("%.2f", peakRealizedPnl), consecutiveLosses);
+            evaluateCircuitBreakers();
         } else {
             log.warn("⚠️ Duplicate broker P&L for trade ID {} ignored — value ${} was NOT double-counted. Ledger total stays ${}.",
                 tradeId, String.format("%.2f", realizedPL), String.format("%.2f", ledger.total()));
@@ -2511,6 +2586,178 @@ public class LiveStrategyRunner implements Runnable {
         }
         if (removed) {
             syncStrategyFlatIfNoOpenPosition(removedSymbol);
+        }
+    }
+
+    // ========================================================================
+    // Circuit Breakers & Hub Lifecycle Control
+    // ========================================================================
+
+    public double getMaxDrawdownDollar() {
+        return STRATEGY_MAX_DRAWDOWN_DOLLAR.getOrDefault(strategyShortName, DEFAULT_MAX_DRAWDOWN_DOLLAR);
+    }
+
+    public int getMaxConsecutiveLosses() {
+        return STRATEGY_MAX_CONSECUTIVE_LOSSES.getOrDefault(strategyShortName, DEFAULT_MAX_CONSECUTIVE_LOSSES);
+    }
+
+    public double getPeakRealizedPnl() {
+        return peakRealizedPnl;
+    }
+
+    public int getConsecutiveLosses() {
+        return consecutiveLosses;
+    }
+
+    public boolean isPaused() {
+        return paused;
+    }
+
+    public boolean isKilled() {
+        return killed;
+    }
+
+    public String getKillReason() {
+        return killReason;
+    }
+
+    public String getLane() {
+        String envLane = System.getenv("TB_LANE");
+        if (envLane != null && !envLane.isBlank()) {
+            return envLane.trim();
+        }
+        return STRATEGY_LANE.getOrDefault(strategyShortName, lane);
+    }
+
+    /**
+     * Evaluates statistical circuit breakers after every confirmed broker reconciliation.
+     * Trips immediately if cumulative drawdown from peak exceeds {@code maxDrawdownDollar}
+     * or if {@code consecutiveLosses >= maxConsecutiveLosses}.
+     */
+    void evaluateCircuitBreakers() {
+        if (killed) return;
+        double maxDd = getMaxDrawdownDollar();
+        double currentDd = peakRealizedPnl - ledger.total();
+        if (maxDd > 0 && currentDd >= maxDd) {
+            tripCircuitBreaker(String.format("MAX_DRAWDOWN_BREACH: drawdown $%.2f >= limit $%.2f", currentDd, maxDd));
+            return;
+        }
+        int maxConsec = getMaxConsecutiveLosses();
+        if (maxConsec > 0 && consecutiveLosses >= maxConsec) {
+            tripCircuitBreaker(String.format("CONSECUTIVE_LOSSES_BREACH: %d consecutive losses >= limit %d",
+                consecutiveLosses, maxConsec));
+        }
+    }
+
+    /**
+     * Trips the strategy circuit breaker: blocks all future entries, flattens any open
+     * position via REDUCE_ONLY market orders, and persists the killed state.
+     */
+    public void tripCircuitBreaker(String reason) {
+        this.killed = true;
+        this.paused = true;
+        this.killReason = reason;
+        log.error("🚨 CIRCUIT BREAKER TRIPPED for '{}': {} — flattening open positions and halting new entries.",
+            strategyShortName, reason);
+        flattenOpenTrades(reason);
+        saveStateNow();
+    }
+
+    public void pauseStrategy(String reason) {
+        if (!this.paused || !Objects.equals(this.killReason, reason)) {
+            this.paused = true;
+            this.killReason = reason;
+            log.warn("⏸ Strategy '{}' PAUSED: {}", strategyShortName, reason);
+            saveStateNow();
+        }
+    }
+
+    public void resumeStrategy() {
+        if (this.killed || this.paused) {
+            log.info("▶ Strategy '{}' RESUMED (clearing killed={}, paused={}, reason='{}')",
+                strategyShortName, this.killed, this.paused, this.killReason);
+            this.killed = false;
+            this.paused = false;
+            this.killReason = null;
+            this.consecutiveLosses = 0;
+            this.peakRealizedPnl = ledger.total();
+            saveStateNow();
+        }
+    }
+
+    private void flattenOpenTrades(String reason) {
+        String sym = toOandaSymbol();
+        if (sym == null) return;
+        List<ActiveTrade> toFlatten = new ArrayList<>();
+        synchronized (activeTrades) {
+            for (ActiveTrade t : activeTrades) {
+                if (!"UNCONFIRMED_RECONCILIATION".equals(t.reconciliationStatus)) {
+                    t.reconciliationStatus = "UNCONFIRMED_RECONCILIATION";
+                    toFlatten.add(t);
+                }
+            }
+        }
+        String closeTag = strategyShortName + "_" + sym.replace("_", "");
+        for (ActiveTrade t : toFlatten) {
+            double closeUnits = "BUY".equals(t.side) ? -t.quantity : t.quantity;
+            try {
+                executor.placeMarketOrder(sym, String.valueOf((int) closeUnits), closeTag, true);
+                if (t.tradeId != null) {
+                    AsyncReconciliationQueue.GLOBAL.submit(this, t.tradeId);
+                }
+                log.info("📤 Flattened open trade {} ({} {} units) due to '{}'",
+                    t.tradeId, sym, (int) closeUnits, reason);
+            } catch (Exception e) {
+                log.warn("⚠ Could not flatten open trade {} ({} {} units) during circuit breaker: {}",
+                    t.tradeId, sym, (int) closeUnits, e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Parses the hub response from {@code POST /api/trading/operations/snapshot} and applies
+     * any 1-click lifecycle changes (kill, pause, resume, or lane change) to active runners.
+     */
+    static void applyDesiredStates(String responseJson) {
+        if (responseJson == null || responseJson.isBlank()) return;
+        try {
+            JsonNode root = MAPPER.readTree(responseJson);
+            JsonNode desiredStates = root.path("desired_states");
+            if (desiredStates == null || !desiredStates.isObject()) return;
+
+            desiredStates.fields().forEachRemaining(entry -> {
+                String stratName = entry.getKey();
+                JsonNode stateNode = entry.getValue();
+                LiveStrategyRunner runner = ACTIVE_RUNNERS.get(stratName);
+                if (runner == null || stateNode == null || !stateNode.isObject()) return;
+
+                String status = stateNode.path("status").asText("active");
+                String targetLane = stateNode.path("lane").asText(runner.getLane());
+                String reason = stateNode.hasNonNull("reason") ? stateNode.get("reason").asText() : null;
+                String myLane = runner.getLane();
+
+                if ("killed".equalsIgnoreCase(status)) {
+                    if (!runner.isKilled()) {
+                        runner.tripCircuitBreaker(reason != null ? reason : "MANUAL_KILL_FROM_HERMES");
+                    }
+                } else if ("paused".equalsIgnoreCase(status)) {
+                    if (!runner.isPaused()) {
+                        runner.pauseStrategy(reason != null ? reason : "MANUAL_PAUSE_FROM_HERMES");
+                    }
+                } else if (!targetLane.isBlank() && !targetLane.equalsIgnoreCase(myLane)) {
+                    String moveReason = "MOVED_TO_LANE_" + targetLane.toUpperCase();
+                    if (!runner.isPaused()) {
+                        runner.flattenOpenTrades(moveReason);
+                        runner.pauseStrategy(moveReason);
+                    }
+                } else if ("active".equalsIgnoreCase(status)) {
+                    if (runner.isKilled() || runner.isPaused()) {
+                        runner.resumeStrategy();
+                    }
+                }
+            });
+        } catch (Exception e) {
+            log.debug("Could not parse desired_states from hub response: {}", e.getMessage());
         }
     }
 
@@ -2767,6 +3014,15 @@ public class LiveStrategyRunner implements Runnable {
             }
             if (root.has("pnlIntegrityMismatches")) {
                 pnlIntegrityMismatches = root.get("pnlIntegrityMismatches").asInt();
+            }
+            if (root.has("paused")) paused = root.get("paused").asBoolean(false);
+            if (root.has("killed")) killed = root.get("killed").asBoolean(false);
+            if (root.hasNonNull("killReason")) killReason = root.get("killReason").asText();
+            if (root.has("consecutiveLosses")) consecutiveLosses = root.get("consecutiveLosses").asInt(0);
+            if (root.has("peakRealizedPnl")) {
+                peakRealizedPnl = root.get("peakRealizedPnl").asDouble(0.0);
+            } else {
+                peakRealizedPnl = Math.max(0.0, ledger.total());
             }
             if (root.hasNonNull("lastBarTime")) {
                 // has() alone is not enough: an explicit JSON null passes it, asText() then yields the
