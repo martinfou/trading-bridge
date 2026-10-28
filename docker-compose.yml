@@ -49,7 +49,7 @@ services:
           cpus: '1'
           memory: 512M
 
-  # Dev / Rehab Lane (-012) — Experimental & Benched Strategies
+  # Dev / Rehab Lane (-012) — Experimental, Hand-Coded & Benched Strategies
   trading-dev:
     build:
       context: .
@@ -64,7 +64,7 @@ services:
       - TB_ALLOW_ORDERS=1
       - TB_LANE=dev
       - TB_STATE_DIR=/app/data/state/dev
-      - STRATEGY=${DEV_STRATEGY:-vwpreversion consecbar}
+      - STRATEGY=${DEV_STRATEGY:-vwpreversion consecbar ltrsi3 compmomentum monthweekphase}
       - STRATEGY_PAIR=${DEV_PAIR:-USD_CHF}
       - GRANULARITY=${DEV_GRANULARITY:-H1}
       - INTERVAL_SEC=${DEV_INTERVAL:-60}
@@ -112,131 +112,6 @@ services:
   #       limits:
   #         cpus: '1'
   #         memory: 512M
-
-  # NFP Week — Short EUR/USD macro play during NFP release week
-  # Runs June 1-5, 2026. Volatility-aware trailing stop with NFP-day widening.
-  nfp-week:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: trading-nfp-week
-    restart: "no"
-    # Was the dashboard's .env, which carries the dormant -012 account: any container created
-    # from it dies on a 401 before its first bar. Every other paper service uses .env.paper.
-    env_file:
-      - ./.env.paper
-    environment:
-      - OANDA_ENV=practice
-      - LOG_LEVEL=INFO
-      - TB_ALLOW_ORDERS=1
-      # Persistent per-strategy state directory (story 50.1): survives container recreation.
-      - TB_STATE_DIR=/app/data/state
-      - STRATEGY=${NFP_STRATEGY:-nfpweek}
-      - STRATEGY_PAIR=${NFP_PAIR:-EUR_USD}
-      - GRANULARITY=${NFP_GRANULARITY:-H1}
-      - INTERVAL_SEC=${NFP_INTERVAL:-60}
-    command: ["$${OANDA_API_KEY}", "$${OANDA_ACCOUNT_ID}", "$${STRATEGY}", "$${GRANULARITY}", "$${INTERVAL_SEC}"]
-    volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 256M
-
-  # Composite Momentum — USD/JPY (OOS PF=2.24, Sharpe=1.00, DD=8.6%)
-  comp-momentum:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: trading-comp-momentum
-    restart: unless-stopped
-    env_file:
-      - ./.env.paper
-    environment:
-      - OANDA_ENV=practice
-      - LOG_LEVEL=INFO
-      - TB_ALLOW_ORDERS=1
-      # Persistent per-strategy state directory (story 50.1): survives container recreation.
-      - TB_STATE_DIR=/app/data/state
-      - STRATEGY=${COMP_STRATEGY:-compmomentum}
-      - STRATEGY_PAIR=${COMP_PAIR:-USD_JPY}
-      - GRANULARITY=${COMP_GRANULARITY:-H1}
-      - INTERVAL_SEC=${COMP_INTERVAL:-60}
-      - HERMES_WEB_URL=${HERMES_WEB_URL:-}
-      - HERMES_WEB_TOKEN=${HERMES_WEB_TOKEN:-}
-    command: ["$${OANDA_API_KEY}", "$${OANDA_ACCOUNT_ID}", "$${STRATEGY}", "$${GRANULARITY}", "$${INTERVAL_SEC}"]
-    volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 256M
-
-  # Month Week-Phase — USD/JPY (OOS PF=2.33, DD=4.86%, strong DD control)
-  month-week:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: trading-month-week
-    restart: unless-stopped
-    env_file:
-      - ./.env.paper
-    environment:
-      - OANDA_ENV=practice
-      - LOG_LEVEL=INFO
-      - TB_ALLOW_ORDERS=1
-      # Persistent per-strategy state directory (story 50.1): survives container recreation.
-      - TB_STATE_DIR=/app/data/state
-      - STRATEGY=${MWP_STRATEGY:-monthweekphase}
-      - STRATEGY_PAIR=${MWP_PAIR:-USD_JPY}
-      - GRANULARITY=${MWP_GRANULARITY:-H1}
-      - INTERVAL_SEC=${MWP_INTERVAL:-60}
-      - HERMES_WEB_URL=${HERMES_WEB_URL:-}
-      - HERMES_WEB_TOKEN=${HERMES_WEB_TOKEN:-}
-    command: ["$${OANDA_API_KEY}", "$${OANDA_ACCOUNT_ID}", "$${STRATEGY}", "$${GRANULARITY}", "$${INTERVAL_SEC}"]
-    volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 256M
-
-  # LtRSI3Momentum — RSI(3) Drift Following (EUR/USD, Sharpe>1.0 post look-ahead fix)
-  lt-rsi3:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: trading-lt-rsi3
-    restart: unless-stopped
-    env_file:
-      - ./.env.paper
-    environment:
-      - OANDA_ENV=practice
-      - LOG_LEVEL=INFO
-      - TB_ALLOW_ORDERS=1
-      # Persistent per-strategy state directory (story 50.1): survives container recreation.
-      - TB_STATE_DIR=/app/data/state
-      - STRATEGY=${LTRSI3_STRATEGY:-ltrsi3}
-      - STRATEGY_PAIR=${LTRSI3_PAIR:-EUR_USD}
-      - GRANULARITY=${LTRSI3_GRANULARITY:-H1}
-      - INTERVAL_SEC=${LTRSI3_INTERVAL:-60}
-      - HERMES_WEB_URL=${HERMES_WEB_URL:-}
-      - HERMES_WEB_TOKEN=${HERMES_WEB_TOKEN:-}
-    command: ["$${OANDA_API_KEY}", "$${OANDA_ACCOUNT_ID}", "$${STRATEGY}", "$${GRANULARITY}", "$${INTERVAL_SEC}"]
-    volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 256M
 
 volumes:
   data:
