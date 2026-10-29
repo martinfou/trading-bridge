@@ -226,7 +226,7 @@ portfolio builder, rapports type StrategyQuant
 |-------|:--------:|:------:|
 | Health Check HTTP Server (port 9090, JSON, zero dep) | P0 | ⏳ |
 | Central Health Monitor (Laravel poll /health, 5 min) | P0 | ⏳ |
-| deploy.sh Multi-Machine (detection hostname, git auto-pull) | P1 | ⏳ |
+| deploy.sh Multi-Machine (detection hostname, git auto-pull) | P1 | ⏳ (se fera dans `scripts/deploy-paper.sh` : `deploy.sh` est retiré le 29 oct 2026, son journal était /dev/null) |
 | Machine-Specific Config (deploy/backtest.env, paper.env, live.env) | P1 | ⏳ |
 | Cross-Machine Strategy Promotion (backtest→paper→live auto) | P2 | ⏳ |
 | Disaster Recovery (kill switch, restart procedure) | P2 | ⏳ |
