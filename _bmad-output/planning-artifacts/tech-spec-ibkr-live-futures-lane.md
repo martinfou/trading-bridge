@@ -21,7 +21,7 @@ You are implementing a missing piece in an existing, running Java trading system
 
 Read in this order before writing any code:
 
-1. `AGENT.md` / `docs/architecture-trading-bridge-java.md` (system overview)
+1. `docs/architecture-trading-bridge-java.md` (system overview). This repo has **no** `AGENT.md` and no `AGENTS.md`: do not go looking for one, and do not create one.
 2. `docs/TRADING-GUARDRAILS.md` (what is forbidden on the order path)
 3. `trading-runtime/src/main/java/com/martinfou/trading/runtime/BarCloseScheduler.java`
 4. `trading-strategies/src/main/java/com/martinfou/trading/strategies/LiveStrategyRunner.java` (read the class, do **not** modify it)
@@ -237,7 +237,7 @@ Rules:
 
 ### 46-10 — `IbkrLiveRunner`: assemble and route
 
-**Files:** `trading-runtime/src/main/java/com/martinfou/trading/runtime/ibkr/IbkrLiveRunner.java` (new), plus `.../ibkr/SqStrategyEvaluator.java` and `.../ibkr/IbkrOrderDispatcher.java` (new).
+**Files:** `trading-runtime/src/main/java/com/martinfou/trading/runtime/ibkr/IbkrLiveRunner.java` (new), plus `trading-runtime/src/main/java/com/martinfou/trading/runtime/ibkr/SqStrategyEvaluator.java` and `trading-runtime/src/main/java/com/martinfou/trading/runtime/ibkr/IbkrOrderDispatcher.java` (new). All three are in the same package.
 
 **`main` env contract** (document it in the class javadoc and in the compose file):
 
@@ -309,7 +309,7 @@ Startup sequence, in this exact order (order matters, see §7):
 Epic 46 is marked 100 % while seven components have no caller and `IbkrLiveRunner` was never created. That is what caused this request. Fix the record in the same PR:
 
 - `_bmad-output/sprint-status-dashboard.md`: Epic 46 back to in-progress, with 46-7..46-11 as the open stories.
-- `_bmad-output/implementation-artifacts/46-6-....md`: its checkboxes are `[ ]` while the story reads `done`. Either check what is genuinely done or move the story to `review`.
+- `_bmad-output/implementation-artifacts/46-6-deterministic-h1-d1-bar-close-scheduler-multi-regime-ensemble-runner.md`: its checkboxes are `[ ]` while the story reads `done`. Either check what is genuinely done or move the story to `review`.
 - `docs/paper-window-log.md`: a dated entry recording that the futures lane was found undeployed, with this document as the reference.
 
 **Acceptance criteria:** a reader landing on the sprint dashboard can no longer believe the futures lane is live.
