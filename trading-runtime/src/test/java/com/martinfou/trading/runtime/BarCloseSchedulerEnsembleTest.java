@@ -6,13 +6,16 @@ import com.martinfou.trading.core.SmallAccountMarginGuard;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("BarCloseScheduler & Multi-Regime Ensemble Tests (Story 46.6)")
+@DisplayName("BarCloseScheduler & Multi-Regime Ensemble Tests (Stories 46.6 & 46.7)")
 class BarCloseSchedulerEnsembleTest {
 
     @Test
@@ -25,20 +28,24 @@ class BarCloseSchedulerEnsembleTest {
 
         Bar bar = new Bar("MES", openSessionTime.minusSeconds(3600), 5000.0, 5010.0, 4990.0, 5005.0, 1000L);
 
-        BarCloseScheduler scheduler = new BarCloseScheduler(
+        try (BarCloseScheduler scheduler = new BarCloseScheduler(
             List.of("MES"),
+            60,
+            Clock.fixed(openSessionTime, ZoneOffset.UTC),
             sym -> List.of(bar),
-            bars -> List.of(new Order("MES", Order.Side.BUY, Order.Type.MARKET, 1.0, 5005.0)),
+            Map.of("MES", bars -> List.of(new Order("MES", Order.Side.BUY, Order.Type.MARKET, 1.0, 5005.0))),
+            () -> 5000.0,
+            List::of,
             new SmallAccountMarginGuard(0.50, 2, 5000.0),
             dispatched::add
-        );
+        )) {
+            int count = scheduler.runCycle();
 
-        int count = scheduler.runCycle(openSessionTime, 5000.0);
-
-        assertEquals(1, count);
-        assertEquals(1, dispatched.size());
-        assertEquals("MES", dispatched.get(0).symbol());
-        assertEquals(1.0, dispatched.get(0).quantity());
+            assertEquals(1, count);
+            assertEquals(1, dispatched.size());
+            assertEquals("MES", dispatched.get(0).symbol());
+            assertEquals(1.0, dispatched.get(0).quantity());
+        }
     }
 
     @Test
@@ -51,17 +58,21 @@ class BarCloseSchedulerEnsembleTest {
 
         Bar bar = new Bar("MES", closedTime.minusSeconds(3600), 5000.0, 5010.0, 4990.0, 5005.0, 1000L);
 
-        BarCloseScheduler scheduler = new BarCloseScheduler(
+        try (BarCloseScheduler scheduler = new BarCloseScheduler(
             List.of("MES"),
+            60,
+            Clock.fixed(closedTime, ZoneOffset.UTC),
             sym -> List.of(bar),
-            bars -> List.of(new Order("MES", Order.Side.BUY, Order.Type.MARKET, 1.0, 5005.0)),
+            Map.of("MES", bars -> List.of(new Order("MES", Order.Side.BUY, Order.Type.MARKET, 1.0, 5005.0))),
+            () -> 5000.0,
+            List::of,
             new SmallAccountMarginGuard(0.50, 2, 5000.0),
             dispatched::add
-        );
+        )) {
+            int count = scheduler.runCycle();
 
-        int count = scheduler.runCycle(closedTime, 5000.0);
-
-        assertEquals(0, count);
-        assertTrue(dispatched.isEmpty());
+            assertEquals(0, count);
+            assertTrue(dispatched.isEmpty());
+        }
     }
 }
