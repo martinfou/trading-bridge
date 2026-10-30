@@ -633,11 +633,6 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
         }
 
         @Override
-        public void nextValidId(int orderId) {
-            orderIdCounter.updateAndGet(current -> Math.max(current, orderId));
-        }
-
-        @Override
         public void updateAccountValue(String key, String value, String currency, String accountName) {
             if (currency == null || currency.isBlank() || "BASE".equalsIgnoreCase(currency) || !cache.hasValue(key)) {
                 cache.updateFromString(key, value);
