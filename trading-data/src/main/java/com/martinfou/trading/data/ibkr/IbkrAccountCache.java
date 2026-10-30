@@ -58,6 +58,10 @@ public final class IbkrAccountCache {
         }
     }
 
+    public boolean hasValue(String key) {
+        return key != null && values.containsKey(key);
+    }
+
     public void updateFromString(String key, String valueStr) {
         if (key != null && valueStr != null) {
             try {
