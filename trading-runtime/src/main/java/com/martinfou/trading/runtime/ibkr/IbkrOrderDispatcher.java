@@ -4,9 +4,11 @@ import com.martinfou.trading.broker.Broker;
 import com.martinfou.trading.broker.IbkrBracketOrderRouter;
 import com.martinfou.trading.broker.OrderSubmitResult;
 import com.martinfou.trading.core.Order;
+import com.martinfou.trading.core.Position;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -77,6 +79,20 @@ public final class IbkrOrderDispatcher implements Consumer<Order> {
                 + "Every live futures entry requires a positive protective stop.",
                 symbol, canonicalStrategyId, order.side(), order.quantity(), order.price(), order.stopLoss());
             return;
+        }
+
+        // 1b. Refuse pyramiding into a second open position on the same symbol
+        if (!order.isCloseOnly()) {
+            List<Position> openPositions = broker.getPositions();
+            if (openPositions != null) {
+                for (Position p : openPositions) {
+                    if (p != null && p.symbol() != null && p.symbol().equalsIgnoreCase(symbol) && Math.abs(p.quantity()) > 0.0) {
+                        log.warn("Refusing new entry for {} [{}]: broker already holds an open position in {} (side={}, qty={})",
+                            symbol, canonicalStrategyId, p.symbol(), p.side(), p.quantity());
+                        return;
+                    }
+                }
+            }
         }
 
         // 2. Idempotency guard per (barTimestamp/correlation or order id, strategy, symbol)

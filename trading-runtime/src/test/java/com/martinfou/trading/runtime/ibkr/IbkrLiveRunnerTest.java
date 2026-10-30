@@ -90,6 +90,31 @@ class IbkrLiveRunnerTest {
     }
 
     @Test
+    @DisplayName("Entry is refused when broker already holds an open position for the symbol")
+    void orderDispatcher_refusesDuplicateEntryWhenPositionOpen() {
+        List<Order> submitted = new ArrayList<>();
+        Broker brokerWithOpenPos = new FakeRecordingBroker(submitted) {
+            @Override
+            public List<Position> getPositions() {
+                return List.of(new Position("MGC", Order.Side.SELL, 1.0, 4003.6));
+            }
+        };
+        AtomicBoolean halted = new AtomicBoolean(false);
+
+        IbkrOrderDispatcher dispatcher = new IbkrOrderDispatcher(
+            brokerWithOpenPos, "sq-mgc-m30-breakout-0-24542", "MGC", () -> halted.set(true), false
+        );
+
+        Order secondEntry = new Order("MGC", Order.Side.SELL, Order.Type.MARKET, 1.0, 3977.7)
+            .withStopLoss(3998.6)
+            .withTakeProfit(3943.2);
+        dispatcher.accept(secondEntry);
+
+        assertTrue(submitted.isEmpty(), "Must not pyramid into a 2nd MGC contract when 1 is already open");
+        assertFalse(halted.get());
+    }
+
+    @Test
     @DisplayName("Accepted entry followed by rejected protective stop flattens position and halts lane")
     void orderDispatcher_whenStopRejected_flattensAndHaltsLane() {
         // 1st order (MARKET entry) succeeds; 2nd order (STOP) fails!
