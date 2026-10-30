@@ -66,4 +66,20 @@ class SmallAccountMarginGuardTest {
         assertTrue(result.allowed());
         assertEquals("APPROVED", result.reason());
     }
+
+    @Test
+    @DisplayName("Should reject pyramiding into a second open position on the same symbol")
+    void testRejectWhenSymbolPositionAlreadyOpen() {
+        SmallAccountMarginGuard guard = new SmallAccountMarginGuard(0.50, 2, 5000.0);
+        Order order = new Order("MGC", Order.Side.SELL, Order.Type.MARKET, 1.0, 3977.7);
+
+        List<Position> active = List.of(
+            new Position("MGC", Order.Side.SELL, 1.0, 4003.6)
+        );
+
+        SmallAccountMarginGuard.ValidationResult result = guard.validateOrder(order, 11500.0, active);
+
+        assertFalse(result.allowed());
+        assertTrue(result.reason().contains("SYMBOL_POSITION_ALREADY_OPEN"));
+    }
 }

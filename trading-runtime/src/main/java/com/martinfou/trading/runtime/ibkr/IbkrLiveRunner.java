@@ -252,7 +252,7 @@ public final class IbkrLiveRunner implements AutoCloseable {
         );
         SmallAccountMarginGuard marginGuard = new SmallAccountMarginGuard(
             SmallAccountMarginGuard.DEFAULT_MAX_MARGIN_UTILIZATION,
-            SmallAccountMarginGuard.DEFAULT_MAX_CONCURRENT_POSITIONS,
+            1,
             5000.0
         );
         this.scheduler = new BarCloseScheduler(

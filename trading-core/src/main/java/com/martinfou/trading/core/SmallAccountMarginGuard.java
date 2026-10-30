@@ -63,7 +63,18 @@ public final class SmallAccountMarginGuard {
 
         List<Position> activePositions = openPositions != null ? openPositions : List.of();
 
-        // 1. Concurrency limit check
+        // 1a. Per-symbol open position check (prevent pyramiding into multiple contracts on the same symbol)
+        for (Position p : activePositions) {
+            if (p != null && p.symbol() != null && p.symbol().equalsIgnoreCase(order.symbol()) && Math.abs(p.quantity()) > 0.0) {
+                return ValidationResult.rejected(
+                    "SYMBOL_POSITION_ALREADY_OPEN (symbol=" + order.symbol() + ", activeQty=" + p.quantity() + ")",
+                    0.0,
+                    0.0
+                );
+            }
+        }
+
+        // 1b. Concurrency limit check
         if (activePositions.size() >= maxConcurrentPositions) {
             return ValidationResult.rejected("CONCURRENT_POSITION_LIMIT_REACHED (active=" + activePositions.size() + ", max=" + maxConcurrentPositions + ")", 0.0, 0.0);
         }
