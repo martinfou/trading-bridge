@@ -131,9 +131,23 @@ public final class IbkrBroker implements Broker {
             emit(BrokerEvent.reject(order, "Broker not connected"));
             return OrderSubmitResult.rejected("Broker not connected");
         }
-        if (order.type() != Order.Type.MARKET) {
-            emit(BrokerEvent.reject(order, "IbkrBroker supports MARKET orders only"));
-            return OrderSubmitResult.rejected("IbkrBroker supports MARKET orders only");
+        if (order.type() == null) {
+            emit(BrokerEvent.reject(order, "Order type is required"));
+            return OrderSubmitResult.rejected("Order type is required");
+        }
+        if (order.type() == Order.Type.STOP) {
+            if (order.price() <= 0.0 || !Double.isFinite(order.price())) {
+                emit(BrokerEvent.reject(order, "IBKR STOP order requires a positive stop price"));
+                return OrderSubmitResult.rejected("IBKR STOP order requires a positive stop price");
+            }
+        } else if (order.type() == Order.Type.LIMIT) {
+            if (order.price() <= 0.0 || !Double.isFinite(order.price())) {
+                emit(BrokerEvent.reject(order, "IBKR LIMIT order requires a positive limit price"));
+                return OrderSubmitResult.rejected("IBKR LIMIT order requires a positive limit price");
+            }
+        } else if (order.type() != Order.Type.MARKET) {
+            emit(BrokerEvent.reject(order, "Unsupported IBKR order type: " + order.type()));
+            return OrderSubmitResult.rejected("Unsupported IBKR order type: " + order.type());
         }
 
         String symbol = toIbkrSymbol(order.symbol());
@@ -149,8 +163,16 @@ public final class IbkrBroker implements Broker {
         // clientTag = id d'ordre (appariement des executions) ; orderRef = nom de la strategie, SEULE chose
         // qui permet a la lane P&L de rattacher le fill a une strategie plutot qu'a un leak. Un UUID ici
         // creerait une fausse strategie par fill.
-        IbkrMarketOrderResult result = client.placeMarketOrder(
-            symbol, order.quantity(), order.side(), order.id(), order.strategyId());
+        IbkrMarketOrderResult result = switch (order.type()) {
+            case MARKET -> client.placeMarketOrder(
+                symbol, order.quantity(), order.side(), order.id(), order.strategyId());
+            case STOP -> client.placeStopOrder(
+                symbol, order.quantity(), order.side(), order.price(), order.id(),
+                order.strategyId(), order.isCloseOnly(), order.ocaGroup(), order.ocaType());
+            case LIMIT -> client.placeLimitOrder(
+                symbol, order.quantity(), order.side(), order.price(), order.id(),
+                order.strategyId(), order.isCloseOnly(), order.ocaGroup(), order.ocaType());
+        };
 
         if (!result.success()) {
             String reason = result.errorMessage() != null ? result.errorMessage() : "IBKR order rejected";

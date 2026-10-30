@@ -99,6 +99,48 @@ public final class StubIbkrGatewayClient implements IbkrGatewayClient {
     }
 
     @Override
+    public IbkrMarketOrderResult placeStopOrder(String symbol, double quantity, Order.Side side,
+                                                double stopPrice, String clientTag, String orderRef,
+                                                boolean closeOnly, String ocaGroup, int ocaType) {
+        if (!connected) {
+            return IbkrMarketOrderResult.failure("IB Gateway not connected");
+        }
+        if (stopPrice <= 0.0 || !Double.isFinite(stopPrice)) {
+            return IbkrMarketOrderResult.failure("stopPrice must be positive");
+        }
+        if (!scriptedResults.isEmpty()) {
+            return scriptedResults.removeFirst();
+        }
+        String orderId = String.valueOf(nextOrderId.getAndIncrement());
+        workingOrderIds.add(orderId);
+        // Stop orders rest at the venue as working orders until triggered; they do not fill immediately.
+        return new IbkrMarketOrderResult(true, orderId, null, null, null);
+    }
+
+    @Override
+    public IbkrMarketOrderResult placeLimitOrder(String symbol, double quantity, Order.Side side,
+                                                 double limitPrice, String clientTag, String orderRef,
+                                                 boolean closeOnly, String ocaGroup, int ocaType) {
+        if (!connected) {
+            return IbkrMarketOrderResult.failure("IB Gateway not connected");
+        }
+        if (limitPrice <= 0.0 || !Double.isFinite(limitPrice)) {
+            return IbkrMarketOrderResult.failure("limitPrice must be positive");
+        }
+        if (!scriptedResults.isEmpty()) {
+            return scriptedResults.removeFirst();
+        }
+        String orderId = String.valueOf(nextOrderId.getAndIncrement());
+        workingOrderIds.add(orderId);
+        // Limit orders rest at the venue as working orders until triggered.
+        return new IbkrMarketOrderResult(true, orderId, null, null, null);
+    }
+
+    public java.util.Set<String> workingOrderIds() {
+        return java.util.Set.copyOf(workingOrderIds);
+    }
+
+    @Override
     public boolean cancelOrder(String brokerOrderId) {
         if (!connected) {
             return false;

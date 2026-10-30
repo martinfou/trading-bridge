@@ -31,6 +31,44 @@ public interface IbkrGatewayClient {
     }
 
     /**
+     * Places a stop order (STP) on the IBKR venue with {@code tif = GTC}.
+     * Used for protective stop-loss orders (Story 46.8).
+     */
+    default IbkrMarketOrderResult placeStopOrder(String symbol, double quantity, Order.Side side,
+                                                 double stopPrice, String clientTag, String orderRef) {
+        return placeStopOrder(symbol, quantity, side, stopPrice, clientTag, orderRef, true, null, 0);
+    }
+
+    /**
+     * Places a stop order (STP) on the IBKR venue with {@code tif = GTC}, optional {@code closeOnly},
+     * and optional OCA group attributes.
+     */
+    default IbkrMarketOrderResult placeStopOrder(String symbol, double quantity, Order.Side side,
+                                                 double stopPrice, String clientTag, String orderRef,
+                                                 boolean closeOnly, String ocaGroup, int ocaType) {
+        return IbkrMarketOrderResult.failure("placeStopOrder not implemented by this client");
+    }
+
+    /**
+     * Places a limit order (LMT) on the IBKR venue with {@code tif = GTC}.
+     * Used for take-profit / limit orders (Story 46.8).
+     */
+    default IbkrMarketOrderResult placeLimitOrder(String symbol, double quantity, Order.Side side,
+                                                  double limitPrice, String clientTag, String orderRef) {
+        return placeLimitOrder(symbol, quantity, side, limitPrice, clientTag, orderRef, true, null, 0);
+    }
+
+    /**
+     * Places a limit order (LMT) on the IBKR venue with {@code tif = GTC}, optional {@code closeOnly},
+     * and optional OCA group attributes.
+     */
+    default IbkrMarketOrderResult placeLimitOrder(String symbol, double quantity, Order.Side side,
+                                                  double limitPrice, String clientTag, String orderRef,
+                                                  boolean closeOnly, String ocaGroup, int ocaType) {
+        return IbkrMarketOrderResult.failure("placeLimitOrder not implemented by this client");
+    }
+
+    /**
      * Registers a listener for asynchronous execution notifications (fills / rejects).
      * Called on the IBKR callback thread; implementations must be thread-safe.
      */

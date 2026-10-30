@@ -32,6 +32,55 @@ class TcpIbkrGatewayClientTest {
     }
 
     @Test
+    void placeStopOrder_refusesWithoutTouchingTheWire() {
+        // Prove OrderTripwire covers the new stop-order path (Story 46.8).
+        assertThrows(IllegalStateException.class,
+            () -> client.placeStopOrder("MGC", 1.0, Order.Side.SELL, 2400.0, "tag", "sq-mgc"));
+    }
+
+    @Test
+    void placeLimitOrder_refusesWithoutTouchingTheWire() {
+        assertThrows(IllegalStateException.class,
+            () -> client.placeLimitOrder("MGC", 1.0, Order.Side.SELL, 2700.0, "tag", "sq-mgc"));
+    }
+
+    @Test
+    void buildStopOrder_setsStpGtcCloseOnlyOcaAndOrderRef() {
+        com.ib.client.Order stop = TcpIbkrGatewayClient.buildStopOrder(
+            2001, 1.0, Order.Side.SELL, 2450.0, "DU12345", "sq-mgc_MGC", true, "TB-OCA-1234", 1
+        );
+        assertEquals(2001, stop.orderId());
+        assertEquals("SELL", stop.action().toString());
+        assertEquals("STP", stop.orderType().toString());
+        assertEquals(2450.0, stop.auxPrice(), 1e-9);
+        assertEquals("GTC", stop.tif().toString());
+        assertTrue(stop.transmit());
+        assertEquals("C", stop.openClose());
+        assertEquals("TB-OCA-1234", stop.ocaGroup());
+        assertEquals(1, stop.getOcaType());
+        assertEquals("DU12345", stop.account());
+        assertEquals("sq-mgc_MGC", stop.orderRef());
+    }
+
+    @Test
+    void buildLimitOrder_setsLmtGtcCloseOnlyOcaAndOrderRef() {
+        com.ib.client.Order limit = TcpIbkrGatewayClient.buildLimitOrder(
+            2002, 1.0, Order.Side.SELL, 2650.0, "DU12345", "sq-mgc_MGC", true, "TB-OCA-1234", 1
+        );
+        assertEquals(2002, limit.orderId());
+        assertEquals("SELL", limit.action().toString());
+        assertEquals("LMT", limit.orderType().toString());
+        assertEquals(2650.0, limit.lmtPrice(), 1e-9);
+        assertEquals("GTC", limit.tif().toString());
+        assertTrue(limit.transmit());
+        assertEquals("C", limit.openClose());
+        assertEquals("TB-OCA-1234", limit.ocaGroup());
+        assertEquals(1, limit.getOcaType());
+        assertEquals("DU12345", limit.account());
+        assertEquals("sq-mgc_MGC", limit.orderRef());
+    }
+
+    @Test
     void fetchAccountSummary_notConnected_failClosedNotFabricated() {
         var snapshot = client.fetchAccountSummary();
         // Fail-closed: zeroed account, NOT a fabricated $100k healthy account.
