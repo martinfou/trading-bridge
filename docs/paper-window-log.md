@@ -545,3 +545,18 @@ Ce que cette edition ne fait pas : aucun changement sur les quatre conteneurs de
 image (D58) ; aucun ordre sur `-005` ; le correctif du chemin de sortie partage est ouvert comme story
 separee (`spec-exit-path-closes-foreign-position.md`), parce qu'il change le comportement du chemin des
 ordres et se revoit comme tel.
+
+---
+
+## Audit du 2026-10-29 — Lane Futures IBKR (Epic 46) trouvée non déployée et corrigée (46-7..46-12)
+
+Un audit complet du dépôt et des conteneurs le **2026-10-29** (`_bmad-output/planning-artifacts/tech-spec-ibkr-live-futures-lane.md` et `_bmad-output/planning-artifacts/prds/prd-futures-trading-engine-2026-10-29/prd.md`) a établi que :
+
+1. **Epic 46 était marqué à 100 % dans le dashboard alors qu'aucun processus ne l'exécutait** : les 7 composants livrés (`BarCloseScheduler`, `IbkrBracketOrderRouter`, `IbkrOrderExecutionManager`, `IbkrStateReconciler`, `CmeAutoRolloverManager`, `IbkrGatewaySupervisor`, `IbkrHeartbeatWatchdog`) n'avaient aucun appelant en code de production, et `IbkrLiveRunner` n'existait pas.
+2. **Blocage critique sur les stops IBKR (`IbkrBroker.java:134`)** : `IbkrBroker.submitOrder` rejetait tout ordre autre que `MARKET` et ignorait silencieusement `order.stopLoss()` et `order.takeProfit()`, rendant toute position ouverte via IBKR nue au courtier.
+3. **Corrections livrées le 2026-10-29 (stories `46-7` à `46-12`)** :
+   - `46-7` : `BarCloseScheduler` aligné sur `:00:05`, equity et positions réelles injectées par suppliers, évaluateur indexé par symbole, et rejet des barres périmées (`> interval + 2 min`).
+   - `46-8` : Support complet des ordres `STOP` (`STP`, `GTC`, `closeOnly`, `ocaGroup`) et `LIMIT` (`LMT`, `GTC`) dans `IbkrGatewayClient`, `TcpIbkrGatewayClient`, `StubIbkrGatewayClient` et `IbkrBroker`, couvert par `OrderTripwire` et `IbkrOrderRefGateTest`.
+   - `46-9` : Extraction de `IbkrBarSource` (conversion `America/New_York` $\to$ UTC `Instant` à la frontière socket et exclusion de la barre en cours de formation).
+   - `46-10` : Création de `IbkrLiveRunner`, `SqStrategyEvaluator` (persistance du curseur de barre dans `TB_STATE_DIR`) et `IbkrOrderDispatcher` (refus local de toute entrée sans stop, envoi du stop protecteur via `IbkrBracketOrderRouter`, flatten + halt immédiat si le stop est rejeté).
+   - `46-11` : Surface de déploiement isolée (`scripts/docker-entrypoint-ibkr.sh` et `docker/docker-compose.futures.yml`, projet `tb-futures`, conteneur `trading-futures`, volume `./data-futures`) sans toucher la lane OANDA `-014`.
