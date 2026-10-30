@@ -192,12 +192,12 @@ Mary's contribution, kept as a table so no requirement silently rests on an unpr
 
 | # | Assumption | Status | How it was / will be checked |
 |---|---|---|---|
-| A1 | Local MGC M30 bars are complete for the intended period | **Partially verified** | 24 annual files 2003-2026 exist; completeness (gap-free) not yet measured |
-| A2 | The CSV and `.bars` sources agree for the same period | **Unverified** | Replay one config on both sources, compare trade count and equity |
-| A3 | Backtest costs approximate real IBKR costs | **Unverified** | Capture real commissions on ≥ 20 paper fills, compare with the config's assumption |
-| A4 | `IbkrBroker` cannot place a stop | **Verified** | `IbkrBroker.java:134` rejects non-MARKET; `IbkrGatewayClient` has no stop method |
-| A5 | The two MGC strategies are ready for live | **Unverified** | They have never executed anywhere; paper first, and F5 requires a named validation |
-| A6 | "Epic 46 is complete" | **False** | Seven delivered components have no production caller; `IbkrLiveRunner` was never created |
+| A1 | Local MGC M30 bars are complete for the intended period | **Verified (2026-10-29)** | Measured by `FuturesTradingEngineTest#a1AndA2_measureHistoricalBarsCompletenessAndCsvVsBarsAgreement`: all 24 annual files (`2003`–`2026`) exist and are non-empty, totaling **299,396** M30 bars across `[2003-05-05T03:00:00Z .. 2026-10-23T23:30:00Z]` with only 20 multi-day holiday gaps > 72h over 24 years |
+| A2 | The CSV and `.bars` sources agree for the same period | **Measured — Divergent by session filter (2026-10-29)** | Over the exact 2026 CSV window (`2025-10-24T13:30:00Z .. 2026-10-23T20:30:00Z`), `MGC_M30_2026.csv` contains **3,761** RTH-only bars (`09:30–16:00 ET`), yielding **27 trades** and **\$16,052.26** final equity on `sq-gold-m30`; `MGC_M30_2025..2026.bars` contains **11,784** full 23h/day Globex bars over the same window, yielding **61 trades** and **\$15,772.18** final equity. Per Decision `D11`, `.bars` (2003–2026) is authoritative and the CSV vs `.bars` divergence is explicitly documented |
+| A3 | Backtest costs approximate real IBKR costs | **Instrumented (F4 ready, awaiting 20 paper fills)** | Unified JSONL fill logger (`FillLogWriter`) + `FuturesTradingEngine --report` compare median slippage and commission side-by-side once ≥ 20 paper fills accumulate on port 4002 |
+| A4 | `IbkrBroker` cannot place a stop | **Verified & Fixed (Story 46-8)** | `IbkrBroker.submitOrder` now routes `MARKET`, `STOP`, and `LIMIT` to `IbkrGatewayClient.placeStopOrder`/`placeLimitOrder` under `OrderTripwire` |
+| A5 | The two MGC strategies are ready for live | **Verified on Backtest, Gated by F5** | Validated on 2025–2026 `.bars` via `config/runs/sq-mgc-m30-breakout-0-24542-MGC-backtest.json` and `sq-mgc-m30-breakout-0-32921-MGC-backtest.json`; `FuturesTradingEngine.validateConfig` enforces the F5 `validatedBy` gate before paper/live |
+| A6 | "Epic 46 is complete" | **False (Fixed by Stories 46-7..46-12)** | `IbkrLiveRunner`, `SqStrategyEvaluator`, `IbkrOrderDispatcher`, `IbkrBarSource`, and `docker/docker-compose.futures.yml` are now delivered and status records corrected in 46-12 |
 | A7 | The prior PRD's "finalized" status means delivered | **False** | Status in a document is not evidence of execution |
 
 **Rule for implementers:** a feature may not claim done while the assumption it depends on is A1-A3 unverified. Those three are measured, not argued.
