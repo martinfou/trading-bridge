@@ -11,9 +11,10 @@ services:
       dockerfile: Dockerfile
     container_name: trading-futures
     restart: unless-stopped
+    network_mode: "${FUTURES_NETWORK_MODE:-host}"
     entrypoint: ["/app/entrypoint-ibkr.sh"]
     environment:
-      - IBKR_HOST=${IBKR_HOST:-host.docker.internal}
+      - IBKR_HOST=${IBKR_HOST:-127.0.0.1}
       - IBKR_PORT=${IBKR_PORT:-4002}
       - IBKR_ACCOUNT_ID=${IBKR_ACCOUNT_ID:-DUR967322}
       - IBKR_CLIENT_ID=${IBKR_CLIENT_ID:-11}
