@@ -197,6 +197,72 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
     }
 
     @Override
+    public IbkrMarketOrderResult placeStopOrder(String symbol, double quantity, Order.Side side,
+                                                double stopPrice, String clientTag, String orderRef,
+                                                boolean closeOnly, String ocaGroup, int ocaType) {
+        OrderTripwire.checkOrderAllowed(symbol, String.valueOf(quantity), "TcpIbkrGatewayClient.placeStopOrder",
+                config.host() + ":" + config.port());
+        if (!isConnected()) {
+            return IbkrMarketOrderResult.failure("IB Gateway not connected");
+        }
+        if (symbol == null || symbol.isBlank()) {
+            return IbkrMarketOrderResult.failure("symbol is required");
+        }
+        if (side == null) {
+            return IbkrMarketOrderResult.failure("side is required");
+        }
+        if (stopPrice <= 0.0 || !Double.isFinite(stopPrice)) {
+            return IbkrMarketOrderResult.failure("stopPrice must be positive");
+        }
+
+        int orderId = generateOrderId();
+        trackOrder(orderId, clientTag);
+        Contract contract = buildContract(symbol);
+        com.ib.client.Order order = buildStopOrder(orderId, quantity, side, stopPrice, config.accountId(),
+                orderRef, closeOnly, ocaGroup, ocaType);
+        try {
+            client.placeOrder(orderId, contract, order);
+        } catch (RuntimeException e) {
+            orderIdToClientTag.remove(orderId);
+            return IbkrMarketOrderResult.failure("placeOrder failed: " + e.getMessage());
+        }
+        return new IbkrMarketOrderResult(true, Integer.toString(orderId), null, null, null);
+    }
+
+    @Override
+    public IbkrMarketOrderResult placeLimitOrder(String symbol, double quantity, Order.Side side,
+                                                 double limitPrice, String clientTag, String orderRef,
+                                                 boolean closeOnly, String ocaGroup, int ocaType) {
+        OrderTripwire.checkOrderAllowed(symbol, String.valueOf(quantity), "TcpIbkrGatewayClient.placeLimitOrder",
+                config.host() + ":" + config.port());
+        if (!isConnected()) {
+            return IbkrMarketOrderResult.failure("IB Gateway not connected");
+        }
+        if (symbol == null || symbol.isBlank()) {
+            return IbkrMarketOrderResult.failure("symbol is required");
+        }
+        if (side == null) {
+            return IbkrMarketOrderResult.failure("side is required");
+        }
+        if (limitPrice <= 0.0 || !Double.isFinite(limitPrice)) {
+            return IbkrMarketOrderResult.failure("limitPrice must be positive");
+        }
+
+        int orderId = generateOrderId();
+        trackOrder(orderId, clientTag);
+        Contract contract = buildContract(symbol);
+        com.ib.client.Order order = buildLimitOrder(orderId, quantity, side, limitPrice, config.accountId(),
+                orderRef, closeOnly, ocaGroup, ocaType);
+        try {
+            client.placeOrder(orderId, contract, order);
+        } catch (RuntimeException e) {
+            orderIdToClientTag.remove(orderId);
+            return IbkrMarketOrderResult.failure("placeOrder failed: " + e.getMessage());
+        }
+        return new IbkrMarketOrderResult(true, Integer.toString(orderId), null, null, null);
+    }
+
+    @Override
     public boolean cancelOrder(String brokerOrderId) {
         EClientSocket socket = this.client;
         if (!isConnected() || socket == null) {
@@ -407,6 +473,60 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
         order.totalQuantity(Decimal.get(quantity));
         order.orderType("MKT");
         order.transmit(true);
+        if (accountId != null && !accountId.isBlank()) {
+            order.account(accountId);
+        }
+        if (orderRef != null && !orderRef.isBlank()) {
+            order.orderRef(orderRef);
+        }
+        return order;
+    }
+
+    static com.ib.client.Order buildStopOrder(int orderId, double quantity, Order.Side side, double stopPrice,
+                                              String accountId, String orderRef, boolean closeOnly,
+                                              String ocaGroup, int ocaType) {
+        com.ib.client.Order order = new com.ib.client.Order();
+        order.orderId(orderId);
+        order.action(side == Order.Side.BUY ? "BUY" : "SELL");
+        order.totalQuantity(Decimal.get(quantity));
+        order.orderType("STP");
+        order.auxPrice(stopPrice);
+        order.tif("GTC");
+        order.transmit(true);
+        if (closeOnly) {
+            order.openClose("C");
+        }
+        if (ocaGroup != null && !ocaGroup.isBlank()) {
+            order.ocaGroup(ocaGroup);
+            order.ocaType(ocaType > 0 ? ocaType : 1);
+        }
+        if (accountId != null && !accountId.isBlank()) {
+            order.account(accountId);
+        }
+        if (orderRef != null && !orderRef.isBlank()) {
+            order.orderRef(orderRef);
+        }
+        return order;
+    }
+
+    static com.ib.client.Order buildLimitOrder(int orderId, double quantity, Order.Side side, double limitPrice,
+                                               String accountId, String orderRef, boolean closeOnly,
+                                               String ocaGroup, int ocaType) {
+        com.ib.client.Order order = new com.ib.client.Order();
+        order.orderId(orderId);
+        order.action(side == Order.Side.BUY ? "BUY" : "SELL");
+        order.totalQuantity(Decimal.get(quantity));
+        order.orderType("LMT");
+        order.lmtPrice(limitPrice);
+        order.tif("GTC");
+        order.transmit(true);
+        if (closeOnly) {
+            order.openClose("C");
+        }
+        if (ocaGroup != null && !ocaGroup.isBlank()) {
+            order.ocaGroup(ocaGroup);
+            order.ocaType(ocaType > 0 ? ocaType : 1);
+        }
         if (accountId != null && !accountId.isBlank()) {
             order.account(accountId);
         }

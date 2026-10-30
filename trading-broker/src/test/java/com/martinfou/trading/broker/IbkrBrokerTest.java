@@ -244,6 +244,56 @@ class IbkrBrokerTest {
         assertEquals(0, broker.flattenAllPositions());
     }
 
+    @Test
+    void submitOrder_stopOrderWithPositivePrice_isAcceptedAndWorking() {
+        var client = new StubIbkrGatewayClient();
+        var broker = new IbkrBroker(client);
+        broker.connect();
+
+        var stopOrder = new Order("MGC", Order.Side.SELL, Order.Type.STOP, 1.0, 2450.0)
+            .asCloseOnly()
+            .withStrategyId("sq-mgc-m30-breakout-0-24542_MGC");
+
+        OrderSubmitResult result = broker.submitOrder(stopOrder);
+        assertTrue(result.accepted(), "STOP order with positive stop price must be accepted");
+        assertTrue(client.workingOrderIds().contains(result.brokerOrderId()));
+    }
+
+    @Test
+    void submitOrder_stopOrderWithNonPositivePrice_isRejected() {
+        var client = new StubIbkrGatewayClient();
+        var broker = new IbkrBroker(client);
+        broker.connect();
+
+        List<BrokerEvent> events = new ArrayList<>();
+        broker.addEventListener(events::add);
+
+        var zeroStop = new Order("MGC", Order.Side.SELL, Order.Type.STOP, 1.0, 0.0)
+            .withStrategyId("sq-mgc-m30-breakout-0-24542_MGC");
+        OrderSubmitResult r1 = broker.submitOrder(zeroStop);
+        assertFalse(r1.accepted(), "STOP order with price <= 0 must be rejected");
+
+        var negativeStop = new Order("MGC", Order.Side.SELL, Order.Type.STOP, 1.0, -10.0)
+            .withStrategyId("sq-mgc-m30-breakout-0-24542_MGC");
+        OrderSubmitResult r2 = broker.submitOrder(negativeStop);
+        assertFalse(r2.accepted(), "STOP order with negative price must be rejected");
+
+        assertEquals(2, events.stream().filter(e -> e.type() == BrokerEventType.REJECT).count());
+    }
+
+    @Test
+    void submitOrder_limitOrderWithPositivePrice_isAccepted() {
+        var client = new StubIbkrGatewayClient();
+        var broker = new IbkrBroker(client);
+        broker.connect();
+
+        var limitOrder = new Order("MGC", Order.Side.SELL, Order.Type.LIMIT, 1.0, 2600.0)
+            .asCloseOnly()
+            .withStrategyId("sq-mgc-m30-breakout-0-24542_MGC");
+        OrderSubmitResult result = broker.submitOrder(limitOrder);
+        assertTrue(result.accepted());
+    }
+
     private static final class ListenerCapturingClient implements IbkrGatewayClient {
         java.util.function.Consumer<IbkrExecution> listener;
 
