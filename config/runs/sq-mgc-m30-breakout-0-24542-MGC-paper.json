@@ -1,0 +1,22 @@
+{
+  "strategy": "sq-mgc-m30-breakout-0-24542",
+  "symbol": "MGC",
+  "timeframe": "M30",
+  "mode": "paper",
+  "broker": "ibkr",
+  "risk": {
+    "type": "percent",
+    "value": 0.5
+  },
+  "capital": 11270.0,
+  "costs": {
+    "commissionPerContract": 0.62,
+    "slippageFixed": 0.10,
+    "fillMode": "TOUCH",
+    "marginTracking": true,
+    "rolloverEnabled": false
+  },
+  "validatedBy": "data-futures/reports/sq-mgc-m30-breakout-0-24542-MGC-backtest-report.json",
+  "unvalidated": false
+}
+

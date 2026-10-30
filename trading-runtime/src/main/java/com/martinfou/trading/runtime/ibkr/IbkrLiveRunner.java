@@ -2,6 +2,8 @@ package com.martinfou.trading.runtime.ibkr;
 
 import com.martinfou.trading.broker.AccountState;
 import com.martinfou.trading.broker.Broker;
+import com.martinfou.trading.broker.BrokerEvent;
+import com.martinfou.trading.broker.BrokerEventType;
 import com.martinfou.trading.broker.IbkrBroker;
 import com.martinfou.trading.broker.IbkrGatewaySupervisor;
 import com.martinfou.trading.broker.IbkrStateReconciler;
@@ -17,6 +19,8 @@ import com.martinfou.trading.data.ibkr.IbkrConnectionConfig;
 import com.martinfou.trading.data.ibkr.IbkrContractResolver;
 import com.martinfou.trading.data.ibkr.TcpIbkrGatewayClient;
 import com.martinfou.trading.runtime.BarCloseScheduler;
+import com.martinfou.trading.runtime.engine.FillLogRecord;
+import com.martinfou.trading.runtime.engine.FillLogWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
@@ -60,6 +65,7 @@ public final class IbkrLiveRunner implements AutoCloseable {
     public static final Set<Integer> FORBIDDEN_PORTS = Set.of(4001, 7496, 7497);
     public static final int MIN_DAYS_TO_EXPIRY = 3;
     public static final int DEFAULT_WARMUP_BAR_COUNT = 120;
+    public static final double DEFAULT_IBKR_MGC_COMMISSION = 0.62;
 
     public record RunnerConfig(
         String host,
@@ -103,6 +109,9 @@ public final class IbkrLiveRunner implements AutoCloseable {
     private final Function<String, List<Bar>> barProvider;
     private final AutoCloseable barSourceCloseable;
     private final Clock clock;
+    private final FillLogWriter fillLogWriter;
+    private final double commissionPerContract;
+    private final Map<String, Double> requestedPricesByOrderId = new ConcurrentHashMap<>();
 
     private IbkrGatewaySupervisor supervisor;
     private BarCloseScheduler scheduler;
@@ -116,11 +125,42 @@ public final class IbkrLiveRunner implements AutoCloseable {
         AutoCloseable barSourceCloseable,
         Clock clock
     ) {
+        this(
+            config,
+            broker,
+            barProvider,
+            barSourceCloseable,
+            clock,
+            resolveDefaultFillLogWriter(config),
+            DEFAULT_IBKR_MGC_COMMISSION
+        );
+    }
+
+    public IbkrLiveRunner(
+        RunnerConfig config,
+        Broker broker,
+        Function<String, List<Bar>> barProvider,
+        AutoCloseable barSourceCloseable,
+        Clock clock,
+        FillLogWriter fillLogWriter,
+        double commissionPerContract
+    ) {
         this.config = Objects.requireNonNull(config, "config is required");
         this.broker = Objects.requireNonNull(broker, "broker is required");
         this.barProvider = Objects.requireNonNull(barProvider, "barProvider is required");
         this.barSourceCloseable = barSourceCloseable;
         this.clock = Objects.requireNonNull(clock, "clock is required");
+        this.fillLogWriter = fillLogWriter;
+        this.commissionPerContract = commissionPerContract;
+    }
+
+    private static FillLogWriter resolveDefaultFillLogWriter(RunnerConfig config) {
+        if (config == null || config.stateDir() == null) {
+            return null;
+        }
+        Path parent = config.stateDir().getParent();
+        Path fillsDir = parent != null ? parent.resolve("fills") : config.stateDir().resolve("fills");
+        return FillLogWriter.forRun(fillsDir, config.strategyName(), config.symbol(), "paper");
     }
 
     /**
@@ -151,6 +191,7 @@ public final class IbkrLiveRunner implements AutoCloseable {
         }
 
         // 3. Connect IbkrBroker. Log getAccountState().
+        broker.addEventListener(this::onBrokerEvent);
         broker.connect();
         AccountState accountState = broker.getAccountState();
         log.info("[3/7] Connected IbkrBroker. Account state: balance={} equity={} currency={}",
@@ -276,6 +317,58 @@ public final class IbkrLiveRunner implements AutoCloseable {
 
     public IbkrOrderDispatcher dispatcher() {
         return dispatcher;
+    }
+
+    public FillLogWriter fillLogWriter() {
+        return fillLogWriter;
+    }
+
+    private void onBrokerEvent(BrokerEvent event) {
+        if (event == null || fillLogWriter == null) {
+            return;
+        }
+        if (event.type() == BrokerEventType.ORDER_SUBMITTED) {
+            if (event.orderId() != null && event.price() != null) {
+                requestedPricesByOrderId.put(event.orderId(), event.price());
+            }
+            return;
+        }
+        if (event.type() == BrokerEventType.REJECT) {
+            if (event.orderId() != null) {
+                requestedPricesByOrderId.remove(event.orderId());
+            }
+            return;
+        }
+        if (event.type() == BrokerEventType.FILL) {
+            double filledPrice = event.price() != null ? event.price() : 0.0;
+            double requestedPrice = event.orderId() != null
+                ? requestedPricesByOrderId.getOrDefault(event.orderId(), filledPrice)
+                : filledPrice;
+            if (requestedPrice <= 0.0) {
+                requestedPrice = filledPrice;
+            }
+            if (event.orderId() != null) {
+                requestedPricesByOrderId.remove(event.orderId());
+            }
+            double qty = event.quantity() != null ? event.quantity() : 0.0;
+            String side = event.side() != null ? event.side() : "";
+            double slippage = FillLogRecord.computeSlippage(side, requestedPrice, filledPrice);
+            double commission = Math.round(commissionPerContract * qty * 10_000.0) / 10_000.0;
+            String ts = event.timestamp() != null ? event.timestamp().toString() : clock.instant().toString();
+            FillLogRecord record = new FillLogRecord(
+                config.strategyName(),
+                config.symbol(),
+                side,
+                qty,
+                requestedPrice,
+                filledPrice,
+                slippage,
+                commission,
+                ts,
+                "paper"
+            );
+            fillLogWriter.append(record);
+        }
     }
 
     public synchronized void stop() {

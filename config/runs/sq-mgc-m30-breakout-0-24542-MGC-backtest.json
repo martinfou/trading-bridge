@@ -1,0 +1,25 @@
+{
+  "strategy": "sq-mgc-m30-breakout-0-24542",
+  "symbol": "MGC",
+  "timeframe": "M30",
+  "mode": "backtest",
+  "broker": "ibkr",
+  "period": {
+    "start": "2025",
+    "end": "2026",
+    "dataSource": "bars"
+  },
+  "risk": {
+    "type": "percent",
+    "value": 0.5
+  },
+  "capital": 11270.0,
+  "costs": {
+    "commissionPerContract": 0.62,
+    "slippageFixed": 0.10,
+    "fillMode": "TOUCH",
+    "marginTracking": true,
+    "rolloverEnabled": true
+  }
+}
+

@@ -1,0 +1,26 @@
+{
+  "strategy": "sq-gold-m30",
+  "symbol": "MGC",
+  "timeframe": "M30",
+  "mode": "backtest",
+  "broker": "ibkr",
+  "period": {
+    "start": "2026",
+    "end": "2026",
+    "dataSource": "csv",
+    "filePath": "data/historical/csv/MGC_M30_2026.csv"
+  },
+  "risk": {
+    "type": "fixed",
+    "value": 1.0
+  },
+  "capital": 11270.0,
+  "costs": {
+    "commissionPerContract": 0.62,
+    "slippageFixed": 0.10,
+    "fillMode": "TOUCH",
+    "marginTracking": true,
+    "rolloverEnabled": false
+  }
+}
+
