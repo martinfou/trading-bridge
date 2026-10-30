@@ -560,3 +560,15 @@ Un audit complet du dépôt et des conteneurs le **2026-10-29** (`_bmad-output/p
    - `46-9` : Extraction de `IbkrBarSource` (conversion `America/New_York` $\to$ UTC `Instant` à la frontière socket et exclusion de la barre en cours de formation).
    - `46-10` : Création de `IbkrLiveRunner`, `SqStrategyEvaluator` (persistance du curseur de barre dans `TB_STATE_DIR`) et `IbkrOrderDispatcher` (refus local de toute entrée sans stop, envoi du stop protecteur via `IbkrBracketOrderRouter`, flatten + halt immédiat si le stop est rejeté).
    - `46-11` : Surface de déploiement isolée (`scripts/docker-entrypoint-ibkr.sh` et `docker/docker-compose.futures.yml`, projet `tb-futures`, conteneur `trading-futures`, volume `./data-futures`) sans toucher la lane OANDA `-014`.
+4. **Déploiement paper initial sur `srv108` (`2026-10-30 02:04:41 UTC` / `2026-10-29 22:04:41 EDT`, commit `f3021a60`)** :
+   - Conteneur `trading-futures` démarré via `DRY_RUN=false IBKR_ACCOUNT_ID=DUR967322 docker compose -f docker/docker-compose.futures.yml --project-name tb-futures up -d` (`network_mode: host`, `127.0.0.1:4002`, `clientId=11`, `IbkrBarSource` sur `clientId=12` avec `formatDate=2` secondes epoch UTC).
+   - Vérification des 7 étapes de démarrage dans `docker logs trading-futures` :
+     - `[1/7]` : `host=127.0.0.1 port=4002 clientId=11 account=DUR967322 symbol=MGC timeframe='30 mins' interval=30m dryRun=false`
+     - `[2/7]` : `code=MGCZ26 exchange=COMEX contractMonth=202612 expiryDate=2026-12-18 daysRemaining=50`
+     - `[3/7]` : `Connected IbkrBroker. Account state: balance=11262.57 equity=11262.57 currency=USD` (base CAD `11262.57` du compte paper `DUR967322`)
+     - `[4/7]` : `Reconciliation complete: brokerPositions=0 localPositions=0 matched=0 inSync=true`
+     - `[5/7]` : `Instantiated strategy: key='sq-mgc-m30-breakout-0-24542' class=SqMgcM30Breakout024542 displayName='SQ_MGC_M30_Breakout_0_24542' symbol=MGC`
+     - `[6/7]` : `Bar cursor initialized from /app/data-futures/state: lastProcessedBarTimestamp=null`
+     - `[7/7]` : `BarCloseScheduler started for symbol=MGC: nextTriggerTime=2026-10-30T02:30:05Z`
+   - Les conteneurs existants `trading-live` (`Up 46 hours (healthy)`) et `trading-dev` (`Up 46 hours (healthy)`) n'ont pas été touchés.
+   - Note opérationnelle COMEX HMDS sur `DUR967322` : sans abonnement payant temps réel COMEX (`code=2188: Up-to-the-second historical data requires additional subscription for the API`), les barres historiques COMEX via HMDS ont un délai de ~10 minutes (toléré par le garde-fou M30 `maxStaleAge = 90m`, mais bloque les intervalles `1m` dont `maxStaleAge = 3m`).
