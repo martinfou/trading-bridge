@@ -317,12 +317,23 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
 
     @Override
     public IbkrAccountSnapshot fetchAccountSummary() {
-        if (!isConnected()) {
+        EClientSocket socket = this.client;
+        if (!isConnected() || socket == null) {
             return failClosedAccount();
         }
         this.accountDownloadLatch = new CountDownLatch(1);
-        client.reqAccountUpdates(true, accountCode());
-        await(accountDownloadLatch, ACCOUNT_TIMEOUT);
+        socket.reqAccountUpdates(true, accountCode());
+        try {
+            await(accountDownloadLatch, ACCOUNT_TIMEOUT);
+        } finally {
+            try {
+                if (socket.isConnected()) {
+                    socket.reqAccountUpdates(false, accountCode());
+                }
+            } catch (RuntimeException ignored) {
+                // Ignore unsubscribe error if socket closed mid-request.
+            }
+        }
         IbkrAccountCache.AccountSummary summary = cache.snapshot();
         return new IbkrAccountSnapshot(summary.totalCashBalance(), summary.netLiquidation(), "USD");
     }
@@ -622,8 +633,15 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
         }
 
         @Override
+        public void nextValidId(int orderId) {
+            orderIdCounter.updateAndGet(current -> Math.max(current, orderId));
+        }
+
+        @Override
         public void updateAccountValue(String key, String value, String currency, String accountName) {
-            cache.updateFromString(key, value);
+            if (currency == null || currency.isBlank() || "BASE".equalsIgnoreCase(currency) || !cache.hasValue(key)) {
+                cache.updateFromString(key, value);
+            }
         }
 
         @Override

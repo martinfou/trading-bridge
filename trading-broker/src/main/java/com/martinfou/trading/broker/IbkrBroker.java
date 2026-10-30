@@ -101,7 +101,7 @@ public final class IbkrBroker implements Broker {
 
     @Override
     public boolean isConnected() {
-        return connected;
+        return connected && client.isConnected();
     }
 
     @Override

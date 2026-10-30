@@ -161,7 +161,7 @@ public final class IbkrBarSource implements AutoCloseable {
             ibkrBarSize,
             WhatToShow.TRADES.toString(),
             0, // useRTH = 0 (include ETH Globex session bars)
-            1, // formatDate = 1 (yyyyMMdd HH:mm:ss)
+            2, // formatDate = 2 (UTC epoch seconds — immune to IB Gateway local timezone)
             false,
             null
         );
