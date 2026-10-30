@@ -1,6 +1,6 @@
 # Story 46.6: Deterministic H1/D1 Bar-Close Scheduler & Multi-Regime Ensemble Runner
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -26,14 +26,14 @@ So that our swing portfolio operates completely hands-free on exact hourly and d
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Precision Bar-Close Scheduler (`trading-runtime`)** (AC: 1, 2)
-  - [ ] Implement `BarCloseScheduler.java` using `ScheduledExecutorService` aligned to clock `:00:05`.
-  - [ ] Validate session open status via `CmeGlobexMarketCalendar.isTradingTime(now)`.
-- [ ] **Task 2: Bar Retrieval & Look-Ahead Verification (`trading-data`, `trading-runtime`)** (AC: 2)
-  - [ ] Fetch closed 1-hour / 1-day bar via IBKR API.
-  - [ ] Assert bar timestamp is strictly $< \text{currentTime}$.
-- [ ] **Task 3: Multi-Regime Ensemble Wiring (`trading-strategies`, `trading-runtime`)** (AC: 3)
+- [x] **Task 1: Precision Bar-Close Scheduler (`trading-runtime`)** (AC: 1, 2) — *completed in 46-7 (`BarCloseScheduler` aligned to `:00:05`, live equity & positions injected, stale bar check enforced)*
+  - [x] Implement `BarCloseScheduler.java` using `ScheduledExecutorService` aligned to clock `:00:05`.
+  - [x] Validate session open status via `CmeGlobexMarketCalendar.isTradingTime(now)`.
+- [x] **Task 2: Bar Retrieval & Look-Ahead Verification (`trading-data`, `trading-runtime`)** (AC: 2) — *completed in 46-9 (`IbkrBarSource` with forming-bar exclusion)*
+  - [x] Fetch closed bar via IBKR API (`IbkrBarSource`).
+  - [x] Assert bar timestamp + timeframe $\le \text{currentTime}$.
+- [ ] **Task 3: Multi-Regime Ensemble Wiring (`trading-strategies`, `trading-runtime`)** (AC: 3) — *deferred per `tech-spec-ibkr-live-futures-lane.md` (MVP runs single strategy `sq-mgc-m30-breakout-0-24542` via `IbkrLiveRunner` in 46-10)*
   - [ ] Configure `LongTermStrategyCatalog` instances for the 4 instruments.
-  - [ ] Wire evaluation output directly to `IbkrBracketOrderRouter`.
-- [ ] **Task 4: Unit & End-to-End Simulation Tests (`trading-runtime`)** (AC: 4)
-  - [ ] Author `BarCloseSchedulerEnsembleTest.java` verifying full cycle from clock trigger to simulated bracket emission.
+  - [x] Wire evaluation output directly to `IbkrBracketOrderRouter` (`IbkrOrderDispatcher` in 46-10).
+- [x] **Task 4: Unit & End-to-End Simulation Tests (`trading-runtime`)** (AC: 4)
+  - [x] Author `BarCloseSchedulerEnsembleTest.java` and `BarCloseSchedulerTimingTest.java` verifying full cycle from clock trigger to bracket emission.
