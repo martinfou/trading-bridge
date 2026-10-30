@@ -577,3 +577,120 @@ Un audit complet du dépôt et des conteneurs le **2026-10-29** (`_bmad-output/p
    - **Trade #2 (`2026-10-30T12:00:05Z`)** : Entrée `orderId=1003` (`SELL 1.0 MGC` demandé `@ 3977.7`, rempli `@ 3975.4`, slippage `+2.3` pts, commission `0.62 USD`, `execId=0000e1a7.6ae535dc.01.01`), stop protecteur `orderId=1004` (`BUY 1.0 STP @ 3998.6`), take-profit `orderId=1005` (`BUY 1.0 LMT @ 3943.2`), groupe OCA `TB-OCA-57E0AF68`.
    - **NAV paper `DUR967322`** : passé de `11 262.57 CAD` à **`11 653.59 CAD` (`+391.02 CAD`)**.
    - **Garde anti-pyramiding déployée** : ajout de `SYMBOL_POSITION_ALREADY_OPEN` dans `SmallAccountMarginGuard`, plafond `maxConcurrentPositions=1` dans `IbkrLiveRunner`, et vérification directe `broker.getPositions()` dans `IbkrOrderDispatcher` pour garantir au plus **1 contrat ouvert par symbole** à tout instant.
+
+---
+
+## Fenêtre 3 (lane futures IBKR, Epic 46) : ouverture formelle et relevé du jour 1 (2026-10-30)
+
+La règle D34 est appliquée à la lane futures, qui n'avait jusqu'ici aucun registre de fenêtre. La
+section du 2026-10-29 décrit le déploiement, mais ne fixe ni la frontière des transactions
+antérieures, ni l'horloge. Sans ces deux chiffres la fenêtre ne se juge pas, et la barre de D46
+(walk-forward passant **et** fenêtre paper complète à P&L positif) reste invérifiable. Le numéro
+« fenêtre 3 » suit la numérotation du fichier (la fenêtre 2, Gold vendredi x DXY, est décidée mais
+toujours pas démarrée) ; Martin peut le renommer, la frontière et l'horloge ci-dessous ne changent pas.
+
+| Champ | Valeur |
+|---|---|
+| Démarrage | **2026-10-30 02:04:41 UTC**, soit 2026-10-29 22:04:41 EDT (démarrage du runner) |
+| Commit au démarrage | `f3021a60`. Deuxième déploiement le 2026-10-30 à 08:07:40 EDT (`fa3362b2`, garde anti-pyramiding) |
+| Compte | `DUR967322` (IBKR paper), devise lue au compte : `CAD` |
+| NAV au départ | **11 262,57** (lu au démarrage, étape `[3/7]` : balance = equity = 11 262,57) |
+| **Frontière de la fenêtre** | **premier `orderId` = 1000**. Tout ordre d'`orderId` supérieur ou égal à 1000 appartient à la fenêtre, et rien d'autre |
+| Positions ouvertes au départ | 0 |
+| Ordres en attente au départ | 0 |
+| **Transactions EXCLUES** | **aucune** : le compte était plat, sans ordre, au démarrage. La liste d'exclusion est vide par construction, elle n'est pas déclarative |
+| Fin prévue | **2026-11-28 22:04 EDT** (30 jours) |
+
+Limite d'observabilité, dite pour ne pas la confondre avec une preuve : l'utilisateur `administrator`
+n'a pas accès au socket Docker (`permission denied`), donc l'image réellement exécutée n'a pas été lue
+par cet agent. Le fait mesuré est le démarrage d'un processus `IbkrLiveRunner` neuf à **08:10 EDT**, soit
+après le commit de 08:07:40 : c'est ce qui autorise à dater le deuxième déploiement, pas une lecture
+`docker inspect`.
+
+### Ce que le courtier a exécuté depuis l'ouverture (5 exécutions, mesurées)
+
+Relevé en lecture seule le 2026-10-30 à **11:01 EDT** depuis ce poste (clientId 97, `reqExecutions`,
+`reqAllOpenOrders`, `reqAccountSummary`, `reqPositions` ; aucun ordre envoyé, aucune config touchée).
+
+| Heure (UTC) | Ordre | Sens | Qté | Prix | Rôle |
+|---|---|---|---|---|---|
+| 04:30:07 | 1000 | SLD | 1 | 4003,60 | entrée |
+| 12:00:05 | 1003 | SLD | 1 | 3975,40 | entrée |
+| 12:14:22 | 1002 | BOT | 1 | 3969,90 | sortie (TP du trade 1) |
+| 13:33:21 | 1005 | BOT | 1 | 3943,20 | sortie (TP du trade 2) |
+| 14:30:05 | 1006 | SLD | 1 | 3916,70 | entrée |
+
+Deux trades fermés, tous deux par leur take-profit, aucun stop touché, aucun rejet :
+
+| Trade | Entrée | Sortie | Points | USD brut (multiplicateur 10) |
+|---|---|---|---|---|
+| 1 | 4003,60 | 3969,90 | +33,70 | **+337,00** |
+| 2 | 3975,40 | 3943,20 | +32,20 | **+322,00** |
+| | | | | **+659,00** |
+
+Les commissions de **sortie** ne sont pas dans nos traces (voir le défaut ci-dessous), donc le net n'est
+pas calculable depuis nos journaux ; le brut ci-dessus l'est, il vient des exécutions du courtier.
+
+### Défaut mesuré : le journal de fills ne contient que les entrées
+
+`data-futures/fills/sq-mgc-m30-breakout-0-24542-MGC-paper.jsonl` porte **3 lignes** (1000, 1003, 1006),
+toutes des entrées, alors que le courtier a exécuté **5 fois**. Les deux sorties (1002 à 12:14:22,
+1005 à 13:33:21) manquent. Ce n'est pas une perte de fichier : c'est le chemin de code.
+
+`IbkrBroker.onExecution` résout l'ordre d'une exécution dans deux `Map` **en mémoire**, remplies par
+`submitOrder` : `pendingOrdersByClientTag` puis `pendingOrdersByBrokerId`. Le runner a redémarré à
+12:10 UTC, et ces deux maps repartent vides. Les deux sorties qui arrivent après 12:10 concernent des
+ordres créés **avant** le redémarrage (les brackets des entrées 1000 et 1003) : elles ne sont donc
+résolues par aucune map, tombent dans la branche `else`, qui se contente de
+`log.warn("IBKR fill for unknown order {} — reconciliation needed")` et **n'émet aucun `BrokerEvent.FILL`**.
+Sans événement, `IbkrLiveRunner` n'écrit rien dans le JSONL.
+
+Conséquences, en clair :
+
+1. Le journal de fills est complet **dans la durée de vie d'un processus**, et seulement dans celle-là.
+   Tout redémarrage coupe la preuve des positions ouvertes par le processus précédent.
+2. Il ne permet donc pas de reconstruire le P&L de la fenêtre, ce qui est exactement le document que
+   D46 exige. Le P&L ci-dessus vient du courtier, pas de nos traces.
+3. Le compte est correct malgré tout : la position réelle est bien d'un contrat, et le courtier détient
+   son stop. Ce qui est faux, c'est **le registre**, pas l'exposition.
+
+Le correctif est un changement du chemin des ordres (persister le registre, ou attribuer une exécution
+inconnue par son `orderRef` au lieu de seulement la journaliser). Il se revoit comme tel : **story
+séparée, pas un patch dans ce relevé**. C'est le prochain point à ouvrir.
+
+### Garde anti-pyramiding : vérifiée sur les données, pas sur le commit
+
+- **Avant** le correctif, deux entrées ont coexisté : 1000 (04:30:07) et 1003 (12:00:05), donc
+  **2 contrats short ouverts du 12:00:05 au 12:14:22 UTC**. C'est précisément la pyramidation que
+  `fa3362b2` interdit.
+- **Après** le redémarrage de 08:10 EDT, l'entrée 1006 (14:30:05) n'est partie qu'une fois les deux
+  positions fermées (13:33:21), et le compte ne porte qu'un contrat. Le plafond d'un contrat par
+  symbole tient sur les données.
+
+### État au 2026-10-30 11:01 EDT (jour 1 sur 30)
+
+- NAV **12 035,90** (lue au compte). Écart depuis 11 262,57 : **+773,33**, soit **+6,87 %**.
+- Cash 12 035,90 ; buying power 24 420,95 ; available funds 7 326,29.
+- **1 position ouverte** : SHORT 1 `MGCZ6`, coût moyen 39 166,04 (soit 3 916,604 $/oz).
+- **Sa protection est bien au courtier** : `1007 BUY 1 STP @ 3942,0` (`PreSubmitted`) et
+  `1008 BUY 1 LMT @ 3873,7` (`Submitted`), groupe OCA `TB-OCA-964C858A`.
+- **Écart NAV contre réalisé non réconcilié ici**, et c'est volontaire : la devise de base, le taux FX,
+  les commissions de sortie et la position encore ouverte pèsent dans les 114,33 d'écart
+  (773,33 moins 659,00). Le prochain relevé le fait avec le taux du jour, pas par inférence.
+
+*Relevé écrit le 2026-10-30 à 11:01 EDT. Les prix, quantités et ordres viennent du courtier
+(`reqExecutions`, `reqAllOpenOrders`, `reqPositions`), pas d'une tuile de dashboard ni du journal interne.*
+
+---
+
+## Points ouverts de la lane futures (à solder, hors de ce relevé)
+
+1. **Journal de fills** (défaut ci-dessus) : story nécessaire avant que la fenêtre 3 puisse produire sa
+   propre preuve de P&L. Priorité haute, c'est le seul document qui juge la fenêtre.
+2. **Le hub ne voit pas les ordres de protection** : `scripts/ibkr_snapshot_push.py` appelle
+   `reqAccountSummary` et `reqPositions`, jamais `reqOpenOrders` ni `reqAllOpenOrders`, donc
+   `open_orders` vaut toujours `[]` dans le payload. Mesuré, pas corrigé ici : ce n'est pas un panneau
+   vide, c'est une clé qui ne peut pas être remplie.
+3. **Pas d'alerte sur le désaccord de registre** : le `warn` « unknown order » est la seule trace d'une
+   sortie non attribuée, et il n'atteint ni Telegram ni le hub. Une sortie non attribuée devrait au
+   minimum incrémenter un compteur visible.
