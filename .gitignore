@@ -141,3 +141,6 @@ data/oanda-ba/
 
 # Runtime live strategy state (whole tree: dev/ subdir held untracked runner state)
 data/state/
+
+# IBKR futures lane persistent state & fill logs (Story 46.11 / F4)
+data-futures/
