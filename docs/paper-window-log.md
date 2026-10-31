@@ -656,7 +656,13 @@ Conséquences, en clair :
 
 Le correctif est un changement du chemin des ordres (persister le registre, ou attribuer une exécution
 inconnue par son `orderRef` au lieu de seulement la journaliser). Il se revoit comme tel : **story
-séparée, pas un patch dans ce relevé**. C'est le prochain point à ouvrir.
+séparée, pas un patch dans ce relevé**.
+
+**Story ouverte le 2026-10-31 :**
+`_bmad-output/implementation-artifacts/spec-fills-journal-loses-exits-after-restart.md`. Elle établit que
+`Execution.orderRef()` d'IBKR porte déjà le nom de la stratégie sur les trois jambes du bracket, que
+`mapExecution` (`TcpIbkrGatewayClient.java:550-555`) le jette à la frontière, et propose l'attribution par
+`orderRef` plus un rattrapage en lecture seule pour les deux sorties déjà perdues (1002, 1005).
 
 ### Garde anti-pyramiding : vérifiée sur les données, pas sur le commit
 
@@ -686,7 +692,10 @@ séparée, pas un patch dans ce relevé**. C'est le prochain point à ouvrir.
 ## Points ouverts de la lane futures (à solder, hors de ce relevé)
 
 1. **Journal de fills** (défaut ci-dessus) : story nécessaire avant que la fenêtre 3 puisse produire sa
-   propre preuve de P&L. Priorité haute, c'est le seul document qui juge la fenêtre.
+   propre preuve de P&L. Priorité haute, c'est le seul document qui juge la fenêtre. **Story ouverte le
+   2026-10-31** : `_bmad-output/implementation-artifacts/spec-fills-journal-loses-exits-after-restart.md`
+   (`ready-for-dev`, aucun code touché). Constat revérifié le 2026-10-31 11:00 EDT : les 3 lignes sont
+   toujours les seules, aucune sortie au journal.
 2. **Le hub ne voit pas les ordres de protection** : `scripts/ibkr_snapshot_push.py` appelle
    `reqAccountSummary` et `reqPositions`, jamais `reqOpenOrders` ni `reqAllOpenOrders`, donc
    `open_orders` vaut toujours `[]` dans le payload. Mesuré, pas corrigé ici : ce n'est pas un panneau
