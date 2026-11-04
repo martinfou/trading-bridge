@@ -324,7 +324,9 @@ def build_payload(account_id: str, environment: str, executions: list[dict],
             "strategy": strategy_name,
             "tag": tag,
             "instrument": execution["symbol"] or str(execution["con_id"]),
-            "direction": "BUY" if execution["side"] == "BOT" else "SELL",
+            # execution["side"] est le sens de l'ordre de SORTIE (SLD ferme un LONG/BUY, BOT couvre un SHORT/SELL).
+            # Le contrat de trading_pnl_entries demande la direction de la position ouverte (BUY = Long, SELL = Short).
+            "direction": execution.get("entry_side") or ("SELL" if execution["side"] == "BOT" else "BUY"),
             "units": execution["shares"],
             # Le prix d'entrée n'est pas connu de l'exécution de sortie Gateway : on ne l'invente pas.
             # S'il provient du journal local (round-trip complet), il est transmis tel quel.
@@ -579,12 +581,13 @@ def load_jsonl_closes(fills_dir: Path, existing_executions: dict[str, dict]
     if not fills_dir.is_dir():
         return [], []
 
-    existing_times: list[tuple[str, datetime, str]] = []
+    existing_times: list[tuple[str, datetime, str, str]] = []
     for ex_id, ex in existing_executions.items():
         if str(ex_id).startswith("jsonl."):
             continue
         try:
-            existing_times.append((str(ex.get("symbol", "")), parse_ibkr_time(ex["time"]), str(ex_id)))
+            ex_strat = normalize_strategy_ref(str(ex.get("order_ref", "")))
+            existing_times.append((str(ex.get("symbol", "")), parse_ibkr_time(ex["time"]), str(ex_id), ex_strat))
         except Exception:  # noqa: BLE001
             continue
 
@@ -623,6 +626,7 @@ def load_jsonl_closes(fills_dir: Path, existing_executions: dict[str, dict]
                 open_leg = None
                 continue
 
+            entry_side = "BUY" if side == "SELL" else "SELL"
             open_leg = None
             mult = FUTURES_MULTIPLIERS.get(symbol)
             if mult is None:
@@ -635,12 +639,18 @@ def load_jsonl_closes(fills_dir: Path, existing_executions: dict[str, dict]
             twin_exec_id = f"jsonl.{symbol}.{close_dt.strftime('%Y%m%dT%H%M%SZ')}.01"
             twin_ref = base_exec_id(twin_exec_id)[0]
             native = next(
-                ((dt, ex_id) for sym, dt, ex_id in existing_times
+                ((dt, ex_id) for sym, dt, ex_id, ex_strat in existing_times
                  if sym and (sym.startswith(symbol) or symbol.startswith(sym))
+                 and (not ex_strat or not strategy or ex_strat == strategy)
                  and abs((dt - close_dt).total_seconds()) <= 20),
                 None,
             )
             if native is not None:
+                native_exec = existing_executions.get(native[1])
+                if isinstance(native_exec, dict):
+                    native_exec["entry_price"] = entry_price
+                    native_exec["opened_at_utc"] = open_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+                    native_exec["entry_side"] = entry_side
                 retired.append((twin_exec_id, twin_ref, native[1]))
                 continue
 
@@ -653,6 +663,7 @@ def load_jsonl_closes(fills_dir: Path, existing_executions: dict[str, dict]
                 "exec_id": exec_id,
                 "time": close_dt.strftime("%Y%m%d %H:%M:%S UTC"),
                 "side": "BOT" if side == "BUY" else "SLD",
+                "entry_side": entry_side,
                 "shares": qty,
                 "price": exit_price,
                 "entry_price": entry_price,
@@ -896,6 +907,11 @@ def selftest() -> int:
         twin_ref = lonely_payload["entries"][0]["fill_ref"]
         checks["jumeau du journal retire quand la native existe"] = (
             synth == [] and retired == [("jsonl.MGC.20261104T080605Z.01", twin_ref, "0000e1a7.6aeb3cc6.01.01")]
+        )
+        checks["native enrichie avec entry_price et opened_at_utc du journal"] = (
+            native["0000e1a7.6aeb3cc6.01.01"].get("entry_price") == 4008.0
+            and native["0000e1a7.6aeb3cc6.01.01"].get("opened_at_utc") == "2026-11-04T06:00:11Z"
+            and native["0000e1a7.6aeb3cc6.01.01"].get("entry_side") == "BUY"
         )
         checks["round-trip du journal reconstruit sans native"] = (
             len(lonely) == 1 and lonely[0]["exec_id"] == "jsonl.MGC.20261104T080605Z.01" and lonely_retired == []
