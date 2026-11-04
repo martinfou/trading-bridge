@@ -67,25 +67,68 @@ public final class HistoricalDataLoader {
         return new LoadResult(bars, symbol, describeYearSpecSource(symbol, yearSpec, tf, DEFAULT_BARS_DIR));
     }
 
-    private static List<Bar> loadYearSpecWithFallback(String symbol, String spec, String tf, Path barsDir) throws IOException {
-        if ("H1".equalsIgnoreCase(tf) || "M1".equalsIgnoreCase(tf)) {
-            return loadYearSpec(symbol, spec, tf, barsDir);
-        }
+    private static final String[] STANDARD_TFS = {"M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1"};
+
+    private static int tfMinutes(String tf) {
+        String u = tf.toUpperCase();
+        int n = u.length() > 1 ? Integer.parseInt(u.substring(1)) : 1;
+        return switch (u.charAt(0)) {
+            case 'M' -> n;
+            case 'H' -> n * 60;
+            case 'D' -> n * 1440;
+            case 'W' -> n * 10080;
+            default -> throw new IllegalArgumentException("Unsupported timeframe: " + tf);
+        };
+    }
+
+    /** Loads native bars (.bars store or direct IBKR/standard CSV) for exactly this timeframe, or throws IOException. */
+    private static List<Bar> loadNative(String symbol, String spec, String tf, Path barsDir) throws IOException {
         try {
             return loadYearSpec(symbol, spec, tf, barsDir);
-        } catch (IOException ignored) {
-            // Fall through to CSV or M1 aggregation
+        } catch (IOException | RuntimeException ignored) {
+            // fall through to direct CSV
         }
-        // Check for direct CSV in data/historical/csv/<SYMBOL>_<TF>_<SPEC>.csv
         Path directCsv = Path.of("data/historical/csv", symbol.toUpperCase() + "_" + tf.toUpperCase() + "_" + spec + ".csv");
         if (Files.isRegularFile(directCsv)) {
             return DataLoader.loadAutoCSV(directCsv, symbol);
         }
-        // Fallback: load M1 and aggregate to target timeframe (e.g., M15 or M30)
-        List<Bar> m1Bars = loadYearSpec(symbol, spec, "M1", barsDir);
+        throw new IOException("No native " + tf + " data for " + symbol + " " + spec);
+    }
+
+    /**
+     * Loads bars for any standard timeframe (M1..W1). Uses native data when present (Dukascopy .bars or
+     * IBKR futures CSV); otherwise aggregates from the coarsest finer timeframe that is available
+     * (e.g. futures: M30 CSV -> H1/H4/D1; M1 -> M5/M15/M30).
+     */
+    public static List<Bar> loadYearSpecWithFallback(String symbol, String spec, String tf, Path barsDir) throws IOException {
+        if ("H1".equalsIgnoreCase(tf) || "M1".equalsIgnoreCase(tf)) {
+            return loadYearSpec(symbol, spec, tf, barsDir);
+        }
+        try {
+            return loadNative(symbol, spec, tf, barsDir);
+        } catch (IOException ignored) {
+            // aggregate below
+        }
+        int target = tfMinutes(tf);
+        List<Bar> source = null;
+        for (int i = STANDARD_TFS.length - 1; i >= 0 && source == null; i--) {
+            String base = STANDARD_TFS[i];
+            int m = tfMinutes(base);
+            if (m >= target || target % m != 0) {
+                continue;
+            }
+            try {
+                source = loadNative(symbol, spec, base, barsDir);
+            } catch (IOException ignored) {
+                // try next finer base
+            }
+        }
+        if (source == null) {
+            throw new IOException("No " + tf + " data (native or aggregable) for " + symbol + " " + spec);
+        }
         com.martinfou.trading.core.BarAggregator agg = new com.martinfou.trading.core.BarAggregator(symbol, tf);
         List<Bar> aggregated = new ArrayList<>();
-        for (Bar b : m1Bars) {
+        for (Bar b : source) {
             boolean newPeriod = agg.isNewPeriod(b);
             agg.add(b);
             if (newPeriod) {
@@ -95,6 +138,11 @@ public final class HistoricalDataLoader {
         agg.completePeriod();
         agg.getLastCompletedBar().ifPresent(aggregated::add);
         return aggregated;
+    }
+
+    private static boolean isHourMultiple(String tf) {
+        String u = tf.toUpperCase();
+        return u.startsWith("H") || u.startsWith("D") || u.startsWith("W");
     }
 
     /** Loads bars from a file path (.bars or CSV). */

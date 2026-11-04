@@ -143,9 +143,13 @@ const groupedInstruments = computed(() => {
 
 const timeframeScale: Record<string, number> = {
   'M1': 1,
+  'M5': 5,
+  'M15': 15,
   'M30': 30,
   'H1': 60,
-  'D1': 1440
+  'H4': 240,
+  'D1': 1440,
+  'W1': 10080
 }
 
 const isValidTimeframe = computed(() => {
@@ -595,9 +599,13 @@ async function run() {
         <label>Strategy Timeframe</label>
         <select v-model="strategyTimeframe">
           <option value="M1">M1 (1 Minute)</option>
+          <option value="M5">M5 (5 Minutes)</option>
+          <option value="M15">M15 (15 Minutes)</option>
           <option value="M30">M30 (30 Minutes)</option>
           <option value="H1">H1 (1 Hour)</option>
+          <option value="H4">H4 (4 Hours)</option>
           <option value="D1">D1 (1 Day)</option>
+          <option value="W1">W1 (1 Week)</option>
         </select>
       </div>
       <div v-if="runMode === 'BACKTEST'" class="field explanation-field">

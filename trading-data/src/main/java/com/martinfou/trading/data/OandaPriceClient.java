@@ -139,7 +139,19 @@ public class OandaPriceClient {
         return getCandlesBefore(instrument, granularity, count, null);
     }
 
+    /** Maps internal timeframe names (M5, H4, D1, W1) to OANDA granularity codes. */
+    static String toOandaGranularity(String tf) {
+        if (tf == null) return "H1";
+        String u = tf.toUpperCase();
+        return switch (u) {
+            case "D1" -> "D";
+            case "W1" -> "W";
+            default -> u;
+        };
+    }
+
     public List<Bar> getCandlesBefore(String instrument, String granularity, int count, Instant to) throws OandaApiException {
+        granularity = toOandaGranularity(granularity);
         String url = "/accounts/" + accountId + "/instruments/" + instrument
             + "/candles?granularity=" + granularity + "&count=" + count;
         if (to != null) {

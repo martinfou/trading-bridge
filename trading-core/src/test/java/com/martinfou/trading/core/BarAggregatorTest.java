@@ -92,4 +92,16 @@ class BarAggregatorTest {
         Bar inProgressNext = inProgressNextOpt.get();
         assertEquals(Instant.parse("2026-05-20T10:30:00Z"), inProgressNext.timestamp());
     }
+
+    @org.junit.jupiter.api.Test
+    void dailyCandleCutsAtCmeSessionOpen() {
+        BarAggregator agg = new BarAggregator("MGC", "D1");
+        // Sun 2026-03-01 23:00Z = 18:00 EST -> opens Monday trading day; Mon 22:00Z = 17:00 EST still Monday.
+        java.time.Instant sunOpen = java.time.Instant.parse("2026-03-01T23:00:00Z");
+        java.time.Instant monLate = java.time.Instant.parse("2026-03-02T21:30:00Z");
+        java.time.Instant monOpen = java.time.Instant.parse("2026-03-02T23:00:00Z");
+        agg.add(new Bar("MGC", sunOpen, 1, 2, 0.5, 1.5, 1));
+        org.junit.jupiter.api.Assertions.assertFalse(agg.isNewPeriod(new Bar("MGC", monLate, 1, 1, 1, 1, 1)));
+        org.junit.jupiter.api.Assertions.assertTrue(agg.isNewPeriod(new Bar("MGC", monOpen, 1, 1, 1, 1, 1)));
+    }
 }
