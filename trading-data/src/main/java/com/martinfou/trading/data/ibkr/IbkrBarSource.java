@@ -307,6 +307,7 @@ public final class IbkrBarSource implements AutoCloseable {
             case "1 hour", "1 hr", "60 mins", "h1" -> Duration.ofHours(1);
             case "4 hours", "h4" -> Duration.ofHours(4);
             case "1 day", "d1" -> Duration.ofDays(1);
+            case "1 week", "w1" -> Duration.ofDays(7);
             default -> throw new IllegalArgumentException("Unsupported IBKR timeframe: " + timeframe);
         };
     }
@@ -321,6 +322,7 @@ public final class IbkrBarSource implements AutoCloseable {
             case "1 hour", "1 hr", "60 mins", "h1" -> "1 hour";
             case "4 hours", "h4" -> "4 hours";
             case "1 day", "d1" -> "1 day";
+            case "1 week", "w1" -> "1 week";
             default -> throw new IllegalArgumentException("Unsupported IBKR timeframe: " + timeframe);
         };
     }

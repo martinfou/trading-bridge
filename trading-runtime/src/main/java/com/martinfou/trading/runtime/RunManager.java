@@ -1252,7 +1252,8 @@ public class RunManager implements RunLifecycle, AutoCloseable {
             config.barsSourceCount(),
             config.barsSourceYear(),
             config.barsSourcePath());
-        List<Bar> allBars = BarSourceResolver.load(source, config.symbol());
+        List<Bar> allBars = BarSourceResolver.load(source, config.symbol(),
+            config.strategyTimeframe() != null ? config.strategyTimeframe() : "H1");
         if (to != null) {
             allBars = allBars.stream().filter(b -> b.timestamp().isBefore(to)).toList();
         }
@@ -1325,9 +1326,13 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         try {
             // Double check under lock
             if (!isYearAvailable(symbol, year, barsDir, csvDir)) {
-                String timeframe = tf;
-                if (timeframe == null || timeframe.isBlank()) {
-                    timeframe = "H1";
+                // Dukascopy only serves M1/H1; other sizes are aggregated at load time.
+                String timeframe = "H1";
+                if (tf != null && !tf.isBlank()) {
+                    String u = tf.toUpperCase(java.util.Locale.ROOT);
+                    if (u.startsWith("M")) {
+                        timeframe = "M1";
+                    }
                 }
                 log.info("No bars available for strategy symbol {} and year {}. Downloading data... This will take a while.", symbol, year);
                 downloadYearSync(symbol, year, timeframe);

@@ -46,7 +46,7 @@ public final class BarSourceResolver {
                 if (source.yearSpec() == null || source.yearSpec().isBlank()) {
                     throw new IllegalArgumentException("barsSource.year is required for type=year");
                 }
-                yield HistoricalDataLoader.loadYearSpec(
+                yield HistoricalDataLoader.loadYearSpecWithFallback(
                     symbol, source.yearSpec(), timeframe, RuntimeDataPaths.defaultBarsDirectory());
             }
             case "file" -> loadFileBars(source, symbol);
