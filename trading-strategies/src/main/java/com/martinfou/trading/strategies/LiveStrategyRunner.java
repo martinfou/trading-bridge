@@ -1058,6 +1058,12 @@ public class LiveStrategyRunner implements Runnable {
                 .asSubclass(Strategy.class));
             map.put("sq-mgc-m30-breakout-0-32921", Class.forName("com.martinfou.trading.strategies.sqimported.SqMgcM30Breakout032921")
                 .asSubclass(Strategy.class));
+            map.put("sq-mgc-m30-breakout-0-34297", Class.forName("com.martinfou.trading.strategies.sqimported.SqMgcM30Breakout034297")
+                .asSubclass(Strategy.class));
+            map.put("sq-mgc-m30-breakout-0-11248", Class.forName("com.martinfou.trading.strategies.sqimported.SqMgcM30Breakout011248")
+                .asSubclass(Strategy.class));
+            map.put("sq-mnq-m15-momentum-0-6737", Class.forName("com.martinfou.trading.strategies.sqimported.SqMnqM15Momentum06737")
+                .asSubclass(Strategy.class));
             // The week-of-12-October news entries were retired on 2026-10-21 (D67, executed as D68 in
             // docs/paper-window-log.md): the classes stay in newsweekly/ as an archive, but nothing
             // registers them any more, so no container can be started on an expired, hard-coded week.

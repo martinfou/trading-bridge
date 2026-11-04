@@ -80,9 +80,14 @@ CATALOG_NAME_OVERRIDES = {
     "2.20.102": "GBPJPY H1 Donchian Trend Breakout",
     "0.4248": "MNQ M15 SuperTrend ATR Momentum",
     "0.1499": "MNQ M15 Ichimoku Kumo Breakout",
+    "0.6737": "MNQ M15 Dual-SuperTrend Momentum",
     "0.3553": "MES H1 Bollinger Band Mean Reversion",
     "0.2700": "MES H1 Prev-Day Low Sweep Pullback",
     "1.29.102": "MGC M30 WMA Channel Breakout",
+    "0.24542": "MGC M30 ADX PDH Breakout",
+    "0.32921": "MGC M30 Donchian High PDL Breakout",
+    "0.34297": "MGC M30 HighD SuperTrend Breakout",
+    "0.11248": "MGC M30 Donchian ATR Volatility Breakout",
 }
 
 

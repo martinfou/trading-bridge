@@ -31,6 +31,9 @@ public final class SqImportedStrategyCatalog {
         register("SqMgcM30Breakout129102", SqMgcM30Breakout129102::new);
         register("SqMgcM30Breakout024542", SqMgcM30Breakout024542::new);
         register("SqMgcM30Breakout032921", SqMgcM30Breakout032921::new);
+        register("SqMgcM30Breakout034297", SqMgcM30Breakout034297::new);
+        register("SqMgcM30Breakout011248", SqMgcM30Breakout011248::new);
+        register("SqMnqM15Momentum06737", SqMnqM15Momentum06737::new);
     }
 
     private SqImportedStrategyCatalog() {}
