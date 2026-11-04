@@ -483,6 +483,7 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
         order.action(side == Order.Side.BUY ? "BUY" : "SELL");
         order.totalQuantity(Decimal.get(quantity));
         order.orderType("MKT");
+        order.outsideRth(true);
         order.transmit(true);
         if (accountId != null && !accountId.isBlank()) {
             order.account(accountId);
@@ -503,6 +504,7 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
         order.orderType("STP");
         order.auxPrice(stopPrice);
         order.tif("GTC");
+        order.outsideRth(true);
         order.transmit(true);
         if (closeOnly) {
             order.openClose("C");
@@ -530,6 +532,7 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
         order.orderType("LMT");
         order.lmtPrice(limitPrice);
         order.tif("GTC");
+        order.outsideRth(true);
         order.transmit(true);
         if (closeOnly) {
             order.openClose("C");

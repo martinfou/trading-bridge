@@ -54,6 +54,7 @@ class TcpIbkrGatewayClientTest {
         assertEquals("STP", stop.orderType().toString());
         assertEquals(2450.0, stop.auxPrice(), 1e-9);
         assertEquals("GTC", stop.tif().toString());
+        assertTrue(stop.outsideRth(), "Futures protective stops must trigger 23/5 outside RTH (Globex)");
         assertTrue(stop.transmit());
         assertEquals("C", stop.openClose());
         assertEquals("TB-OCA-1234", stop.ocaGroup());
@@ -72,6 +73,7 @@ class TcpIbkrGatewayClientTest {
         assertEquals("LMT", limit.orderType().toString());
         assertEquals(2650.0, limit.lmtPrice(), 1e-9);
         assertEquals("GTC", limit.tif().toString());
+        assertTrue(limit.outsideRth(), "Futures take-profit limits must fill 23/5 outside RTH (Globex)");
         assertTrue(limit.transmit());
         assertEquals("C", limit.openClose());
         assertEquals("TB-OCA-1234", limit.ocaGroup());
