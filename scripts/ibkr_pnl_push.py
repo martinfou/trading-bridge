@@ -40,6 +40,7 @@ import math
 import os
 import re
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
@@ -52,8 +53,26 @@ from zoneinfo import ZoneInfo
 SOURCE = "hermes-ibkr-pnl"
 PNL_PATH = "/api/trading/pnl-import"
 WINDOW_START = "2026-10-01T00:00:00Z"
-EXCHANGE_TZ = ZoneInfo("America/New_York")     # les heures d'exécution IBKR sont à l'heure du Gateway
 MONTREAL = ZoneInfo("America/Montreal")
+# Fuseau des heures d'exécution IBKR. MESURÉ 2026-11-04 (Gateway Docker 10.50.1f, compte paper DUR967322) :
+# `execution.time` sort en UTC sans suffixe (« 20261104 08:06:05 ») et le journal de fills du runtime écrit
+# le MÊME instant en Z (08:06:05.56Z, fichier modifié à 03:06 EST). Supposer New York décalait le fill de +5 h,
+# donc dans le futur : OANDA refusait la conversion (400 « Time is in the future ») et la ligne était refusée
+# à chaque cycle. Surchargeable si un Gateway rend un jour l'heure locale (HERMES_IBKR_EXEC_TZ).
+_EXECUTION_TZ: ZoneInfo | None = None
+
+
+def execution_tz() -> ZoneInfo:
+    """Fuseau des heures d'exécution, lu paresseusement (le fichier d'env est chargé après les imports)."""
+    global _EXECUTION_TZ
+    if _EXECUTION_TZ is None:
+        name = os.environ.get("HERMES_IBKR_EXEC_TZ", "UTC")
+        try:
+            _EXECUTION_TZ = ZoneInfo(name)
+        except Exception:                        # noqa: BLE001 - nom inconnu : UTC, la valeur mesurée
+            _EXECUTION_TZ = ZoneInfo("UTC")
+    return _EXECUTION_TZ
+
 UNAVAILABLE = 1.7976931348623157e308
 STATE_PATH = Path.home() / ".local/share/hermes-ibkr/pnl_state.json"
 LEDGER_DAYS = 120                # profondeur du registre local
@@ -143,11 +162,12 @@ def is_close(report: dict | None) -> bool:
 
 
 def parse_ibkr_time(raw: str) -> datetime:
-    """'20261021 05:56:48' (heure Gateway) → UTC. Refuse une heure ambiguë (changement d'heure)."""
+    """'20261021 05:56:48' (heure Gateway, UTC mesuré) → UTC. Refuse une heure ambiguë (changement d'heure)."""
     cleaned = " ".join(raw.split())
-    # Un Gateway recent ajoute le fuseau a l'heure d'execution : on le LIT (le supposer New York
-    # decalerait closed_at, l'heure du taux FX et la date locale sans aucune erreur).
-    zone = EXCHANGE_TZ
+    # Un Gateway recent ajoute parfois le fuseau a l'heure d'execution : on le LIT (le supposer decalerait
+    # closed_at, l'heure du taux FX et la date locale sans aucune erreur). Sans suffixe, c'est UTC : mesuré
+    # le 2026-11-04 contre le journal de fills du runtime, meme seconde.
+    zone = execution_tz()
     match = re.search(r"\s+([A-Za-z][A-Za-z0-9/_+-]*)$", cleaned)
     if match:
         token = match.group(1)
@@ -209,6 +229,15 @@ class FxRates:
         try:
             with urllib.request.urlopen(request, timeout=20) as response:
                 candles = json.load(response).get("candles", [])
+        except urllib.error.HTTPError as exc:
+            # Le corps porte la vraie raison (« Time is in the future », « instrument not tradeable ») : sans
+            # lui, un 400 reste opaque et on cherche le bug au mauvais endroit.
+            try:
+                detail = exc.read().decode("utf-8", "replace")[:160]
+            except Exception:                    # noqa: BLE001
+                detail = ""
+            self.errors.append(f"{pair} {hour_start:%Y-%m-%dT%H}: HTTP {exc.code} {detail}")
+            return None
         except Exception as exc:                     # noqa: BLE001 - réseau : la ligne sera refusée
             self.errors.append(f"{pair} {hour_start:%Y-%m-%dT%H}: {exc}")
             return None
@@ -242,6 +271,13 @@ def build_payload(account_id: str, environment: str, executions: list[dict],
             closed_at = parse_ibkr_time(execution["time"])
         except (ValueError, TypeError) as exc:
             refused.append(f"{execution['exec_id']}: {exc}")
+            continue
+        # Un fill ne peut pas avoir eu lieu dans le futur. Si l'heure du Gateway est relue avec le mauvais
+        # fuseau, c'est exactement ce qui arrive : on le dit ici, pas dans un 400 d'OANDA illisible.
+        if closed_at > datetime.now(timezone.utc) + timedelta(seconds=120):
+            refused.append(f"{execution['exec_id']}: heure d'exécution dans le futur "
+                           f"({closed_at:%Y-%m-%dT%H:%M:%SZ}) : fuseau du Gateway à vérifier "
+                           f"(HERMES_IBKR_EXEC_TZ={execution_tz().key})")
             continue
 
         native = float(report["realized_pnl"])       # déjà net des commissions des deux jambes
@@ -437,7 +473,7 @@ def collect(host: str, port: int, client_id: int, account: str, since: datetime,
         client.reqPositions()
         flt = ExecutionFilter()
         flt.acctCode = account
-        flt.time = since.astimezone(EXCHANGE_TZ).strftime("%Y%m%d-%H:%M:%S")
+        flt.time = since.astimezone(execution_tz()).strftime("%Y%m%d-%H:%M:%S")
         client.reqExecutions(2, flt)
 
         for event, label in ((client.exec_done, "exécutions"), (client.summary_done, "résumé de compte"),
@@ -499,6 +535,7 @@ def load_state() -> dict:
         return {"last_success_utc": None, "executions": {}}
     state.setdefault("executions", {})
     state.setdefault("last_success_utc", None)
+    state.setdefault("alerts", {})
     return state
 
 
@@ -529,22 +566,27 @@ def backfill_since(state: dict, fallback_days: int = 7) -> datetime:
     return datetime.now(timezone.utc) - timedelta(days=fallback_days)
 
 
-def load_jsonl_closes(fills_dir: Path, existing_executions: dict[str, dict]) -> list[dict]:
+def load_jsonl_closes(fills_dir: Path, existing_executions: dict[str, dict]) -> tuple[list[dict], list[tuple[str, str]]]:
     """Reconstruit les round-trips fermés depuis data-futures/fills/*-paper.jsonl lorsque le Gateway
-    a redémarré avant le passage du publisher P&L."""
-    if not fills_dir.is_dir():
-        return []
+    a redémarré avant le passage du publisher P&L.
 
-    existing_times: list[tuple[str, datetime]] = []
+    Retourne (lignes synthétisées, jumeaux à retirer). Un round-trip du journal qui a une exécution
+    Gateway native à ±20 s ne doit pas être publié deux fois : la native porte le P&L du venue, le jumeau
+    est retiré du miroir (l'identité d'une ligne est son fill_ref, donc ils ne se dédoublonnent pas seuls)."""
+    if not fills_dir.is_dir():
+        return [], []
+
+    existing_times: list[tuple[str, datetime, str]] = []
     for ex_id, ex in existing_executions.items():
         if str(ex_id).startswith("jsonl."):
             continue
         try:
-            existing_times.append((str(ex.get("symbol", "")), parse_ibkr_time(ex["time"])))
+            existing_times.append((str(ex.get("symbol", "")), parse_ibkr_time(ex["time"]), str(ex_id)))
         except Exception:  # noqa: BLE001
             continue
 
     synthesized: list[dict] = []
+    retired: list[tuple[str, str]] = []
     for path in sorted(fills_dir.glob("*-paper.jsonl")):
         open_leg: dict | None = None
         for idx, raw_line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), start=1):
@@ -583,12 +625,17 @@ def load_jsonl_closes(fills_dir: Path, existing_executions: dict[str, dict]) -> 
             if mult is None:
                 continue
 
-            # Ignorer si une exécution Gateway native existe déjà à ±20s sur ce symbole
-            already_seen = any(
-                (sym.startswith(symbol) or symbol.startswith(sym)) and abs((dt - close_dt).total_seconds()) <= 20
-                for sym, dt in existing_times
+            # Ignorer si une exécution Gateway native existe déjà à ±20s sur ce symbole : c'est la même
+            # transaction, et le jumeau du journal doit sortir du miroir au lieu d'y rester en double.
+            twin_ref = f"jsonl.{symbol}.{close_dt.strftime('%Y%m%dT%H%M%SZ')}.01"
+            native = next(
+                ((dt, ex_id) for sym, dt, ex_id in existing_times
+                 if sym and (sym.startswith(symbol) or symbol.startswith(sym))
+                 and abs((dt - close_dt).total_seconds()) <= 20),
+                None,
             )
-            if already_seen:
+            if native is not None:
+                retired.append((twin_ref, native[1]))
                 continue
 
             pts = (exit_price - entry_price) if side == "SELL" else (entry_price - exit_price)
@@ -615,10 +662,34 @@ def load_jsonl_closes(fills_dir: Path, existing_executions: dict[str, dict]) -> 
                     "realized_pnl": realized_usd,
                 },
             })
-    return synthesized
+    return synthesized, retired
 
 
 # --------------------------------------------------------------------------- alerte
+
+ALERT_REPEAT_HOURS = 12      # une meme ligne refusee ne doit pas reveiller Martin a chaque cycle de 5 min
+ALERT_RETENTION_DAYS = 7
+
+
+def should_alert(state: dict, key: str) -> bool:
+    """Vrai si cette alerte n'a pas deja ete envoyee pour la meme cause dans la fenetre de repetition."""
+    sent = state.setdefault("alerts", {})
+    now = datetime.now(timezone.utc)
+    for existing, stamp in list(sent.items()):
+        try:
+            if now - datetime.fromisoformat(str(stamp).replace("Z", "+00:00")) > timedelta(days=ALERT_RETENTION_DAYS):
+                del sent[existing]
+        except ValueError:
+            del sent[existing]
+    last = sent.get(key)
+    if last:
+        try:
+            if now - datetime.fromisoformat(str(last).replace("Z", "+00:00")) < timedelta(hours=ALERT_REPEAT_HOURS):
+                return False
+        except ValueError:
+            pass
+    sent[key] = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return True
 
 
 def telegram_token_and_chat() -> tuple[str | None, str | None]:
@@ -708,8 +779,10 @@ def selftest() -> int:
     checks["bougie de l'heure du fill"] = picked is not None and picked["mid"]["c"] == "1.403980"
     checks["bougie incomplète refusée"] = candle_for([dict(candles[1], complete=False)], hour) is None
     checks["heure absente refusée"] = candle_for(candles, datetime(2026, 10, 21, 3, 0, tzinfo=timezone.utc)) is None
-    checks["heure Gateway convertie en UTC"] = (
-        parse_ibkr_time("20261021  05:56:50").strftime("%Y-%m-%dT%H:%M:%SZ") == "2026-10-21T09:56:50Z"
+    # Le Gateway rend l'heure d'execution en UTC, sans suffixe (mesure 2026-11-04 : 08:06:05 cote Gateway
+    # = 08:06:05Z cote journal du runtime). La lire comme New York la mettait 5 h dans le futur.
+    checks["heure Gateway sans fuseau lue comme UTC"] = (
+        parse_ibkr_time("20261021  05:56:50").strftime("%Y-%m-%dT%H:%M:%SZ") == "2026-10-21T05:56:50Z"
     )
 
     execution = {
@@ -789,6 +862,35 @@ def selftest() -> int:
         is None
     )
 
+    # Un fill ne peut pas avoir eu lieu dans le futur : si le fuseau est mal lu, on le dit ici plutot que de
+    # laisser OANDA repondre « Time is in the future » sans explication.
+    future = dict(execution, exec_id="a.b.99.01", time="20990101 00:00:00")
+    fut_payload, fut_refused = build_payload("DU123", "practice", [future], {"currency": "CAD"}, FxRates(None))
+    checks["heure dans le futur refusee et nommee"] = (
+        fut_payload["entries"] == [] and any("futur" in reason for reason in fut_refused)
+    )
+
+    # Journal + execution native a ±20 s = la meme transaction : le jumeau du journal doit sortir du miroir,
+    # sinon le hub compte deux fois le meme trade (les fill_ref differents ne se dedoublonnent pas).
+    with tempfile.TemporaryDirectory() as tmp:
+        fills = Path(tmp)
+        (fills / "strat-MGC-paper.jsonl").write_text("\n".join([
+            json.dumps({"strategy": "strat", "symbol": "MGC", "side": "BUY", "quantity": 1.0,
+                        "filledPrice": 4008.0, "commission": 0.62, "timestamp": "2026-11-04T06:00:11Z"}),
+            json.dumps({"strategy": "strat", "symbol": "MGC", "side": "SELL", "quantity": 1.0,
+                        "filledPrice": 4041.1, "commission": 0.62, "timestamp": "2026-11-04T08:06:05Z"}),
+        ]) + "\n")
+        native = {"0000e1a7.6aeb3cc6.01.01": {
+            "exec_id": "0000e1a7.6aeb3cc6.01.01", "time": "20261104 08:06:05", "symbol": "MGCZ6"}}
+        synth, retired = load_jsonl_closes(fills, native)
+        checks["jumeau du journal retire quand la native existe"] = (
+            synth == [] and retired == [("jsonl.MGC.20261104T080605Z.01", "0000e1a7.6aeb3cc6.01.01")]
+        )
+        lonely, lonely_retired = load_jsonl_closes(fills, {})
+        checks["round-trip du journal reconstruit sans native"] = (
+            len(lonely) == 1 and lonely[0]["exec_id"] == "jsonl.MGC.20261104T080605Z.01" and lonely_retired == []
+        )
+
     if not all(checks.values()):
         for name, ok in checks.items():
             print(("✓" if ok else "✗"), name)
@@ -847,7 +949,9 @@ def main() -> int:
         data = collect(host, port, client_id, account, since, args.timeout)
     except Exception as exc:                     # noqa: BLE001 - Gateway muet ou mauvais compte
         print(f"Gateway: {exc}", file=sys.stderr)
-        alert(f"cycle echoue, Gateway: {exc}")
+        if should_alert(state, "gateway:" + str(exc)[:80]):
+            alert(f"cycle echoue, Gateway: {exc}")
+            save_state(state)
         if args.dry_run:
             return 1
         degraded = {
@@ -886,15 +990,28 @@ def main() -> int:
         "TB_FUTURES_FILLS_DIR",
         Path.home() / "projects/trading-bridge/data-futures/fills"
     ))
-    for jsonl_exec in load_jsonl_closes(fills_dir, state["executions"]):
+    synthesized, retire_candidates = load_jsonl_closes(fills_dir, state["executions"])
+    for jsonl_exec in synthesized:
         state["executions"].setdefault(jsonl_exec["exec_id"], jsonl_exec)
 
     save_state(state)                  # vu = conserve, meme si l'envoi echoue ensuite
-    merged = list(state["executions"].values())
+    # Un jumeau du journal dont la transaction a une execution native ne part JAMAIS dans le payload : sinon
+    # la meme transaction est publiee deux fois (fill_ref differents, le hub ne peut pas les rapprocher).
+    twins = {twin for twin, _native_id in retire_candidates}
+    merged = [execution for exec_id, execution in state["executions"].items() if exec_id not in twins]
     payload, refused = build_payload(account, environment, merged, data["snapshot"], fx)
+
+    # Un jumeau du journal ne sort du miroir que si la ligne native qui le remplace est REELLEMENT publiee :
+    # sinon un refus (taux FX manquant) retirerait la transaction du registre au lieu de la garder.
+    published = {entry["fill_ref"] for entry in payload["entries"]}
+    retired = sorted({twin for twin, native_id in retire_candidates
+                      if base_exec_id(native_id)[0] in published and twin not in published})
+    if retired:
+        payload["retired_fill_refs"] = retired
 
     if args.dry_run:
         print(json.dumps({"entries": payload["entries"], "refused": refused, "fx_errors": fx.errors,
+                          "retired_fill_refs": payload.get("retired_fill_refs", []),
                           "window_start_utc": payload["window_start_utc"],
                           "since": since.strftime("%Y-%m-%dT%H:%M:%SZ"),
                           "ledger": len(state["executions"])}, indent=1, default=str))
@@ -914,8 +1031,16 @@ def main() -> int:
     save_state(state)
 
     if refused or fx.errors:
-        # Un fill refuse n'est pas un detail : sans alerte, il disparaitrait en silence.
-        alert("fills non publies: " + "; ".join((refused + fx.errors)[:3]))
+        # Un fill refuse n'est pas un detail : sans alerte, il disparaitrait en silence. Mais la meme ligne
+        # refusee a chaque cycle de 5 minutes noierait le canal : une seule alerte par cause et par 12 h.
+        fresh = [r for r in refused if should_alert(state, "refused:" + r.split(":")[0])]
+        fresh_fx = [e for e in fx.errors if should_alert(state, "fx:" + e)]
+        save_state(state)
+        if fresh or fresh_fx:
+            alert("fills non publies: " + "; ".join((fresh + fresh_fx)[:3]))
+        else:
+            print(f"{len(refused)} refus + {len(fx.errors)} erreurs FX deja signales : pas de nouvelle alerte",
+                  file=sys.stderr)
         return 1
     return 0
 
