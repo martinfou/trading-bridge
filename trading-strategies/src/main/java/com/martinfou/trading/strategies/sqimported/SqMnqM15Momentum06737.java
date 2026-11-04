@@ -298,3 +298,4 @@ public class SqMnqM15Momentum06737 implements Strategy {
     return FuturesRegistry.quantizePrice(symbol, price);
   }
 }
+

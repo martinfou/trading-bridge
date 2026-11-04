@@ -274,3 +274,4 @@ public class SqMgcM30Breakout011248 implements Strategy {
     return FuturesRegistry.quantizePrice(symbol, price);
   }
 }
+
