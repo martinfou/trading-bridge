@@ -109,7 +109,10 @@ class StrategyMapCoverageTest {
             java.util.Map.entry("sq-gbpjpy-h1-breakout-4-19-179", "GBP_JPY"),
             java.util.Map.entry("sq-mgc-m30-breakout-1-29-102", "MGC"),
             java.util.Map.entry("sq-mgc-m30-breakout-0-24542", "MGC"),
-            java.util.Map.entry("sq-mgc-m30-breakout-0-32921", "MGC")
+            java.util.Map.entry("sq-mgc-m30-breakout-0-32921", "MGC"),
+            java.util.Map.entry("sq-mgc-m30-breakout-0-34297", "MGC"),
+            java.util.Map.entry("sq-mgc-m30-breakout-0-11248", "MGC"),
+            java.util.Map.entry("sq-mnq-m15-momentum-0-6737", "MNQ")
         );
         for (var entry : expectedPairs.entrySet()) {
             String alias = entry.getKey();

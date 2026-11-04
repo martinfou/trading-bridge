@@ -458,6 +458,60 @@
         "source": "M30 Gold Dukascopy SQX + 2025-2026 Blind OOS (ELITE 92.6)"
       },
       "computedRiskPct": 0.5
+    },
+    "sq-mgc-m30-breakout-0-34297": {
+      "instrument": "MGC",
+      "granularity": "M30",
+      "lane": "paper",
+      "maxDrawdownDollar": 680.0,
+      "maxConsecutiveLosses": 5,
+      "positionSizeUnits": 1,
+      "backtestMetrics": {
+        "sharpe": 0.89,
+        "maxDrawdown": 13.6,
+        "winRate": 49.5,
+        "avgWinLoss": 1.47,
+        "totalReturn": 123.73,
+        "trades": 1038,
+        "source": "M30 Gold Dukascopy SQX + 2023-2026 Blind OOS (ELITE 90.6)"
+      },
+      "computedRiskPct": 0.5
+    },
+    "sq-mgc-m30-breakout-0-11248": {
+      "instrument": "MGC",
+      "granularity": "M30",
+      "lane": "paper",
+      "maxDrawdownDollar": 750.0,
+      "maxConsecutiveLosses": 5,
+      "positionSizeUnits": 1,
+      "backtestMetrics": {
+        "sharpe": 0.87,
+        "maxDrawdown": 15.0,
+        "winRate": 50.2,
+        "avgWinLoss": 1.45,
+        "totalReturn": 100.25,
+        "trades": 1049,
+        "source": "M30 Gold Dukascopy SQX + 2023-2026 Blind OOS (ELITE 91.5)"
+      },
+      "computedRiskPct": 0.5
+    },
+    "sq-mnq-m15-momentum-0-6737": {
+      "instrument": "MNQ",
+      "granularity": "M15",
+      "lane": "paper",
+      "maxDrawdownDollar": 612.0,
+      "maxConsecutiveLosses": 5,
+      "positionSizeUnits": 1,
+      "backtestMetrics": {
+        "sharpe": 0.56,
+        "maxDrawdown": 4.08,
+        "winRate": 52.5,
+        "avgWinLoss": 1.38,
+        "totalReturn": 32.21,
+        "trades": 356,
+        "source": "2013-2026 MNQ M15 SQX + 2023-2026 Blind OOS (zero-martingale)"
+      },
+      "computedRiskPct": 0.5
     }
   }
 }

@@ -29,7 +29,10 @@ class SqNewStrategiesTest {
         Map.entry("SqGbpJpyH1Breakout419179", "GBP_JPY"),
         Map.entry("SqMgcM30Breakout129102", "MGC"),
         Map.entry("SqMgcM30Breakout024542", "MGC"),
-        Map.entry("SqMgcM30Breakout032921", "MGC")
+        Map.entry("SqMgcM30Breakout032921", "MGC"),
+        Map.entry("SqMgcM30Breakout034297", "MGC"),
+        Map.entry("SqMgcM30Breakout011248", "MGC"),
+        Map.entry("SqMnqM15Momentum06737", "MNQ")
     );
 
     Map<String, String> expectedStyles = Map.ofEntries(
@@ -43,7 +46,10 @@ class SqNewStrategiesTest {
         Map.entry("SqGbpJpyH1Breakout419179", "BREAKOUT"),
         Map.entry("SqMgcM30Breakout129102", "BREAKOUT"),
         Map.entry("SqMgcM30Breakout024542", "BREAKOUT"),
-        Map.entry("SqMgcM30Breakout032921", "BREAKOUT")
+        Map.entry("SqMgcM30Breakout032921", "BREAKOUT"),
+        Map.entry("SqMgcM30Breakout034297", "BREAKOUT"),
+        Map.entry("SqMgcM30Breakout011248", "BREAKOUT"),
+        Map.entry("SqMnqM15Momentum06737", "MOMENTUM")
     );
 
     for (var entry : expectedDefaults.entrySet()) {
