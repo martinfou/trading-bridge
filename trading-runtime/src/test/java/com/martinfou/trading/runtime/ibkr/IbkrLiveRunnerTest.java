@@ -214,6 +214,38 @@ class IbkrLiveRunnerTest {
         }
     }
 
+    @Test
+    @DisplayName("Multi-strategy comma-separated STRATEGY initializes all 3 ELITE MGC evaluators and evaluates each")
+    void runner_multiStrategyEnsembleEvaluatesAll(@TempDir Path tempDir) {
+        Instant now = Instant.parse("2026-08-19T14:30:05Z");
+        Clock fixedClock = Clock.fixed(now, ZoneOffset.UTC);
+
+        List<Bar> bars = new ArrayList<>();
+        Instant start = now.minus(Duration.ofMinutes(30 * 65));
+        for (int i = 0; i < 65; i++) {
+            bars.add(new Bar("MGC", start.plus(Duration.ofMinutes(30L * i)),
+                2500.0 + i, 2505.0 + i, 2495.0 + i, 2502.0 + i, 100L));
+        }
+
+        StubIbkrGatewayClient stubClient = new StubIbkrGatewayClient();
+        IbkrBroker broker = new IbkrBroker(stubClient);
+
+        IbkrLiveRunner.RunnerConfig cfg = new IbkrLiveRunner.RunnerConfig(
+            "127.0.0.1", 4002, "DU12345", 11, "MGC", "30 mins", 30,
+            "sq-mgc-m30-breakout-0-24542,sq-mgc-m30-breakout-1-29-102,sq-mgc-m30-breakout-0-32921",
+            "0", tempDir, true
+        );
+
+        try (IbkrLiveRunner runner = new IbkrLiveRunner(cfg, broker, sym -> bars, () -> {}, fixedClock)) {
+            runner.start();
+            assertEquals(3, runner.evaluators().size());
+            runner.scheduler().runCycle();
+            for (SqStrategyEvaluator ev : runner.evaluators()) {
+                assertEquals(bars.get(bars.size() - 1).timestamp(), ev.lastProcessedBarTimestamp());
+            }
+        }
+    }
+
     private static final class AlwaysSignalStrategy implements Strategy {
         private final List<Order> pending = new ArrayList<>();
         @Override public String name() { return "AlwaysSignal"; }

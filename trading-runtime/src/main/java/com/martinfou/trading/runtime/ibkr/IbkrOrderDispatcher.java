@@ -39,6 +39,7 @@ public final class IbkrOrderDispatcher implements Consumer<Order> {
     private final String symbol;
     private final Runnable haltLaneAction;
     private final boolean dryRun;
+    private final java.util.function.BiConsumer<String, String> orderStrategyTracker;
     private final AtomicBoolean halted = new AtomicBoolean(false);
     private final Set<String> dispatchedIdempotencyKeys = ConcurrentHashMap.newKeySet();
 
@@ -49,11 +50,23 @@ public final class IbkrOrderDispatcher implements Consumer<Order> {
         Runnable haltLaneAction,
         boolean dryRun
     ) {
+        this(broker, strategyName, symbol, haltLaneAction, dryRun, (orderId, strat) -> {});
+    }
+
+    public IbkrOrderDispatcher(
+        Broker broker,
+        String strategyName,
+        String symbol,
+        Runnable haltLaneAction,
+        boolean dryRun,
+        java.util.function.BiConsumer<String, String> orderStrategyTracker
+    ) {
         this.broker = Objects.requireNonNull(broker, "broker is required");
         this.strategyName = Objects.requireNonNull(strategyName, "strategyName is required").trim();
         this.symbol = Objects.requireNonNull(symbol, "symbol is required").trim().toUpperCase();
         this.haltLaneAction = Objects.requireNonNull(haltLaneAction, "haltLaneAction is required");
         this.dryRun = dryRun;
+        this.orderStrategyTracker = orderStrategyTracker != null ? orderStrategyTracker : (orderId, strat) -> {};
     }
 
     public boolean isHalted() {
@@ -70,7 +83,22 @@ public final class IbkrOrderDispatcher implements Consumer<Order> {
             return;
         }
 
-        String canonicalStrategyId = strategyName + "_" + symbol;
+        String incomingTag = rawOrder.strategyId() != null ? rawOrder.strategyId().trim() : "";
+        String suffix = "_" + symbol;
+        String resolvedStrategyName;
+        String canonicalStrategyId;
+        if (!incomingTag.isEmpty()) {
+            if (incomingTag.toUpperCase().endsWith(suffix)) {
+                canonicalStrategyId = incomingTag;
+                resolvedStrategyName = incomingTag.substring(0, incomingTag.length() - suffix.length());
+            } else {
+                resolvedStrategyName = incomingTag;
+                canonicalStrategyId = incomingTag + suffix;
+            }
+        } else {
+            resolvedStrategyName = strategyName;
+            canonicalStrategyId = strategyName + suffix;
+        }
         Order order = rawOrder.withStrategyId(canonicalStrategyId);
 
         // 1. Refuse stopless entries locally at ERROR
@@ -125,6 +153,12 @@ public final class IbkrOrderDispatcher implements Consumer<Order> {
         if (stopOrder == null) {
             log.error("REFUSED ENTRY for {}: IbkrBracketOrderRouter produced no protective stop order", canonicalStrategyId);
             return;
+        }
+
+        orderStrategyTracker.accept(entryOrder.id(), resolvedStrategyName);
+        orderStrategyTracker.accept(stopOrder.id(), resolvedStrategyName);
+        if (tpOrder != null) {
+            orderStrategyTracker.accept(tpOrder.id(), resolvedStrategyName);
         }
 
         // 4. Submit parent entry

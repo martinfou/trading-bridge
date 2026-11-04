@@ -102,6 +102,20 @@ public final class IbkrLiveRunner implements AutoCloseable {
             String v = env.get(key);
             return (v != null && !v.isBlank()) ? v.trim() : defaultVal;
         }
+
+        public List<String> strategyNames() {
+            if (strategyName == null || strategyName.isBlank()) {
+                return List.of();
+            }
+            java.util.ArrayList<String> out = new java.util.ArrayList<>();
+            for (String part : strategyName.split(",")) {
+                String trimmed = part.trim();
+                if (!trimmed.isEmpty()) {
+                    out.add(trimmed);
+                }
+            }
+            return List.copyOf(out);
+        }
     }
 
     private final RunnerConfig config;
@@ -110,12 +124,16 @@ public final class IbkrLiveRunner implements AutoCloseable {
     private final AutoCloseable barSourceCloseable;
     private final Clock clock;
     private final FillLogWriter fillLogWriter;
+    private final Map<String, FillLogWriter> fillLogWritersByStrategy = new ConcurrentHashMap<>();
     private final double commissionPerContract;
     private final Map<String, Double> requestedPricesByOrderId = new ConcurrentHashMap<>();
+    private final Map<String, String> strategyByOrderId = new ConcurrentHashMap<>();
+    private volatile String lastDispatchedStrategy;
 
     private IbkrGatewaySupervisor supervisor;
     private BarCloseScheduler scheduler;
     private SqStrategyEvaluator evaluator;
+    private final List<SqStrategyEvaluator> evaluators = new java.util.ArrayList<>();
     private IbkrOrderDispatcher dispatcher;
 
     public IbkrLiveRunner(
@@ -152,6 +170,13 @@ public final class IbkrLiveRunner implements AutoCloseable {
         this.clock = Objects.requireNonNull(clock, "clock is required");
         this.fillLogWriter = fillLogWriter;
         this.commissionPerContract = commissionPerContract;
+        if (config.stateDir() != null) {
+            Path parent = config.stateDir().getParent();
+            Path fillsDir = parent != null ? parent.resolve("fills") : config.stateDir().resolve("fills");
+            for (String s : config.strategyNames()) {
+                fillLogWritersByStrategy.put(s, FillLogWriter.forRun(fillsDir, s, config.symbol(), "paper"));
+            }
+        }
     }
 
     private static FillLogWriter resolveDefaultFillLogWriter(RunnerConfig config) {
@@ -160,7 +185,8 @@ public final class IbkrLiveRunner implements AutoCloseable {
         }
         Path parent = config.stateDir().getParent();
         Path fillsDir = parent != null ? parent.resolve("fills") : config.stateDir().resolve("fills");
-        return FillLogWriter.forRun(fillsDir, config.strategyName(), config.symbol(), "paper");
+        String primaryStrategy = config.strategyNames().isEmpty() ? config.strategyName() : config.strategyNames().get(0);
+        return FillLogWriter.forRun(fillsDir, primaryStrategy, config.symbol(), "paper");
     }
 
     /**
@@ -226,49 +252,70 @@ public final class IbkrLiveRunner implements AutoCloseable {
         );
         this.supervisor.start();
 
-        // 5. Instantiate strategy from STRATEGY via the same getStrategyMap() reflection LiveStrategyRunner uses.
-        Strategy strategy = SqStrategyEvaluator.instantiateStrategy(config.strategyName(), config.symbol());
-        log.info("[5/7] Instantiated strategy: key='{}' class={} displayName='{}' symbol={}",
-            config.strategyName(), strategy.getClass().getSimpleName(), strategy.name(), config.symbol());
+        // 5 & 6. Instantiate strategy(ies) from STRATEGY via LiveStrategyRunner.getStrategyMap() and load bar cursors.
+        this.evaluators.clear();
+        for (String stratName : config.strategyNames()) {
+            Strategy strategy = SqStrategyEvaluator.instantiateStrategy(stratName, config.symbol());
+            log.info("[5/7] Instantiated strategy: key='{}' class={} displayName='{}' symbol={}",
+                stratName, strategy.getClass().getSimpleName(), strategy.name(), config.symbol());
 
-        // 6. Load the bar cursor from TB_STATE_DIR.
-        this.evaluator = new SqStrategyEvaluator(
-            config.strategyName(),
-            config.symbol(),
-            strategy,
-            config.stateDir(),
-            config.dryRun()
-        );
-        log.info("[6/7] Bar cursor initialized from {}: lastProcessedBarTimestamp={}",
-            config.stateDir(), evaluator.lastProcessedBarTimestamp());
+            SqStrategyEvaluator ev = new SqStrategyEvaluator(
+                stratName,
+                config.symbol(),
+                strategy,
+                config.stateDir(),
+                config.dryRun()
+            );
+            log.info("[6/7] Bar cursor initialized for {} from {}: lastProcessedBarTimestamp={}",
+                stratName, config.stateDir(), ev.lastProcessedBarTimestamp());
+            this.evaluators.add(ev);
+        }
+        this.evaluator = this.evaluators.isEmpty() ? null : this.evaluators.get(0);
 
         // 7. Build and start() the BarCloseScheduler.
+        String primaryStrategy = config.strategyNames().get(0);
         this.dispatcher = new IbkrOrderDispatcher(
             broker,
-            config.strategyName(),
+            primaryStrategy,
             config.symbol(),
             this::stop,
-            config.dryRun()
+            config.dryRun(),
+            (orderId, stratName) -> {
+                if (orderId != null && stratName != null) {
+                    strategyByOrderId.put(orderId, stratName);
+                    lastDispatchedStrategy = stratName;
+                }
+            }
         );
         SmallAccountMarginGuard marginGuard = new SmallAccountMarginGuard(
             SmallAccountMarginGuard.DEFAULT_MAX_MARGIN_UTILIZATION,
             1,
             5000.0
         );
+        Function<List<Bar>, List<com.martinfou.trading.core.Order>> combinedEvaluator = bars -> {
+            java.util.ArrayList<com.martinfou.trading.core.Order> orders = new java.util.ArrayList<>();
+            for (SqStrategyEvaluator ev : evaluators) {
+                List<com.martinfou.trading.core.Order> generated = ev.apply(bars);
+                if (generated != null && !generated.isEmpty()) {
+                    orders.addAll(generated);
+                }
+            }
+            return orders;
+        };
         this.scheduler = new BarCloseScheduler(
             List.of(config.symbol()),
             config.intervalMinutes(),
             clock,
             barProvider,
-            Map.of(config.symbol(), evaluator),
+            Map.of(config.symbol(), combinedEvaluator),
             () -> broker.getAccountState().equity(),
             broker::getPositions,
             marginGuard,
             dispatcher
         );
         this.scheduler.start();
-        log.info("[7/7] BarCloseScheduler started for symbol={}: nextTriggerTime={}",
-            config.symbol(), scheduler.nextTriggerTime());
+        log.info("[7/7] BarCloseScheduler started for symbol={} strategies={}: nextTriggerTime={}",
+            config.symbol(), config.strategyNames(), scheduler.nextTriggerTime());
     }
 
     public static void validateConfig(RunnerConfig config) {
@@ -285,9 +332,16 @@ public final class IbkrLiveRunner implements AutoCloseable {
             throw new IllegalArgumentException(
                 "FUTURES_SYMBOL must name a single symbol (comma-separated lists are refused): '" + config.symbol() + "'");
         }
-        if (config.strategyName() == null || config.strategyName().isBlank() || config.strategyName().contains(",") || config.strategyName().contains(" ")) {
+        List<String> stratNames = config.strategyNames();
+        if (stratNames.isEmpty()) {
             throw new IllegalArgumentException(
-                "STRATEGY is required and must name a single strategy for the MVP: '" + config.strategyName() + "'");
+                "STRATEGY is required and must name at least one strategy: '" + config.strategyName() + "'");
+        }
+        for (String s : stratNames) {
+            if (s.isBlank() || s.contains(" ")) {
+                throw new IllegalArgumentException(
+                    "Invalid strategy name in STRATEGY: '" + s + "'");
+            }
         }
         if (config.intervalMinutes() <= 0) {
             throw new IllegalArgumentException("FUTURES_INTERVAL_MINUTES must be > 0");
@@ -315,6 +369,10 @@ public final class IbkrLiveRunner implements AutoCloseable {
         return evaluator;
     }
 
+    public List<SqStrategyEvaluator> evaluators() {
+        return List.copyOf(evaluators);
+    }
+
     public IbkrOrderDispatcher dispatcher() {
         return dispatcher;
     }
@@ -336,6 +394,7 @@ public final class IbkrLiveRunner implements AutoCloseable {
         if (event.type() == BrokerEventType.REJECT) {
             if (event.orderId() != null) {
                 requestedPricesByOrderId.remove(event.orderId());
+                strategyByOrderId.remove(event.orderId());
             }
             return;
         }
@@ -347,8 +406,15 @@ public final class IbkrLiveRunner implements AutoCloseable {
             if (requestedPrice <= 0.0) {
                 requestedPrice = filledPrice;
             }
+            String resolvedStrat = null;
             if (event.orderId() != null) {
                 requestedPricesByOrderId.remove(event.orderId());
+                resolvedStrat = strategyByOrderId.remove(event.orderId());
+            }
+            if (resolvedStrat == null || resolvedStrat.isBlank()) {
+                resolvedStrat = lastDispatchedStrategy != null
+                    ? lastDispatchedStrategy
+                    : (config.strategyNames().isEmpty() ? config.strategyName() : config.strategyNames().get(0));
             }
             double qty = event.quantity() != null ? event.quantity() : 0.0;
             String side = event.side() != null ? event.side() : "";
@@ -356,7 +422,7 @@ public final class IbkrLiveRunner implements AutoCloseable {
             double commission = Math.round(commissionPerContract * qty * 10_000.0) / 10_000.0;
             String ts = event.timestamp() != null ? event.timestamp().toString() : clock.instant().toString();
             FillLogRecord record = new FillLogRecord(
-                config.strategyName(),
+                resolvedStrat,
                 config.symbol(),
                 side,
                 qty,
@@ -367,7 +433,8 @@ public final class IbkrLiveRunner implements AutoCloseable {
                 ts,
                 "paper"
             );
-            fillLogWriter.append(record);
+            FillLogWriter writer = fillLogWritersByStrategy.getOrDefault(resolvedStrat, fillLogWriter);
+            writer.append(record);
         }
     }
 
@@ -380,11 +447,11 @@ public final class IbkrLiveRunner implements AutoCloseable {
                 log.warn("Error closing scheduler: {}", e.getMessage());
             }
         }
-        if (evaluator != null) {
+        for (SqStrategyEvaluator ev : evaluators) {
             try {
-                evaluator.persistCursor();
+                ev.persistCursor();
             } catch (Exception e) {
-                log.warn("Error persisting cursor on shutdown: {}", e.getMessage());
+                log.warn("Error persisting cursor on shutdown for {}: {}", ev.strategyName(), e.getMessage());
             }
         }
         if (supervisor != null) {
