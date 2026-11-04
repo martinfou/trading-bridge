@@ -58,11 +58,11 @@ public class RunGoldJanuarySeasonal {
 
         // Configs : {label, symbol, range, startM, startD, endM, endD, side, qty}
         String[][] configs = {
-            {"A: XAU Jan1-31 BUY (candidate)", "XAU_USD", "2006-2025", "1", "1", "1", "31", "BUY", "10"},
-            {"B: XAU Dec15-Jan15 BUY",         "XAU_USD", "2006-2025", "12", "15", "1", "15", "BUY", "10"},
-            {"C: XAU Dec1-Jan31 BUY",          "XAU_USD", "2006-2025", "12", "1", "1", "31", "BUY", "10"},
-            {"D: XAU Feb1-28 BUY (contrôle)",  "XAU_USD", "2006-2025", "2", "1", "2", "28", "BUY", "10"},
-            {"E: XAU Nov1-30 BUY (contrôle)",  "XAU_USD", "2006-2025", "11", "1", "11", "30", "BUY", "10"},
+            {"A: XAU Jan1-31 BUY (candidate)", "XAU_USD", "2007-2026", "1", "1", "1", "31", "BUY", "10"},
+            {"B: XAU Dec15-Jan15 BUY",         "XAU_USD", "2007-2026", "12", "15", "1", "15", "BUY", "10"},
+            {"C: XAU Dec1-Jan31 BUY",          "XAU_USD", "2007-2026", "12", "1", "1", "31", "BUY", "10"},
+            {"D: XAU Feb1-28 BUY (contrôle)",  "XAU_USD", "2007-2026", "2", "1", "2", "28", "BUY", "10"},
+            {"E: XAU Nov1-30 BUY (contrôle)",  "XAU_USD", "2007-2026", "11", "1", "11", "30", "BUY", "10"},
             {"F: EUR Jan1-31 BUY (contrôle)",  "EUR_USD", "2006-2026", "1", "1", "1", "31", "BUY", "10000"},
             {"G: GBP Jan1-31 BUY (contrôle)",  "GBP_USD", "2006-2026", "1", "1", "1", "31", "BUY", "10000"},
         };
@@ -93,8 +93,8 @@ public class RunGoldJanuarySeasonal {
     /** Walk-forward XAU Jan1-31 : IS 2006-2015 / OOS 2016-2025. */
     private static void runWalkForward(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String symbol = "XAU_USD";
-        var isLoaded = HistoricalDataLoader.loadFromArgs(symbol, symbol, "2006-2015");
-        var oosLoaded = HistoricalDataLoader.loadFromArgs(symbol, symbol, "2016-2025");
+        var isLoaded = HistoricalDataLoader.loadFromArgs(symbol, symbol, "2007-2015");
+        var oosLoaded = HistoricalDataLoader.loadFromArgs(symbol, symbol, "2016-2026");
         List<Bar> isBars = isLoaded.bars();
         List<Bar> oosBars = oosLoaded.bars();
 
@@ -117,7 +117,7 @@ public class RunGoldJanuarySeasonal {
     /** Sweep robustesse : bordures autour de Jan 1→Jan 31 (XAU). Plateau attendu. */
     private static void runSweep(java.util.function.Function<String, BacktestExecutionCost> cost) throws Exception {
         String symbol = "XAU_USD";
-        var loaded = HistoricalDataLoader.loadFromArgs(symbol, symbol, "2006-2025");
+        var loaded = HistoricalDataLoader.loadFromArgs(symbol, symbol, "2007-2026");
         List<Bar> bars = loaded.bars();
         if (bars.isEmpty()) { System.out.println(symbol + " : PAS DE DONNÉES"); return; }
 
