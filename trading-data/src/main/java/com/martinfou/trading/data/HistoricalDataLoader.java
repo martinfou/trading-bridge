@@ -101,13 +101,12 @@ public final class HistoricalDataLoader {
      * (e.g. futures: M30 CSV -> H1/H4/D1; M1 -> M5/M15/M30).
      */
     public static List<Bar> loadYearSpecWithFallback(String symbol, String spec, String tf, Path barsDir) throws IOException {
-        if ("H1".equalsIgnoreCase(tf) || "M1".equalsIgnoreCase(tf)) {
-            return loadYearSpec(symbol, spec, tf, barsDir);
-        }
         try {
             return loadNative(symbol, spec, tf, barsDir);
-        } catch (IOException ignored) {
-            // aggregate below
+        } catch (IOException e) {
+            if ("M1".equalsIgnoreCase(tf)) {
+                throw e; // nothing finer to aggregate from
+            }
         }
         int target = tfMinutes(tf);
         List<Bar> source = null;
