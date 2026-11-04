@@ -21,7 +21,7 @@ services:
       - FUTURES_SYMBOL=${FUTURES_SYMBOL:-MGC}
       - FUTURES_TIMEFRAME=${FUTURES_TIMEFRAME:-30 mins}
       - FUTURES_INTERVAL_MINUTES=${FUTURES_INTERVAL_MINUTES:-30}
-      - STRATEGY=${STRATEGY:-sq-mgc-m30-breakout-0-24542}
+      - STRATEGY=${STRATEGY:-sq-mgc-m30-breakout-0-24542,sq-mgc-m30-breakout-1-29-102,sq-mgc-m30-breakout-0-32921}
       - TB_ALLOW_ORDERS=${TB_ALLOW_ORDERS:-1}
       - TB_STATE_DIR=/app/data-futures/state
       - DRY_RUN=${DRY_RUN:-false}

@@ -111,12 +111,27 @@ def latest_revisions(executions: list[dict]) -> list[dict]:
 CONTROL_REFS = {"killswitch", "flatten", "flatten-all", "control"}
 
 UUID_SHAPE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
+STRATEGY_SYMBOL_SUFFIX = re.compile(r"_(MGC|MNQ|MES|M2K|MCL|GC|NQ|ES)[A-Z0-9]*$", re.IGNORECASE)
+
+FUTURES_MULTIPLIERS = {
+    "MGC": 10.0,
+    "MES": 5.0,
+    "MNQ": 2.0,
+    "M2K": 5.0,
+    "MCL": 100.0,
+}
+
+
+def normalize_strategy_ref(ref: str) -> str:
+    """Retire le suffixe de symbole ajouté par IbkrOrderDispatcher (ex: sq-mgc-m30-breakout-0-24542_MGC)."""
+    return STRATEGY_SYMBOL_SUFFIX.sub("", (ref or "").strip())
 
 
 def looks_like_strategy(ref: str) -> bool:
     """Un nom de strategie, pas un identifiant technique : un UUID en orderRef creerait une fausse strategie
     par fill (mesure : IbkrBroker passait order.id() la ou le nom de strategie etait attendu)."""
-    return bool(ref) and not UUID_SHAPE.match(ref) and re.match(r"^[A-Za-z][A-Za-z0-9_-]{1,63}$", ref) is not None
+    cleaned = normalize_strategy_ref(ref)
+    return bool(cleaned) and not UUID_SHAPE.match(cleaned) and re.match(r"^[A-Za-z][A-Za-z0-9_-]{1,63}$", cleaned) is not None
 
 
 def is_close(report: dict | None) -> bool:
@@ -253,14 +268,15 @@ def build_payload(account_id: str, environment: str, executions: list[dict],
             rate = fetched
 
         order_ref = (execution.get("order_ref") or "").strip()
+        normalized_ref = normalize_strategy_ref(order_ref)
         tag = order_ref or f"IBKR-ORDER-{execution['order_id']}"
         # Trois natures, jamais confondues : une strategie, un ordre de controle (kill-switch, flatten
         # declenche a la main), ou un fill non attribue.
-        ref_lower = order_ref.lower()
+        ref_lower = normalized_ref.lower()
         if ref_lower in CONTROL_REFS:
             kind, strategy_name = "control", None
-        elif looks_like_strategy(order_ref):
-            kind, strategy_name = "strategy", order_ref
+        elif looks_like_strategy(normalized_ref):
+            kind, strategy_name = "strategy", normalized_ref
         else:
             kind, strategy_name = "leak", None
         local = closed_at.astimezone(MONTREAL)
@@ -274,8 +290,9 @@ def build_payload(account_id: str, environment: str, executions: list[dict],
             "instrument": execution["symbol"] or str(execution["con_id"]),
             "direction": "BUY" if execution["side"] == "BOT" else "SELL",
             "units": execution["shares"],
-            # Le prix d'entrée n'est pas connu de l'exécution de sortie : on ne l'invente pas.
-            "entry_price": None,
+            # Le prix d'entrée n'est pas connu de l'exécution de sortie Gateway : on ne l'invente pas.
+            # S'il provient du journal local (round-trip complet), il est transmis tel quel.
+            "entry_price": execution.get("entry_price"),
             "exit_price": execution["price"],
             "pl": round(native * rate, 4),
             "pl_native": round(native, 4),
@@ -288,7 +305,7 @@ def build_payload(account_id: str, environment: str, executions: list[dict],
             # exit_reason est borné à 32 caractères par l'API : le taux garde sa place, le bavardage non.
             "exit_reason": (f"IBKR FX {rate:.6f}" if rate != 1.0 else "IBKR"),
             "order_id": str(execution["order_id"]),
-            "opened_at_utc": None,
+            "opened_at_utc": execution.get("opened_at_utc"),
             "closed_at_utc": closed_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "local_date": local.strftime("%Y-%m-%d"),
             "iso_week": "%s-W%02d" % local.isocalendar()[:2],
@@ -510,6 +527,95 @@ def backfill_since(state: dict, fallback_days: int = 7) -> datetime:
         except ValueError:
             pass
     return datetime.now(timezone.utc) - timedelta(days=fallback_days)
+
+
+def load_jsonl_closes(fills_dir: Path, existing_executions: dict[str, dict]) -> list[dict]:
+    """Reconstruit les round-trips fermés depuis data-futures/fills/*-paper.jsonl lorsque le Gateway
+    a redémarré avant le passage du publisher P&L."""
+    if not fills_dir.is_dir():
+        return []
+
+    existing_times: list[tuple[str, datetime]] = []
+    for ex_id, ex in existing_executions.items():
+        if str(ex_id).startswith("jsonl."):
+            continue
+        try:
+            existing_times.append((str(ex.get("symbol", "")), parse_ibkr_time(ex["time"])))
+        except Exception:  # noqa: BLE001
+            continue
+
+    synthesized: list[dict] = []
+    for path in sorted(fills_dir.glob("*-paper.jsonl")):
+        open_leg: dict | None = None
+        for idx, raw_line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), start=1):
+            raw_line = raw_line.strip()
+            if not raw_line:
+                continue
+            try:
+                rec = json.loads(raw_line)
+            except json.JSONDecodeError:
+                continue
+            side = str(rec.get("side", "")).upper()
+            symbol = str(rec.get("symbol", "")).upper()
+            strategy = normalize_strategy_ref(str(rec.get("strategy", "")))
+            if side not in ("BUY", "SELL") or not symbol:
+                continue
+
+            if open_leg is None or open_leg.get("side") == side:
+                open_leg = rec
+                continue
+
+            # Fermeture d'un round-trip (jambe opposée)
+            try:
+                entry_price = float(open_leg["filledPrice"])
+                exit_price = float(rec["filledPrice"])
+                qty = min(float(open_leg.get("quantity", 1.0)), float(rec.get("quantity", 1.0)))
+                open_comm = float(open_leg.get("commission", 0.62))
+                close_comm = float(rec.get("commission", 0.62))
+                open_dt = datetime.fromisoformat(str(open_leg["timestamp"]).replace("Z", "+00:00")).astimezone(timezone.utc)
+                close_dt = datetime.fromisoformat(str(rec["timestamp"]).replace("Z", "+00:00")).astimezone(timezone.utc)
+            except (KeyError, TypeError, ValueError):
+                open_leg = None
+                continue
+
+            open_leg = None
+            mult = FUTURES_MULTIPLIERS.get(symbol)
+            if mult is None:
+                continue
+
+            # Ignorer si une exécution Gateway native existe déjà à ±20s sur ce symbole
+            already_seen = any(
+                (sym.startswith(symbol) or symbol.startswith(sym)) and abs((dt - close_dt).total_seconds()) <= 20
+                for sym, dt in existing_times
+            )
+            if already_seen:
+                continue
+
+            pts = (exit_price - entry_price) if side == "SELL" else (entry_price - exit_price)
+            realized_usd = round(pts * mult * qty - (open_comm + close_comm), 4)
+            stamp = close_dt.strftime("%Y%m%dT%H%M%SZ")
+            exec_id = f"jsonl.{symbol}.{stamp}.01"
+
+            synthesized.append({
+                "exec_id": exec_id,
+                "time": close_dt.strftime("%Y%m%d %H:%M:%S UTC"),
+                "side": "BOT" if side == "BUY" else "SLD",
+                "shares": qty,
+                "price": exit_price,
+                "entry_price": entry_price,
+                "opened_at_utc": open_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "order_id": 90000 + idx,
+                "order_ref": f"{strategy}_{symbol}" if strategy else "",
+                "currency": "USD",
+                "con_id": 0,
+                "symbol": symbol,
+                "report": {
+                    "commission": round(open_comm + close_comm, 4),
+                    "currency": "USD",
+                    "realized_pnl": realized_usd,
+                },
+            })
+    return synthesized
 
 
 # --------------------------------------------------------------------------- alerte
@@ -775,6 +881,14 @@ def main() -> int:
         if stored is not None and stored.get("report") is not None and execution.get("report") is None:
             continue
         state["executions"][execution["exec_id"]] = execution
+
+    fills_dir = Path(os.environ.get(
+        "TB_FUTURES_FILLS_DIR",
+        Path.home() / "projects/trading-bridge/data-futures/fills"
+    ))
+    for jsonl_exec in load_jsonl_closes(fills_dir, state["executions"]):
+        state["executions"].setdefault(jsonl_exec["exec_id"], jsonl_exec)
+
     save_state(state)                  # vu = conserve, meme si l'envoi echoue ensuite
     merged = list(state["executions"].values())
     payload, refused = build_payload(account, environment, merged, data["snapshot"], fx)
