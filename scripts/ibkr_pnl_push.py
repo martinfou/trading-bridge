@@ -566,13 +566,16 @@ def backfill_since(state: dict, fallback_days: int = 7) -> datetime:
     return datetime.now(timezone.utc) - timedelta(days=fallback_days)
 
 
-def load_jsonl_closes(fills_dir: Path, existing_executions: dict[str, dict]) -> tuple[list[dict], list[tuple[str, str]]]:
+def load_jsonl_closes(fills_dir: Path, existing_executions: dict[str, dict]
+                      ) -> tuple[list[dict], list[tuple[str, str, str]]]:
     """Reconstruit les round-trips fermés depuis data-futures/fills/*-paper.jsonl lorsque le Gateway
     a redémarré avant le passage du publisher P&L.
 
     Retourne (lignes synthétisées, jumeaux à retirer). Un round-trip du journal qui a une exécution
     Gateway native à ±20 s ne doit pas être publié deux fois : la native porte le P&L du venue, le jumeau
-    est retiré du miroir (l'identité d'une ligne est son fill_ref, donc ils ne se dédoublonnent pas seuls)."""
+    est retiré du miroir (l'identité d'une ligne est son fill_ref, donc ils ne se dédoublonnent pas seuls).
+    Chaque jumeau est (exec_id local, fill_ref du miroir, exec_id natif) : l'exec_id porte la révision,
+    le fill_ref est sa base, et les deux ne sont pas interchangeables."""
     if not fills_dir.is_dir():
         return [], []
 
@@ -586,7 +589,7 @@ def load_jsonl_closes(fills_dir: Path, existing_executions: dict[str, dict]) -> 
             continue
 
     synthesized: list[dict] = []
-    retired: list[tuple[str, str]] = []
+    retired: list[tuple[str, str, str]] = []
     for path in sorted(fills_dir.glob("*-paper.jsonl")):
         open_leg: dict | None = None
         for idx, raw_line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), start=1):
@@ -627,7 +630,10 @@ def load_jsonl_closes(fills_dir: Path, existing_executions: dict[str, dict]) -> 
 
             # Ignorer si une exécution Gateway native existe déjà à ±20s sur ce symbole : c'est la même
             # transaction, et le jumeau du journal doit sortir du miroir au lieu d'y rester en double.
-            twin_ref = f"jsonl.{symbol}.{close_dt.strftime('%Y%m%dT%H%M%SZ')}.01"
+            # Le ref à retirer est celui que le miroir stocke réellement : la BASE de l'execId, sans le
+            # suffixe de révision (fill_ref = base_exec_id(...)), sinon la suppression ne trouve rien.
+            twin_exec_id = f"jsonl.{symbol}.{close_dt.strftime('%Y%m%dT%H%M%SZ')}.01"
+            twin_ref = base_exec_id(twin_exec_id)[0]
             native = next(
                 ((dt, ex_id) for sym, dt, ex_id in existing_times
                  if sym and (sym.startswith(symbol) or symbol.startswith(sym))
@@ -635,7 +641,7 @@ def load_jsonl_closes(fills_dir: Path, existing_executions: dict[str, dict]) -> 
                 None,
             )
             if native is not None:
-                retired.append((twin_ref, native[1]))
+                retired.append((twin_exec_id, twin_ref, native[1]))
                 continue
 
             pts = (exit_price - entry_price) if side == "SELL" else (entry_price - exit_price)
@@ -883,10 +889,14 @@ def selftest() -> int:
         native = {"0000e1a7.6aeb3cc6.01.01": {
             "exec_id": "0000e1a7.6aeb3cc6.01.01", "time": "20261104 08:06:05", "symbol": "MGCZ6"}}
         synth, retired = load_jsonl_closes(fills, native)
-        checks["jumeau du journal retire quand la native existe"] = (
-            synth == [] and retired == [("jsonl.MGC.20261104T080605Z.01", "0000e1a7.6aeb3cc6.01.01")]
-        )
         lonely, lonely_retired = load_jsonl_closes(fills, {})
+        # Le ref retire doit etre EXACTEMENT celui que le miroir stockerait pour ce jumeau (la base de
+        # l'execId, sans suffixe de revision) : un ".01" en trop et la suppression ne trouve aucune ligne.
+        lonely_payload, _ = build_payload("DU123", "practice", lonely, {"currency": "CAD"}, FixedFx(None))
+        twin_ref = lonely_payload["entries"][0]["fill_ref"]
+        checks["jumeau du journal retire quand la native existe"] = (
+            synth == [] and retired == [("jsonl.MGC.20261104T080605Z.01", twin_ref, "0000e1a7.6aeb3cc6.01.01")]
+        )
         checks["round-trip du journal reconstruit sans native"] = (
             len(lonely) == 1 and lonely[0]["exec_id"] == "jsonl.MGC.20261104T080605Z.01" and lonely_retired == []
         )
@@ -997,15 +1007,15 @@ def main() -> int:
     save_state(state)                  # vu = conserve, meme si l'envoi echoue ensuite
     # Un jumeau du journal dont la transaction a une execution native ne part JAMAIS dans le payload : sinon
     # la meme transaction est publiee deux fois (fill_ref differents, le hub ne peut pas les rapprocher).
-    twins = {twin for twin, _native_id in retire_candidates}
+    twins = {twin_exec_id for twin_exec_id, _ref, _native_id in retire_candidates}
     merged = [execution for exec_id, execution in state["executions"].items() if exec_id not in twins]
     payload, refused = build_payload(account, environment, merged, data["snapshot"], fx)
 
     # Un jumeau du journal ne sort du miroir que si la ligne native qui le remplace est REELLEMENT publiee :
     # sinon un refus (taux FX manquant) retirerait la transaction du registre au lieu de la garder.
     published = {entry["fill_ref"] for entry in payload["entries"]}
-    retired = sorted({twin for twin, native_id in retire_candidates
-                      if base_exec_id(native_id)[0] in published and twin not in published})
+    retired = sorted({ref for _exec_id, ref, native_id in retire_candidates
+                      if base_exec_id(native_id)[0] in published and ref not in published})
     if retired:
         payload["retired_fill_refs"] = retired
 
