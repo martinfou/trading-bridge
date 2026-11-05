@@ -379,4 +379,282 @@ class TuiCommandHandlerTest {
             server.stop(0);
         }
     }
+
+    @Test
+    void dataCommand_supportsMultiTimeframesAndFuturesSymbols() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/api/historical-data/status", exchange -> {
+            byte[] body = """
+                {
+                  "status": [
+                    {
+                      "symbol": "MES",
+                      "pair": "mes",
+                      "year": 2024,
+                      "timeframe": "m15",
+                      "csvExists": false,
+                      "csvSize": 0,
+                      "barsExists": true,
+                      "barsSize": 4096
+                    }
+                  ],
+                  "activeDownloads": [],
+                  "activeTasks": []
+                }
+                """.strip().getBytes();
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.createContext("/api/historical-data/download", exchange -> {
+            byte[] body = "{\"accepted\":true}".getBytes();
+            exchange.sendResponseHeaders(202, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.start();
+        try {
+            var handler = new TuiCommandHandler(new ControlPlaneClient("http://127.0.0.1:" + server.getAddress().getPort()));
+            List<String> statusLines = handler.handleCliArgs(List.of("data", "status", "m15", "--symbol", "MES"), null);
+            assertTrue(statusLines.stream().anyMatch(l -> l.contains("MES") && l.contains("2024 (BARS)")));
+
+            List<String> dlLines = handler.handleCliArgs(List.of("data", "download", "MES", "2024", "m15"), null);
+            assertTrue(dlLines.getFirst().contains("Download started for MES 2024 (M15)"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void generatorAndInspectCommands_workInCliAndJsonMode() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/api/generator/start", exchange -> {
+            String reqBody = new String(exchange.getRequestBody().readAllBytes());
+            // Verify Smart Preset for MES ($10,000 capital, $0.62 comm) was applied
+            assertTrue(reqBody.contains("\"symbol\":\"MES\""));
+            assertTrue(reqBody.contains("\"commissionPerTrade\":0.62"));
+            byte[] body = "{\"jobId\":\"gen-42\",\"status\":\"RUNNING\"}".getBytes();
+            exchange.sendResponseHeaders(202, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.createContext("/api/generator/databank", exchange -> {
+            byte[] body = """
+                {
+                  "candidates": [
+                    {
+                      "id": "MES_H1_Trend_001",
+                      "symbol": "MES",
+                      "timeframe": "H1",
+                      "yearSpec": "2020-2025",
+                      "archetype": "TREND",
+                      "direction": "BOTH",
+                      "entryOrderType": "MARKET",
+                      "tier": "GOLD",
+                      "compositeScore": 88.5,
+                      "totalTrades": 210,
+                      "isTrades": 150,
+                      "oosTrades": 60,
+                      "netProfit": 4500.0,
+                      "isNetProfit": 3100.0,
+                      "oosNetProfit": 1400.0,
+                      "totalReturnPct": 45.0,
+                      "profitFactor": 1.85,
+                      "isProfitFactor": 1.90,
+                      "oosProfitFactor": 1.72,
+                      "sharpeRatio": 1.65,
+                      "isSharpeRatio": 1.70,
+                      "oosSharpeRatio": 1.55,
+                      "maxDrawdownPct": 6.4,
+                      "retDdRatio": 7.03,
+                      "rSquared": 0.94,
+                      "mcVar95": 820.0,
+                      "mcLossProbPct": 1.2,
+                      "promoted": false,
+                      "longSignalSummary": "EMA(20) > EMA(50) AND RSI(14) > 55",
+                      "shortSignalSummary": "EMA(20) < EMA(50) AND RSI(14) < 45",
+                      "entrySummary": "MARKET on bar open",
+                      "exitSummary": "SL=2.0*ATR(14), TP=3.5*ATR(14)",
+                      "javaSourceCode": "public class MES_H1_Trend_001 implements Strategy {}"
+                    }
+                  ],
+                  "status": {"running": false}
+                }
+                """.strip().getBytes();
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.start();
+        try {
+            var handler = new TuiCommandHandler(new ControlPlaneClient("http://127.0.0.1:" + server.getAddress().getPort()));
+            List<String> startOut = handler.handleCliArgs(List.of("generator", "start", "--symbol", "MES", "--tf", "H1"), null);
+            assertTrue(startOut.getFirst().contains("gen-42"));
+            assertTrue(startOut.getFirst().contains("comm=$0.62"));
+
+            List<String> dbOut = handler.handleCliArgs(List.of("generator", "databank"), null);
+            assertTrue(dbOut.stream().anyMatch(l -> l.contains("MES_H1_Trend_001") && l.contains("GOLD")));
+
+            List<String> inspectOut = handler.handleCliArgs(List.of("inspect", "MES_H1_Trend_001", "--code"), null);
+            assertTrue(inspectOut.stream().anyMatch(l -> l.contains("EMA(20) > EMA(50)")));
+            assertTrue(inspectOut.stream().anyMatch(l -> l.contains("public class MES_H1_Trend_001")));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void wfaMonteCarloAndAnalyticsCommands_formatResearchMetrics() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/api/runs/run-99/monte-carlo", exchange -> {
+            byte[] body = """
+                {
+                  "runId": "run-99",
+                  "runs": 1000,
+                  "blockSize": 3,
+                  "pnlPercentiles": [500.0, 1200.0, 1800.0, 2400.0, 3100.0],
+                  "drawdownPercentiles": [12.5, 9.0, 6.5, 4.8, 3.2],
+                  "sharpePercentiles": [0.8, 1.1, 1.45, 1.8, 2.2],
+                  "worstPnl": 120.0,
+                  "bestPnl": 3900.0,
+                  "var95": 640.0,
+                  "probabilityOfLoss": 0.015
+                }
+                """.strip().getBytes();
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.createContext("/api/runs/walk-forward/wfa-1/report", exchange -> {
+            byte[] body = """
+                {
+                  "strategyName": "LondonOpenRangeBreakout",
+                  "symbol": "MES",
+                  "timeframe": "H1",
+                  "anchored": false,
+                  "aggregatedOosNetProfit": 2340.5,
+                  "aggregatedOosSharpe": 1.52,
+                  "aggregatedOosMaxDrawdownPct": 5.8,
+                  "wfaEfficiency": 0.78,
+                  "folds": [
+                    {
+                      "foldIndex": 1,
+                      "isNetProfit": 1200.0,
+                      "isSharpe": 1.7,
+                      "oosNetProfit": 480.0,
+                      "oosSharpe": 1.5,
+                      "bestParameters": {"period": 20}
+                    }
+                  ]
+                }
+                """.strip().getBytes();
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.start();
+        try {
+            var handler = new TuiCommandHandler(new ControlPlaneClient("http://127.0.0.1:" + server.getAddress().getPort()));
+            List<String> mcOut = handler.handleCliArgs(List.of("mc", "run-99"), null);
+            assertTrue(mcOut.stream().anyMatch(l -> l.contains("MONTE CARLO BOOTSTRAP REPORT")));
+            assertTrue(mcOut.stream().anyMatch(l -> l.contains("50th (Median)")));
+
+            List<String> wfaOut = handler.handleCliArgs(List.of("wfa", "report", "wfa-1"), null);
+            assertTrue(wfaOut.stream().anyMatch(l -> l.contains("WALK-FORWARD ANALYSIS REPORT: wfa-1")));
+            assertTrue(wfaOut.stream().anyMatch(l -> l.contains("Fold #1")));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void edgeCaseGuardsAndBackendDtoSchemas_handleMalformedFlagsAndCanonicalFields() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/api/universe", exchange -> {
+            byte[] body = """
+                [
+                  {
+                    "symbol": "MES",
+                    "name": "Micro E-mini S&P 500",
+                    "assetClass": "FUTURES",
+                    "pointValue": 5.0,
+                    "tickSize": 0.25,
+                    "currency": "USD",
+                    "isCustom": false,
+                    "providerTicker": "MES=F"
+                  }
+                ]
+                """.strip().getBytes();
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.createContext("/api/runs/walk-forward/wfa-canonical/report", exchange -> {
+            byte[] body = """
+                {
+                  "strategyName": "LondonOpenRangeBreakout",
+                  "instrument": "MES",
+                  "timeframe": "H1",
+                  "wfe": 0.84,
+                  "oosSharpe": 1.65,
+                  "oosMaxDrawdownPct": 4.2,
+                  "oosProfitFactor": 1.95,
+                  "oosReturnPct": 18.4,
+                  "oosTradesCount": 74,
+                  "folds": [
+                    {
+                      "index": 1,
+                      "isReturnPct": 11.2,
+                      "isSharpe": 1.80,
+                      "oosReturnPct": 6.4,
+                      "oosSharpe": 1.60,
+                      "chosenParameters": {"period": 20.0}
+                    }
+                  ]
+                }
+                """.strip().getBytes();
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.start();
+        try {
+            var handler = new TuiCommandHandler(new ControlPlaneClient("http://127.0.0.1:" + server.getAddress().getPort()));
+
+            // 1. Canonical InstrumentDefinition schema
+            List<String> uniOut = handler.handleCliArgs(List.of("universe", "list"), null);
+            assertTrue(uniOut.stream().anyMatch(l -> l.contains("MES") && l.contains("FUTURES") && l.contains("5.00") && l.contains("$0.62")));
+
+            // 2. Canonical WfaReport & WfaFoldResult schema
+            List<String> wfaOut = handler.handleCliArgs(List.of("wfa", "report", "wfa-canonical"), null);
+            assertTrue(wfaOut.stream().anyMatch(l -> l.contains("WFE: 0.84") && l.contains("18.40%")));
+            assertTrue(wfaOut.stream().anyMatch(l -> l.contains("Fold #1") && l.contains("IS=11.20") && l.contains("OOS=6.40")));
+
+            // 3. Edge-case guards on stripped flags & malformed arguments
+            List<String> btMissing = handler.handleCliArgs(List.of("backtest", "--weekly"), null);
+            assertTrue(btMissing.getFirst().startsWith("Usage: /backtest"));
+
+            List<String> promoteMissing = handler.handleCliArgs(List.of("promote", "--account", "acc-1"), null);
+            assertTrue(promoteMissing.getFirst().startsWith("Usage: /promote"));
+
+            List<String> wfaBadParam = handler.handleCliArgs(List.of("wfa", "run", "Strat", "MES", "--param", "badformat"), null);
+            assertTrue(wfaBadParam.getFirst().contains("Invalid --param format"));
+
+            List<String> invertedRange = handler.handleCliArgs(List.of("data", "delete", "MES", "2025-2023"), null);
+            assertTrue(invertedRange.getFirst().contains("Invalid year range"));
+
+            List<String> trailingFlag = handler.handleCliArgs(List.of("backtest", "Strat", "MES", "2024", "--comm"), null);
+            assertTrue(trailingFlag.getFirst().contains("Missing value for flag --comm"));
+        } finally {
+            server.stop(0);
+        }
+    }
 }

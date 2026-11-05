@@ -164,24 +164,258 @@ public final class ControlPlaneClient {
         Double capital,
         Double lotSize
     ) throws IOException, InterruptedException {
+        return startBacktest(strategyId, symbol, barsSource, capital, lotSize, null, null, null);
+    }
+
+    public JsonNode startBacktest(
+        String strategyId,
+        String symbol,
+        Map<String, Object> barsSource,
+        Double capital,
+        Double lotSize,
+        Double commissionPerTrade,
+        Double slippagePct,
+        String timeframe
+    ) throws IOException, InterruptedException {
+        TuiDefaults.SmartPreset preset = TuiDefaults.resolvePreset(symbol);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("strategyId", strategyId);
         body.put("symbol", symbol);
         body.put("mode", "BACKTEST");
         body.put("barsSource", barsSource);
-        body.put("capital", capital != null ? capital : TuiDefaults.STARTING_CAPITAL);
-        if (lotSize != null) {
-            body.put("lotSize", lotSize);
+        body.put("capital", capital != null ? capital : preset.capital());
+        body.put("lotSize", lotSize != null ? lotSize : preset.lotSize());
+        body.put("commissionPerTrade", commissionPerTrade != null ? commissionPerTrade : preset.commissionPerTrade());
+        body.put("slippagePct", slippagePct != null ? slippagePct : preset.slippagePct());
+        if (timeframe != null && !timeframe.isBlank()) {
+            body.put("dataTimeframe", timeframe.toUpperCase());
+            body.put("strategyTimeframe", timeframe.toUpperCase());
         }
         return postJson("/api/runs", body);
     }
 
+    public JsonNode listRuns() throws IOException, InterruptedException {
+        return getJson("/api/runs");
+    }
+
+    public JsonNode getRunTrades(String runId) throws IOException, InterruptedException {
+        return getJson("/api/runs/" + encodePath(runId) + "/trades");
+    }
+
+    public JsonNode getRunTradesSummary(String runId) throws IOException, InterruptedException {
+        return getJson("/api/runs/" + encodePath(runId) + "/trades/summary");
+    }
+
+    public JsonNode getRunWeeklyStats(String runId) throws IOException, InterruptedException {
+        return getJson("/api/runs/" + encodePath(runId) + "/weekly-stats");
+    }
+
+    public JsonNode getRunAlignment(String runId) throws IOException, InterruptedException {
+        return getJson("/api/runs/" + encodePath(runId) + "/alignment");
+    }
+
+    public JsonNode retireRun(String runId, String reason) throws IOException, InterruptedException {
+        Map<String, Object> body = new LinkedHashMap<>();
+        if (reason != null && !reason.isBlank()) {
+            body.put("reason", reason);
+        }
+        return postJson("/api/runs/" + encodePath(runId) + "/retire", body);
+    }
+
+    public String exportRun(String runId, String format) throws IOException, InterruptedException {
+        String fmt = (format != null && !format.isBlank()) ? format.toLowerCase() : "jsonl";
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(baseUrl + "/api/runs/" + encodePath(runId) + "/export?format=" + encodeQuery(fmt)))
+            .timeout(Duration.ofSeconds(60))
+            .GET()
+            .build();
+        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() >= 400) {
+            throw new ControlPlaneException(response.statusCode(), errorMessage(response.body(), response.statusCode()));
+        }
+        return response.body() != null ? response.body() : "";
+    }
+
+    public JsonNode listBacktests(
+        String symbol,
+        String strategyId,
+        Double minSharpe,
+        Double minProfitFactor,
+        Integer limit
+    ) throws IOException, InterruptedException {
+        StringBuilder path = new StringBuilder("/api/backtests?limit=").append(limit != null ? limit : 20);
+        if (symbol != null && !symbol.isBlank()) {
+            path.append("&symbol=").append(encodeQuery(symbol));
+        }
+        if (strategyId != null && !strategyId.isBlank()) {
+            path.append("&strategyId=").append(encodeQuery(strategyId));
+        }
+        if (minSharpe != null) {
+            path.append("&minSharpe=").append(minSharpe);
+        }
+        if (minProfitFactor != null) {
+            path.append("&minProfitFactor=").append(minProfitFactor);
+        }
+        return getJson(path.toString());
+    }
+
+    public JsonNode getBacktestDetails(String runId) throws IOException, InterruptedException {
+        return getJson("/api/backtests/" + encodePath(runId));
+    }
+
+    public JsonNode deleteBacktest(String runId) throws IOException, InterruptedException {
+        return deleteJson("/api/backtests/" + encodePath(runId));
+    }
+
+    public JsonNode deleteAllBacktests() throws IOException, InterruptedException {
+        return deleteJson("/api/backtests");
+    }
+
+    public JsonNode listUniverse(String assetClass) throws IOException, InterruptedException {
+        if (assetClass != null && !assetClass.isBlank()) {
+            return getJson("/api/instruments?assetClass=" + encodeQuery(assetClass));
+        }
+        return getJson("/api/universe");
+    }
+
+    public JsonNode addInstrument(Map<String, Object> instrument) throws IOException, InterruptedException {
+        return postJson("/api/instruments", instrument);
+    }
+
+    public JsonNode deleteInstrument(String symbol) throws IOException, InterruptedException {
+        return deleteJson("/api/instruments/" + encodePath(symbol));
+    }
+
+    public JsonNode generatorStatus() throws IOException, InterruptedException {
+        return getJson("/api/generator/status");
+    }
+
+    public JsonNode generatorDatabank() throws IOException, InterruptedException {
+        return getJson("/api/generator/databank");
+    }
+
+    public JsonNode generatorStart(Map<String, Object> request) throws IOException, InterruptedException {
+        return postJson("/api/generator/start", request);
+    }
+
+    public JsonNode generatorStop() throws IOException, InterruptedException {
+        return postJson("/api/generator/stop", Map.of());
+    }
+
+    public JsonNode generatorPromote(String candidateId) throws IOException, InterruptedException {
+        return postJson("/api/generator/databank/" + encodePath(candidateId) + "/promote", Map.of());
+    }
+
+    public JsonNode generatorBacktest(String candidateId) throws IOException, InterruptedException {
+        return postJson("/api/generator/databank/" + encodePath(candidateId) + "/backtest", Map.of());
+    }
+
+    public JsonNode generatorDeleteCandidate(String candidateId) throws IOException, InterruptedException {
+        return deleteJson("/api/generator/databank/" + encodePath(candidateId));
+    }
+
+    public JsonNode generatorClearDatabank() throws IOException, InterruptedException {
+        return deleteJson("/api/generator/databank");
+    }
+
+    public JsonNode startWalkForward(Map<String, Object> request) throws IOException, InterruptedException {
+        return postJson("/api/runs/walk-forward", request);
+    }
+
+    public JsonNode listWalkForwardRuns(int limit) throws IOException, InterruptedException {
+        return getJson("/api/runs/walk-forward?limit=" + limit);
+    }
+
+    public JsonNode getWalkForwardProgress(String wfaId) throws IOException, InterruptedException {
+        return getJson("/api/runs/walk-forward/" + encodePath(wfaId));
+    }
+
+    public JsonNode getWalkForwardReport(String wfaId) throws IOException, InterruptedException {
+        return getJson("/api/runs/walk-forward/" + encodePath(wfaId) + "/report");
+    }
+
+    public JsonNode monteCarlo(String runId, int runs, int blockSize) throws IOException, InterruptedException {
+        return getJson("/api/runs/" + encodePath(runId) + "/monte-carlo?runs=" + runs + "&blockSize=" + blockSize);
+    }
+
+    public JsonNode analyticsHeatmap(
+        String strategyId,
+        String symbol,
+        String xParam,
+        String yParam,
+        String metric
+    ) throws IOException, InterruptedException {
+        StringBuilder path = new StringBuilder("/api/backtests/analytics/heatmap?strategyId=")
+            .append(encodeQuery(strategyId))
+            .append("&xParam=").append(encodeQuery(xParam))
+            .append("&yParam=").append(encodeQuery(yParam));
+        if (symbol != null && !symbol.isBlank()) {
+            path.append("&symbol=").append(encodeQuery(symbol));
+        }
+        if (metric != null && !metric.isBlank()) {
+            path.append("&metric=").append(encodeQuery(metric));
+        }
+        return getJson(path.toString());
+    }
+
+    public JsonNode analyticsPareto(
+        String strategyId,
+        String symbol,
+        String metricX,
+        String metricY
+    ) throws IOException, InterruptedException {
+        StringBuilder path = new StringBuilder("/api/backtests/analytics/pareto?strategyId=")
+            .append(encodeQuery(strategyId));
+        if (symbol != null && !symbol.isBlank()) {
+            path.append("&symbol=").append(encodeQuery(symbol));
+        }
+        if (metricX != null && !metricX.isBlank()) {
+            path.append("&metricX=").append(encodeQuery(metricX));
+        }
+        if (metricY != null && !metricY.isBlank()) {
+            path.append("&metricY=").append(encodeQuery(metricY));
+        }
+        return getJson(path.toString());
+    }
+
+    public JsonNode getPromoteThresholds() throws IOException, InterruptedException {
+        return getJson("/api/promote-gates/thresholds");
+    }
+
+    public JsonNode brokerBalances() throws IOException, InterruptedException {
+        return getJson("/api/broker-accounts/balances");
+    }
+
+    public JsonNode portfolioMargins() throws IOException, InterruptedException {
+        return getJson("/api/portfolio/margins");
+    }
+
+    public JsonNode diagnosticsIntegrity() throws IOException, InterruptedException {
+        return getJson("/api/diagnostics/integrity");
+    }
+
     public JsonNode promote(String strategyId, String targetMode, String runId)
         throws IOException, InterruptedException {
+        return promote(strategyId, targetMode, runId, null, null);
+    }
+
+    public JsonNode promote(
+        String strategyId,
+        String targetMode,
+        String runId,
+        String brokerAccountId,
+        String executionLabel
+    ) throws IOException, InterruptedException {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("targetMode", targetMode);
         if (runId != null && !runId.isBlank()) {
             body.put("runId", runId);
+        }
+        if (brokerAccountId != null && !brokerAccountId.isBlank()) {
+            body.put("brokerAccountId", brokerAccountId);
+        }
+        if (executionLabel != null && !executionLabel.isBlank()) {
+            body.put("executionLabel", executionLabel);
         }
         return postJson("/api/strategies/" + encodePath(strategyId) + "/promote", body);
     }
@@ -287,6 +521,20 @@ public final class ControlPlaneClient {
         return parseResponse(response);
     }
 
+    private JsonNode deleteJson(String path) throws IOException, InterruptedException {
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(baseUrl + path))
+            .timeout(Duration.ofSeconds(30))
+            .DELETE()
+            .build();
+        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+        return parseResponse(response);
+    }
+
+    private static String encodeQuery(String value) {
+        return java.net.URLEncoder.encode(value != null ? value : "", java.nio.charset.StandardCharsets.UTF_8);
+    }
+
     private static JsonNode parseProcessInboxResponse(HttpResponse<String> response) throws IOException {
         return parseResponse(response, true);
     }
@@ -338,7 +586,10 @@ public final class ControlPlaneClient {
     }
 
     private static String encodePath(String segment) {
-        return segment.replace(" ", "%20");
+        if (segment == null) {
+            return "";
+        }
+        return java.net.URLEncoder.encode(segment, java.nio.charset.StandardCharsets.UTF_8).replace("+", "%20");
     }
 
     static final class ControlPlaneException extends IOException {

@@ -34,6 +34,20 @@ public final class TuiCommandHandler {
         return handle(line, reader, null);
     }
 
+    public List<String> handleCliArgs(List<String> rawArgs, java.util.function.Consumer<String> liveOutput) {
+        if (rawArgs == null || rawArgs.isEmpty()) {
+            return help();
+        }
+        List<String> parts = new ArrayList<>(rawArgs);
+        String first = parts.getFirst();
+        if (first.startsWith("/")) {
+            parts.set(0, first.substring(1));
+        } else if ("--help".equalsIgnoreCase(first) || "-h".equalsIgnoreCase(first)) {
+            parts.set(0, "help");
+        }
+        return dispatchParts(parts, null, liveOutput);
+    }
+
     public List<String> handle(String line, LineReader reader, java.util.function.Consumer<String> liveOutput) {
         if (line == null || line.isBlank()) {
             return List.of();
@@ -46,24 +60,63 @@ public final class TuiCommandHandler {
         if (parts.isEmpty()) {
             return List.of("Empty command. Type /help");
         }
+        return dispatchParts(parts, reader, liveOutput);
+    }
+
+    private List<String> dispatchParts(
+        List<String> rawParts,
+        LineReader reader,
+        java.util.function.Consumer<String> liveOutput
+    ) {
+        List<String> parts = new ArrayList<>(rawParts);
+        boolean jsonMode = parts.removeIf(p -> "--json".equalsIgnoreCase(p));
+        if (parts.isEmpty()) {
+            return help();
+        }
         String command = parts.getFirst().toLowerCase(Locale.ROOT);
         try {
             return switch (command) {
                 case "help", "h", "?" -> help();
-                case "list", "ls" -> listStrategies();
-                case "status" -> status(parts);
-                case "backtest", "bt" -> backtest(parts, reader, liveOutput);
-                case "promote" -> promote(parts);
+                case "list", "ls" -> listStrategies(parts, jsonMode);
+                case "strategies" -> TuiResearchCommands.strategies(client, parts, jsonMode);
+                case "inspect" -> TuiResearchCommands.inspectCommand(client, parts, jsonMode);
+                case "universe", "instruments" -> TuiResearchCommands.universe(client, parts, jsonMode);
+                case "status" -> status(parts, jsonMode);
+                case "backtest", "bt" -> backtest(parts, reader, liveOutput, jsonMode);
+                case "backtests", "history" -> TuiResearchCommands.backtests(client, parts, jsonMode);
+                case "promote" -> promote(parts, jsonMode);
                 case "trade", "t" -> trade(parts, reader, liveOutput);
                 case "configure-oanda", "oanda-setup" -> configureOanda(reader, liveOutput);
-                case "run" -> showRun(parts);
-                case "events" -> showEvents(parts);
+                case "run" -> showRun(parts, jsonMode);
+                case "retire" -> TuiResearchCommands.retire(client, parts, jsonMode);
+                case "events" -> showEvents(parts, jsonMode);
                 case "compare" -> compare(parts);
                 case "kill" -> kill(parts);
+                case "generator", "gen" -> TuiResearchCommands.generator(client, parts, liveOutput, jsonMode);
+                case "wfa", "walk-forward" -> TuiResearchCommands.wfa(client, parts, liveOutput, jsonMode);
+                case "mc", "montecarlo", "monte-carlo" -> TuiResearchCommands.monteCarlo(client, parts, lastRunId, jsonMode);
+                case "analytics" -> TuiResearchCommands.analytics(client, parts, jsonMode);
+                case "heatmap" -> {
+                    List<String> forwarded = new ArrayList<>();
+                    forwarded.add("analytics");
+                    forwarded.add("heatmap");
+                    forwarded.addAll(parts.subList(1, parts.size()));
+                    yield TuiResearchCommands.analytics(client, forwarded, jsonMode);
+                }
+                case "pareto" -> {
+                    List<String> forwarded = new ArrayList<>();
+                    forwarded.add("analytics");
+                    forwarded.add("pareto");
+                    forwarded.addAll(parts.subList(1, parts.size()));
+                    yield TuiResearchCommands.analytics(client, forwarded, jsonMode);
+                }
+                case "export" -> TuiResearchCommands.export(client, parts, lastRunId);
+                case "gates" -> TuiResearchCommands.gates(client, jsonMode);
+                case "portfolio", "balances", "margins" -> TuiResearchCommands.portfolio(client, jsonMode);
                 case "inbox", "sq" -> sqBridge(parts);
                 case "weekly-build", "weekly" -> weeklyBuild(parts);
                 case "weekly-status", "wb-status" -> weeklyStatus();
-                case "data" -> dataCommand(parts);
+                case "data" -> dataCommand(parts, liveOutput, jsonMode);
                 case "health" -> brokerHealth();
                 case "quit", "exit", "q" -> List.of("__QUIT__");
                 default -> List.of("Unknown command: /" + command + ". Type /help");
@@ -82,29 +135,48 @@ public final class TuiCommandHandler {
 
     static List<String> help() {
         return List.of(
-            "Trading Bridge TUI — control plane client",
-            "  /list              List strategies + deployment mode",
-            "  /status [id]       Trading Desk summary or promote-readiness",
-            "  /backtest [args]   Start BACKTEST (no args = interactive wizard)",
-            "      args: <id> [SYMBOL YEAR | SYMBOL 2006-2012 | --sample | --ci | file.csv]",
-            "            [--capital 1000] [--lots 0.01]",
-            "  /promote <id> PAPER|LIVE [runId]",
-            "  /trade             Start a live/paper trading run (interactive wizard)",
-            "  /configure-oanda   Interactive wizard to configure OANDA token and account ID",
-            "  /run <runId>       Run status + full backtest report",
-            "  /events <runId>    Last 20 run events",
-            "  /compare <id>      Compare live performance of a strategy with its backtest baseline",
-            "  /kill <id> [reason]",
-            "  /health            Broker connection health (uptime, failures per run)",
-            "  /sq | /inbox [process]   SQ bridge status or trigger inbox drain",
-            "  /weekly-status           Weekly builder hot-folder counts",
-            "  /weekly-build [--plan|--compile|--deploy]   Trigger Job 1/2/3",
-            "  /data <args>             Historical data status, download, or delete (type /data for help)",
-            "  /quit              Exit",
+            "Trading Bridge CLI / TUI — Quant Research & Control Plane Client",
+            "Global flags: [--json] (raw JSON output for LLM/scripts)",
+            "",
+            "1. Data & Multi-Asset Universe:",
+            "  /universe [list|add|delete] [--asset FOREX|FUTURES|EQUITIES]",
+            "  /data status [tf] [--symbol SYM]     Historical data timeline (m1,m5,m15,m30,h1,h4,d1,w1)",
+            "  /data download <sym> <years> [tf] [--wait] | /data delete <sym> <years> [tf]",
+            "",
+            "2. Strategy Catalog & DNA/Source Inspection:",
+            "  /list [--asset A] [--family F] [--full] | /strategies [list|inspect]",
+            "  /inspect <id> [--code]               Inspect catalog strategy or Generator genome + Java source",
+            "",
+            "3. Backtesting & Run Diagnostics (Smart Instrument Defaults per symbol):",
+            "  /backtest <id> [SYM YEAR | SYM 2020-2025 | --sample | --ci | file.bars]",
+            "            [--tf H1] [--capital C] [--lots L] [--comm C] [--slip S] [--weekly] [--trades]",
+            "  /backtests [list|show|delete|clear] [--symbol S] [--strategy ID] [--min-sharpe X] [--min-pf Y]",
+            "  /run <runId> [--weekly] [--trades] [--alignment]",
+            "  /retire <runId> [reason]             Retire an active or completed run",
+            "  /events <runId>                      Last 20 run events",
+            "",
+            "4. Evolutionary Strategy Generator & Databank:",
+            "  /generator status | /generator stop",
+            "  /generator start [--symbol MES] [--tf H1] [--years 2020-2025] [--oos-pct 25] [--mode GA|RANDOM]",
+            "                   [--pop 50] [--gens 10] [--blocks RSI,ATR,EMA] [--wait]",
+            "  /generator databank [--top N] [--symbol S]",
+            "  /generator inspect <candidateId> [--code] | /generator promote <id> | /generator backtest <id>",
+            "",
+            "5. Robustness, Anti-Overfit & Live Ops:",
+            "  /wfa [run|list|status|report]        Walk-Forward Analysis (Rolling/Anchored + fold stability)",
+            "  /mc <runId> [--runs 1000]            Monte Carlo bootstrap percentiles, VaR(95%), Loss Prob",
+            "  /analytics <heatmap|pareto> ...      Parameter sensitivity heatmap & Pareto frontier",
+            "  /export <runId> [--format jsonl|html] [--out path]",
+            "  /promote <id> PAPER|LIVE [runId] [--account ID] [--label LABEL] | /gates",
+            "  /status [id] | /portfolio | /compare <id> | /trade | /kill <id> | /health",
+            "  /sq [process] | /weekly-status | /weekly-build [--plan|--compile|--deploy] | /quit",
             "Env: CONTROL_PLANE_URL (default http://localhost:8080)");
     }
 
-    private List<String> listStrategies() throws IOException, InterruptedException {
+    private List<String> listStrategies(List<String> parts, boolean jsonMode) throws IOException, InterruptedException {
+        if (jsonMode || parts.size() > 1) {
+            return TuiResearchCommands.strategiesList(client, parts, jsonMode);
+        }
         JsonNode root = client.listStrategies();
         JsonNode strategies = root.get("strategies");
         List<String> lines = new ArrayList<>();
@@ -119,12 +191,15 @@ public final class TuiCommandHandler {
         return lines;
     }
 
-    private List<String> status(List<String> parts) throws IOException, InterruptedException {
+    private List<String> status(List<String> parts, boolean jsonMode) throws IOException, InterruptedException {
         if (parts.size() >= 2) {
             JsonNode readiness = client.promoteReadiness(parts.get(1));
-            return List.of(formatJson(readiness));
+            return List.of(jsonMode ? readiness.toPrettyString() : formatJson(readiness));
         }
         JsonNode summary = client.controlSummary();
+        if (jsonMode) {
+            return List.of(summary.toPrettyString());
+        }
         List<String> lines = new ArrayList<>();
         lines.add("Trading Desk summary:");
         if (summary.has("runs") && summary.get("runs").size() > 0) {
@@ -151,28 +226,53 @@ public final class TuiCommandHandler {
         return lines;
     }
 
-    private List<String> backtest(List<String> parts, LineReader reader, java.util.function.Consumer<String> liveOutput)
-        throws IOException, InterruptedException {
+    private List<String> backtest(
+        List<String> parts,
+        LineReader reader,
+        java.util.function.Consumer<String> liveOutput,
+        boolean jsonMode
+    ) throws IOException, InterruptedException {
         if (parts.size() < 2) {
             if (reader == null) {
                 return List.of("Usage: /backtest (interactive) requires a terminal — use /backtest <strategyId> …");
             }
             return TuiInteractiveBacktest.run(this, client, reader, liveOutput);
         }
-        String strategyId = parts.get(1);
+        List<String> cleanParts = new ArrayList<>(parts);
+        boolean showWeekly = cleanParts.removeIf("--weekly"::equalsIgnoreCase);
+        boolean showTrades = cleanParts.removeIf("--trades"::equalsIgnoreCase);
+        cleanParts.removeIf("--wait"::equalsIgnoreCase);
+
+        if (cleanParts.size() < 2) {
+            if (reader == null) {
+                return List.of("Usage: /backtest (interactive) requires a terminal — use /backtest <strategyId> …");
+            }
+            return TuiInteractiveBacktest.run(this, client, reader, liveOutput);
+        }
+
+        String strategyId = cleanParts.get(1);
         BacktestRequestParser.ParsedBacktest parsed;
         try {
-            parsed = BacktestRequestParser.parse(parts);
+            parsed = BacktestRequestParser.parse(cleanParts);
         } catch (IllegalArgumentException e) {
             return List.of("Backtest data: " + e.getMessage());
         }
-        return runBacktest(
+        List<String> lines = runBacktest(
             strategyId,
             parsed.symbol(),
             parsed.barsSource(),
             parsed.dataLabel(),
             parsed.capital(),
-            parsed.lotSize());
+            parsed.lotSize(),
+            parsed.commissionPerTrade(),
+            parsed.slippagePct(),
+            parsed.timeframe(),
+            jsonMode);
+        if (!jsonMode && lastRunId != null && (showWeekly || showTrades)) {
+            lines = new ArrayList<>(lines);
+            TuiResearchCommands.appendEnhancedRunDiagnostics(client, lastRunId, lines, showTrades, showWeekly, false);
+        }
+        return lines;
     }
 
     List<String> runBacktest(
@@ -192,16 +292,35 @@ public final class TuiCommandHandler {
         Double capital,
         Double lotSize
     ) throws IOException, InterruptedException {
-        JsonNode started = client.startBacktest(strategyId, symbol, barsSource, capital, lotSize);
+        return runBacktest(strategyId, symbol, barsSource, dataLabel, capital, lotSize, null, null, null, false);
+    }
+
+    List<String> runBacktest(
+        String strategyId,
+        String symbol,
+        Map<String, Object> barsSource,
+        String dataLabel,
+        Double capital,
+        Double lotSize,
+        Double commissionPerTrade,
+        Double slippagePct,
+        String timeframe,
+        boolean jsonMode
+    ) throws IOException, InterruptedException {
+        JsonNode started = client.startBacktest(
+            strategyId, symbol, barsSource, capital, lotSize, commissionPerTrade, slippagePct, timeframe);
         lastRunId = started.get("runId").asText();
         List<String> lines = new ArrayList<>();
         lines.add("Started run " + lastRunId + " (" + strategyId + " " + dataLabel + ")");
 
-        for (int i = 0; i < 120; i++) {
+        for (int i = 0; i < 300; i++) {
             Thread.sleep(100);
             JsonNode run = client.getRun(lastRunId);
             String status = run.get("status").asText();
             if (!"RUNNING".equals(status)) {
+                if (jsonMode) {
+                    return List.of(run.toPrettyString());
+                }
                 lines.add("Run " + status);
                 lines.addAll(TuiBacktestReport.format(run));
                 if (lines.stream().noneMatch(l -> l.contains("BACKTEST RESULT"))) {
@@ -210,18 +329,38 @@ public final class TuiCommandHandler {
                 return lines;
             }
         }
+        if (jsonMode) {
+            return List.of(started.toPrettyString());
+        }
         lines.add("Run still RUNNING — use /run " + lastRunId);
         return lines;
     }
 
-    private List<String> promote(List<String> parts) throws IOException, InterruptedException {
+    private List<String> promote(List<String> parts, boolean jsonMode) throws IOException, InterruptedException {
         if (parts.size() < 3) {
-            return List.of("Usage: /promote <strategyId> PAPER|LIVE [runId]");
+            return List.of("Usage: /promote <strategyId> PAPER|LIVE [runId] [--account ID] [--label LABEL]");
         }
-        String strategyId = parts.get(1);
-        String mode = parts.get(2).toUpperCase(Locale.ROOT);
-        String runId = parts.size() >= 4 ? parts.get(3) : lastRunId;
-        JsonNode response = client.promote(strategyId, mode, runId);
+        String accountId = TuiResearchCommands.extractFlag(parts, "--account", "--broker-account");
+        String label = TuiResearchCommands.extractFlag(parts, "--label", "--execution-label");
+        List<String> positional = new ArrayList<>();
+        for (int i = 0; i < parts.size(); i++) {
+            String t = parts.get(i);
+            if (t.startsWith("--")) {
+                i++;
+                continue;
+            }
+            positional.add(t);
+        }
+        if (positional.size() < 3) {
+            return List.of("Usage: /promote <strategyId> PAPER|LIVE [runId] [--account ID] [--label LABEL]");
+        }
+        String strategyId = positional.get(1);
+        String mode = positional.get(2).toUpperCase(Locale.ROOT);
+        String runId = positional.size() >= 4 ? positional.get(3) : lastRunId;
+        JsonNode response = client.promote(strategyId, mode, runId, accountId, label);
+        if (jsonMode) {
+            return List.of(response.toPrettyString());
+        }
         List<String> lines = new ArrayList<>();
         boolean promoted = response.get("promoted").asBoolean();
         lines.add(promoted ? "Promoted to " + mode : "Promote rejected");
@@ -243,12 +382,27 @@ public final class TuiCommandHandler {
         return TuiInteractiveTrade.run(this, client, reader, liveOutput);
     }
 
-    private List<String> showRun(List<String> parts) throws IOException, InterruptedException {
-        String runId = parts.size() >= 2 ? parts.get(1) : lastRunId;
+    private List<String> showRun(List<String> parts, boolean jsonMode) throws IOException, InterruptedException {
+        boolean showTrades = TuiResearchCommands.hasFlag(parts, "--trades");
+        boolean showWeekly = TuiResearchCommands.hasFlag(parts, "--weekly");
+        boolean showAlignment = TuiResearchCommands.hasFlag(parts, "--alignment");
+        String runId = null;
+        for (int i = 1; i < parts.size(); i++) {
+            if (!parts.get(i).startsWith("-")) {
+                runId = parts.get(i);
+                break;
+            }
+        }
         if (runId == null || runId.isBlank()) {
-            return List.of("Usage: /run <runId> (or run a /backtest first)");
+            runId = lastRunId;
+        }
+        if (runId == null || runId.isBlank()) {
+            return List.of("Usage: /run <runId> [--weekly] [--trades] [--alignment] (or run a /backtest first)");
         }
         JsonNode run = client.getRun(runId);
+        if (jsonMode) {
+            return List.of(run.toPrettyString());
+        }
         List<String> lines = new ArrayList<>();
         lines.add("Run " + runId + "  status=" + run.get("status").asText()
             + "  strategy=" + run.get("strategyId").asText());
@@ -258,13 +412,19 @@ public final class TuiCommandHandler {
         } else {
             lines.addAll(report);
         }
+        if (showTrades || showWeekly || showAlignment) {
+            TuiResearchCommands.appendEnhancedRunDiagnostics(client, runId, lines, showTrades, showWeekly, showAlignment);
+        }
         return lines;
     }
 
-    private List<String> showEvents(List<String> parts) throws IOException, InterruptedException {
+    private List<String> showEvents(List<String> parts, boolean jsonMode) throws IOException, InterruptedException {
         String runId = parts.size() >= 2 ? parts.get(1) : lastRunId;
         if (runId == null || runId.isBlank()) {
             return List.of("Usage: /events <runId>");
+        }
+        if (jsonMode) {
+            return List.of(client.listEvents(runId, 0, 50).toPrettyString());
         }
         return tailEvents(runId, 20);
     }
@@ -599,16 +759,24 @@ public final class TuiCommandHandler {
         }
     }
 
-    private List<String> dataCommand(List<String> parts) throws IOException, InterruptedException {
+    private static final java.util.Set<String> SUPPORTED_TIMEFRAMES = java.util.Set.of(
+        "m1", "m5", "m15", "m30", "h1", "h4", "d1", "w1"
+    );
+
+    private List<String> dataCommand(
+        List<String> parts,
+        java.util.function.Consumer<String> liveOutput,
+        boolean jsonMode
+    ) throws IOException, InterruptedException {
         if (parts.size() < 2) {
             return dataHelp();
         }
         String subcommand = parts.get(1).toLowerCase(Locale.ROOT);
         return switch (subcommand) {
             case "help", "?" -> dataHelp();
-            case "status" -> dataStatus(parts);
-            case "download" -> dataDownload(parts);
-            case "delete" -> dataDelete(parts);
+            case "status" -> dataStatus(parts, jsonMode);
+            case "download" -> dataDownload(parts, liveOutput, jsonMode);
+            case "delete" -> dataDelete(parts, jsonMode);
             default -> List.of("Unknown subcommand: /data " + subcommand + ". Type /data help");
         };
     }
@@ -617,21 +785,25 @@ public final class TuiCommandHandler {
         return List.of(
             "Usage: /data <subcommand> [args]",
             "Subcommands:",
-            "  status [tf]                 Show downloaded historical data status (default tf: h1)",
-            "  download <pair> <year> [tf]  Download historical data for a specific year (e.g. /data download eurusd 2012)",
-            "  download <pair> <start>-<end> [tf] Download range of years (e.g. /data download eurusd 2012-2015)",
+            "  status [tf] [--symbol SYM]  Show downloaded historical data status (default tf: h1; supports m1,m5,m15,m30,h1,h4,d1,w1)",
+            "  download <sym> <year> [tf] [--wait]        Download historical data for a specific year (e.g. /data download MES 2024 h1)",
+            "  download <sym> <start>-<end> [tf] [--wait] Download range of years (e.g. /data download eurusd 2012-2015 m15)",
             "  download --sync [tf]        Trigger full local sync of all pairs and years",
-            "  delete <pair> <year> [tf]    Delete local files for a year (e.g. /data delete eurusd 2012)",
-            "  delete <pair> <start>-<end> [tf] Delete local files for a range of years"
+            "  delete <sym> <year> [tf]    Delete local files for a year (e.g. /data delete eurusd 2012)",
+            "  delete <sym> <start>-<end> [tf] Delete local files for a range of years"
         );
     }
 
-    private List<String> dataStatus(List<String> parts) throws IOException, InterruptedException {
+    private List<String> dataStatus(List<String> parts, boolean jsonMode) throws IOException, InterruptedException {
+        String symbolFilter = TuiResearchCommands.extractFlag(parts, "--symbol", null);
         String tf = "h1";
-        if (parts.size() >= 3) {
+        if (parts.size() >= 3 && !parts.get(2).startsWith("-")) {
             tf = parts.get(2).toLowerCase(Locale.ROOT);
         }
         JsonNode root = client.historicalDataStatus(tf);
+        if (jsonMode) {
+            return List.of(root.toPrettyString());
+        }
         List<String> lines = new ArrayList<>();
 
         JsonNode activeTasks = root.path("activeTasks");
@@ -659,10 +831,12 @@ public final class TuiCommandHandler {
         lines.add("Legend: \u2588 CSV+BARS  \u2592 CSV only  \u2591 BARS only  \u00B7 No Data");
         lines.add("");
 
-        List<String> supportedPairs = List.of("EUR_USD", "GBP_USD", "GBP_JPY", "USD_CAD", "USD_JPY", "AUD_USD", "NZD_USD", "USD_CHF");
+        List<String> defaultForexPairs = List.of("EUR_USD", "GBP_USD", "GBP_JPY", "USD_CAD", "USD_JPY", "AUD_USD", "NZD_USD", "USD_CHF");
         Map<String, Map<Integer, String>> pairYearStates = new LinkedHashMap<>();
-        for (String sp : supportedPairs) {
-            pairYearStates.put(sp, new java.util.TreeMap<>());
+        if (symbolFilter == null) {
+            for (String sp : defaultForexPairs) {
+                pairYearStates.put(sp, new java.util.TreeMap<>());
+            }
         }
 
         int minYear = 2006;
@@ -673,11 +847,20 @@ public final class TuiCommandHandler {
         if (statusList.isArray()) {
             for (JsonNode item : statusList) {
                 String sym = item.path("symbol").asText();
-                if (!pairYearStates.containsKey(sym)) {
+                if (sym.isBlank()) {
+                    continue;
+                }
+                if (symbolFilter != null && !sym.equalsIgnoreCase(symbolFilter)) {
                     continue;
                 }
                 boolean csvExists = item.path("csvExists").asBoolean(false);
                 boolean barsExists = item.path("barsExists").asBoolean(false);
+                if (symbolFilter != null || csvExists || barsExists) {
+                    pairYearStates.computeIfAbsent(sym, k -> new java.util.TreeMap<>());
+                }
+                if (!pairYearStates.containsKey(sym)) {
+                    continue;
+                }
                 if (csvExists || barsExists) {
                     int year = item.path("year").asInt();
                     String state;
@@ -702,6 +885,7 @@ public final class TuiCommandHandler {
             }
         }
 
+        List<String> supportedPairs = new ArrayList<>(pairYearStates.keySet());
         int totalYears = maxYear - minYear + 1;
         String headerText;
         if (minYear == maxYear) {
@@ -753,6 +937,7 @@ public final class TuiCommandHandler {
                 }
                 pairDetailStr.put(sym, String.join(", ", segments));
             }
+            col0Width = Math.max(col0Width, sym.length());
             col3Width = Math.max(col3Width, pairDetailStr.get(sym).length());
         }
 
@@ -798,9 +983,15 @@ public final class TuiCommandHandler {
         return lines;
     }
 
-    private List<String> dataDownload(List<String> parts) throws IOException, InterruptedException {
+    private List<String> dataDownload(
+        List<String> rawParts,
+        java.util.function.Consumer<String> liveOutput,
+        boolean jsonMode
+    ) throws IOException, InterruptedException {
+        List<String> parts = new ArrayList<>(rawParts);
+        boolean wait = parts.removeIf("--wait"::equalsIgnoreCase);
         if (parts.size() < 3) {
-            return List.of("Usage: /data download <pair> <year-or-range> [tf] OR /data download --sync [tf]");
+            return List.of("Usage: /data download <pair> <year-or-range> [tf] [--wait] OR /data download --sync [tf]");
         }
         String p2 = parts.get(2);
         if ("--sync".equalsIgnoreCase(p2)) {
@@ -808,15 +999,18 @@ public final class TuiCommandHandler {
             if (parts.size() >= 4) {
                 tf = parts.get(3).toLowerCase(Locale.ROOT);
             }
-            if (!tf.equalsIgnoreCase("h1") && !tf.equalsIgnoreCase("m1")) {
-                return List.of("Invalid timeframe: '" + tf + "'. Supported timeframes are h1 and m1.");
+            if (!SUPPORTED_TIMEFRAMES.contains(tf.toLowerCase(Locale.ROOT))) {
+                return List.of("Invalid timeframe: '" + tf + "'. Supported timeframes are m1, m5, m15, m30, h1, h4, d1, w1.");
             }
             JsonNode resp = client.downloadHistoricalData(null, null, null, null, tf, true);
+            if (jsonMode) {
+                return List.of(resp.toPrettyString());
+            }
             return List.of(resp.path("accepted").asBoolean(false) ? "Sync download started" : "Sync download busy/already running");
         }
 
         if (parts.size() < 4) {
-            return List.of("Usage: /data download <pair> <year-or-range> [tf]");
+            return List.of("Usage: /data download <pair> <year-or-range> [tf] [--wait]");
         }
 
         String pair = normalizePair(p2);
@@ -827,12 +1021,29 @@ public final class TuiCommandHandler {
 
         JsonNode resp = client.downloadHistoricalData(pair, parsed.year, parsed.startYear, parsed.endYear, parsed.tf, false);
         String label = (parsed.startYear != null && parsed.endYear != null) ? (parsed.startYear + "-" + parsed.endYear) : String.valueOf(parsed.year);
-        return List.of(resp.path("accepted").asBoolean(false)
+        boolean accepted = resp.path("accepted").asBoolean(false);
+        if (wait && accepted) {
+            for (int i = 0; i < 600; i++) {
+                Thread.sleep(250);
+                JsonNode st = client.historicalDataStatus(parsed.tf);
+                JsonNode active = st.path("activeDownloads");
+                if (!active.isArray() || active.isEmpty()) {
+                    break;
+                }
+                if (liveOutput != null && i % 4 == 0) {
+                    liveOutput.accept("[Data] Downloading " + toSymbol(pair) + " " + label + " (" + parsed.tf.toUpperCase(Locale.ROOT) + ")...");
+                }
+            }
+        }
+        if (jsonMode) {
+            return List.of(resp.toPrettyString());
+        }
+        return List.of(accepted
             ? "Download started for " + toSymbol(pair) + " " + label + " (" + parsed.tf.toUpperCase(Locale.ROOT) + ")"
             : "Download busy/already running");
     }
 
-    private List<String> dataDelete(List<String> parts) throws IOException, InterruptedException {
+    private List<String> dataDelete(List<String> parts, boolean jsonMode) throws IOException, InterruptedException {
         if (parts.size() < 4) {
             return List.of("Usage: /data delete <pair> <year-or-range> [tf]");
         }
@@ -853,8 +1064,12 @@ public final class TuiCommandHandler {
 
         List<String> lines = new ArrayList<>();
         for (int y : yearsToDelete) {
-            client.deleteHistoricalData(pair, y, parsed.tf);
-            lines.add("Deleted " + toSymbol(pair) + " " + y + " (" + parsed.tf.toUpperCase(Locale.ROOT) + ")");
+            JsonNode del = client.deleteHistoricalData(pair, y, parsed.tf);
+            if (jsonMode) {
+                lines.add(del.toPrettyString());
+            } else {
+                lines.add("Deleted " + toSymbol(pair) + " " + y + " (" + parsed.tf.toUpperCase(Locale.ROOT) + ")");
+            }
         }
         return lines;
     }
@@ -912,8 +1127,13 @@ public final class TuiCommandHandler {
             }
         }
 
-        if (!args.tf.equalsIgnoreCase("h1") && !args.tf.equalsIgnoreCase("m1")) {
-            args.error = "Invalid timeframe: '" + args.tf + "'. Supported timeframes are h1 and m1.";
+        if (args.startYear != null && args.endYear != null && args.startYear > args.endYear) {
+            args.error = "Invalid year range: startYear (" + args.startYear + ") > endYear (" + args.endYear + ")";
+            return args;
+        }
+
+        if (!SUPPORTED_TIMEFRAMES.contains(args.tf.toLowerCase(Locale.ROOT))) {
+            args.error = "Invalid timeframe: '" + args.tf + "'. Supported timeframes are m1, m5, m15, m30, h1, h4, d1, w1.";
         }
 
         return args;

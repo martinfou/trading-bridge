@@ -20,8 +20,21 @@ final class BacktestRequestParser {
         Map<String, Object> barsSource,
         String dataLabel,
         Double capital,
-        Double lotSize
-    ) {}
+        Double lotSize,
+        Double commissionPerTrade,
+        Double slippagePct,
+        String timeframe
+    ) {
+        ParsedBacktest(
+            String symbol,
+            Map<String, Object> barsSource,
+            String dataLabel,
+            Double capital,
+            Double lotSize
+        ) {
+            this(symbol, barsSource, dataLabel, capital, lotSize, null, null, null);
+        }
+    }
 
     static ParsedBacktest parse(List<String> parts) {
         if (parts.size() < 2) {
@@ -30,16 +43,42 @@ final class BacktestRequestParser {
         List<String> dataParts = new ArrayList<>(parts.subList(2, parts.size()));
         Double capital = null;
         Double lotSize = null;
+        Double commissionPerTrade = null;
+        Double slippagePct = null;
+        String timeframe = null;
         for (int i = 0; i < dataParts.size(); ) {
             String token = dataParts.get(i);
-            if ("--capital".equals(token) && i + 1 < dataParts.size()) {
+            if ("--capital".equals(token)) {
+                requireFlagValue(dataParts, i, token);
                 capital = TuiPrompts.parsePositiveDouble(dataParts.get(i + 1), "capital");
                 dataParts.remove(i + 1);
                 dataParts.remove(i);
                 continue;
             }
-            if ("--lots".equals(token) && i + 1 < dataParts.size()) {
+            if ("--lots".equals(token) || "--lot-size".equals(token)) {
+                requireFlagValue(dataParts, i, token);
                 lotSize = TuiPrompts.parsePositiveDouble(dataParts.get(i + 1), "lot size");
+                dataParts.remove(i + 1);
+                dataParts.remove(i);
+                continue;
+            }
+            if ("--comm".equals(token) || "--commission".equals(token)) {
+                requireFlagValue(dataParts, i, token);
+                commissionPerTrade = parseNonNegativeDouble(dataParts.get(i + 1), "commission");
+                dataParts.remove(i + 1);
+                dataParts.remove(i);
+                continue;
+            }
+            if ("--slip".equals(token) || "--slippage".equals(token)) {
+                requireFlagValue(dataParts, i, token);
+                slippagePct = parseNonNegativeDouble(dataParts.get(i + 1), "slippage");
+                dataParts.remove(i + 1);
+                dataParts.remove(i);
+                continue;
+            }
+            if ("--tf".equals(token) || "--timeframe".equals(token)) {
+                requireFlagValue(dataParts, i, token);
+                timeframe = dataParts.get(i + 1).toUpperCase(java.util.Locale.ROOT);
                 dataParts.remove(i + 1);
                 dataParts.remove(i);
                 continue;
@@ -53,7 +92,28 @@ final class BacktestRequestParser {
         rebuilt.addAll(dataParts);
 
         ParsedBacktest core = parseDataOnly(rebuilt);
-        return new ParsedBacktest(core.symbol(), core.barsSource(), core.dataLabel(), capital, lotSize);
+        return new ParsedBacktest(
+            core.symbol(),
+            core.barsSource(),
+            core.dataLabel(),
+            capital,
+            lotSize,
+            commissionPerTrade,
+            slippagePct,
+            timeframe
+        );
+    }
+
+    private static double parseNonNegativeDouble(String raw, String label) {
+        try {
+            double v = Double.parseDouble(raw);
+            if (Double.isNaN(v) || Double.isInfinite(v) || v < 0.0) {
+                throw new IllegalArgumentException(label + " must be >= 0");
+            }
+            return v;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Invalid " + label + ": " + raw);
+        }
     }
 
     private static ParsedBacktest parseDataOnly(List<String> parts) {
@@ -128,8 +188,17 @@ final class BacktestRequestParser {
         return false;
     }
 
+    private static void requireFlagValue(List<String> parts, int index, String flag) {
+        if (index + 1 >= parts.size() || parts.get(index + 1).startsWith("--")) {
+            throw new IllegalArgumentException("Missing value for flag " + flag);
+        }
+    }
+
     private static boolean looksLikeSymbol(String arg) {
-        return arg.contains("_") || arg.matches("[A-Za-z]{6}");
+        if (arg == null || arg.startsWith("-") || arg.matches("\\d+")) {
+            return false;
+        }
+        return arg.contains("_") || arg.matches("[A-Za-z]{6}") || arg.matches("[A-Z0-9]{2,6}");
     }
 
     private static boolean isFilePath(String arg) {

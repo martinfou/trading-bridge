@@ -86,4 +86,50 @@ class BacktestRequestParserTest {
         assertEquals(50_000.0, parsed.capital());
         assertEquals(0.05, parsed.lotSize());
     }
+
+    @Test
+    void futuresSymbolAndCostTimeframeFlags() {
+        var parsed = BacktestRequestParser.parse(List.of(
+            "backtest",
+            "LondonOpenRangeBreakout",
+            "MES",
+            "2022-2025",
+            "--tf",
+            "m15",
+            "--comm",
+            "0.62",
+            "--slip",
+            "0.00005"));
+        assertEquals("MES", parsed.symbol());
+        assertEquals("2022-2025", parsed.barsSource().get("year"));
+        assertEquals("M15", parsed.timeframe());
+        assertEquals(0.62, parsed.commissionPerTrade());
+        assertEquals(0.00005, parsed.slippagePct());
+    }
+
+    @Test
+    void smartPresetsResolvePerAssetClass() {
+        var micro = TuiDefaults.resolvePreset("MES");
+        assertEquals("FUTURES", micro.assetClass());
+        assertEquals(10_000.0, micro.capital());
+        assertEquals(1.0, micro.lotSize());
+        assertEquals(0.62, micro.commissionPerTrade());
+
+        var full = TuiDefaults.resolvePreset("GC");
+        assertEquals("FUTURES", full.assetClass());
+        assertEquals(50_000.0, full.capital());
+        assertEquals(2.10, full.commissionPerTrade());
+
+        var fx = TuiDefaults.resolvePreset("EUR_USD");
+        assertEquals("FOREX", fx.assetClass());
+        assertEquals(10_000.0, fx.capital());
+        assertEquals(0.10, fx.lotSize());
+        assertEquals(0.70, fx.commissionPerTrade());
+
+        var eq = TuiDefaults.resolvePreset("AAPL");
+        assertEquals("EQUITIES", eq.assetClass());
+        assertEquals(10_000.0, eq.capital());
+        assertEquals(10.0, eq.lotSize());
+        assertEquals(1.00, eq.commissionPerTrade());
+    }
 }

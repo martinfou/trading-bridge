@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# =============================================================================
+# ./tb — Trading Bridge LLM Quant Research CLI & Control Plane Client
+#
+# Runs one-shot CLI commands (e.g., `./tb generator status`, `./tb backtest ...`)
+# or opens the interactive TUI when invoked with no arguments.
+# Automatically starts the shared Control Plane daemon on :8080 if not running.
+# =============================================================================
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# Detect JAVA_HOME on macOS if not set (prefer JDK 21)
+if [ -z "$JAVA_HOME" ]; then
+  if [ "$(uname)" = "Darwin" ] && [ -x /usr/libexec/java_home ]; then
+    export JAVA_HOME="$(/usr/libexec/java_home -v 21 2>/dev/null || /usr/libexec/java_home)"
+  fi
+fi
+
+PORT="${CONTROL_PLANE_PORT:-8080}"
+BASE_URL="${CONTROL_PLANE_URL:-http://localhost:$PORT}"
+export CONTROL_PLANE_URL="$BASE_URL"
+HEALTH_URL="$BASE_URL/api/health"
+
+# 1. Ensure trading-tui classes and cached classpath exist and are up to date
+TUI_CLASSES="$SCRIPT_DIR/trading-tui/target/classes"
+TUI_CP_FILE="$SCRIPT_DIR/trading-tui/target/cp.txt"
+
+if [ ! -d "$TUI_CLASSES" ] || [ ! -f "$TUI_CP_FILE" ] || [ -n "$(find "$SCRIPT_DIR/trading-tui/src/main" -type f -newer "$TUI_CP_FILE" 2>/dev/null)" ]; then
+  >&2 echo "[tb] Compiling trading-tui and caching classpath..."
+  ./mvnw -q test-compile dependency:build-classpath -pl trading-tui -Dmdep.outputFile="$TUI_CP_FILE"
+fi
+
+# 2. Ensure Control Plane daemon is running on :8080 (unless --help / help)
+FIRST_ARG="${1:-}"
+if [ "$FIRST_ARG" != "help" ] && [ "$FIRST_ARG" != "--help" ] && [ "$FIRST_ARG" != "-h" ] && [ "$FIRST_ARG" != "/help" ] && [ "$FIRST_ARG" != "h" ] && [ "$FIRST_ARG" != "?" ]; then
+  if ! curl -s -f "$HEALTH_URL" >/dev/null 2>&1; then
+    >&2 echo "[tb] Control Plane not running on $BASE_URL — starting background daemon..."
+    if [ ! -d "$SCRIPT_DIR/trading-runtime/target/classes" ]; then
+      ./mvnw -q compile -pl trading-runtime -am
+    fi
+    nohup ./mvnw -q exec:java -pl trading-runtime -Dexec.mainClass="com.martinfou.trading.runtime.ControlPlaneMain" > "$SCRIPT_DIR/control-plane.log" 2>&1 &
+    CP_PID=$!
+    count=0
+    until curl -s -f "$HEALTH_URL" >/dev/null 2>&1; do
+      sleep 0.5
+      count=$((count + 1))
+      if [ "$count" -ge 60 ]; then
+        >&2 echo "[tb] ERROR: Control Plane failed to start within 30s (see control-plane.log)."
+        exit 1
+      fi
+    done
+    >&2 echo "[tb] Control Plane daemon UP (PID $CP_PID)."
+  fi
+fi
+
+# 3. Execute TradingTuiMain directly via cached classpath
+CP="$TUI_CLASSES:$(cat "$TUI_CP_FILE")"
+exec java -cp "$CP" com.martinfou.trading.tui.TradingTuiMain "$@"
+

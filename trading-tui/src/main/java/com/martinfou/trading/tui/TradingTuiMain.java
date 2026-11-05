@@ -21,6 +21,33 @@ public final class TradingTuiMain {
         ControlPlaneClient client = ControlPlaneClient.fromEnvironment();
         TuiCommandHandler handler = new TuiCommandHandler(client);
 
+        if (args != null && args.length > 0) {
+            java.util.List<String> argList = java.util.Arrays.asList(args);
+            boolean jsonFlag = argList.stream().anyMatch("--json"::equalsIgnoreCase);
+            java.util.function.Consumer<String> liveOut = jsonFlag ? System.err::println : System.out::println;
+            java.util.List<String> output = handler.handleCliArgs(argList, liveOut);
+            boolean isError = false;
+            for (String line : output) {
+                if ("__QUIT__".equals(line)) {
+                    continue;
+                }
+                System.out.println(line);
+                if (line.startsWith("API error ")
+                    || line.startsWith("Invalid input: ")
+                    || line.startsWith("Invalid ")
+                    || line.startsWith("Request failed: ")
+                    || line.startsWith("Unknown command: ")
+                    || line.startsWith("Backtest data: ")
+                    || line.startsWith("Strategy or Databank candidate not found")) {
+                    isError = true;
+                }
+            }
+            if (isError) {
+                System.exit(1);
+            }
+            return;
+        }
+
         try (Terminal terminal = TerminalBuilder.builder().system(true).build()) {
             terminal.writer().println("Trading Bridge TUI → " + client.baseUrl());
             try {
