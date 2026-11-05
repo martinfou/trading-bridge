@@ -147,3 +147,7 @@ data-futures/
 
 # Repo-local Maven repo for artifacts not on Maven Central (see third-party/README.md)
 !third-party/m2/**/*.jar
+
+# Local-only files (never commit: account statements, machine env)
+transactions_*.csv
+deploy/*.env
