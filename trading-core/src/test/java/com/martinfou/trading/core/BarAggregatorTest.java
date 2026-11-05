@@ -104,4 +104,27 @@ class BarAggregatorTest {
         org.junit.jupiter.api.Assertions.assertFalse(agg.isNewPeriod(new Bar("MGC", monLate, 1, 1, 1, 1, 1)));
         org.junit.jupiter.api.Assertions.assertTrue(agg.isNewPeriod(new Bar("MGC", monOpen, 1, 1, 1, 1, 1)));
     }
+
+    @org.junit.jupiter.api.Test
+    void weeklyCandleAlignsMondayForUtcAndCmeSession() {
+        // UTC symbol (rolloverHour=0): week starts Monday 00:00Z, Sunday belongs to that same week
+        BarAggregator utcAgg = new BarAggregator("AAPL", "W1");
+        Instant monUtc = Instant.parse("2026-03-02T14:30:00Z");
+        Instant sunUtc = Instant.parse("2026-03-08T12:00:00Z");
+        Instant nextMonUtc = Instant.parse("2026-03-09T00:00:00Z");
+        utcAgg.add(new Bar("AAPL", monUtc, 100, 105, 99, 102, 10));
+        assertEquals(Instant.parse("2026-03-02T00:00:00Z"), utcAgg.getInProgressBar().orElseThrow().timestamp());
+        assertFalse(utcAgg.isNewPeriod(new Bar("AAPL", sunUtc, 102, 103, 101, 102, 5)));
+        assertTrue(utcAgg.isNewPeriod(new Bar("AAPL", nextMonUtc, 102, 104, 101, 103, 5)));
+
+        // CME futures across US spring-forward DST (2026-03-08): Sun 18:00 EDT = 22:00Z
+        BarAggregator cmeAgg = new BarAggregator("MGC", "W1");
+        Instant sunDstOpen = Instant.parse("2026-03-08T22:00:00Z");
+        Instant friClose = Instant.parse("2026-03-13T20:30:00Z");
+        Instant nextSunOpen = Instant.parse("2026-03-15T22:00:00Z");
+        cmeAgg.add(new Bar("MGC", sunDstOpen, 2900, 2910, 2895, 2905, 100));
+        assertEquals(sunDstOpen, cmeAgg.getInProgressBar().orElseThrow().timestamp());
+        assertFalse(cmeAgg.isNewPeriod(new Bar("MGC", friClose, 2905, 2920, 2900, 2915, 50)));
+        assertTrue(cmeAgg.isNewPeriod(new Bar("MGC", nextSunOpen, 2915, 2925, 2910, 2920, 50)));
+    }
 }

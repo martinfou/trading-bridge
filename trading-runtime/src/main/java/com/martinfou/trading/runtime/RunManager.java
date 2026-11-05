@@ -1253,7 +1253,9 @@ public class RunManager implements RunLifecycle, AutoCloseable {
             config.barsSourceYear(),
             config.barsSourcePath());
         List<Bar> allBars = BarSourceResolver.load(source, config.symbol(),
-            config.strategyTimeframe() != null ? config.strategyTimeframe() : "H1");
+            (config.strategyTimeframe() != null && !config.strategyTimeframe().isBlank())
+                ? config.strategyTimeframe()
+                : "H1");
         if (to != null) {
             allBars = allBars.stream().filter(b -> b.timestamp().isBefore(to)).toList();
         }

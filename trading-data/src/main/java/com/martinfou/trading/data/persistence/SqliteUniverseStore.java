@@ -97,7 +97,7 @@ public final class SqliteUniverseStore implements AutoCloseable {
             new InstrumentDefinition("M2K", "Micro Russell 2000 Small Cap ($5/pt)", "FUTURES", 5.0, 0.10, "USD", false, "RTY=F"),
             new InstrumentDefinition("EMD", "E-mini S&P MidCap 400 ($100/pt)", "FUTURES", 100.0, 0.10, "USD", false, "EMD=F"),
             new InstrumentDefinition("MNQ", "Micro E-mini Nasdaq 100 ($2/pt)", "FUTURES", 2.0, 0.25, "USD", false, "NQ=F"),
-            new InstrumentDefinition("MGC", "Micro Gold ($10/oz)", "FUTURES", 10.0, 0.10, "USD", false, "GC=F"),
+            new InstrumentDefinition("MGC", "Micro Gold ($10/oz)", "FUTURES", 10.0, 0.10, "USD", false, "MGC=F"),
             new InstrumentDefinition("GC", "Gold Futures ($100/oz)", "FUTURES", 100.0, 0.10, "USD", false, "GC=F"),
 
             // US Equities & Minicaps

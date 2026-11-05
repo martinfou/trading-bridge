@@ -181,3 +181,9 @@ Items deferred during code reviews — not blocking current stories.
 - **Risque d'inexactitude de l'equity finale** — L'appel d'equity post-déconnexion dans `RunManager.executeRun()` lève une exception et empêche l'enregistrement du statut propre de fin de run.
 
 
+
+## Deferred from: code review (2026-11-04)
+
+- `DukascopyDownloader` / `HistoricalDataCatalog.yearsForSymbol` / `RunManager.lockAndDownload` (`trading-data/.../DukascopyDownloader.java:159`, `HistoricalDataCatalog.java:107`, `RunManager.java:1325`): Dukascopy raw CSV downloader and catalog scanner only natively produce/scan `m1`/`h1` Dukascopy CSVs; non-Forex symbols in `RunManager.lockAndDownload` fall through to Dukascopy warning logs.
+- `HistoricalDataLoader.loadNative` / `HistoricalDataService.generateMultiAssetBars` (`HistoricalDataLoader.java:99`, `HistoricalDataService.java:332`): Pre-existing relative `data/historical/csv` path resolution and `08:00 UTC` synthetic multi-asset bar start timestamp.
+- Desktop timeframe constants (`desktop/src/views/DataManagerView.vue`, `DashboardView.vue`, `BacktestForm.vue`): Consolidate timeframe option lists into a single shared frontend constant module.

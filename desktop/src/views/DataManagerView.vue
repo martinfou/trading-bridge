@@ -108,10 +108,10 @@ async function loadInstrumentsUniverse() {
 async function refreshDataStatus() {
   try {
     loadError.value = null
-    const [res] = await Promise.all([
-      getHistoricalDataStatus(dataTimeframe.value),
-      loadInstrumentsUniverse()
-    ])
+    if (rawInstruments.value.length === 0) {
+      await loadInstrumentsUniverse()
+    }
+    const res = await getHistoricalDataStatus(dataTimeframe.value)
     dataStatus.value = res.status || []
     activeDownloads.value = res.activeDownloads || []
     activeTasks.value = res.activeTasks || []
@@ -250,7 +250,7 @@ onUnmounted(() => {
           <Sliders class="icon-xs" />
           ⚡ Manage Universe
         </button>
-        <button class="btn secondary" @click="refreshDataStatus">
+        <button class="btn secondary" @click="onUniverseUpdated">
           <RefreshCw class="icon-xs" />
           Refresh
         </button>

@@ -141,8 +141,8 @@ public class OandaPriceClient {
 
     /** Maps internal timeframe names (M5, H4, D1, W1) to OANDA granularity codes. */
     static String toOandaGranularity(String tf) {
-        if (tf == null) return "H1";
-        String u = tf.toUpperCase();
+        if (tf == null || tf.isBlank()) return "H1";
+        String u = tf.trim().toUpperCase();
         return switch (u) {
             case "D1" -> "D";
             case "W1" -> "W";

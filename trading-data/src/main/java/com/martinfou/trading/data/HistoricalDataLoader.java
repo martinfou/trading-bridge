@@ -72,8 +72,14 @@ public final class HistoricalDataLoader {
 
     /** Length of one candle of {@code tf} in minutes. */
     static int tfMinutes(String tf) {
-        String u = tf.toUpperCase();
+        if (tf == null || tf.isBlank()) {
+            throw new IllegalArgumentException("Blank timeframe");
+        }
+        String u = tf.trim().toUpperCase();
         int n = u.length() > 1 ? Integer.parseInt(u.substring(1)) : 1;
+        if (n <= 0) {
+            throw new IllegalArgumentException("Timeframe multiplier must be positive: " + tf);
+        }
         return switch (u.charAt(0)) {
             case 'M' -> n;
             case 'H' -> n * 60;
@@ -83,11 +89,21 @@ public final class HistoricalDataLoader {
         };
     }
 
-    /** True when native {@code base} candles can be aggregated into {@code target} (18 M30 bars make H4). */
+    /**
+     * True when native {@code base} candles can be aggregated into {@code target}.
+     * Session-aligned D1/W1 candles (17:00/18:00 NY) only aggregate from {@code <= H1} so UTC-aligned H4
+     * bars never straddle the daily rollover boundary.
+     */
     static boolean canServe(String target, String base) {
         int b = tfMinutes(base);
         int t = tfMinutes(target);
-        return b <= t && t % b == 0;
+        if (b == t) {
+            return true;
+        }
+        if (t >= 1440 && b > 60) {
+            return false;
+        }
+        return b < t && t % b == 0;
     }
 
     /** Loads native bars (.bars store or direct IBKR/standard CSV) for exactly this timeframe, or throws IOException. */
@@ -122,7 +138,7 @@ public final class HistoricalDataLoader {
         for (int i = STANDARD_TFS.length - 1; i >= 0 && source == null; i--) {
             String base = STANDARD_TFS[i];
             int m = tfMinutes(base);
-            if (m >= target || target % m != 0) {
+            if (m >= target || !canServe(tf, base)) {
                 continue;
             }
             try {
@@ -146,11 +162,6 @@ public final class HistoricalDataLoader {
         agg.completePeriod();
         agg.getLastCompletedBar().ifPresent(aggregated::add);
         return aggregated;
-    }
-
-    private static boolean isHourMultiple(String tf) {
-        String u = tf.toUpperCase();
-        return u.startsWith("H") || u.startsWith("D") || u.startsWith("W");
     }
 
     /** Loads bars from a file path (.bars or CSV). */
@@ -223,7 +234,7 @@ public final class HistoricalDataLoader {
     }
 
     public static LoadResult loadAllAvailable(String symbol, String tf, Path barsDir, Path csvDir) throws IOException {
-        String timeframe = tf != null ? tf.toUpperCase() : "H1";
+        String timeframe = (tf != null && !tf.isBlank()) ? tf.trim().toUpperCase() : "H1";
         HistoricalDataCatalog.SymbolAvailability availability =
             HistoricalDataCatalog.availability(symbol, timeframe, barsDir, csvDir);
         if (availability.years().isEmpty()) {
@@ -231,7 +242,7 @@ public final class HistoricalDataLoader {
         }
         var merged = new ArrayList<Bar>();
         for (int year : availability.years()) {
-            merged.addAll(loadYear(symbol, year, timeframe, barsDir));
+            merged.addAll(loadYearSpecWithFallback(symbol, String.valueOf(year), timeframe, barsDir));
         }
         String source = availability.minYear() + "-" + availability.maxYear()
             + " (" + availability.years().size() + " year(s))";
@@ -244,14 +255,12 @@ public final class HistoricalDataLoader {
         if (m.find()) {
             return pairToSymbol(m.group(1));
         }
-        if (name.contains("_h1_")) {
-            return name.substring(0, name.indexOf("_h1_")).toUpperCase();
-        } else if (name.contains("_m1_")) {
-            return name.substring(0, name.indexOf("_m1_")).toUpperCase();
-        } else if (name.contains("_m15_")) {
-            return name.substring(0, name.indexOf("_m15_")).toUpperCase();
-        } else if (name.contains("_m30_")) {
-            return name.substring(0, name.indexOf("_m30_")).toUpperCase();
+        for (String candidate : STANDARD_TFS) {
+            String token = "_" + candidate.toLowerCase() + "_";
+            int idx = name.indexOf(token);
+            if (idx > 0) {
+                return name.substring(0, idx).toUpperCase();
+            }
         }
         return fallback;
     }
@@ -259,7 +268,7 @@ public final class HistoricalDataLoader {
     private static List<Bar> loadBarStoreFile(Path path, String symbol) throws IOException {
         String filename = path.getFileName().toString();
         String tf = "H1";
-        for (String candidate : List.of("M15", "M30", "M1", "H1", "H4", "D1")) {
+        for (String candidate : STANDARD_TFS) {
             if (filename.contains("_" + candidate + "_")) {
                 tf = candidate;
                 break;
@@ -274,8 +283,9 @@ public final class HistoricalDataLoader {
 
     private static String symbolFromBarStorePath(Path path, String fallback) {
         String name = path.getFileName().toString();
-        for (String candidate : List.of("_H1_", "_M15_", "_M30_", "_M1_", "_H4_", "_D1_")) {
-            int idx = name.indexOf(candidate);
+        for (String candidate : STANDARD_TFS) {
+            String token = "_" + candidate + "_";
+            int idx = name.indexOf(token);
             if (idx > 0) {
                 return name.substring(0, idx);
             }

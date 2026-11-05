@@ -123,7 +123,10 @@ public final class HistoricalDataService implements AutoCloseable {
                 String name = f.getName().toLowerCase(Locale.ROOT);
                 boolean pairMatch = name.startsWith(p + "_") || name.startsWith(p + "-");
                 boolean tfMatch = name.contains("_" + t + "_") || name.contains("-" + t + "-");
-                if (name.endsWith(".csv") && pairMatch && tfMatch && name.contains(yStr)) {
+                boolean yearMatch = name.endsWith("_" + yStr + ".csv")
+                    || name.endsWith("-" + yStr + ".csv")
+                    || name.contains("-" + yStr + "-01-01");
+                if (name.endsWith(".csv") && pairMatch && tfMatch && yearMatch) {
                     return Optional.of(f.toPath());
                 }
             }

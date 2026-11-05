@@ -40,10 +40,13 @@ public final class BarAggregator {
 
     /** Explicit session boundary for D1/W1: a trading day starts at {@code rolloverHour} local time in {@code zone}. */
     public BarAggregator(String symbol, String targetTimeframe, ZoneId zone, int rolloverHour) {
+        if (rolloverHour < 0 || rolloverHour > 23) {
+            throw new IllegalArgumentException("rolloverHour must be in 0..23: " + rolloverHour);
+        }
         this.sessionZone = Objects.requireNonNull(zone, "zone");
         this.rolloverHour = rolloverHour;
         this.symbol = Objects.requireNonNull(symbol, "symbol");
-        this.targetTimeframe = Objects.requireNonNull(targetTimeframe, "targetTimeframe").toUpperCase();
+        this.targetTimeframe = Objects.requireNonNull(targetTimeframe, "targetTimeframe").trim().toUpperCase();
         this.periodMinutes = parsePeriodMinutes(this.targetTimeframe);
     }
 
@@ -117,11 +120,18 @@ public final class BarAggregator {
 
     /** Local date of the trading day containing the timestamp (a session opening at 18:00 belongs to the next date). */
     private LocalDate tradingDate(Instant timestamp) {
-        return timestamp.atZone(sessionZone).toLocalDateTime().plusHours(24 - rolloverHour).toLocalDate();
+        ZonedDateTime zdt = timestamp.atZone(sessionZone);
+        if (rolloverHour == 0) {
+            return zdt.toLocalDate();
+        }
+        return zdt.getHour() >= rolloverHour ? zdt.toLocalDate().plusDays(1) : zdt.toLocalDate();
     }
 
     private Instant tradingDayStart(LocalDate date) {
-        return date.atStartOfDay().minusHours(24 - rolloverHour).atZone(sessionZone).toInstant();
+        if (rolloverHour == 0) {
+            return date.atStartOfDay(sessionZone).toInstant();
+        }
+        return date.minusDays(1).atTime(rolloverHour, 0).atZone(sessionZone).toInstant();
     }
 
     private Instant getPeriodStart(Instant timestamp) {
@@ -142,16 +152,22 @@ public final class BarAggregator {
     }
 
     private static int parsePeriodMinutes(String tf) {
-        String upper = tf.toUpperCase();
+        String upper = tf.trim().toUpperCase();
+        int minutes;
         if (upper.startsWith("M")) {
-            return Integer.parseInt(upper.substring(1));
+            minutes = Integer.parseInt(upper.substring(1));
         } else if (upper.startsWith("H")) {
-            return Integer.parseInt(upper.substring(1)) * 60;
+            minutes = Integer.parseInt(upper.substring(1)) * 60;
         } else if (upper.startsWith("D")) {
-            return 24 * 60; // 1 day in minutes
+            minutes = 24 * 60; // 1 day in minutes
         } else if (upper.startsWith("W")) {
-            return 7 * 24 * 60; // 1 week in minutes
+            minutes = 7 * 24 * 60; // 1 week in minutes
+        } else {
+            throw new IllegalArgumentException("Unsupported timeframe format: " + tf);
         }
-        throw new IllegalArgumentException("Unsupported timeframe format: " + tf);
+        if (minutes <= 0) {
+            throw new IllegalArgumentException("Timeframe period must be positive: " + tf);
+        }
+        return minutes;
     }
 }

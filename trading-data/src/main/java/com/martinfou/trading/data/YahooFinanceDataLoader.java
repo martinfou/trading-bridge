@@ -83,7 +83,8 @@ public final class YahooFinanceDataLoader {
             case "RTY=F", "M2K=F" -> "M2K";
             case "NQ=F" -> "MNQ";
             case "EMD=F" -> "EMD";
-            case "GC=F", "MGC=F" -> "MGC";
+            case "GC=F" -> "GC";
+            case "MGC=F" -> "MGC";
             default -> upper.replace('=', '_').replace('/', '_');
         };
     }
