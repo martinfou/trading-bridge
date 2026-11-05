@@ -38,7 +38,17 @@ public final class HistoricalDataCatalog {
     }
 
     public static SymbolAvailability availability(String symbol, Path barsDir, Path csvDir) throws IOException {
-        SortedSet<Integer> years = yearsForSymbol(symbol, barsDir, csvDir);
+        return availability(symbol, null, barsDir, csvDir);
+    }
+
+    /**
+     * Availability for a specific strategy timeframe: a year counts when native bars exist at exactly that
+     * timeframe, or at a finer one the loader can aggregate into it. {@code timeframe == null} counts any
+     * standard timeframe, which is what the coverage grid means by "data is present".
+     */
+    public static SymbolAvailability availability(String symbol, String timeframe, Path barsDir, Path csvDir)
+            throws IOException {
+        SortedSet<Integer> years = yearsForSymbol(symbol, timeframe, barsDir, csvDir);
         if (years.isEmpty()) {
             return new SymbolAvailability(symbol, List.of(), 0, 0, "", List.of());
         }
@@ -63,18 +73,38 @@ public final class HistoricalDataCatalog {
     }
 
     static SortedSet<Integer> yearsForSymbol(String symbol, Path barsDir, Path csvDir) throws IOException {
+        return yearsForSymbol(symbol, null, barsDir, csvDir);
+    }
+
+    static SortedSet<Integer> yearsForSymbol(String symbol, String timeframe, Path barsDir, Path csvDir)
+            throws IOException {
         SortedSet<Integer> years = new TreeSet<>();
-        String prefix = symbol.toUpperCase(Locale.ROOT) + "_H1_";
+        String prefix = symbol.toUpperCase(Locale.ROOT) + "_";
+        String target = (timeframe == null || timeframe.isBlank()) ? null : timeframe.toUpperCase(Locale.ROOT);
         if (Files.isDirectory(barsDir)) {
             try (var stream = Files.list(barsDir)) {
                 stream.filter(Files::isRegularFile)
                     .map(p -> p.getFileName().toString())
-                    .filter(name -> name.regionMatches(true, 0, prefix, 0, prefix.length()))
+                    .filter(name -> name.toUpperCase(Locale.ROOT).startsWith(prefix))
                     .filter(name -> name.toLowerCase(Locale.ROOT).endsWith(".bars"))
-                    .forEach(name -> parseYearSuffix(name, prefix.length(), years));
+                    .forEach(name -> {
+                        String rest = name.substring(prefix.length());
+                        int sep = rest.indexOf('_');
+                        if (sep <= 0) {
+                            return;
+                        }
+                        String tfToken = rest.substring(0, sep).toUpperCase(Locale.ROOT);
+                        if (!isStandardTimeframe(tfToken)) {
+                            return; // unknown token, not one of the standard candle sizes
+                        }
+                        if (target != null && !HistoricalDataLoader.canServe(target, tfToken)) {
+                            return;
+                        }
+                        parseYearSuffix(rest, sep + 1, years);
+                    });
             }
         }
-        if (Files.isDirectory(csvDir)) {
+        if (Files.isDirectory(csvDir) && (target == null || HistoricalDataLoader.canServe(target, "H1"))) {
             String pair = symbol.replace("_", "").toLowerCase(Locale.ROOT);
             try (var stream = Files.list(csvDir)) {
                 stream.filter(Files::isRegularFile)
@@ -87,6 +117,15 @@ public final class HistoricalDataCatalog {
         return years;
     }
 
+    private static boolean isStandardTimeframe(String tf) {
+        for (String standard : HistoricalDataLoader.STANDARD_TFS) {
+            if (standard.equals(tf)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static void collectSymbolsFromBars(Path barsDir, SortedSet<String> symbols) throws IOException {
         if (!Files.isDirectory(barsDir)) {
             return;
@@ -94,12 +133,15 @@ public final class HistoricalDataCatalog {
         try (var stream = Files.list(barsDir)) {
             stream.filter(Files::isRegularFile)
                 .map(p -> p.getFileName().toString())
-                .filter(name -> name.toUpperCase(Locale.ROOT).contains("_H1_"))
                 .filter(name -> name.toLowerCase(Locale.ROOT).endsWith(".bars"))
                 .forEach(name -> {
-                    int idx = name.toUpperCase(Locale.ROOT).indexOf("_H1_");
-                    if (idx > 0) {
-                        symbols.add(name.substring(0, idx).toUpperCase(Locale.ROOT));
+                    String upper = name.toUpperCase(Locale.ROOT);
+                    for (String tf : HistoricalDataLoader.STANDARD_TFS) {
+                        int idx = upper.indexOf("_" + tf + "_");
+                        if (idx > 0) {
+                            symbols.add(upper.substring(0, idx));
+                            return;
+                        }
                     }
                 });
         }
