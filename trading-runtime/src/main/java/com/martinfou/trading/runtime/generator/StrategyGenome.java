@@ -49,7 +49,21 @@ public record StrategyGenome(
         ADX_REGIME,
         ATR_EXPANSION,
         DAILY_HIGH_LOW,
-        MOMENTUM_ROC
+        MOMENTUM_ROC,
+        MACD_HISTOGRAM,
+        STOCHASTIC_OSC,
+        KELTNER_CHANNEL,
+        BB_KC_SQUEEZE,
+        CCI_OSCILLATOR,
+        WILLIAMS_R,
+        VWAP_ANCHOR,
+        VOLUME_SURGE,
+        ENGULFING_PATTERN,
+        INSIDE_BAR_COIL,
+        LINEAR_REG_SLOPE,
+        ZSCORE_EXTREME,
+        CHOPPINESS_FILTER,
+        HIGHER_HIGHS_SWING
     }
 
     /**
@@ -79,12 +93,10 @@ public record StrategyGenome(
                     : String.format(Locale.US, "Close[0] < SuperTrend(%d, %.1f)", period1, threshold);
                 case BOLLINGER_BANDS -> {
                     if (threshold > 0) {
-                        // Breakout mode
                         yield isLong
                             ? String.format(Locale.US, "Close[0] > BBUpper(%d, %.1f)", period1, threshold)
                             : String.format(Locale.US, "Close[0] < BBLower(%d, %.1f)", period1, threshold);
                     } else {
-                        // Mean-reversion mode (negative threshold encodes stdDev)
                         double std = Math.abs(threshold);
                         yield isLong
                             ? String.format(Locale.US, "Close[0] < BBLower(%d, %.1f) (Oversold Dip)", period1, std)
@@ -93,13 +105,11 @@ public record StrategyGenome(
                 }
                 case RSI_FILTER -> {
                     if (threshold >= 50.0) {
-                        // Momentum confirmation
                         double lvl = isLong ? threshold : (100.0 - threshold);
                         yield isLong
                             ? String.format(Locale.US, "RSI(%d)[%d] > %.0f", period1, shift1, lvl)
                             : String.format(Locale.US, "RSI(%d)[%d] < %.0f", period1, shift1, lvl);
                     } else {
-                        // Mean-reversion oversold/overbought
                         double lvl = isLong ? threshold : (100.0 - threshold);
                         yield isLong
                             ? String.format(Locale.US, "RSI(%d)[%d] < %.0f (Oversold)", period1, shift1, lvl)
@@ -114,6 +124,80 @@ public record StrategyGenome(
                 case MOMENTUM_ROC -> isLong
                     ? String.format(Locale.US, "Close[0] > Close[%d] + %.2f * ATR(14)", period1, threshold)
                     : String.format(Locale.US, "Close[0] < Close[%d] - %.2f * ATR(14)", period1, threshold);
+                case MACD_HISTOGRAM -> isLong
+                    ? String.format(Locale.US, "MACD(%d, %d)[%d] > 0 & Rising", period1, period2, shift1)
+                    : String.format(Locale.US, "MACD(%d, %d)[%d] < 0 & Falling", period1, period2, shift1);
+                case STOCHASTIC_OSC -> {
+                    if (threshold >= 50.0) {
+                        double lvl = isLong ? threshold : (100.0 - threshold);
+                        yield isLong
+                            ? String.format(Locale.US, "Stoch%%K(%d)[%d] > %.0f", period1, shift1, lvl)
+                            : String.format(Locale.US, "Stoch%%K(%d)[%d] < %.0f", period1, shift1, lvl);
+                    } else {
+                        double lvl = isLong ? threshold : (100.0 - threshold);
+                        yield isLong
+                            ? String.format(Locale.US, "Stoch%%K(%d)[%d] < %.0f (Oversold)", period1, shift1, lvl)
+                            : String.format(Locale.US, "Stoch%%K(%d)[%d] > %.0f (Overbought)", period1, shift1, lvl);
+                    }
+                }
+                case KELTNER_CHANNEL -> isLong
+                    ? String.format(Locale.US, "Close[0] > KeltnerUpper(%d, %.1f)", period1, Math.abs(threshold))
+                    : String.format(Locale.US, "Close[0] < KeltnerLower(%d, %.1f)", period1, Math.abs(threshold));
+                case BB_KC_SQUEEZE -> isLong
+                    ? String.format(Locale.US, "TTM Squeeze(%d, %.1f) + Bullish Breakout", period1, Math.abs(threshold))
+                    : String.format(Locale.US, "TTM Squeeze(%d, %.1f) + Bearish Breakout", period1, Math.abs(threshold));
+                case CCI_OSCILLATOR -> {
+                    if (threshold >= 0) {
+                        yield isLong
+                            ? String.format(Locale.US, "CCI(%d)[%d] > +%.0f", period1, shift1, threshold)
+                            : String.format(Locale.US, "CCI(%d)[%d] < -%.0f", period1, shift1, threshold);
+                    } else {
+                        double lvl = Math.abs(threshold);
+                        yield isLong
+                            ? String.format(Locale.US, "CCI(%d)[%d] < -%.0f (Oversold)", period1, shift1, lvl)
+                            : String.format(Locale.US, "CCI(%d)[%d] > +%.0f (Overbought)", period1, shift1, lvl);
+                    }
+                }
+                case WILLIAMS_R -> {
+                    if (threshold >= 50.0) {
+                        yield isLong
+                            ? String.format(Locale.US, "Williams%%R(%d)[%d] > -%.0f", period1, shift1, 100.0 - threshold)
+                            : String.format(Locale.US, "Williams%%R(%d)[%d] < -%.0f", period1, shift1, threshold);
+                    } else {
+                        yield isLong
+                            ? String.format(Locale.US, "Williams%%R(%d)[%d] < -%.0f (Oversold)", period1, shift1, 100.0 - threshold)
+                            : String.format(Locale.US, "Williams%%R(%d)[%d] > -%.0f (Overbought)", period1, shift1, threshold);
+                    }
+                }
+                case VWAP_ANCHOR -> isLong
+                    ? String.format(Locale.US, "Close[0] > RollingVWAP(%d)[%d]", period1, shift1)
+                    : String.format(Locale.US, "Close[0] < RollingVWAP(%d)[%d]", period1, shift1);
+                case VOLUME_SURGE -> String.format(Locale.US, "Volume[0] > %.2f * AvgVolume(%d)[1]", Math.max(1.05, threshold), period1);
+                case ENGULFING_PATTERN -> isLong
+                    ? String.format(Locale.US, "Bullish Engulfing Bar[0..%d] (Body > %.2f * ATR)", Math.max(1, shift1), Math.max(0.15, threshold))
+                    : String.format(Locale.US, "Bearish Engulfing Bar[0..%d] (Body > %.2f * ATR)", Math.max(1, shift1), Math.max(0.15, threshold));
+                case INSIDE_BAR_COIL -> isLong
+                    ? String.format(Locale.US, "InsideBar Coil[%d] & Close[0] > High[1]", Math.max(1, shift1))
+                    : String.format(Locale.US, "InsideBar Coil[%d] & Close[0] < Low[1]", Math.max(1, shift1));
+                case LINEAR_REG_SLOPE -> isLong
+                    ? String.format(Locale.US, "LinRegSlope(%d)[%d] > +%.2f * ATR", period1, shift1, Math.max(0.05, threshold))
+                    : String.format(Locale.US, "LinRegSlope(%d)[%d] < -%.2f * ATR", period1, shift1, Math.max(0.05, threshold));
+                case ZSCORE_EXTREME -> {
+                    double z = Math.max(0.8, Math.abs(threshold));
+                    if (threshold < 0) {
+                        yield isLong
+                            ? String.format(Locale.US, "ZScore(%d)[%d] < -%.2f (Mean-Rev Dip)", period1, shift1, z)
+                            : String.format(Locale.US, "ZScore(%d)[%d] > +%.2f (Mean-Rev Spike)", period1, shift1, z);
+                    } else {
+                        yield isLong
+                            ? String.format(Locale.US, "ZScore(%d)[%d] > +%.2f (Momentum Thrust)", period1, shift1, z)
+                            : String.format(Locale.US, "ZScore(%d)[%d] < -%.2f (Momentum Thrust)", period1, shift1, z);
+                    }
+                }
+                case CHOPPINESS_FILTER -> String.format(Locale.US, "EfficiencyRatio(%d)[%d] > %.2f (Trending Regime)", period1, shift1, Math.clamp(threshold, 0.20, 0.75));
+                case HIGHER_HIGHS_SWING -> isLong
+                    ? String.format(Locale.US, "SwingHigh/Low(%d) Higher-High & Higher-Low", period1)
+                    : String.format(Locale.US, "SwingHigh/Low(%d) Lower-Low & Lower-High", period1);
             };
         }
 
@@ -129,6 +213,20 @@ public record StrategyGenome(
                 case ATR_EXPANSION -> "ATR(" + period1 + ")";
                 case DAILY_HIGH_LOW -> "DailyHighLow";
                 case MOMENTUM_ROC -> "ROC(" + period1 + ")";
+                case MACD_HISTOGRAM -> "MACD(" + period1 + "," + period2 + ")";
+                case STOCHASTIC_OSC -> "Stoch(" + period1 + ")";
+                case KELTNER_CHANNEL -> "Keltner(" + period1 + ")";
+                case BB_KC_SQUEEZE -> "TTMSqueeze(" + period1 + ")";
+                case CCI_OSCILLATOR -> "CCI(" + period1 + ")";
+                case WILLIAMS_R -> "Will%R(" + period1 + ")";
+                case VWAP_ANCHOR -> "VWAP(" + period1 + ")";
+                case VOLUME_SURGE -> "VolSurge(" + period1 + ")";
+                case ENGULFING_PATTERN -> "EngulfingPA";
+                case INSIDE_BAR_COIL -> "InsideBarNR";
+                case LINEAR_REG_SLOPE -> "LinReg(" + period1 + ")";
+                case ZSCORE_EXTREME -> "ZScore(" + period1 + ")";
+                case CHOPPINESS_FILTER -> "KaufmanER(" + period1 + ")";
+                case HIGHER_HIGHS_SWING -> "SwingHHLL(" + period1 + ")";
             };
         }
 
@@ -143,24 +241,31 @@ public record StrategyGenome(
             int choice = rng.nextInt(3);
             if (choice == 0) {
                 p1 = periods[rng.nextInt(periods.length)];
-                if (blockType == BlockType.MA_CROSSOVER || blockType == BlockType.ATR_EXPANSION) {
+                if (blockType == BlockType.MA_CROSSOVER || blockType == BlockType.ATR_EXPANSION || blockType == BlockType.MACD_HISTOGRAM) {
                     p2 = Math.max(p1 + 10, periods[rng.nextInt(periods.length)]);
                 }
             } else if (choice == 1) {
                 s1 = rng.nextInt(0, 4);
                 s2 = Math.max(s1 + 1, rng.nextInt(1, 5));
             } else {
-                if (blockType == BlockType.RSI_FILTER) {
-                    th = th >= 50.0 ? rng.nextInt(50, 66) : rng.nextInt(25, 42);
+                if (blockType == BlockType.RSI_FILTER || blockType == BlockType.STOCHASTIC_OSC || blockType == BlockType.WILLIAMS_R) {
+                    th = th >= 50.0 ? rng.nextInt(50, 68) : rng.nextInt(20, 42);
                 } else if (blockType == BlockType.ADX_REGIME) {
                     th = rng.nextInt(18, 32);
-                } else if (blockType == BlockType.ATR_EXPANSION) {
-                    th = Math.round(rng.nextDouble(0.95, 1.35) * 100.0) / 100.0;
-                } else if (blockType == BlockType.SUPERTREND || blockType == BlockType.BOLLINGER_BANDS) {
-                    double mag = Math.round(rng.nextDouble(1.5, 2.8) * 10.0) / 10.0;
+                } else if (blockType == BlockType.ATR_EXPANSION || blockType == BlockType.VOLUME_SURGE) {
+                    th = Math.round(rng.nextDouble(1.05, 1.65) * 100.0) / 100.0;
+                } else if (blockType == BlockType.SUPERTREND || blockType == BlockType.BOLLINGER_BANDS
+                    || blockType == BlockType.KELTNER_CHANNEL || blockType == BlockType.BB_KC_SQUEEZE
+                    || blockType == BlockType.ZSCORE_EXTREME) {
+                    double mag = Math.round(rng.nextDouble(1.3, 2.6) * 10.0) / 10.0;
                     th = th < 0 ? -mag : mag;
-                } else if (blockType == BlockType.MOMENTUM_ROC) {
-                    th = Math.round(rng.nextDouble(0.2, 1.2) * 100.0) / 100.0;
+                } else if (blockType == BlockType.CCI_OSCILLATOR) {
+                    double mag = rng.nextInt(60, 140);
+                    th = th < 0 ? -mag : mag;
+                } else if (blockType == BlockType.CHOPPINESS_FILTER) {
+                    th = Math.round(rng.nextDouble(0.25, 0.58) * 100.0) / 100.0;
+                } else if (blockType == BlockType.MOMENTUM_ROC || blockType == BlockType.LINEAR_REG_SLOPE || blockType == BlockType.ENGULFING_PATTERN) {
+                    th = Math.round(rng.nextDouble(0.15, 0.95) * 100.0) / 100.0;
                 }
             }
             return new RuleGene(blockType, p1, p2, s1, s2, th);
@@ -264,6 +369,16 @@ public record StrategyGenome(
         sb.append("    private String symbol;\n");
         sb.append("    private final List<Bar> history = new ArrayList<>();\n");
         sb.append("    private final List<Order> pendingOrders = new ArrayList<>();\n\n");
+        sb.append("    private boolean inTrade = false;\n");
+        sb.append("    private Order.Side positionSide = null;\n");
+        sb.append("    private double stopLoss = 0.0;\n");
+        sb.append("    private double takeProfit = 0.0;\n");
+        sb.append("    private int barsInTrade = 0;\n\n");
+        sb.append("    private Order.Side armedSide = null;\n");
+        sb.append("    private double armedStopPrice = 0.0;\n");
+        sb.append("    private double armedSlDist = 0.0;\n");
+        sb.append("    private double armedPtDist = 0.0;\n");
+        sb.append("    private int armedBarsRemaining = 0;\n\n");
         sb.append("    public ").append(id).append("() {\n");
         sb.append("        this(DEFAULT_SYMBOL);\n");
         sb.append("    }\n\n");
@@ -287,39 +402,190 @@ public record StrategyGenome(
         sb.append("    @Override\n");
         sb.append("    public void onBar(Bar bar) {\n");
         sb.append("        history.add(bar);\n");
-        sb.append("        if (history.size() < 65) return;\n");
+        sb.append("        if (history.size() < 61) return;\n");
         sb.append("        double atr = calcAtr(").append(atrPeriod).append(", 0);\n");
-        sb.append("        if (atr <= 0) return;\n");
-        sb.append("        double slDist = ").append(String.format(Locale.US, "%.2f", slAtrMult)).append(" * atr;\n");
-        sb.append("        double ptDist = ").append(String.format(Locale.US, "%.2f", tpAtrMult)).append(" * atr;\n");
-        sb.append("        // Entry & exit evaluation follows genome specification\n");
+        sb.append("        if (atr <= 0) return;\n\n");
+        sb.append("        if (inTrade) {\n");
+        sb.append("            barsInTrade++;\n");
+        sb.append("            if (positionSide == Order.Side.BUY && (bar.low() <= stopLoss || bar.high() >= takeProfit)) {\n");
+        sb.append("                closePosition(bar);\n");
+        sb.append("                return;\n");
+        sb.append("            } else if (positionSide == Order.Side.SELL && (bar.high() >= stopLoss || bar.low() <= takeProfit)) {\n");
+        sb.append("                closePosition(bar);\n");
+        sb.append("                return;\n");
+        sb.append("            }\n");
+        if (maxBarsInTrade > 0) {
+            sb.append("            if (barsInTrade >= ").append(maxBarsInTrade).append(") {\n");
+            sb.append("                closePosition(bar);\n");
+            sb.append("                return;\n");
+            sb.append("            }\n");
+        }
+        if (trailingAtrMult > 0) {
+            sb.append("            double trailDist = ").append(String.format(Locale.US, "%.2f", trailingAtrMult)).append(" * atr;\n");
+            sb.append("            if (positionSide == Order.Side.BUY) {\n");
+            sb.append("                stopLoss = Math.max(stopLoss, quantize(bar.close() - trailDist));\n");
+            sb.append("            } else if (positionSide == Order.Side.SELL) {\n");
+            sb.append("                stopLoss = Math.min(stopLoss, quantize(bar.close() + trailDist));\n");
+            sb.append("            }\n");
+        }
+        sb.append("            return;\n");
+        sb.append("        }\n\n");
+        sb.append("        if (armedSide != null && armedBarsRemaining > 0) {\n");
+        sb.append("            if (armedSide == Order.Side.BUY && bar.high() >= armedStopPrice) {\n");
+        sb.append("                executeEntry(Order.Side.BUY, bar.close(), armedSlDist, armedPtDist);\n");
+        sb.append("                clearArmed();\n");
+        sb.append("                return;\n");
+        sb.append("            } else if (armedSide == Order.Side.SELL && bar.low() <= armedStopPrice) {\n");
+        sb.append("                executeEntry(Order.Side.SELL, bar.close(), armedSlDist, armedPtDist);\n");
+        sb.append("                clearArmed();\n");
+        sb.append("                return;\n");
+        sb.append("            }\n");
+        sb.append("            armedBarsRemaining--;\n");
+        sb.append("            if (armedBarsRemaining <= 0) clearArmed();\n");
+        sb.append("        }\n\n");
+        sb.append("        double slDist = quantize(").append(String.format(Locale.US, "%.2f", slAtrMult)).append(" * atr);\n");
+        sb.append("        double ptDist = quantize(").append(String.format(Locale.US, "%.2f", tpAtrMult)).append(" * atr);\n\n");
         sb.append("        if (evaluateLong()) {\n");
-        sb.append("            double price = bar.close();\n");
-        sb.append("            pendingOrders.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, 1.0, price)\n");
-        sb.append("                .withStrategyId(\"").append(id).append("\")\n");
-        sb.append("                .withStopLoss(quantize(price - slDist))\n");
-        sb.append("                .withTakeProfit(quantize(price + ptDist)));\n");
-        sb.append("        } else if (evaluateShort()) {\n");
-        sb.append("            double price = bar.close();\n");
-        sb.append("            pendingOrders.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, 1.0, price)\n");
-        sb.append("                .withStrategyId(\"").append(id).append("\")\n");
-        sb.append("                .withStopLoss(quantize(price + slDist))\n");
-        sb.append("                .withTakeProfit(quantize(price - ptDist)));\n");
+        if ("STOP".equalsIgnoreCase(entryOrderType)) {
+            sb.append("            double hh = calcHighestHigh(").append(stopEntryLookback).append(", 1);\n");
+            sb.append("            double stopPrice = quantize(hh + ").append(String.format(Locale.US, "%.2f", stopEntryAtrMult)).append(" * atr);\n");
+            sb.append("            if (bar.close() >= stopPrice && stopPrice > 0) {\n");
+            sb.append("                executeEntry(Order.Side.BUY, bar.close(), slDist, ptDist);\n");
+            sb.append("                clearArmed();\n");
+            sb.append("                return;\n");
+            sb.append("            } else if (stopPrice > 0) {\n");
+            sb.append("                armOrder(Order.Side.BUY, stopPrice, slDist, ptDist, ").append(stopOrderValidBars).append(");\n");
+            sb.append("            }\n");
+        } else {
+            sb.append("            executeEntry(Order.Side.BUY, bar.close(), slDist, ptDist);\n");
+            sb.append("            return;\n");
+        }
+        sb.append("        }\n");
+        sb.append("        if (evaluateShort()) {\n");
+        if ("STOP".equalsIgnoreCase(entryOrderType)) {
+            sb.append("            double ll = calcLowestLow(").append(stopEntryLookback).append(", 1);\n");
+            sb.append("            double stopPrice = quantize(ll - ").append(String.format(Locale.US, "%.2f", stopEntryAtrMult)).append(" * atr);\n");
+            sb.append("            if (bar.close() <= stopPrice && stopPrice > 0) {\n");
+            sb.append("                executeEntry(Order.Side.SELL, bar.close(), slDist, ptDist);\n");
+            sb.append("                clearArmed();\n");
+            sb.append("            } else if (stopPrice > 0) {\n");
+            sb.append("                armOrder(Order.Side.SELL, stopPrice, slDist, ptDist, ").append(stopOrderValidBars).append(");\n");
+            sb.append("            }\n");
+        } else {
+            sb.append("            executeEntry(Order.Side.SELL, bar.close(), slDist, ptDist);\n");
+        }
         sb.append("        }\n");
         sb.append("    }\n\n");
+        sb.append("    private void executeEntry(Order.Side side, double price, double slDist, double ptDist) {\n");
+        sb.append("        double minOffset = Math.max(price * 0.0003, 0.0001);\n");
+        sb.append("        double safeSl = Math.max(slDist, minOffset);\n");
+        sb.append("        double safePt = Math.max(ptDist, minOffset);\n");
+        sb.append("        double sl = side == Order.Side.BUY ? quantize(price - safeSl) : quantize(price + safeSl);\n");
+        sb.append("        double tp = side == Order.Side.BUY ? quantize(price + safePt) : quantize(price - safePt);\n");
+        sb.append("        pendingOrders.add(new Order(symbol, side, Order.Type.MARKET, 1.0, price)\n");
+        sb.append("            .withStrategyId(\"").append(id).append("\")\n");
+        sb.append("            .withStopLoss(sl)\n");
+        sb.append("            .withTakeProfit(tp));\n");
+        sb.append("        this.inTrade = true;\n");
+        sb.append("        this.positionSide = side;\n");
+        sb.append("        this.stopLoss = sl;\n");
+        sb.append("        this.takeProfit = tp;\n");
+        sb.append("        this.barsInTrade = 0;\n");
+        sb.append("    }\n\n");
+        sb.append("    private void closePosition(Bar bar) {\n");
+        sb.append("        if (!inTrade || positionSide == null) return;\n");
+        sb.append("        Order.Side exitSide = positionSide == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;\n");
+        sb.append("        pendingOrders.add(new Order(symbol, exitSide, Order.Type.MARKET, 1.0, bar.close())\n");
+        sb.append("            .withStrategyId(\"").append(id).append("\")\n");
+        sb.append("            .asCloseOnly());\n");
+        sb.append("        this.inTrade = false;\n");
+        sb.append("        this.positionSide = null;\n");
+        sb.append("        this.barsInTrade = 0;\n");
+        sb.append("    }\n\n");
+        sb.append("    private void armOrder(Order.Side side, double stopPrice, double slDist, double ptDist, int validBars) {\n");
+        sb.append("        this.armedSide = side;\n");
+        sb.append("        this.armedStopPrice = stopPrice;\n");
+        sb.append("        this.armedSlDist = slDist;\n");
+        sb.append("        this.armedPtDist = ptDist;\n");
+        sb.append("        this.armedBarsRemaining = Math.max(1, validBars);\n");
+        sb.append("    }\n\n");
+        sb.append("    private void clearArmed() {\n");
+        sb.append("        this.armedSide = null;\n");
+        sb.append("        this.armedStopPrice = 0.0;\n");
+        sb.append("        this.armedSlDist = 0.0;\n");
+        sb.append("        this.armedPtDist = 0.0;\n");
+        sb.append("        this.armedBarsRemaining = 0;\n");
+        sb.append("    }\n\n");
         sb.append("    private boolean evaluateLong() {\n");
-        if ("SHORT_ONLY".equalsIgnoreCase(direction)) {
+        if ("SHORT_ONLY".equalsIgnoreCase(direction) || longRules == null || longRules.isEmpty()) {
             sb.append("        return false;\n");
         } else {
-            sb.append("        return calcHighestHigh(").append(stopEntryLookback).append(", 1) > calcLowestLow(").append(stopEntryLookback).append(", 2);\n");
+            sb.append("        return ").append(renderRulesExpr(longRules, true)).append(";\n");
         }
         sb.append("    }\n\n");
         sb.append("    private boolean evaluateShort() {\n");
-        if ("LONG_ONLY".equalsIgnoreCase(direction)) {
+        if ("LONG_ONLY".equalsIgnoreCase(direction) || shortRules == null || shortRules.isEmpty()) {
             sb.append("        return false;\n");
         } else {
-            sb.append("        return calcLowestLow(").append(stopEntryLookback).append(", 1) < calcHighestHigh(").append(stopEntryLookback).append(", 2);\n");
+            sb.append("        return ").append(renderRulesExpr(shortRules, false)).append(";\n");
         }
+        sb.append("    }\n\n");
+        sb.append("    private double getClose(int shift) {\n");
+        sb.append("        int idx = Math.max(0, history.size() - 1 - shift);\n");
+        sb.append("        return history.get(idx).close();\n");
+        sb.append("    }\n\n");
+        sb.append("    private double getOpen(int shift) {\n");
+        sb.append("        int idx = Math.max(0, history.size() - 1 - shift);\n");
+        sb.append("        return history.get(idx).open();\n");
+        sb.append("    }\n\n");
+        sb.append("    private double getHigh(int shift) {\n");
+        sb.append("        int idx = Math.max(0, history.size() - 1 - shift);\n");
+        sb.append("        return history.get(idx).high();\n");
+        sb.append("    }\n\n");
+        sb.append("    private double getLow(int shift) {\n");
+        sb.append("        int idx = Math.max(0, history.size() - 1 - shift);\n");
+        sb.append("        return history.get(idx).low();\n");
+        sb.append("    }\n\n");
+        sb.append("    private double getVolume(int shift) {\n");
+        sb.append("        int idx = Math.max(0, history.size() - 1 - shift);\n");
+        sb.append("        return Math.max(1.0, history.get(idx).volume());\n");
+        sb.append("    }\n\n");
+        sb.append("    private double calcSma(int period, int shift) {\n");
+        sb.append("        int endIdx = history.size() - 1 - shift;\n");
+        sb.append("        int startIdx = Math.max(0, endIdx - period + 1);\n");
+        sb.append("        if (endIdx < startIdx) return 0.0;\n");
+        sb.append("        double sum = 0.0;\n");
+        sb.append("        for (int i = startIdx; i <= endIdx; i++) sum += history.get(i).close();\n");
+        sb.append("        return sum / (endIdx - startIdx + 1);\n");
+        sb.append("    }\n\n");
+        sb.append("    private double calcEma(int period, int shift) {\n");
+        sb.append("        int endIdx = history.size() - 1 - shift;\n");
+        sb.append("        int startIdx = Math.max(0, endIdx - period * 2);\n");
+        sb.append("        if (endIdx < startIdx) return 0.0;\n");
+        sb.append("        double k = 2.0 / (period + 1.0);\n");
+        sb.append("        double ema = history.get(startIdx).close();\n");
+        sb.append("        for (int i = startIdx + 1; i <= endIdx; i++) ema = (history.get(i).close() - ema) * k + ema;\n");
+        sb.append("        return ema;\n");
+        sb.append("    }\n\n");
+        sb.append("    private double calcStdDev(int period, int shift, double mean) {\n");
+        sb.append("        int endIdx = history.size() - 1 - shift;\n");
+        sb.append("        int startIdx = Math.max(0, endIdx - period + 1);\n");
+        sb.append("        if (endIdx <= startIdx) return 0.0;\n");
+        sb.append("        double sumSq = 0.0;\n");
+        sb.append("        for (int i = startIdx; i <= endIdx; i++) { double d = history.get(i).close() - mean; sumSq += d * d; }\n");
+        sb.append("        return Math.sqrt(sumSq / (endIdx - startIdx + 1));\n");
+        sb.append("    }\n\n");
+        sb.append("    private double calcRsi(int period, int shift) {\n");
+        sb.append("        int endIdx = history.size() - 1 - shift;\n");
+        sb.append("        int startIdx = Math.max(1, endIdx - period + 1);\n");
+        sb.append("        if (endIdx < startIdx) return 50.0;\n");
+        sb.append("        double gains = 0.0, losses = 0.0;\n");
+        sb.append("        for (int i = startIdx; i <= endIdx; i++) {\n");
+        sb.append("            double diff = history.get(i).close() - history.get(i - 1).close();\n");
+        sb.append("            if (diff > 0) gains += diff; else losses -= diff;\n");
+        sb.append("        }\n");
+        sb.append("        if (losses == 0.0) return 100.0;\n");
+        sb.append("        return 100.0 - (100.0 / (1.0 + gains / losses));\n");
         sb.append("    }\n\n");
         sb.append("    private double calcAtr(int period, int shift) {\n");
         sb.append("        int endIdx = history.size() - 1 - shift;\n");
@@ -350,6 +616,65 @@ public record StrategyGenome(
         sb.append("        for (int i = startIdx; i <= endIdx; i++) min = Math.min(min, history.get(i).low());\n");
         sb.append("        return min == Double.POSITIVE_INFINITY ? 0.0 : min;\n");
         sb.append("    }\n\n");
+        sb.append("    private double calcStochK(int period, int shift) {\n");
+        sb.append("        double hh = calcHighestHigh(period, shift);\n");
+        sb.append("        double ll = calcLowestLow(period, shift);\n");
+        sb.append("        if (hh <= ll) return 50.0;\n");
+        sb.append("        return ((getClose(shift) - ll) / (hh - ll)) * 100.0;\n");
+        sb.append("    }\n\n");
+        sb.append("    private double calcCci(int period, int shift) {\n");
+        sb.append("        double mean = calcSma(period, shift);\n");
+        sb.append("        double sd = calcStdDev(period, shift, mean);\n");
+        sb.append("        if (sd <= 0.0) return 0.0;\n");
+        sb.append("        return (getClose(shift) - mean) / (0.015 * sd);\n");
+        sb.append("    }\n\n");
+        sb.append("    private double calcVwap(int period, int shift) {\n");
+        sb.append("        int endIdx = history.size() - 1 - shift;\n");
+        sb.append("        int startIdx = Math.max(0, endIdx - period + 1);\n");
+        sb.append("        if (endIdx < startIdx) return getClose(shift);\n");
+        sb.append("        double pv = 0.0, vol = 0.0;\n");
+        sb.append("        for (int i = startIdx; i <= endIdx; i++) {\n");
+        sb.append("            Bar b = history.get(i);\n");
+        sb.append("            double v = Math.max(1.0, b.volume());\n");
+        sb.append("            double typ = (b.high() + b.low() + b.close()) / 3.0;\n");
+        sb.append("            pv += typ * v;\n");
+        sb.append("            vol += v;\n");
+        sb.append("        }\n");
+        sb.append("        return vol > 0 ? pv / vol : getClose(shift);\n");
+        sb.append("    }\n\n");
+        sb.append("    private double calcAvgVolume(int period, int shift) {\n");
+        sb.append("        int endIdx = history.size() - 1 - shift;\n");
+        sb.append("        int startIdx = Math.max(0, endIdx - period + 1);\n");
+        sb.append("        if (endIdx < startIdx) return 1.0;\n");
+        sb.append("        double sum = 0.0;\n");
+        sb.append("        for (int i = startIdx; i <= endIdx; i++) sum += Math.max(1.0, history.get(i).volume());\n");
+        sb.append("        return sum / (endIdx - startIdx + 1);\n");
+        sb.append("    }\n\n");
+        sb.append("    private double calcLinRegSlope(int period, int shift) {\n");
+        sb.append("        int n = Math.max(3, period);\n");
+        sb.append("        int endIdx = history.size() - 1 - shift;\n");
+        sb.append("        int startIdx = Math.max(0, endIdx - n + 1);\n");
+        sb.append("        int count = endIdx - startIdx + 1;\n");
+        sb.append("        if (count < 3) return 0.0;\n");
+        sb.append("        double sumX = 0.0, sumY = 0.0, sumXY = 0.0, sumX2 = 0.0;\n");
+        sb.append("        for (int i = 0; i < count; i++) {\n");
+        sb.append("            double y = history.get(startIdx + i).close();\n");
+        sb.append("            sumX += i; sumY += y; sumXY += i * y; sumX2 += (double) i * i;\n");
+        sb.append("        }\n");
+        sb.append("        double denom = count * sumX2 - sumX * sumX;\n");
+        sb.append("        return Math.abs(denom) > 1e-9 ? (count * sumXY - sumX * sumY) / denom : 0.0;\n");
+        sb.append("    }\n\n");
+        sb.append("    private double calcEfficiencyRatio(int period, int shift) {\n");
+        sb.append("        int endIdx = history.size() - 1 - shift;\n");
+        sb.append("        int startIdx = Math.max(1, endIdx - period + 1);\n");
+        sb.append("        if (endIdx <= startIdx) return 0.5;\n");
+        sb.append("        double net = Math.abs(history.get(endIdx).close() - history.get(startIdx - 1).close());\n");
+        sb.append("        double path = 0.0;\n");
+        sb.append("        for (int i = startIdx; i <= endIdx; i++) {\n");
+        sb.append("            path += Math.abs(history.get(i).close() - history.get(i - 1).close());\n");
+        sb.append("        }\n");
+        sb.append("        return path > 0.0 ? net / path : 0.0;\n");
+        sb.append("    }\n\n");
         sb.append("    private double quantize(double price) {\n");
         sb.append("        return FuturesRegistry.quantizePrice(symbol, price);\n");
         sb.append("    }\n\n");
@@ -363,9 +688,187 @@ public record StrategyGenome(
         sb.append("    public void reset() {\n");
         sb.append("        history.clear();\n");
         sb.append("        pendingOrders.clear();\n");
+        sb.append("        inTrade = false;\n");
+        sb.append("        positionSide = null;\n");
+        sb.append("        stopLoss = 0.0;\n");
+        sb.append("        takeProfit = 0.0;\n");
+        sb.append("        barsInTrade = 0;\n");
+        sb.append("        clearArmed();\n");
         sb.append("    }\n");
         sb.append("}\n");
         return sb.toString();
+    }
+
+    private static String renderRulesExpr(List<RuleGene> rules, boolean isLong) {
+        List<String> parts = new ArrayList<>(rules.size());
+        for (RuleGene r : rules) {
+            int p1 = Math.max(2, r.period1());
+            int p2 = Math.max(2, r.period2());
+            int s1 = Math.max(0, r.shift1());
+            int s2 = Math.max(0, r.shift2());
+            double th = r.threshold();
+            String expr = switch (r.blockType()) {
+                case DONCHIAN_BREAKOUT -> {
+                    int ls = Math.max(1, s1);
+                    yield isLong ? "(getClose(0) > calcHighestHigh(" + p1 + ", " + ls + "))" : "(getClose(0) < calcLowestLow(" + p1 + ", " + ls + "))";
+                }
+                case MA_CROSSOVER -> isLong
+                    ? "(calcEma(" + p1 + ", " + s1 + ") > calcSma(" + p2 + ", " + s2 + "))"
+                    : "(calcEma(" + p1 + ", " + s1 + ") < calcSma(" + p2 + ", " + s2 + "))";
+                case PRICE_VS_MA -> isLong
+                    ? "(getClose(" + s1 + ") > calcEma(" + p1 + ", " + s1 + "))"
+                    : "(getClose(" + s1 + ") < calcEma(" + p1 + ", " + s1 + "))";
+                case SUPERTREND -> {
+                    double mult = Math.abs(th) > 0.1 ? Math.abs(th) : 2.0;
+                    String mStr = String.format(Locale.US, "%.2f", mult * 0.5);
+                    yield isLong
+                        ? "(getClose(0) > ((calcHighestHigh(" + p1 + ", 1) + calcLowestLow(" + p1 + ", 1)) * 0.5 + " + mStr + " * calcAtr(" + p1 + ", 1)))"
+                        : "(getClose(0) < ((calcHighestHigh(" + p1 + ", 1) + calcLowestLow(" + p1 + ", 1)) * 0.5 - " + mStr + " * calcAtr(" + p1 + ", 1)))";
+                }
+                case BOLLINGER_BANDS -> {
+                    double stdMult = Math.abs(th) > 0.1 ? Math.abs(th) : 2.0;
+                    String sm = String.format(Locale.US, "%.2f", stdMult);
+                    if (th >= 0) {
+                        yield isLong
+                            ? "(getClose(0) > (calcSma(" + p1 + ", 1) + " + sm + " * calcStdDev(" + p1 + ", 1, calcSma(" + p1 + ", 1))))"
+                            : "(getClose(0) < (calcSma(" + p1 + ", 1) - " + sm + " * calcStdDev(" + p1 + ", 1, calcSma(" + p1 + ", 1))))";
+                    } else {
+                        yield isLong
+                            ? "(getClose(0) < (calcSma(" + p1 + ", 1) - " + sm + " * calcStdDev(" + p1 + ", 1, calcSma(" + p1 + ", 1))))"
+                            : "(getClose(0) > (calcSma(" + p1 + ", 1) + " + sm + " * calcStdDev(" + p1 + ", 1, calcSma(" + p1 + ", 1))))";
+                    }
+                }
+                case RSI_FILTER -> {
+                    String thHigh = String.format(Locale.US, "%.1f", th);
+                    String thLow = String.format(Locale.US, "%.1f", 100.0 - th);
+                    if (th >= 50.0) {
+                        yield isLong ? "(calcRsi(" + p1 + ", " + s1 + ") > " + thHigh + ")" : "(calcRsi(" + p1 + ", " + s1 + ") < " + thLow + ")";
+                    } else {
+                        yield isLong ? "(calcRsi(" + p1 + ", " + s1 + ") < " + thHigh + ")" : "(calcRsi(" + p1 + ", " + s1 + ") > " + thLow + ")";
+                    }
+                }
+                case ADX_REGIME -> {
+                    String thAdx = String.format(Locale.US, "%.2f", th * 0.65);
+                    yield "((calcHighestHigh(" + (p1 * 2) + ", " + s1 + ") - calcLowestLow(" + (p1 * 2) + ", " + s1 + ")) > 0 && ((calcAtr(" + p1 + ", " + s1 + ") * " + p1 + " / (calcHighestHigh(" + (p1 * 2) + ", " + s1 + ") - calcLowestLow(" + (p1 * 2) + ", " + s1 + "))) * 25.0) >= " + thAdx + ")";
+                }
+                case ATR_EXPANSION -> {
+                    String thAtr = String.format(Locale.US, "%.2f", th);
+                    yield "(calcAtr(" + p2 + ", 1) > 0 && calcAtr(" + p1 + ", 0) > " + thAtr + " * calcAtr(" + p2 + ", 1))";
+                }
+                case DAILY_HIGH_LOW -> {
+                    int ds1 = Math.max(1, s1);
+                    int ds2 = Math.max(2, s2) + 8;
+                    yield isLong
+                        ? "(calcHighestHigh(24, " + ds1 + ") > calcHighestHigh(24, " + ds2 + "))"
+                        : "(calcLowestLow(24, " + ds1 + ") < calcLowestLow(24, " + ds2 + "))";
+                }
+                case MOMENTUM_ROC -> {
+                    String thRoc = String.format(Locale.US, "%.2f", th);
+                    yield isLong
+                        ? "(getClose(0) > getClose(Math.min(" + p1 + ", history.size() - 1)) + " + thRoc + " * calcAtr(14, 0))"
+                        : "(getClose(0) < getClose(Math.min(" + p1 + ", history.size() - 1)) - " + thRoc + " * calcAtr(14, 0))";
+                }
+                case MACD_HISTOGRAM -> {
+                    int fast = Math.min(p1, p2);
+                    int slow = Math.max(fast + 6, Math.max(p1, p2));
+                    yield isLong
+                        ? "((calcEma(" + fast + ", " + s1 + ") - calcEma(" + slow + ", " + s1 + ")) > 0 && (calcEma(" + fast + ", " + s1 + ") - calcEma(" + slow + ", " + s1 + ")) > (calcEma(" + fast + ", " + (s1 + 1) + ") - calcEma(" + slow + ", " + (s1 + 1) + ")))"
+                        : "((calcEma(" + fast + ", " + s1 + ") - calcEma(" + slow + ", " + s1 + ")) < 0 && (calcEma(" + fast + ", " + s1 + ") - calcEma(" + slow + ", " + s1 + ")) < (calcEma(" + fast + ", " + (s1 + 1) + ") - calcEma(" + slow + ", " + (s1 + 1) + ")))";
+                }
+                case STOCHASTIC_OSC -> {
+                    String thHigh = String.format(Locale.US, "%.1f", th);
+                    String thLow = String.format(Locale.US, "%.1f", 100.0 - th);
+                    if (th >= 50.0) {
+                        yield isLong ? "(calcStochK(" + p1 + ", " + s1 + ") > " + thHigh + ")" : "(calcStochK(" + p1 + ", " + s1 + ") < " + thLow + ")";
+                    } else {
+                        yield isLong ? "(calcStochK(" + p1 + ", " + s1 + ") < " + thHigh + ")" : "(calcStochK(" + p1 + ", " + s1 + ") > " + thLow + ")";
+                    }
+                }
+                case KELTNER_CHANNEL -> {
+                    double mult = Math.abs(th) > 0.2 ? Math.abs(th) : 1.8;
+                    String mStr = String.format(Locale.US, "%.2f", mult);
+                    yield isLong
+                        ? "(getClose(0) > (calcEma(" + p1 + ", 1) + " + mStr + " * calcAtr(" + p1 + ", 1)))"
+                        : "(getClose(0) < (calcEma(" + p1 + ", 1) - " + mStr + " * calcAtr(" + p1 + ", 1)))";
+                }
+                case BB_KC_SQUEEZE -> {
+                    double mult = Math.abs(th) > 0.2 ? Math.abs(th) : 1.8;
+                    String mStr = String.format(Locale.US, "%.2f", mult);
+                    yield isLong
+                        ? "((2.0 * calcStdDev(" + p1 + ", 1, calcSma(" + p1 + ", 1))) < (" + mStr + " * 1.35 * calcAtr(" + p1 + ", 1)) && getClose(0) > calcEma(" + p1 + ", 0))"
+                        : "((2.0 * calcStdDev(" + p1 + ", 1, calcSma(" + p1 + ", 1))) < (" + mStr + " * 1.35 * calcAtr(" + p1 + ", 1)) && getClose(0) < calcEma(" + p1 + ", 0))";
+                }
+                case CCI_OSCILLATOR -> {
+                    double lvl = Math.max(40.0, Math.abs(th));
+                    String lvlStr = String.format(Locale.US, "%.1f", lvl);
+                    if (th >= 0) {
+                        yield isLong ? "(calcCci(" + p1 + ", " + s1 + ") > " + lvlStr + ")" : "(calcCci(" + p1 + ", " + s1 + ") < -" + lvlStr + ")";
+                    } else {
+                        yield isLong ? "(calcCci(" + p1 + ", " + s1 + ") < -" + lvlStr + ")" : "(calcCci(" + p1 + ", " + s1 + ") > " + lvlStr + ")";
+                    }
+                }
+                case WILLIAMS_R -> {
+                    String thHigh = String.format(Locale.US, "%.1f", th);
+                    String thLow = String.format(Locale.US, "%.1f", 100.0 - th);
+                    if (th >= 50.0) {
+                        yield isLong ? "(calcStochK(" + p1 + ", " + s1 + ") > " + thHigh + ")" : "(calcStochK(" + p1 + ", " + s1 + ") < " + thLow + ")";
+                    } else {
+                        yield isLong ? "(calcStochK(" + p1 + ", " + s1 + ") < " + thHigh + ")" : "(calcStochK(" + p1 + ", " + s1 + ") > " + thLow + ")";
+                    }
+                }
+                case VWAP_ANCHOR -> isLong
+                    ? "(getClose(0) > calcVwap(" + p1 + ", " + s1 + "))"
+                    : "(getClose(0) < calcVwap(" + p1 + ", " + s1 + "))";
+                case VOLUME_SURGE -> {
+                    String vMult = String.format(Locale.US, "%.2f", Math.max(1.05, th));
+                    yield "(getVolume(0) > " + vMult + " * calcAvgVolume(" + p1 + ", 1))";
+                }
+                case ENGULFING_PATTERN -> {
+                    int ps = Math.max(1, s1);
+                    String bodyMult = String.format(Locale.US, "%.2f", Math.max(0.15, Math.min(0.8, th)));
+                    yield isLong
+                        ? "(getClose(0) > getOpen(0) && getClose(0) > getHigh(" + ps + ") && (getClose(0) - getOpen(0)) >= " + bodyMult + " * calcAtr(14, 0))"
+                        : "(getClose(0) < getOpen(0) && getClose(0) < getLow(" + ps + ") && (getOpen(0) - getClose(0)) >= " + bodyMult + " * calcAtr(14, 0))";
+                }
+                case INSIDE_BAR_COIL -> {
+                    int cs = Math.max(1, s1);
+                    yield isLong
+                        ? "((getHigh(" + cs + ") - getLow(" + cs + ")) < 0.85 * calcAtr(14, " + cs + ") && getClose(0) > getHigh(" + cs + "))"
+                        : "((getHigh(" + cs + ") - getLow(" + cs + ")) < 0.85 * calcAtr(14, " + cs + ") && getClose(0) < getLow(" + cs + "))";
+                }
+                case LINEAR_REG_SLOPE -> {
+                    String sMult = String.format(Locale.US, "%.3f", Math.max(0.02, th * 0.12));
+                    yield isLong
+                        ? "(calcLinRegSlope(" + p1 + ", " + s1 + ") > " + sMult + " * calcAtr(14, 0))"
+                        : "(calcLinRegSlope(" + p1 + ", " + s1 + ") < -" + sMult + " * calcAtr(14, 0))";
+                }
+                case ZSCORE_EXTREME -> {
+                    double z = Math.max(0.8, Math.abs(th));
+                    String zStr = String.format(Locale.US, "%.2f", z);
+                    if (th < 0) {
+                        yield isLong
+                            ? "(calcStdDev(" + p1 + ", " + s1 + ", calcSma(" + p1 + ", " + s1 + ")) > 0 && ((getClose(" + s1 + ") - calcSma(" + p1 + ", " + s1 + ")) / calcStdDev(" + p1 + ", " + s1 + ", calcSma(" + p1 + ", " + s1 + "))) < -" + zStr + ")"
+                            : "(calcStdDev(" + p1 + ", " + s1 + ", calcSma(" + p1 + ", " + s1 + ")) > 0 && ((getClose(" + s1 + ") - calcSma(" + p1 + ", " + s1 + ")) / calcStdDev(" + p1 + ", " + s1 + ", calcSma(" + p1 + ", " + s1 + "))) > " + zStr + ")";
+                    } else {
+                        yield isLong
+                            ? "(calcStdDev(" + p1 + ", " + s1 + ", calcSma(" + p1 + ", " + s1 + ")) > 0 && ((getClose(" + s1 + ") - calcSma(" + p1 + ", " + s1 + ")) / calcStdDev(" + p1 + ", " + s1 + ", calcSma(" + p1 + ", " + s1 + "))) > " + zStr + ")"
+                            : "(calcStdDev(" + p1 + ", " + s1 + ", calcSma(" + p1 + ", " + s1 + ")) > 0 && ((getClose(" + s1 + ") - calcSma(" + p1 + ", " + s1 + ")) / calcStdDev(" + p1 + ", " + s1 + ", calcSma(" + p1 + ", " + s1 + "))) < -" + zStr + ")";
+                    }
+                }
+                case CHOPPINESS_FILTER -> {
+                    String erStr = String.format(Locale.US, "%.2f", Math.clamp(th, 0.20, 0.70));
+                    yield "(calcEfficiencyRatio(" + p1 + ", " + s1 + ") >= " + erStr + ")";
+                }
+                case HIGHER_HIGHS_SWING -> {
+                    int sw = Math.max(4, Math.min(20, p1 / 2));
+                    yield isLong
+                        ? "(calcHighestHigh(" + sw + ", 1) > calcHighestHigh(" + sw + ", " + (sw + 1) + ") && calcLowestLow(" + sw + ", 1) > calcLowestLow(" + sw + ", " + (sw + 1) + "))"
+                        : "(calcLowestLow(" + sw + ", 1) < calcLowestLow(" + sw + ", " + (sw + 1) + ") && calcHighestHigh(" + sw + ", 1) < calcHighestHigh(" + sw + ", " + (sw + 1) + "))";
+                }
+            };
+            parts.add(expr);
+        }
+        return String.join(" && ", parts);
     }
 
     /**
@@ -428,38 +931,29 @@ public record StrategyGenome(
 
             if (inTrade) {
                 barsInTrade++;
-                if (genome.trailingAtrMult() > 0) {
-                    double trailDist = genome.trailingAtrMult() * atr;
-                    if (positionSide == Order.Side.BUY) {
-                        double candidateSl = quantize(bar.close() - trailDist);
+                if (positionSide == Order.Side.BUY) {
+                    if (bar.low() <= stopLoss || bar.high() >= takeProfit
+                        || (genome.maxBarsInTrade() > 0 && barsInTrade >= genome.maxBarsInTrade())) {
+                        closePosition(bar);
+                        return;
+                    }
+                    if (genome.trailingAtrMult() > 0) {
+                        double candidateSl = quantize(bar.close() - genome.trailingAtrMult() * atr);
                         if (candidateSl > stopLoss) {
                             stopLoss = candidateSl;
                         }
-                    } else if (positionSide == Order.Side.SELL) {
-                        double candidateSl = quantize(bar.close() + trailDist);
+                    }
+                } else if (positionSide == Order.Side.SELL) {
+                    if (bar.high() >= stopLoss || bar.low() <= takeProfit
+                        || (genome.maxBarsInTrade() > 0 && barsInTrade >= genome.maxBarsInTrade())) {
+                        closePosition(bar);
+                        return;
+                    }
+                    if (genome.trailingAtrMult() > 0) {
+                        double candidateSl = quantize(bar.close() + genome.trailingAtrMult() * atr);
                         if (candidateSl < stopLoss) {
                             stopLoss = candidateSl;
                         }
-                    }
-                }
-                if (genome.maxBarsInTrade() > 0 && barsInTrade >= genome.maxBarsInTrade()) {
-                    closePosition(bar);
-                    return;
-                }
-                if (positionSide == Order.Side.BUY) {
-                    if (bar.low() <= stopLoss || bar.high() >= takeProfit) {
-                        // BacktestEngine handles SL/TP fills on the order itself, so reset state
-                        inTrade = false;
-                        positionSide = null;
-                        barsInTrade = 0;
-                        return;
-                    }
-                } else if (positionSide == Order.Side.SELL) {
-                    if (bar.high() >= stopLoss || bar.low() <= takeProfit) {
-                        inTrade = false;
-                        positionSide = null;
-                        barsInTrade = 0;
-                        return;
                     }
                 }
                 return;
@@ -467,13 +961,11 @@ public record StrategyGenome(
 
             if (armedSide != null && armedBarsRemaining > 0) {
                 if (armedSide == Order.Side.BUY && bar.high() >= armedStopPrice) {
-                    double fill = Math.max(bar.open(), armedStopPrice);
-                    executeEntry(Order.Side.BUY, quantize(fill), armedSlDist, armedPtDist);
+                    executeEntry(Order.Side.BUY, bar.close(), armedSlDist, armedPtDist);
                     clearArmed();
                     return;
                 } else if (armedSide == Order.Side.SELL && bar.low() <= armedStopPrice) {
-                    double fill = Math.min(bar.open(), armedStopPrice);
-                    executeEntry(Order.Side.SELL, quantize(fill), armedSlDist, armedPtDist);
+                    executeEntry(Order.Side.SELL, bar.close(), armedSlDist, armedPtDist);
                     clearArmed();
                     return;
                 }
@@ -612,6 +1104,102 @@ public record StrategyGenome(
                         ? getClose(0) > ref + th * atr
                         : getClose(0) < ref - th * atr;
                 }
+                case MACD_HISTOGRAM -> {
+                    int fast = Math.min(p1, p2);
+                    int slow = Math.max(fast + 6, Math.max(p1, p2));
+                    double macd0 = calcEma(fast, s1) - calcEma(slow, s1);
+                    double macd1 = calcEma(fast, s1 + 1) - calcEma(slow, s1 + 1);
+                    yield isLong ? (macd0 > 0 && macd0 > macd1) : (macd0 < 0 && macd0 < macd1);
+                }
+                case STOCHASTIC_OSC -> {
+                    double k = calcStochK(p1, s1);
+                    if (th >= 50.0) {
+                        yield isLong ? k > th : k < (100.0 - th);
+                    } else {
+                        yield isLong ? k < th : k > (100.0 - th);
+                    }
+                }
+                case KELTNER_CHANNEL -> {
+                    double mult = Math.abs(th) > 0.2 ? Math.abs(th) : 1.8;
+                    double mid = calcEma(p1, 1);
+                    double atr = calcAtr(p1, 1);
+                    yield isLong ? getClose(0) > (mid + mult * atr) : getClose(0) < (mid - mult * atr);
+                }
+                case BB_KC_SQUEEZE -> {
+                    double mult = Math.abs(th) > 0.2 ? Math.abs(th) : 1.8;
+                    double mean = calcSma(p1, 1);
+                    double std = calcStdDev(p1, 1, mean);
+                    double atr = calcAtr(p1, 1);
+                    boolean squeezed = (2.0 * std) < (mult * 1.35 * atr);
+                    double ema0 = calcEma(p1, 0);
+                    yield squeezed && (isLong ? getClose(0) > ema0 : getClose(0) < ema0);
+                }
+                case CCI_OSCILLATOR -> {
+                    double cci = calcCci(p1, s1);
+                    double lvl = Math.max(40.0, Math.abs(th));
+                    if (th >= 0) {
+                        yield isLong ? cci > lvl : cci < -lvl;
+                    } else {
+                        yield isLong ? cci < -lvl : cci > lvl;
+                    }
+                }
+                case WILLIAMS_R -> {
+                    double k = calcStochK(p1, s1);
+                    if (th >= 50.0) {
+                        yield isLong ? k > th : k < (100.0 - th);
+                    } else {
+                        yield isLong ? k < th : k > (100.0 - th);
+                    }
+                }
+                case VWAP_ANCHOR -> {
+                    double vwap = calcVwap(p1, s1);
+                    yield isLong ? getClose(0) > vwap : getClose(0) < vwap;
+                }
+                case VOLUME_SURGE -> {
+                    double vMult = Math.max(1.05, th);
+                    yield getVolume(0) > vMult * calcAvgVolume(p1, 1);
+                }
+                case ENGULFING_PATTERN -> {
+                    int ps = Math.max(1, s1);
+                    double bodyMult = Math.max(0.15, Math.min(0.8, th));
+                    double atr = calcAtr(14, 0);
+                    yield isLong
+                        ? (getClose(0) > getOpen(0) && getClose(0) > getHigh(ps) && (getClose(0) - getOpen(0)) >= bodyMult * atr)
+                        : (getClose(0) < getOpen(0) && getClose(0) < getLow(ps) && (getOpen(0) - getClose(0)) >= bodyMult * atr);
+                }
+                case INSIDE_BAR_COIL -> {
+                    int cs = Math.max(1, s1);
+                    boolean coiled = (getHigh(cs) - getLow(cs)) < 0.85 * calcAtr(14, cs);
+                    yield coiled && (isLong ? getClose(0) > getHigh(cs) : getClose(0) < getLow(cs));
+                }
+                case LINEAR_REG_SLOPE -> {
+                    double sMult = Math.max(0.02, th * 0.12);
+                    double slope = calcLinRegSlope(p1, s1);
+                    double atr = calcAtr(14, 0);
+                    yield isLong ? slope > sMult * atr : slope < -sMult * atr;
+                }
+                case ZSCORE_EXTREME -> {
+                    double z = Math.max(0.8, Math.abs(th));
+                    double mean = calcSma(p1, s1);
+                    double sd = calcStdDev(p1, s1, mean);
+                    if (sd <= 0.0) yield false;
+                    double zVal = (getClose(s1) - mean) / sd;
+                    if (th < 0) {
+                        yield isLong ? zVal < -z : zVal > z;
+                    } else {
+                        yield isLong ? zVal > z : zVal < -z;
+                    }
+                }
+                case CHOPPINESS_FILTER -> {
+                    double er = calcEfficiencyRatio(p1, s1);
+                    yield er >= Math.clamp(th, 0.20, 0.70);
+                }
+                case HIGHER_HIGHS_SWING -> {
+                    int sw = Math.max(4, Math.min(20, p1 / 2));
+                    yield isLong
+                        ? (calcHighestHigh(sw, 1) > calcHighestHigh(sw, sw + 1) && calcLowestLow(sw, 1) > calcLowestLow(sw, sw + 1))
+                        : (calcLowestLow(sw, 1) < calcLowestLow(sw, sw + 1) && calcHighestHigh(sw, 1) < calcHighestHigh(sw, sw + 1));
+                }
             };
         }
 
@@ -641,7 +1229,8 @@ public record StrategyGenome(
             }
             Order.Side exitSide = positionSide == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
             Order closeOrder = new Order(symbol, exitSide, Order.Type.MARKET, 1.0, bar.close())
-                .withStrategyId(genome.id());
+                .withStrategyId(genome.id())
+                .asCloseOnly();
             pendingOrders.add(closeOrder);
             this.inTrade = false;
             this.positionSide = null;
@@ -667,6 +1256,100 @@ public record StrategyGenome(
         private double getClose(int shift) {
             int idx = Math.max(0, history.size() - 1 - shift);
             return history.get(idx).close();
+        }
+
+        private double getOpen(int shift) {
+            int idx = Math.max(0, history.size() - 1 - shift);
+            return history.get(idx).open();
+        }
+
+        private double getHigh(int shift) {
+            int idx = Math.max(0, history.size() - 1 - shift);
+            return history.get(idx).high();
+        }
+
+        private double getLow(int shift) {
+            int idx = Math.max(0, history.size() - 1 - shift);
+            return history.get(idx).low();
+        }
+
+        private double getVolume(int shift) {
+            int idx = Math.max(0, history.size() - 1 - shift);
+            return Math.max(1.0, history.get(idx).volume());
+        }
+
+        private double calcStochK(int period, int shift) {
+            double hh = calcHighestHigh(period, shift);
+            double ll = calcLowestLow(period, shift);
+            if (hh <= ll) return 50.0;
+            return ((getClose(shift) - ll) / (hh - ll)) * 100.0;
+        }
+
+        private double calcCci(int period, int shift) {
+            double mean = calcSma(period, shift);
+            double sd = calcStdDev(period, shift, mean);
+            if (sd <= 0.0) return 0.0;
+            return (getClose(shift) - mean) / (0.015 * sd);
+        }
+
+        private double calcVwap(int period, int shift) {
+            int endIdx = history.size() - 1 - shift;
+            int startIdx = Math.max(0, endIdx - period + 1);
+            if (endIdx < startIdx) return getClose(shift);
+            double pv = 0.0;
+            double vol = 0.0;
+            for (int i = startIdx; i <= endIdx; i++) {
+                Bar b = history.get(i);
+                double v = Math.max(1.0, b.volume());
+                double typ = (b.high() + b.low() + b.close()) / 3.0;
+                pv += typ * v;
+                vol += v;
+            }
+            return vol > 0 ? pv / vol : getClose(shift);
+        }
+
+        private double calcAvgVolume(int period, int shift) {
+            int endIdx = history.size() - 1 - shift;
+            int startIdx = Math.max(0, endIdx - period + 1);
+            if (endIdx < startIdx) return 1.0;
+            double sum = 0.0;
+            for (int i = startIdx; i <= endIdx; i++) {
+                sum += Math.max(1.0, history.get(i).volume());
+            }
+            return sum / (endIdx - startIdx + 1);
+        }
+
+        private double calcLinRegSlope(int period, int shift) {
+            int n = Math.max(3, period);
+            int endIdx = history.size() - 1 - shift;
+            int startIdx = Math.max(0, endIdx - n + 1);
+            int count = endIdx - startIdx + 1;
+            if (count < 3) return 0.0;
+            double sumX = 0.0;
+            double sumY = 0.0;
+            double sumXY = 0.0;
+            double sumX2 = 0.0;
+            for (int i = 0; i < count; i++) {
+                double y = history.get(startIdx + i).close();
+                sumX += i;
+                sumY += y;
+                sumXY += i * y;
+                sumX2 += (double) i * i;
+            }
+            double denom = count * sumX2 - sumX * sumX;
+            return Math.abs(denom) > 1e-9 ? (count * sumXY - sumX * sumY) / denom : 0.0;
+        }
+
+        private double calcEfficiencyRatio(int period, int shift) {
+            int endIdx = history.size() - 1 - shift;
+            int startIdx = Math.max(1, endIdx - period + 1);
+            if (endIdx <= startIdx) return 0.5;
+            double net = Math.abs(history.get(endIdx).close() - history.get(startIdx - 1).close());
+            double path = 0.0;
+            for (int i = startIdx; i <= endIdx; i++) {
+                path += Math.abs(history.get(i).close() - history.get(i - 1).close());
+            }
+            return path > 0.0 ? net / path : 0.0;
         }
 
         private double calcSma(int period, int shift) {

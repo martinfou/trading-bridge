@@ -40,6 +40,11 @@ public final class SqImportedStrategyCatalog {
         register("SqMgcM30Pullback51084", SqMgcM30Pullback51084::new);
         register("SqMgcM30Trend28281", SqMgcM30Trend28281::new);
         register("SqMnqH1Momentum66294", SqMnqH1Momentum66294::new);
+        register("SqMnqH1MeanRev91321", SqMnqH1MeanRev91321::new);
+        register("SqMgcM30Momentum86612", SqMgcM30Momentum86612::new);
+        register("SqAaplM30Momentum82914", SqAaplM30Momentum82914::new);
+        register("SqMgcH1Trend29170", SqMgcH1Trend29170::new);
+        register("SqMgcH1Trend64270", SqMgcH1Trend64270::new);
     }
 
     private SqImportedStrategyCatalog() {}
@@ -73,6 +78,12 @@ public final class SqImportedStrategyCatalog {
         }
         if (upper.contains("MES")) {
             return "MES";
+        }
+        if (upper.contains("AAPL")) {
+            return "AAPL";
+        }
+        if (upper.contains("EURUSD")) {
+            return "EUR_USD";
         }
         return "GBP_JPY";
     }

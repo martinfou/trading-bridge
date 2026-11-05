@@ -397,8 +397,8 @@ public final class StrategyGeneratorService implements AutoCloseable {
         String archetype = (rawReq.archetype() != null && !rawReq.archetype().isBlank()) ? rawReq.archetype().toUpperCase(Locale.ROOT) : "ALL";
         String direction = (rawReq.direction() != null && !rawReq.direction().isBlank()) ? rawReq.direction().toUpperCase(Locale.ROOT) : "BOTH";
         String entryOrderType = (rawReq.entryOrderType() != null && !rawReq.entryOrderType().isBlank()) ? rawReq.entryOrderType().toUpperCase(Locale.ROOT) : "STOP";
-        int popSize = rawReq.populationSize() != null ? Math.clamp(rawReq.populationSize(), 10, 200) : 30;
-        int gens = rawReq.generations() != null ? Math.clamp(rawReq.generations(), 1, 50) : 6;
+        int popSize = rawReq.populationSize() != null ? Math.clamp(rawReq.populationSize(), 10, 200) : 50;
+        int gens = rawReq.generations() != null ? Math.clamp(rawReq.generations(), 1, 50) : 10;
         List<String> blocks = (rawReq.buildingBlocks() != null && !rawReq.buildingBlocks().isEmpty())
             ? rawReq.buildingBlocks()
             : List.of("DONCHIAN_BREAKOUT", "MA_CROSSOVER", "SUPERTREND", "BOLLINGER_BANDS", "RSI_FILTER", "ADX_REGIME", "ATR_EXPANSION", "DAILY_HIGH_LOW");
@@ -761,16 +761,37 @@ public final class StrategyGeneratorService implements AutoCloseable {
 
     private BlockType pickBlockForArchetype(String arch, List<BlockType> allowed, int slot, ThreadLocalRandom rng) {
         if (slot == 0) {
-            BlockType preferred = switch (arch) {
-                case "BREAKOUT" -> BlockType.DONCHIAN_BREAKOUT;
-                case "TREND_FOLLOWING" -> BlockType.MA_CROSSOVER;
-                case "MEAN_REVERSION" -> BlockType.RSI_FILTER;
-                case "MOMENTUM" -> BlockType.SUPERTREND;
-                case "PULLBACK" -> BlockType.PRICE_VS_MA;
-                default -> allowed.get(rng.nextInt(allowed.size()));
+            BlockType[] preferredPool = switch (arch) {
+                case "BREAKOUT" -> new BlockType[]{
+                    BlockType.DONCHIAN_BREAKOUT, BlockType.KELTNER_CHANNEL, BlockType.BB_KC_SQUEEZE,
+                    BlockType.INSIDE_BAR_COIL, BlockType.BOLLINGER_BANDS, BlockType.ATR_EXPANSION
+                };
+                case "TREND_FOLLOWING" -> new BlockType[]{
+                    BlockType.MA_CROSSOVER, BlockType.SUPERTREND, BlockType.LINEAR_REG_SLOPE,
+                    BlockType.VWAP_ANCHOR, BlockType.HIGHER_HIGHS_SWING, BlockType.MACD_HISTOGRAM
+                };
+                case "MEAN_REVERSION" -> new BlockType[]{
+                    BlockType.RSI_FILTER, BlockType.STOCHASTIC_OSC, BlockType.WILLIAMS_R,
+                    BlockType.ZSCORE_EXTREME, BlockType.CCI_OSCILLATOR, BlockType.BOLLINGER_BANDS
+                };
+                case "MOMENTUM" -> new BlockType[]{
+                    BlockType.SUPERTREND, BlockType.MOMENTUM_ROC, BlockType.MACD_HISTOGRAM,
+                    BlockType.CCI_OSCILLATOR, BlockType.ENGULFING_PATTERN, BlockType.VOLUME_SURGE
+                };
+                case "PULLBACK" -> new BlockType[]{
+                    BlockType.PRICE_VS_MA, BlockType.VWAP_ANCHOR, BlockType.STOCHASTIC_OSC,
+                    BlockType.ENGULFING_PATTERN, BlockType.HIGHER_HIGHS_SWING, BlockType.RSI_FILTER
+                };
+                default -> BlockType.values();
             };
-            if (allowed.contains(preferred)) {
-                return preferred;
+            List<BlockType> matching = new ArrayList<>();
+            for (BlockType b : preferredPool) {
+                if (allowed.contains(b)) {
+                    matching.add(b);
+                }
+            }
+            if (!matching.isEmpty()) {
+                return matching.get(rng.nextInt(matching.size()));
             }
         }
         return allowed.get(rng.nextInt(allowed.size()));
@@ -784,16 +805,24 @@ public final class StrategyGeneratorService implements AutoCloseable {
         int s1 = rng.nextInt(0, 3);
         int s2 = Math.max(s1 + 1, rng.nextInt(1, 4));
         double th = switch (bt) {
-            case SUPERTREND -> round2(rng.nextDouble(1.5, 2.8));
+            case SUPERTREND, KELTNER_CHANNEL, BB_KC_SQUEEZE -> round2(rng.nextDouble(1.4, 2.6));
             case BOLLINGER_BANDS -> "MEAN_REVERSION".equals(arch)
                 ? -round2(rng.nextDouble(1.8, 2.5))
                 : round2(rng.nextDouble(1.5, 2.3));
-            case RSI_FILTER -> "MEAN_REVERSION".equals(arch) || "PULLBACK".equals(arch)
-                ? rng.nextInt(28, 42)
-                : rng.nextInt(51, 62);
+            case RSI_FILTER, STOCHASTIC_OSC, WILLIAMS_R -> "MEAN_REVERSION".equals(arch) || "PULLBACK".equals(arch)
+                ? rng.nextInt(22, 40)
+                : rng.nextInt(52, 65);
+            case CCI_OSCILLATOR -> "MEAN_REVERSION".equals(arch)
+                ? -rng.nextInt(80, 140)
+                : rng.nextInt(70, 130);
+            case ZSCORE_EXTREME -> "MEAN_REVERSION".equals(arch)
+                ? -round2(rng.nextDouble(1.3, 2.3))
+                : round2(rng.nextDouble(1.1, 2.0));
             case ADX_REGIME -> rng.nextInt(18, 28);
             case ATR_EXPANSION -> round2(rng.nextDouble(0.95, 1.25));
-            case MOMENTUM_ROC -> round2(rng.nextDouble(0.25, 0.90));
+            case VOLUME_SURGE -> round2(rng.nextDouble(1.15, 1.65));
+            case MOMENTUM_ROC, LINEAR_REG_SLOPE, ENGULFING_PATTERN -> round2(rng.nextDouble(0.20, 0.85));
+            case CHOPPINESS_FILTER -> round2(rng.nextDouble(0.28, 0.55));
             default -> 1.0;
         };
         return new RuleGene(bt, p1, p2, s1, s2, th);

@@ -28,6 +28,18 @@ public class SqMnqH1Momentum66294 implements Strategy {
     private final List<Bar> history = new ArrayList<>();
     private final List<Order> pendingOrders = new ArrayList<>();
 
+    private boolean inTrade = false;
+    private Order.Side positionSide = null;
+    private double stopLoss = 0.0;
+    private double takeProfit = 0.0;
+    private int barsInTrade = 0;
+
+    private Order.Side armedSide = null;
+    private double armedStopPrice = 0.0;
+    private double armedSlDist = 0.0;
+    private double armedPtDist = 0.0;
+    private int armedBarsRemaining = 0;
+
     public SqMnqH1Momentum66294() {
         this(DEFAULT_SYMBOL);
     }
@@ -56,33 +68,159 @@ public class SqMnqH1Momentum66294 implements Strategy {
     @Override
     public void onBar(Bar bar) {
         history.add(bar);
-        if (history.size() < 65) return;
+        if (history.size() < 61) return;
         double atr = calcAtr(14, 0);
         if (atr <= 0) return;
-        double slDist = 1.57 * atr;
-        double ptDist = 2.31 * atr;
-        // Entry & exit evaluation follows genome specification
+
+        if (inTrade) {
+            barsInTrade++;
+            if (positionSide == Order.Side.BUY && (bar.low() <= stopLoss || bar.high() >= takeProfit)) {
+                closePosition(bar);
+                return;
+            } else if (positionSide == Order.Side.SELL && (bar.high() >= stopLoss || bar.low() <= takeProfit)) {
+                closePosition(bar);
+                return;
+            }
+            if (barsInTrade >= 38) {
+                closePosition(bar);
+                return;
+            }
+            double trailDist = 2.40 * atr;
+            if (positionSide == Order.Side.BUY) {
+                stopLoss = Math.max(stopLoss, quantize(bar.close() - trailDist));
+            } else if (positionSide == Order.Side.SELL) {
+                stopLoss = Math.min(stopLoss, quantize(bar.close() + trailDist));
+            }
+            return;
+        }
+
+        if (armedSide != null && armedBarsRemaining > 0) {
+            if (armedSide == Order.Side.BUY && bar.high() >= armedStopPrice) {
+                executeEntry(Order.Side.BUY, bar.close(), armedSlDist, armedPtDist);
+                clearArmed();
+                return;
+            } else if (armedSide == Order.Side.SELL && bar.low() <= armedStopPrice) {
+                executeEntry(Order.Side.SELL, bar.close(), armedSlDist, armedPtDist);
+                clearArmed();
+                return;
+            }
+            armedBarsRemaining--;
+            if (armedBarsRemaining <= 0) clearArmed();
+        }
+
+        double slDist = quantize(1.57 * atr);
+        double ptDist = quantize(2.31 * atr);
+
         if (evaluateLong()) {
-            double price = bar.close();
-            pendingOrders.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, 1.0, price)
-                .withStrategyId("SqMnqH1Momentum66294")
-                .withStopLoss(quantize(price - slDist))
-                .withTakeProfit(quantize(price + ptDist)));
-        } else if (evaluateShort()) {
-            double price = bar.close();
-            pendingOrders.add(new Order(symbol, Order.Side.SELL, Order.Type.MARKET, 1.0, price)
-                .withStrategyId("SqMnqH1Momentum66294")
-                .withStopLoss(quantize(price + slDist))
-                .withTakeProfit(quantize(price - ptDist)));
+            double hh = calcHighestHigh(50, 1);
+            double stopPrice = quantize(hh + 0.24 * atr);
+            if (bar.close() >= stopPrice && stopPrice > 0) {
+                executeEntry(Order.Side.BUY, bar.close(), slDist, ptDist);
+                clearArmed();
+                return;
+            } else if (stopPrice > 0) {
+                armOrder(Order.Side.BUY, stopPrice, slDist, ptDist, 6);
+            }
+        }
+        if (evaluateShort()) {
+            double ll = calcLowestLow(50, 1);
+            double stopPrice = quantize(ll - 0.24 * atr);
+            if (bar.close() <= stopPrice && stopPrice > 0) {
+                executeEntry(Order.Side.SELL, bar.close(), slDist, ptDist);
+                clearArmed();
+            } else if (stopPrice > 0) {
+                armOrder(Order.Side.SELL, stopPrice, slDist, ptDist, 6);
+            }
         }
     }
 
+    private void executeEntry(Order.Side side, double price, double slDist, double ptDist) {
+        double minOffset = Math.max(price * 0.0003, 0.0001);
+        double safeSl = Math.max(slDist, minOffset);
+        double safePt = Math.max(ptDist, minOffset);
+        double sl = side == Order.Side.BUY ? quantize(price - safeSl) : quantize(price + safeSl);
+        double tp = side == Order.Side.BUY ? quantize(price + safePt) : quantize(price - safePt);
+        pendingOrders.add(new Order(symbol, side, Order.Type.MARKET, 1.0, price)
+            .withStrategyId("SqMnqH1Momentum66294")
+            .withStopLoss(sl)
+            .withTakeProfit(tp));
+        this.inTrade = true;
+        this.positionSide = side;
+        this.stopLoss = sl;
+        this.takeProfit = tp;
+        this.barsInTrade = 0;
+    }
+
+    private void closePosition(Bar bar) {
+        if (!inTrade || positionSide == null) return;
+        Order.Side exitSide = positionSide == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
+        pendingOrders.add(new Order(symbol, exitSide, Order.Type.MARKET, 1.0, bar.close())
+            .withStrategyId("SqMnqH1Momentum66294")
+            .asCloseOnly());
+        this.inTrade = false;
+        this.positionSide = null;
+        this.barsInTrade = 0;
+    }
+
+    private void armOrder(Order.Side side, double stopPrice, double slDist, double ptDist, int validBars) {
+        this.armedSide = side;
+        this.armedStopPrice = stopPrice;
+        this.armedSlDist = slDist;
+        this.armedPtDist = ptDist;
+        this.armedBarsRemaining = Math.max(1, validBars);
+    }
+
+    private void clearArmed() {
+        this.armedSide = null;
+        this.armedStopPrice = 0.0;
+        this.armedSlDist = 0.0;
+        this.armedPtDist = 0.0;
+        this.armedBarsRemaining = 0;
+    }
+
     private boolean evaluateLong() {
-        return calcHighestHigh(50, 1) > calcLowestLow(50, 2);
+        return (getClose(0) > ((calcHighestHigh(25, 1) + calcLowestLow(25, 1)) * 0.5 + 0.85 * calcAtr(25, 1))) && (calcAtr(50, 1) > 0 && calcAtr(25, 0) > 1.24 * calcAtr(50, 1));
     }
 
     private boolean evaluateShort() {
-        return calcLowestLow(50, 1) < calcHighestHigh(50, 2);
+        return (getClose(0) < ((calcHighestHigh(25, 1) + calcLowestLow(25, 1)) * 0.5 - 0.85 * calcAtr(25, 1))) && (calcAtr(50, 1) > 0 && calcAtr(25, 0) > 1.24 * calcAtr(50, 1));
+    }
+
+    private double getClose(int shift) {
+        int idx = Math.max(0, history.size() - 1 - shift);
+        return history.get(idx).close();
+    }
+
+    private double calcSma(int period, int shift) {
+        int endIdx = history.size() - 1 - shift;
+        int startIdx = Math.max(0, endIdx - period + 1);
+        if (endIdx < startIdx) return 0.0;
+        double sum = 0.0;
+        for (int i = startIdx; i <= endIdx; i++) sum += history.get(i).close();
+        return sum / (endIdx - startIdx + 1);
+    }
+
+    private double calcEma(int period, int shift) {
+        int endIdx = history.size() - 1 - shift;
+        int startIdx = Math.max(0, endIdx - period * 2);
+        if (endIdx < startIdx) return 0.0;
+        double k = 2.0 / (period + 1.0);
+        double ema = history.get(startIdx).close();
+        for (int i = startIdx + 1; i <= endIdx; i++) ema = (history.get(i).close() - ema) * k + ema;
+        return ema;
+    }
+
+    private double calcRsi(int period, int shift) {
+        int endIdx = history.size() - 1 - shift;
+        int startIdx = Math.max(1, endIdx - period + 1);
+        if (endIdx < startIdx) return 50.0;
+        double gains = 0.0, losses = 0.0;
+        for (int i = startIdx; i <= endIdx; i++) {
+            double diff = history.get(i).close() - history.get(i - 1).close();
+            if (diff > 0) gains += diff; else losses -= diff;
+        }
+        if (losses == 0.0) return 100.0;
+        return 100.0 - (100.0 / (1.0 + gains / losses));
     }
 
     private double calcAtr(int period, int shift) {
@@ -132,5 +270,11 @@ public class SqMnqH1Momentum66294 implements Strategy {
     public void reset() {
         history.clear();
         pendingOrders.clear();
+        inTrade = false;
+        positionSide = null;
+        stopLoss = 0.0;
+        takeProfit = 0.0;
+        barsInTrade = 0;
+        clearArmed();
     }
 }
