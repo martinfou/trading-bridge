@@ -1307,9 +1307,9 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         log.info("Successfully completed Java-native download and conversion for {} year {}", symbol, year);
     }
 
-    private static boolean isYearAvailable(String symbol, int year, Path barsDir, Path csvDir) {
+    private static boolean isYearAvailable(String symbol, int year, String timeframe, Path barsDir, Path csvDir) {
         try {
-            var availability = com.martinfou.trading.data.HistoricalDataCatalog.availability(symbol, barsDir, csvDir);
+            var availability = com.martinfou.trading.data.HistoricalDataCatalog.availability(symbol, timeframe, barsDir, csvDir);
             return availability.years().contains(year);
         } catch (Exception e) {
             return false;
@@ -1317,7 +1317,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
     }
 
     private static void lockAndDownload(String symbol, int year, String tf, Path barsDir, Path csvDir) throws IOException {
-        if (isYearAvailable(symbol, year, barsDir, csvDir)) {
+        if (isYearAvailable(symbol, year, tf, barsDir, csvDir)) {
             return;
         }
         String lockKey = symbol + "-" + year;
@@ -1325,7 +1325,7 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         lock.lock();
         try {
             // Double check under lock
-            if (!isYearAvailable(symbol, year, barsDir, csvDir)) {
+            if (!isYearAvailable(symbol, year, tf, barsDir, csvDir)) {
                 // Dukascopy only serves M1/H1; other sizes are aggregated at load time.
                 String timeframe = "H1";
                 if (tf != null && !tf.isBlank()) {

@@ -67,9 +67,11 @@ public final class HistoricalDataLoader {
         return new LoadResult(bars, symbol, describeYearSpecSource(symbol, yearSpec, tf, DEFAULT_BARS_DIR));
     }
 
-    private static final String[] STANDARD_TFS = {"M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1"};
+    /** Standard candle sizes, finest first. */
+    static final String[] STANDARD_TFS = {"M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1"};
 
-    private static int tfMinutes(String tf) {
+    /** Length of one candle of {@code tf} in minutes. */
+    static int tfMinutes(String tf) {
         String u = tf.toUpperCase();
         int n = u.length() > 1 ? Integer.parseInt(u.substring(1)) : 1;
         return switch (u.charAt(0)) {
@@ -79,6 +81,13 @@ public final class HistoricalDataLoader {
             case 'W' -> n * 10080;
             default -> throw new IllegalArgumentException("Unsupported timeframe: " + tf);
         };
+    }
+
+    /** True when native {@code base} candles can be aggregated into {@code target} (18 M30 bars make H4). */
+    static boolean canServe(String target, String base) {
+        int b = tfMinutes(base);
+        int t = tfMinutes(target);
+        return b <= t && t % b == 0;
     }
 
     /** Loads native bars (.bars store or direct IBKR/standard CSV) for exactly this timeframe, or throws IOException. */
@@ -216,7 +225,7 @@ public final class HistoricalDataLoader {
     public static LoadResult loadAllAvailable(String symbol, String tf, Path barsDir, Path csvDir) throws IOException {
         String timeframe = tf != null ? tf.toUpperCase() : "H1";
         HistoricalDataCatalog.SymbolAvailability availability =
-            HistoricalDataCatalog.availability(symbol, barsDir, csvDir);
+            HistoricalDataCatalog.availability(symbol, timeframe, barsDir, csvDir);
         if (availability.years().isEmpty()) {
             throw new IOException("No historical data for " + symbol);
         }

@@ -48,7 +48,7 @@ public final class DataAvailabilityService {
         response.put("configured", true);
         response.put("repoRoot", root.toString());
         if (availability.years().isEmpty()) {
-            response.put("message", "No local H1 data for " + symbol
+            response.put("message", "No local data for " + symbol
                 + " — run ./scripts/download-data.sh --list --tf h1");
         }
         return Map.copyOf(response);
