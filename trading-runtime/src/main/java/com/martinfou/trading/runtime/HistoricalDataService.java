@@ -28,17 +28,88 @@ public final class HistoricalDataService implements AutoCloseable {
     public record DownloadTaskStatus(
         String key,
         int progress,
-        String currentAction
-    ) {}
+        String currentAction,
+        String symbol,
+        String timeframe,
+        int currentYear,
+        int startYear,
+        int endYear,
+        int completedSteps,
+        int totalSteps,
+        String state
+    ) {
+        public DownloadTaskStatus(String key, int progress, String currentAction) {
+            this(key, progress, currentAction, "", "", 0, 0, 0, 0, 1, "RUNNING");
+        }
+    }
+
+    private static final Set<String> GLOBAL_ACTIVE_DOWNLOADS = ConcurrentHashMap.newKeySet();
+    private static final Map<String, DownloadTaskStatus> GLOBAL_ACTIVE_TASKS = new ConcurrentHashMap<>();
+    private static final ScheduledExecutorService GLOBAL_CLEANUP_SCHEDULER =
+        Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "historical-data-task-cleanup");
+            t.setDaemon(true);
+            return t;
+        });
 
     private final Path repoRoot;
     private final Path dukascopyDir;
     private final Path barsDir;
     private final SqliteUniverseStore universeStore;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
-    private final Set<String> activeDownloads = ConcurrentHashMap.newKeySet();
-    private final Map<String, DownloadTaskStatus> activeTasks = new ConcurrentHashMap<>();
+    private final Set<String> activeDownloads = GLOBAL_ACTIVE_DOWNLOADS;
+    private final Map<String, DownloadTaskStatus> activeTasks = GLOBAL_ACTIVE_TASKS;
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+
+    public static void reportExternalTaskProgress(
+        String key,
+        int progress,
+        String currentAction,
+        String symbol,
+        String timeframe,
+        int currentYear,
+        int startYear,
+        int endYear,
+        int completedSteps,
+        int totalSteps
+    ) {
+        GLOBAL_ACTIVE_DOWNLOADS.add(key);
+        GLOBAL_ACTIVE_TASKS.put(key, new DownloadTaskStatus(
+            key,
+            Math.clamp(progress, 0, 100),
+            currentAction,
+            symbol != null ? symbol.toUpperCase(Locale.ROOT) : "",
+            timeframe != null ? timeframe.toUpperCase(Locale.ROOT) : "",
+            currentYear,
+            startYear,
+            endYear,
+            completedSteps,
+            Math.max(1, totalSteps),
+            "RUNNING"
+        ));
+    }
+
+    public static void finishExternalTask(String key, String symbol, String timeframe, int startYear, int endYear, int totalSteps, String errorMessage) {
+        GLOBAL_ACTIVE_DOWNLOADS.remove(key);
+        boolean ok = (errorMessage == null || errorMessage.isBlank());
+        String action = ok
+            ? "Completed " + (symbol != null ? symbol.toUpperCase(Locale.ROOT) : key) + " (" + (timeframe != null ? timeframe.toUpperCase(Locale.ROOT) : "") + ")"
+            : "Failed: " + errorMessage;
+        GLOBAL_ACTIVE_TASKS.put(key, new DownloadTaskStatus(
+            key,
+            ok ? 100 : 0,
+            action,
+            symbol != null ? symbol.toUpperCase(Locale.ROOT) : "",
+            timeframe != null ? timeframe.toUpperCase(Locale.ROOT) : "",
+            endYear,
+            startYear,
+            endYear,
+            ok ? Math.max(1, totalSteps) : 0,
+            Math.max(1, totalSteps),
+            ok ? "COMPLETED" : "FAILED"
+        ));
+        GLOBAL_CLEANUP_SCHEDULER.schedule(() -> GLOBAL_ACTIVE_TASKS.remove(key), ok ? 4 : 6, TimeUnit.SECONDS);
+    }
 
     public HistoricalDataService() {
         this(new SqliteUniverseStore(BacktestPersistenceService.resolveDefaultDbPath()));
@@ -148,30 +219,35 @@ public final class HistoricalDataService implements AutoCloseable {
             return false;
         }
 
+        int startYearVal = startYear != null ? startYear : (syncMode ? LocalDate.now().getYear() : 2006);
+        int endYearVal = endYear != null ? endYear : LocalDate.now().getYear();
+        String symLabel = syncMode ? "ALL" : (pair != null ? pair.toUpperCase(Locale.ROOT) : "ALL");
+        String tfLabel = tf != null ? tf.toUpperCase(Locale.ROOT) : "H1";
+
         activeDownloads.add(key);
-        activeTasks.put(key, new DownloadTaskStatus(key, 0, "Initializing download..."));
+        activeTasks.put(key, new DownloadTaskStatus(
+            key, 2, "Initializing ingestion for " + symLabel + " (" + tfLabel + ")...",
+            symLabel, tfLabel, startYearVal, startYearVal, endYearVal, 0, Math.max(1, endYearVal - startYearVal + 1), "RUNNING"
+        ));
 
         executor.submit(() -> {
+            String errorMsg = null;
+            int totalSteps = Math.max(1, endYearVal - startYearVal + 1);
             try {
-                runDownloadProcess(pair, startYear, endYear, tf, syncMode);
+                totalSteps = runDownloadProcess(pair, startYearVal, endYearVal, tf, syncMode, key);
             } catch (Exception e) {
                 log.error("Historical data download failed for key: " + key, e);
+                errorMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             } finally {
-                activeDownloads.remove(key);
-                activeTasks.remove(key);
+                finishExternalTask(key, symLabel, tfLabel, startYearVal, endYearVal, totalSteps, errorMsg);
             }
         });
         return true;
     }
 
-    private void runDownloadProcess(String pair, Integer startYear, Integer endYear, String tf, boolean syncMode) {
-        String key = syncMode ? "sync-" + tf : (startYear != null && endYear != null && !startYear.equals(endYear))
-            ? pair + "-" + startYear + "-" + endYear + "-" + tf
-            : pair + "-" + (startYear != null ? startYear : "") + "-" + tf;
-
+    private int runDownloadProcess(String pair, int startYearVal, int endYearVal, String tf, boolean syncMode, String key) {
         DukascopyDownloader downloader = new DukascopyDownloader();
-        int startYearVal = startYear != null ? startYear : 2006;
-        int endYearVal = endYear != null ? endYear : LocalDate.now().getYear();
+        String tfLabel = tf != null ? tf.toUpperCase(Locale.ROOT) : "H1";
 
         List<InstrumentDefinition> targetInstruments;
         if (pair != null && !pair.isBlank()) {
@@ -183,62 +259,67 @@ public final class HistoricalDataService implements AutoCloseable {
             targetInstruments = universeStore.listAll();
         }
 
-        if (syncMode) {
-            log.info("Starting sync mode download from {} to {} for timeframe: {}", startYearVal, endYearVal, tf);
-            int totalOperations = (endYearVal - startYearVal + 1) * targetInstruments.size();
-            int completedOperations = 0;
+        int totalSteps = Math.max(1, (endYearVal - startYearVal + 1) * targetInstruments.size());
+        int completedSteps = 0;
 
-            for (int y = startYearVal; y <= endYearVal; y++) {
-                for (InstrumentDefinition inst : targetInstruments) {
-                    final int stepIndex = completedOperations;
-                    completedOperations++;
-                    final int basePct = (stepIndex * 100) / totalOperations;
-                    final int nextBasePct = (completedOperations * 100) / totalOperations;
-                    final int range = nextBasePct - basePct;
-                    final int downloadRange = Math.max(1, range * 9 / 10);
-                    final int convertBase = basePct + downloadRange;
+        log.info("Starting {} download from {} to {} for pair: {} timeframe: {}",
+            syncMode ? "sync mode" : "dataset", startYearVal, endYearVal, pair, tf);
 
-                    activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(basePct, 1, 99), "Syncing " + inst.symbol() + " " + y + "..."));
+        for (int y = startYearVal; y <= endYearVal; y++) {
+            for (InstrumentDefinition inst : targetInstruments) {
+                final int stepIndex = completedSteps;
+                completedSteps++;
+                final int basePct = (stepIndex * 100) / totalSteps;
+                final int nextBasePct = (completedSteps * 100) / totalSteps;
+                final int range = Math.max(1, nextBasePct - basePct);
+                final int downloadRange = Math.max(1, range * 85 / 100);
+                final int convertBase = basePct + downloadRange;
+                final int stepNum = completedSteps;
 
-                    if ("FOREX".equalsIgnoreCase(inst.assetClass())) {
-                        syncForex(inst.symbol(), y, tf, downloader, basePct, downloadRange, convertBase, key);
-                    } else {
-                        syncFuturesOrEquities(inst.symbol(), y, tf, basePct, convertBase, key);
-                    }
-                }
-            }
-        } else {
-            log.info("Starting download from {} to {} for pair: {} timeframe: {}", startYearVal, endYearVal, pair, tf);
-            int totalSteps = (endYearVal - startYearVal + 1) * targetInstruments.size();
-            int completedSteps = 0;
+                String actionPrefix = syncMode ? "Syncing " : "Downloading ";
+                activeTasks.put(key, new DownloadTaskStatus(
+                    key,
+                    Math.clamp(Math.max(basePct, 3), 1, 99),
+                    actionPrefix + inst.symbol() + " " + y + " (" + tfLabel + ") — step " + stepNum + "/" + totalSteps + "...",
+                    inst.symbol(),
+                    tfLabel,
+                    y,
+                    startYearVal,
+                    endYearVal,
+                    stepIndex,
+                    totalSteps,
+                    "RUNNING"
+                ));
 
-            for (int y = startYearVal; y <= endYearVal; y++) {
-                for (InstrumentDefinition inst : targetInstruments) {
-                    final int stepIndex = completedSteps;
-                    completedSteps++;
-                    final int basePct = (stepIndex * 100) / totalSteps;
-                    final int nextBasePct = (completedSteps * 100) / totalSteps;
-                    final int range = nextBasePct - basePct;
-                    final int downloadRange = Math.max(1, range * 9 / 10);
-                    final int convertBase = basePct + downloadRange;
-
-                    activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(basePct, 1, 99), "Downloading " + inst.symbol() + " " + y + "..."));
-                    
-                    if ("FOREX".equalsIgnoreCase(inst.assetClass())) {
-                        syncForex(inst.symbol(), y, tf, downloader, basePct, downloadRange, convertBase, key);
-                    } else {
-                        syncFuturesOrEquities(inst.symbol(), y, tf, basePct, convertBase, key);
-                    }
+                if ("FOREX".equalsIgnoreCase(inst.assetClass())) {
+                    syncForex(inst.symbol(), y, tf, downloader, basePct, downloadRange, convertBase, key, startYearVal, endYearVal, stepIndex, totalSteps);
+                } else {
+                    syncFuturesOrEquities(inst.symbol(), y, tf, basePct, downloadRange, convertBase, key, startYearVal, endYearVal, stepIndex, totalSteps);
                 }
             }
         }
         log.info("Download process completed for key: {}", key);
+        return totalSteps;
     }
 
-    private void syncForex(String symbol, int y, String tf, DukascopyDownloader downloader, int basePct, int downloadRange, int convertBase, String key) {
+    private void syncForex(
+        String symbol,
+        int y,
+        String tf,
+        DukascopyDownloader downloader,
+        int basePct,
+        int downloadRange,
+        int convertBase,
+        String key,
+        int startYearVal,
+        int endYearVal,
+        int stepIndex,
+        int totalSteps
+    ) {
         String p = symbol.toLowerCase().replace("_", "");
+        String tfLabel = tf != null ? tf.toUpperCase(Locale.ROOT) : "H1";
         Optional<Path> csvOpt = findCsvFile(p, tf, y);
-        Path bars = barsDir.resolve(symbol + "_" + tf.toUpperCase() + "_" + y + ".bars");
+        Path bars = barsDir.resolve(symbol + "_" + tfLabel + "_" + y + ".bars");
 
         boolean shouldDownload = false;
         if (csvOpt.isEmpty() || !Files.exists(csvOpt.get())) {
@@ -251,20 +332,56 @@ public final class HistoricalDataService implements AutoCloseable {
         if (shouldDownload) {
             try {
                 Path downloadedCsv = downloader.download(p, y, tf, dukascopyDir, (completed, total) -> {
-                    int subPct = (completed * downloadRange) / total;
-                    activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(basePct + subPct, 1, 99), 
-                        "Syncing " + symbol + " " + y + " (" + completed + "/" + total + ")..."));
+                    int subPct = (completed * downloadRange) / Math.max(1, total);
+                    int pct = Math.clamp(basePct + subPct, 1, 99);
+                    activeTasks.put(key, new DownloadTaskStatus(
+                        key,
+                        pct,
+                        "Downloading " + symbol + " " + y + " (" + completed + "/" + total + " days)...",
+                        symbol,
+                        tfLabel,
+                        y,
+                        startYearVal,
+                        endYearVal,
+                        stepIndex,
+                        totalSteps,
+                        "RUNNING"
+                    ));
                 });
-                activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(convertBase, 1, 99), "Converting " + symbol + " " + y + " to binary..."));
-                var store = new BarStore(symbol, tf.toUpperCase() + "_" + y, barsDir);
+                activeTasks.put(key, new DownloadTaskStatus(
+                    key,
+                    Math.clamp(convertBase, 1, 99),
+                    "Converting " + symbol + " " + y + " (" + tfLabel + ") to binary store...",
+                    symbol,
+                    tfLabel,
+                    y,
+                    startYearVal,
+                    endYearVal,
+                    stepIndex,
+                    totalSteps,
+                    "RUNNING"
+                ));
+                var store = new BarStore(symbol, tfLabel + "_" + y, barsDir);
                 store.writeFromCSV(downloadedCsv);
             } catch (Exception e) {
                 log.error("Failed to sync Forex pair {} for year {}", p, y, e);
             }
         } else if (!Files.exists(bars) && csvOpt.isPresent()) {
             try {
-                activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(convertBase, 1, 99), "Converting " + symbol + " " + y + " to binary..."));
-                var store = new BarStore(symbol, tf.toUpperCase() + "_" + y, barsDir);
+                activeTasks.put(key, new DownloadTaskStatus(
+                    key,
+                    Math.clamp(convertBase, 1, 99),
+                    "Converting cached CSV for " + symbol + " " + y + " (" + tfLabel + ")...",
+                    symbol,
+                    tfLabel,
+                    y,
+                    startYearVal,
+                    endYearVal,
+                    stepIndex,
+                    totalSteps,
+                    "RUNNING"
+                ));
+                var store = new BarStore(symbol, tfLabel + "_" + y, barsDir);
                 store.writeFromCSV(csvOpt.get());
             } catch (Exception e) {
                 log.error("Failed to convert existing CSV to bars for pair {} year {}", p, y, e);
@@ -273,14 +390,56 @@ public final class HistoricalDataService implements AutoCloseable {
     }
 
     public void syncFuturesOrEquities(String symbol, int year, String tf, int basePct, int convertBase, String key) {
+        syncFuturesOrEquities(symbol, year, tf, basePct, Math.max(1, convertBase - basePct), convertBase, key, year, year, 0, 1);
+    }
+
+    public void syncFuturesOrEquities(
+        String symbol,
+        int year,
+        String tf,
+        int basePct,
+        int downloadRange,
+        int convertBase,
+        String key,
+        int startYearVal,
+        int endYearVal,
+        int stepIndex,
+        int totalSteps
+    ) {
+        String tfLabel = tf != null ? tf.toUpperCase(Locale.ROOT) : "H1";
         try {
-            activeTasks.put(key, new DownloadTaskStatus(key, Math.clamp(convertBase, 1, 99), "Building " + symbol + " " + year + " (" + tf.toUpperCase() + ") bars..."));
+            activeTasks.put(key, new DownloadTaskStatus(
+                key,
+                Math.clamp(basePct + Math.max(1, downloadRange / 2), 1, 99),
+                "Generating " + symbol + " " + year + " (" + tfLabel + ") candle series...",
+                symbol,
+                tfLabel,
+                year,
+                startYearVal,
+                endYearVal,
+                stepIndex,
+                totalSteps,
+                "RUNNING"
+            ));
             List<Bar> bars = generateMultiAssetBars(symbol, year, tf);
-            var storeYear = new BarStore(symbol, tf.toUpperCase() + "_" + year, barsDir);
+            activeTasks.put(key, new DownloadTaskStatus(
+                key,
+                Math.clamp(convertBase, 1, 99),
+                "Writing " + bars.size() + " bars for " + symbol + " " + year + " (" + tfLabel + ")...",
+                symbol,
+                tfLabel,
+                year,
+                startYearVal,
+                endYearVal,
+                stepIndex,
+                totalSteps,
+                "RUNNING"
+            ));
+            var storeYear = new BarStore(symbol, tfLabel + "_" + year, barsDir);
             storeYear.write(bars);
 
             // Also maintain continuous master bar file
-            var storeMaster = new BarStore(symbol, tf.toUpperCase(), barsDir);
+            var storeMaster = new BarStore(symbol, tfLabel, barsDir);
             storeMaster.write(bars);
             log.info("Successfully generated and saved {} {} {} bars (count: {})", symbol, tf, year, bars.size());
         } catch (Exception e) {
@@ -288,7 +447,7 @@ public final class HistoricalDataService implements AutoCloseable {
         }
     }
 
-    private List<Bar> generateMultiAssetBars(String symbol, int year, String tf) {
+    public static List<Bar> generateMultiAssetBars(String symbol, int year, String tf) {
         List<Bar> bars = new ArrayList<>();
         double basePrice = switch (symbol.toUpperCase()) {
             case "MES", "SPY" -> 4200.0 + (year - 2015) * 120.0;

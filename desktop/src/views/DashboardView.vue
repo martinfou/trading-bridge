@@ -210,6 +210,9 @@ async function refreshDataStatus() {
     activeTasks.value = res.activeTasks || []
     if (activeTasks.value.length > 0) {
       showDataManager.value = true
+      ensureFastStatusPolling()
+    } else if (activeDownloads.value.length === 0) {
+      ensureSlowStatusPolling()
     }
   } catch (err: any) {
     loadError.value = err.message
@@ -262,6 +265,7 @@ async function triggerDownload(sync = false) {
       }
     }
     await downloadHistoricalData(params)
+    ensureFastStatusPolling()
     refreshDataStatus()
   } catch (err: any) {
     loadError.value = err.message
@@ -294,10 +298,27 @@ function formatBytes(bytes: number): string {
 }
 
 let statusPollTimer: ReturnType<typeof setInterval> | null = null
+let statusPollInterval = 5000
+
+function ensureFastStatusPolling() {
+  if (statusPollInterval !== 800) {
+    if (statusPollTimer) clearInterval(statusPollTimer)
+    statusPollInterval = 800
+    statusPollTimer = setInterval(refreshDataStatus, 800)
+  }
+}
+
+function ensureSlowStatusPolling() {
+  if (statusPollInterval !== 5000) {
+    if (statusPollTimer) clearInterval(statusPollTimer)
+    statusPollInterval = 5000
+    statusPollTimer = setInterval(refreshDataStatus, 5000)
+  }
+}
 
 onMounted(() => {
   refreshDataStatus()
-  statusPollTimer = setInterval(refreshDataStatus, 5000)
+  statusPollTimer = setInterval(refreshDataStatus, statusPollInterval)
 })
 
 onUnmounted(() => {

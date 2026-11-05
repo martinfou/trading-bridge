@@ -115,9 +115,41 @@ async function refreshDataStatus() {
     dataStatus.value = res.status || []
     activeDownloads.value = res.activeDownloads || []
     activeTasks.value = res.activeTasks || []
+
+    if (activeTasks.value.length > 0) {
+      const primary = activeTasks.value[0]
+      if (primary.state === 'COMPLETED') {
+        setStatus(`${primary.currentAction} (100%)`, 'success')
+      } else if (primary.state === 'FAILED') {
+        setStatus(primary.currentAction || 'Ingestion failed', 'error')
+      } else {
+        setStatus(`${primary.currentAction || 'Downloading historical data...'} (${primary.progress ?? 0}%)`, 'info')
+      }
+      ensureFastPolling()
+    } else if (activeDownloads.value.length === 0) {
+      ensureSlowPolling()
+    }
   } catch (err: any) {
     loadError.value = err.message
   }
+}
+
+function isCellSyncing(symbol: string, year: number): boolean {
+  const cleanSym = symbol.toLowerCase().replace('_', '')
+  if (activeDownloads.value.includes(`${symbol.toLowerCase()}-${year}-${dataTimeframe.value}`)) {
+    return true
+  }
+  return activeTasks.value.some((t: any) => {
+    if (t.state === 'COMPLETED' || t.state === 'FAILED') return false
+    const tTf = (t.timeframe || '').toLowerCase()
+    if (tTf && tTf !== dataTimeframe.value.toLowerCase()) return false
+    const tSym = (t.symbol || '').toLowerCase().replace('_', '')
+    const symMatch = tSym === 'all' || tSym === cleanSym || (t.key || '').toLowerCase().startsWith(cleanSym + '-')
+    if (!symMatch) return false
+    if (t.currentYear === year) return true
+    if (t.startYear && t.endYear && year >= t.startYear && year <= t.endYear) return true
+    return false
+  })
 }
 
 async function onUniverseUpdated() {
@@ -178,8 +210,9 @@ async function triggerDownload(sync = false) {
       }
     }
     await downloadHistoricalData(params)
-    setStatus(`Successfully submitted ingestion task for ${selectedPair.value.toUpperCase()} ${selectedTf.value.toUpperCase()}`, 'success')
-    refreshDataStatus()
+    setStatus(`Ingestion started for ${sync ? 'all instruments' : selectedPair.value.toUpperCase()} (${selectedTf.value.toUpperCase()})...`, 'info')
+    ensureFastPolling()
+    await refreshDataStatus()
   } catch (err: any) {
     loadError.value = err.message
     setStatus(`Ingestion failed: ${err.message}`, 'error')
@@ -215,11 +248,44 @@ function formatBytes(bytes?: number): string {
 }
 
 let pollTimer: any = null
+let currentPollInterval = 5000
+
+function ensureFastPolling() {
+  if (currentPollInterval !== 800) {
+    if (pollTimer) clearInterval(pollTimer)
+    currentPollInterval = 800
+    pollTimer = setInterval(refreshDataStatus, 800)
+  }
+}
+
+function ensureSlowPolling() {
+  if (currentPollInterval !== 5000) {
+    if (pollTimer) clearInterval(pollTimer)
+    currentPollInterval = 5000
+    pollTimer = setInterval(refreshDataStatus, 5000)
+  }
+}
+
+const displayTasks = computed(() => {
+  if (activeTasks.value.length > 0) {
+    return activeTasks.value
+  }
+  return activeDownloads.value.map(key => ({
+    key,
+    progress: 10,
+    currentAction: 'Downloading & converting historical bars...',
+    symbol: key.split('-')[0]?.toUpperCase() || key.toUpperCase(),
+    timeframe: dataTimeframe.value.toUpperCase(),
+    state: 'RUNNING',
+    completedSteps: 0,
+    totalSteps: 1
+  }))
+})
 
 onMounted(async () => {
   await loadInstrumentsUniverse()
   await refreshDataStatus()
-  pollTimer = setInterval(refreshDataStatus, 5000)
+  pollTimer = setInterval(refreshDataStatus, currentPollInterval)
   if (route.query.pair) {
     selectedPair.value = String(route.query.pair).toLowerCase()
   }
@@ -272,19 +338,38 @@ onUnmounted(() => {
     </div>
 
     <!-- Active Tasks Progress Card -->
-    <div v-if="activeDownloads.length > 0 || activeTasks.length > 0" class="active-tasks-card mb-4">
+    <div v-if="displayTasks.length > 0" class="active-tasks-card mb-4">
       <div class="tasks-header">
         <div class="flex items-center gap-2">
-          <div class="spinner-sm"></div>
-          <h4>Active Background Ingestions ({{ activeDownloads.length + activeTasks.length }})</h4>
+          <div v-if="displayTasks.some((t: any) => t.state !== 'COMPLETED' && t.state !== 'FAILED')" class="spinner-sm"></div>
+          <CheckCircle2 v-else class="icon-sm" style="color: #10b981;" />
+          <h4>Data Ingestion Status ({{ displayTasks.length }})</h4>
         </div>
-        <span class="text-xs text-muted">Downloading via broker / proxy API...</span>
+        <span class="text-xs text-muted">Live ingestion pipeline progress</span>
       </div>
       <div class="tasks-list">
-        <div v-for="task in activeDownloads" :key="task" class="task-row">
-          <DownloadCloud class="icon-sm text-accent" />
-          <span class="task-name">{{ task.toUpperCase() }}</span>
-          <span class="task-status">Downloading & Parsing Parquet/CSV...</span>
+        <div v-for="task in displayTasks" :key="task.key" class="task-progress-row">
+          <div class="task-row-top">
+            <div class="task-row-meta">
+              <DownloadCloud class="icon-sm text-accent" />
+              <span class="task-name">{{ (task.symbol || task.key || '').toUpperCase() }}</span>
+              <span v-if="task.timeframe" class="task-tf-badge">{{ task.timeframe.toUpperCase() }}</span>
+              <span v-if="task.totalSteps && task.totalSteps > 1" class="task-step-badge">
+                Step {{ Math.min(task.totalSteps, (task.completedSteps ?? 0) + 1) }}/{{ task.totalSteps }}
+              </span>
+              <span class="task-status">{{ task.currentAction }}</span>
+            </div>
+            <span class="task-pct-badge" :class="(task.state || 'RUNNING').toLowerCase()">
+              {{ task.progress ?? 0 }}%
+            </span>
+          </div>
+          <div class="task-progress-bar-bg">
+            <div
+              class="task-progress-bar-fill"
+              :class="(task.state || 'RUNNING').toLowerCase()"
+              :style="{ width: Math.max(2, Math.min(100, task.progress ?? 0)) + '%' }"
+            ></div>
+          </div>
         </div>
       </div>
     </div>
@@ -398,13 +483,13 @@ onUnmounted(() => {
                       complete: groupedStatus[inst.symbol.toLowerCase()][year].barsExists,
                       partial: groupedStatus[inst.symbol.toLowerCase()][year].csvExists && !groupedStatus[inst.symbol.toLowerCase()][year].barsExists,
                       missing: !groupedStatus[inst.symbol.toLowerCase()][year].csvExists && !groupedStatus[inst.symbol.toLowerCase()][year].barsExists,
-                      syncing: activeDownloads.includes(inst.symbol + '-' + year + '-' + dataTimeframe)
+                      syncing: isCellSyncing(inst.symbol, year)
                     }
                   ]"
                   :title="`${inst.label} ${year} (${dataTimeframe.toUpperCase()})\nBARS: ${groupedStatus[inst.symbol.toLowerCase()][year].barsExists ? formatBytes(groupedStatus[inst.symbol.toLowerCase()][year].barsSize) : 'None'}\nCSV: ${groupedStatus[inst.symbol.toLowerCase()][year].csvExists ? formatBytes(groupedStatus[inst.symbol.toLowerCase()][year].csvSize) : 'None'}\nClick to Delete`"
                   @click="groupedStatus[inst.symbol.toLowerCase()][year].barsExists || groupedStatus[inst.symbol.toLowerCase()][year].csvExists ? triggerDelete(inst.symbol, year) : null"
                 ></div>
-                <div v-else class="status-indicator missing"></div>
+                <div v-else :class="['status-indicator', isCellSyncing(inst.symbol, year) ? 'syncing' : 'missing']"></div>
               </td>
             </tr>
           </tbody>
@@ -505,8 +590,36 @@ onUnmounted(() => {
           @click="triggerDownload(false)"
         >
           <DownloadCloud class="icon-xs" />
-          <span>{{ actionLoading ? 'Ingesting...' : 'Start Ingestion' }}</span>
+          <span>{{ actionLoading ? 'Starting...' : 'Start Ingestion' }}</span>
         </button>
+      </div>
+
+      <!-- Inline Progress Strip inside Ingestion Form Card -->
+      <div v-if="displayTasks.length > 0" class="inline-form-progress mt-4">
+        <div v-for="task in displayTasks" :key="'inline-' + task.key" class="task-progress-row">
+          <div class="task-row-top">
+            <div class="task-row-meta">
+              <div v-if="task.state !== 'COMPLETED' && task.state !== 'FAILED'" class="spinner-sm"></div>
+              <CheckCircle2 v-else class="icon-xs" style="color: #10b981;" />
+              <span class="task-name">{{ (task.symbol || task.key || '').toUpperCase() }}</span>
+              <span v-if="task.timeframe" class="task-tf-badge">{{ task.timeframe.toUpperCase() }}</span>
+              <span v-if="task.totalSteps && task.totalSteps > 1" class="task-step-badge">
+                Step {{ Math.min(task.totalSteps, (task.completedSteps ?? 0) + 1) }}/{{ task.totalSteps }}
+              </span>
+              <span class="task-status">{{ task.currentAction }}</span>
+            </div>
+            <span class="task-pct-badge" :class="(task.state || 'RUNNING').toLowerCase()">
+              {{ task.progress ?? 0 }}%
+            </span>
+          </div>
+          <div class="task-progress-bar-bg">
+            <div
+              class="task-progress-bar-fill"
+              :class="(task.state || 'RUNNING').toLowerCase()"
+              :style="{ width: Math.max(2, Math.min(100, task.progress ?? 0)) + '%' }"
+            ></div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -908,11 +1021,19 @@ onUnmounted(() => {
   padding: 1rem;
 }
 
+.inline-form-progress {
+  border-top: 1px solid var(--border);
+  padding-top: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
 .tasks-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.65rem;
 }
 
 .tasks-header h4 {
@@ -925,23 +1046,98 @@ onUnmounted(() => {
 .tasks-list {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.6rem;
 }
 
-.task-row {
+.task-progress-row {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.task-row-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.task-row-meta {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  font-size: 0.75rem;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.76rem;
 }
 
 .task-name {
   font-weight: 700;
   font-family: monospace;
+  color: var(--text-primary);
+}
+
+.task-tf-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: rgba(217, 119, 6, 0.18);
+  color: #fbbf24;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+}
+
+.task-step-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
 }
 
 .task-status {
   color: var(--text-secondary);
+}
+
+.task-pct-badge {
+  font-size: 0.85rem;
+  font-weight: 700;
+  font-family: monospace;
+  color: var(--accent);
+}
+
+.task-pct-badge.completed {
+  color: #10b981;
+}
+
+.task-pct-badge.failed {
+  color: #ef4444;
+}
+
+.task-progress-bar-bg {
+  width: 100%;
+  height: 7px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.task-progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #d97706, #fbbf24, #38bdf8);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.task-progress-bar-fill.completed {
+  background: linear-gradient(90deg, #059669, #10b981);
+}
+
+.task-progress-bar-fill.failed {
+  background: linear-gradient(90deg, #dc2626, #ef4444);
 }
 
 /* Buttons */

@@ -57,11 +57,35 @@ const DEFAULT_INSTRUMENTS: FormInstrument[] = [
   { symbol: 'SOXL', displayName: 'SOXL — Direxion Daily Semi Bull 3X', assetClass: 'EQUITY', defaultCapital: 10000, defaultLotSize: 10, defaultCommission: 0.00 },
 ]
 
-const { getStrategies, startRun, loading, error, getBrokerAccounts, getInstruments } = useControlPlane()
+const { getStrategies, startRun, loading, error, getBrokerAccounts, getInstruments, getHistoricalDataStatus } = useControlPlane()
 const { getPresetForSymbol, getPresetForAssetClass } = useCostPresets()
 const { isCompatibleBasket, inferAssetClass, getStrategy } = useStrategyCatalog()
 
 const isSubmitting = ref(false)
+const activeIngestionTasks = ref<any[]>([])
+let ingestionPollTimer: ReturnType<typeof setInterval> | null = null
+
+async function pollIngestionProgress() {
+  try {
+    const res = await getHistoricalDataStatus(strategyTimeframe.value.toLowerCase())
+    activeIngestionTasks.value = res.activeTasks || []
+  } catch {
+    // ignore transient poll errors
+  }
+}
+
+function startIngestionPolling() {
+  stopIngestionPolling()
+  pollIngestionProgress()
+  ingestionPollTimer = setInterval(pollIngestionProgress, 500)
+}
+
+function stopIngestionPolling() {
+  if (ingestionPollTimer) {
+    clearInterval(ingestionPollTimer)
+    ingestionPollTimer = null
+  }
+}
 const strategies = ref<Strategy[]>([])
 const instruments = ref<FormInstrument[]>(DEFAULT_INSTRUMENTS)
 const selectedStrategy = ref('')
@@ -301,6 +325,20 @@ watch(selectedAccountId, (val) => localStorage.setItem('bt_accountId', val))
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
+  stopIngestionPolling()
+})
+
+watch(() => props.isDownloading, (downloading) => {
+  if (downloading) {
+    startIngestionPolling()
+  } else if (!isSubmitting.value) {
+    setTimeout(() => {
+      if (!isSubmitting.value && !props.isDownloading) {
+        stopIngestionPolling()
+        activeIngestionTasks.value = []
+      }
+    }, 1500)
+  }
 })
 
 watch([() => props.preselectedStrategy, strategies], ([val, list]) => {
@@ -386,6 +424,7 @@ async function run() {
   if (!basketCompatibility.value.compatible) return
 
   isSubmitting.value = true
+  startIngestionPolling()
   try {
     const yearSpec = yearSelectionMode.value === 'all'
       ? 'all'
@@ -434,6 +473,13 @@ async function run() {
     })
   } finally {
     isSubmitting.value = false
+    await pollIngestionProgress()
+    setTimeout(() => {
+      if (!isSubmitting.value && !props.isDownloading) {
+        stopIngestionPolling()
+        activeIngestionTasks.value = []
+      }
+    }, 2500)
   }
 }
 </script>
@@ -636,18 +682,52 @@ async function run() {
       <button class="run-btn" :disabled="loading || isSubmitting || props.isDownloading || !selectedStrategy || selectedSymbols.length === 0 || !isValidTimeframe || !isValidYearRange || !basketCompatibility.compatible" @click="run">
         <span v-if="loading || isSubmitting" class="spinner"></span>
         <span v-if="loading || isSubmitting">
-          Starting (ingestion may take a moment)...
+          <template v-if="activeIngestionTasks.length > 0">
+            {{ activeIngestionTasks[0].currentAction || 'Ingesting historical data...' }} ({{ activeIngestionTasks[0].progress ?? 0 }}%)
+          </template>
+          <template v-else>
+            Starting (ingestion may take a moment)...
+          </template>
         </span>
         <span v-else-if="props.isDownloading">
-          ⏳ Ingestion in progress...
+          ⏳ Ingestion in progress<template v-if="activeIngestionTasks.length > 0"> ({{ activeIngestionTasks[0].progress ?? 0 }}%)</template>...
         </span>
         <span v-else>
           {{ runMode === 'BACKTEST' ? '▶ Run Backtest' : (runMode.startsWith('LIVE') ? '▶ Start Live Trading' : '▶ Start Paper Trading') }}
         </span>
       </button>
 
-      <div v-if="isSubmitting" class="banner info">
-        ℹ️ Launching execution. If historical price files are missing for the selected instrument(s)/year, they will be auto-downloaded first. This can take up to a minute.
+      <!-- Live Data Download / Ingestion Progress Card -->
+      <div v-if="activeIngestionTasks.length > 0" class="ingestion-progress-box">
+        <div v-for="task in activeIngestionTasks" :key="task.key" class="ingestion-task-item">
+          <div class="ingestion-task-top">
+            <div class="ingestion-task-title">
+              <span class="ingestion-badge" :class="(task.state || 'RUNNING').toLowerCase()">
+                {{ task.state === 'COMPLETED' ? '✓ READY' : (task.state === 'FAILED' ? '✕ FAILED' : '⬇ DOWNLOADING') }}
+              </span>
+              <span class="ingestion-symbol">{{ (task.symbol || task.key || '').toUpperCase() }}</span>
+              <span v-if="task.timeframe" class="ingestion-tf">{{ task.timeframe.toUpperCase() }}</span>
+              <span v-if="task.totalSteps && task.totalSteps > 1" class="ingestion-steps">
+                Step {{ Math.min(task.totalSteps, (task.completedSteps ?? 0) + 1) }}/{{ task.totalSteps }}
+              </span>
+            </div>
+            <span class="ingestion-pct" :class="(task.state || 'RUNNING').toLowerCase()">
+              {{ task.progress ?? 0 }}%
+            </span>
+          </div>
+          <div class="ingestion-action-text">{{ task.currentAction }}</div>
+          <div class="ingestion-bar-track">
+            <div
+              class="ingestion-bar-fill"
+              :class="(task.state || 'RUNNING').toLowerCase()"
+              :style="{ width: Math.max(2, Math.min(100, task.progress ?? 0)) + '%' }"
+            ></div>
+          </div>
+        </div>
+      </div>
+
+      <div v-else-if="isSubmitting" class="banner info">
+        ℹ️ Launching execution. If historical price files are missing for the selected instrument(s)/year, they will be auto-downloaded first.
       </div>
     </div>
   </div>
@@ -951,5 +1031,123 @@ select option {
   background: var(--border);
   color: var(--text-primary);
   border-color: var(--accent);
+}
+
+.ingestion-progress-box {
+  background: rgba(15, 29, 45, 0.75);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.ingestion-task-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.ingestion-task-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ingestion-task-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.ingestion-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.ingestion-badge.completed {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+.ingestion-badge.failed {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.ingestion-symbol {
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-family: monospace;
+  color: var(--text-primary);
+}
+
+.ingestion-tf {
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: rgba(217, 119, 6, 0.18);
+  color: #fbbf24;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+}
+
+.ingestion-steps {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+.ingestion-pct {
+  font-size: 0.9rem;
+  font-weight: 700;
+  font-family: monospace;
+  color: #38bdf8;
+}
+
+.ingestion-pct.completed {
+  color: #34d399;
+}
+
+.ingestion-pct.failed {
+  color: #f87171;
+}
+
+.ingestion-action-text {
+  font-size: 0.78rem;
+  color: #93c5fd;
+}
+
+.ingestion-bar-track {
+  width: 100%;
+  height: 8px;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ingestion-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #0284c7, #38bdf8, #f59e0b);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.ingestion-bar-fill.completed {
+  background: linear-gradient(90deg, #059669, #10b981);
+}
+
+.ingestion-bar-fill.failed {
+  background: linear-gradient(90deg, #dc2626, #ef4444);
 }
 </style>

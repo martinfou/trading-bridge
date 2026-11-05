@@ -1293,20 +1293,71 @@ public class RunManager implements RunLifecycle, AutoCloseable {
         return priceClient.getCandlesBefore(config.symbol(), tf, fetchCount, to);
     }
 
+    private static boolean isForexSymbol(String symbol) {
+        if (symbol == null) {
+            return false;
+        }
+        String clean = symbol.replace("_", "").replace("/", "").trim().toUpperCase(java.util.Locale.ROOT);
+        return clean.matches("(EUR|USD|GBP|JPY|AUD|NZD|CAD|CHF){2}");
+    }
+
     private static void downloadYearSync(String symbol, int year, String tf) throws IOException {
         String pair = symbol.replace("_", "").toLowerCase(java.util.Locale.ROOT);
         String tfLower = tf.toLowerCase(java.util.Locale.ROOT);
+        String tfUpper = tf.toUpperCase(java.util.Locale.ROOT);
         Path csvDir = RuntimeDataPaths.defaultDukascopyDirectory();
         Path barsDir = RuntimeDataPaths.defaultBarsDirectory();
+        String taskKey = pair + "-" + year + "-" + tfLower;
 
-        DukascopyDownloader downloader = new DukascopyDownloader();
-        log.info("Starting Java-native download for pair {} year {} tf {}", pair, year, tfLower);
-        Path downloadedCsv = downloader.download(pair, year, tfLower, csvDir);
+        HistoricalDataService.reportExternalTaskProgress(
+            taskKey, 3, "Initializing ingestion for " + symbol + " " + year + " (" + tfUpper + ")...",
+            symbol, tfUpper, year, year, year, 0, 1
+        );
 
-        log.info("Converting downloaded CSV {} to binary bars...", downloadedCsv);
-        BarStore store = new BarStore(symbol, tf.toUpperCase(java.util.Locale.ROOT) + "_" + year, barsDir);
-        store.writeFromCSV(downloadedCsv);
-        log.info("Successfully completed Java-native download and conversion for {} year {}", symbol, year);
+        String errorMsg = null;
+        try {
+            if (isForexSymbol(symbol)) {
+                DukascopyDownloader downloader = new DukascopyDownloader();
+                log.info("Starting Java-native download for pair {} year {} tf {}", pair, year, tfLower);
+                Path downloadedCsv = downloader.download(pair, year, tfLower, csvDir, (completed, total) -> {
+                    int pct = Math.clamp(5 + (completed * 80) / Math.max(1, total), 5, 88);
+                    HistoricalDataService.reportExternalTaskProgress(
+                        taskKey,
+                        pct,
+                        "Downloading " + symbol + " " + year + " (" + completed + "/" + total + " days)...",
+                        symbol, tfUpper, year, year, year, 0, 1
+                    );
+                });
+
+                HistoricalDataService.reportExternalTaskProgress(
+                    taskKey, 92, "Converting " + symbol + " " + year + " (" + tfUpper + ") to binary bars...",
+                    symbol, tfUpper, year, year, year, 0, 1
+                );
+                log.info("Converting downloaded CSV {} to binary bars...", downloadedCsv);
+                BarStore store = new BarStore(symbol, tfUpper + "_" + year, barsDir);
+                store.writeFromCSV(downloadedCsv);
+                log.info("Successfully completed Java-native download and conversion for {} year {}", symbol, year);
+            } else {
+                log.info("Generating multi-asset bars for non-Forex symbol {} year {} tf {}", symbol, year, tfUpper);
+                HistoricalDataService.reportExternalTaskProgress(
+                    taskKey, 45, "Generating " + symbol + " " + year + " (" + tfUpper + ") candle series...",
+                    symbol, tfUpper, year, year, year, 0, 1
+                );
+                List<Bar> generated = HistoricalDataService.generateMultiAssetBars(symbol, year, tfUpper);
+                HistoricalDataService.reportExternalTaskProgress(
+                    taskKey, 90, "Writing " + generated.size() + " bars for " + symbol + " " + year + " (" + tfUpper + ")...",
+                    symbol, tfUpper, year, year, year, 0, 1
+                );
+                BarStore storeYear = new BarStore(symbol, tfUpper + "_" + year, barsDir);
+                storeYear.write(generated);
+                log.info("Successfully generated and saved {} {} {} bars (count: {})", symbol, tfUpper, year, generated.size());
+            }
+        } catch (IOException | RuntimeException e) {
+            errorMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            throw e;
+        } finally {
+            HistoricalDataService.finishExternalTask(taskKey, symbol, tfUpper, year, year, 1, errorMsg);
+        }
     }
 
     private static boolean isYearAvailable(String symbol, int year, String timeframe, Path barsDir, Path csvDir) {
