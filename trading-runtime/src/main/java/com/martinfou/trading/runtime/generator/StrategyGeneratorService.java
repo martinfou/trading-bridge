@@ -401,7 +401,7 @@ public final class StrategyGeneratorService implements AutoCloseable {
         int gens = rawReq.generations() != null ? Math.clamp(rawReq.generations(), 1, 50) : 10;
         List<String> blocks = (rawReq.buildingBlocks() != null && !rawReq.buildingBlocks().isEmpty())
             ? rawReq.buildingBlocks()
-            : List.of("DONCHIAN_BREAKOUT", "MA_CROSSOVER", "SUPERTREND", "BOLLINGER_BANDS", "RSI_FILTER", "ADX_REGIME", "ATR_EXPANSION", "DAILY_HIGH_LOW");
+            : java.util.Arrays.stream(BlockType.values()).map(Enum::name).toList();
         int minTrades = rawReq.minTrades() != null ? Math.max(1, rawReq.minTrades()) : 15;
         double minPf = rawReq.minProfitFactor() != null ? rawReq.minProfitFactor() : 1.15;
         double minOosPf = rawReq.minOosProfitFactor() != null ? rawReq.minOosProfitFactor() : 1.05;
@@ -488,9 +488,20 @@ public final class StrategyGeneratorService implements AutoCloseable {
                                 bestScoreFound = sg.fitness;
                             }
                             if (sg.candidate != null) {
-                                databank.add(sg.candidate);
-                                registerInCatalog(sg.candidate);
-                                passedCount.incrementAndGet();
+                                boolean isDuplicate = databank.stream().anyMatch(existing ->
+                                    existing.id().equals(sg.candidate.id()) || (
+                                        existing.symbol().equals(sg.candidate.symbol())
+                                        && existing.timeframe().equals(sg.candidate.timeframe())
+                                        && existing.entryOrderType().equals(sg.candidate.entryOrderType())
+                                        && existing.longSignalSummary().equals(sg.candidate.longSignalSummary())
+                                        && existing.exitSummary().equals(sg.candidate.exitSummary())
+                                    )
+                                );
+                                if (!isDuplicate) {
+                                    databank.add(sg.candidate);
+                                    registerInCatalog(sg.candidate);
+                                    passedCount.incrementAndGet();
+                                }
                             }
                         }
                     }
@@ -598,9 +609,11 @@ public final class StrategyGeneratorService implements AutoCloseable {
             );
 
             // Check Acceptance Gate
+            boolean passesOosGate = req.minOosProfitFactor() <= 0.0
+                || (oosTrades >= 1 && oosPf >= req.minOosProfitFactor());
             boolean passes = fullResult.totalTrades() >= req.minTrades()
                 && pf >= req.minProfitFactor()
-                && (oosTrades == 0 || oosPf >= req.minOosProfitFactor())
+                && passesOosGate
                 && sharpe >= req.minSharpe()
                 && maxDdPct <= req.maxDrawdownPct()
                 && netProfit > 0;
@@ -883,6 +896,8 @@ public final class StrategyGeneratorService implements AutoCloseable {
         }
         if (p2.longRules().size() > 1 && rng.nextBoolean()) {
             longRules.add(p2.longRules().get(1).mutate());
+        } else if (p1.longRules().size() > 1 && rng.nextBoolean()) {
+            longRules.add(p1.longRules().get(1).mutate());
         }
 
         double sl = round2((p1.slAtrMult() + p2.slAtrMult()) * 0.5 + rng.nextDouble(-0.25, 0.25));
@@ -1021,6 +1036,11 @@ public final class StrategyGeneratorService implements AutoCloseable {
         @Override
         public String name() {
             return delegate.name();
+        }
+
+        @Override
+        public void reconcileInstrument(String brokerSymbol) {
+            delegate.reconcileInstrument(brokerSymbol);
         }
 
         @Override

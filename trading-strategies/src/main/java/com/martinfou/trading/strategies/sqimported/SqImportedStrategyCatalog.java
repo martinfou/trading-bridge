@@ -70,21 +70,22 @@ public final class SqImportedStrategyCatalog {
             throw new IllegalArgumentException("Unknown sqimported strategy: " + key);
         }
         String upper = key.toUpperCase();
-        if (upper.contains("GOLD") || upper.contains("MGC")) {
-            return "MGC";
-        }
-        if (upper.contains("MNQ")) {
-            return "MNQ";
-        }
-        if (upper.contains("MES")) {
-            return "MES";
-        }
-        if (upper.contains("AAPL")) {
-            return "AAPL";
-        }
-        if (upper.contains("EURUSD")) {
-            return "EUR_USD";
-        }
+        if (upper.contains("GOLD") || upper.contains("MGC")) return "MGC";
+        if (upper.startsWith("SQGC")) return "GC";
+        if (upper.contains("MNQ")) return "MNQ";
+        if (upper.startsWith("SQNQ")) return "NQ";
+        if (upper.contains("MES")) return "MES";
+        if (upper.startsWith("SQES")) return "ES";
+        if (upper.contains("AAPL")) return "AAPL";
+        if (upper.contains("NVDA")) return "NVDA";
+        if (upper.contains("TSLA")) return "TSLA";
+        if (upper.contains("MSFT")) return "MSFT";
+        if (upper.contains("SPY")) return "SPY";
+        if (upper.contains("QQQ")) return "QQQ";
+        if (upper.contains("EURUSD")) return "EUR_USD";
+        if (upper.contains("GBPUSD")) return "GBP_USD";
+        if (upper.contains("USDJPY")) return "USD_JPY";
+        if (upper.contains("AUDUSD")) return "AUD_USD";
         return "GBP_JPY";
     }
 }

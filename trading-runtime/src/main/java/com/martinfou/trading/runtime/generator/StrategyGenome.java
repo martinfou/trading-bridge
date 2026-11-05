@@ -622,6 +622,9 @@ public record StrategyGenome(
         sb.append("        if (hh <= ll) return 50.0;\n");
         sb.append("        return ((getClose(shift) - ll) / (hh - ll)) * 100.0;\n");
         sb.append("    }\n\n");
+        sb.append("    private double calcWilliamsR(int period, int shift) {\n");
+        sb.append("        return calcStochK(period, shift) - 100.0;\n");
+        sb.append("    }\n\n");
         sb.append("    private double calcCci(int period, int shift) {\n");
         sb.append("        double mean = calcSma(period, shift);\n");
         sb.append("        double sd = calcStdDev(period, shift, mean);\n");
@@ -808,12 +811,12 @@ public record StrategyGenome(
                     }
                 }
                 case WILLIAMS_R -> {
-                    String thHigh = String.format(Locale.US, "%.1f", th);
-                    String thLow = String.format(Locale.US, "%.1f", 100.0 - th);
+                    String wrLongLvl = String.format(Locale.US, "-%.1f", 100.0 - th);
+                    String wrShortLvl = String.format(Locale.US, "-%.1f", th);
                     if (th >= 50.0) {
-                        yield isLong ? "(calcStochK(" + p1 + ", " + s1 + ") > " + thHigh + ")" : "(calcStochK(" + p1 + ", " + s1 + ") < " + thLow + ")";
+                        yield isLong ? "(calcWilliamsR(" + p1 + ", " + s1 + ") > " + wrLongLvl + ")" : "(calcWilliamsR(" + p1 + ", " + s1 + ") < " + wrShortLvl + ")";
                     } else {
-                        yield isLong ? "(calcStochK(" + p1 + ", " + s1 + ") < " + thHigh + ")" : "(calcStochK(" + p1 + ", " + s1 + ") > " + thLow + ")";
+                        yield isLong ? "(calcWilliamsR(" + p1 + ", " + s1 + ") < " + wrLongLvl + ")" : "(calcWilliamsR(" + p1 + ", " + s1 + ") > " + wrShortLvl + ")";
                     }
                 }
                 case VWAP_ANCHOR -> isLong
@@ -1144,11 +1147,13 @@ public record StrategyGenome(
                     }
                 }
                 case WILLIAMS_R -> {
-                    double k = calcStochK(p1, s1);
+                    double wr = calcWilliamsR(p1, s1);
+                    double wrLongLvl = -(100.0 - th);
+                    double wrShortLvl = -th;
                     if (th >= 50.0) {
-                        yield isLong ? k > th : k < (100.0 - th);
+                        yield isLong ? wr > wrLongLvl : wr < wrShortLvl;
                     } else {
-                        yield isLong ? k < th : k > (100.0 - th);
+                        yield isLong ? wr < wrLongLvl : wr > wrShortLvl;
                     }
                 }
                 case VWAP_ANCHOR -> {
@@ -1283,6 +1288,10 @@ public record StrategyGenome(
             double ll = calcLowestLow(period, shift);
             if (hh <= ll) return 50.0;
             return ((getClose(shift) - ll) / (hh - ll)) * 100.0;
+        }
+
+        private double calcWilliamsR(int period, int shift) {
+            return calcStochK(period, shift) - 100.0;
         }
 
         private double calcCci(int period, int shift) {
