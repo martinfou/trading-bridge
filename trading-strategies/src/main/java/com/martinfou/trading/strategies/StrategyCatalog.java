@@ -295,6 +295,43 @@ public final class StrategyCatalog {
         put(id, family, defaultSymbol, factory);
     }
 
+    /**
+     * Runtime registration for strategies discovered and promoted via the Native Strategy Generator.
+     * Overwrites any existing dynamic registration with the same id.
+     */
+    public static synchronized void registerGenerated(
+        String id,
+        Family family,
+        String defaultSymbol,
+        String type,
+        List<String> indicators,
+        String description,
+        String tradingStyle,
+        List<String> timeframes,
+        Function<String, Strategy> factory
+    ) {
+        Family resolvedFamily = family != null ? family : Family.GENERATED;
+        String resolvedSymbol = (defaultSymbol != null && !defaultSymbol.isBlank()) ? defaultSymbol : "EUR_USD";
+        List<String> assetClasses = resolveAssetClasses(id, resolvedFamily, resolvedSymbol);
+        List<String> recommendedSymbols = new ArrayList<>(resolveRecommendedSymbols(id, resolvedFamily, resolvedSymbol, assetClasses));
+        if (!recommendedSymbols.contains(resolvedSymbol)) {
+            recommendedSymbols.addFirst(resolvedSymbol);
+        }
+        ENTRIES.put(id, new Registration(
+            resolvedFamily,
+            resolvedSymbol,
+            (type != null && !type.isBlank()) ? type : resolveType(id, resolvedFamily),
+            (indicators != null && !indicators.isEmpty()) ? List.copyOf(indicators) : resolveIndicators(id, resolvedFamily),
+            (description != null && !description.isBlank()) ? description : resolveDescription(id, resolvedFamily),
+            assetClasses,
+            (tradingStyle != null && !tradingStyle.isBlank()) ? tradingStyle : resolveTradingStyle(id, resolvedFamily),
+            (timeframes != null && !timeframes.isEmpty()) ? List.copyOf(timeframes) : resolveTimeframes(id, resolvedFamily),
+            List.copyOf(recommendedSymbols),
+            "INTERMEDIATE",
+            factory
+        ));
+    }
+
     public static Strategy create(String id, String symbol) {
         return create(id, symbol, null);
     }

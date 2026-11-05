@@ -38,10 +38,66 @@ const showIndicators = ref(true)
 
 let pendingOrderLines: any[] = []
 let indicatorSeries: ISeriesApi<'Line'>[] = []
+let resizeObserver: ResizeObserver | null = null
+let lastSymbolOrRunKey = ''
+
+function getPricePrecision(symbol?: string, samplePrice?: number): { precision: number; minMove: number } {
+  const sym = (symbol || '').toUpperCase()
+  if (sym.includes('JPY')) {
+    return { precision: 3, minMove: 0.001 }
+  }
+  if (
+    sym === 'MGC' || sym === 'GC' || sym === 'MES' || sym === 'ES' ||
+    sym === 'MNQ' || sym === 'NQ' || sym === 'MCL' || sym === 'CL' ||
+    sym.includes('XAU') || sym.includes('XAG') ||
+    (samplePrice !== undefined && samplePrice >= 20)
+  ) {
+    return { precision: 2, minMove: 0.01 }
+  }
+  if (
+    sym.includes('EUR') || sym.includes('USD') || sym.includes('GBP') ||
+    sym.includes('CAD') || sym.includes('AUD') || sym.includes('NZD') || sym.includes('CHF')
+  ) {
+    return { precision: 5, minMove: 0.00001 }
+  }
+  return { precision: 2, minMove: 0.01 }
+}
+
+function formatLivePrice(price: number, symbol?: string): string {
+  const { precision } = getPricePrecision(symbol, price)
+  return price.toFixed(precision)
+}
+
+/**
+ * Returns a strictly ascending, timestamp-deduplicated, NaN-free copy of props.bars.
+ * Prevents lightweight-charts assertion failures ("data must be asc ordered by time")
+ * when historical files (e.g. MGC continuous contract rollovers) contain duplicate timestamps.
+ */
+function getCleanBars(rawBars: Bar[]): Bar[] {
+  if (!rawBars || rawBars.length === 0) return []
+  const bySec = new Map<number, Bar>()
+  for (const b of rawBars) {
+    if (!b || !b.time) continue
+    const sec = Math.floor(new Date(b.time).getTime() / 1000)
+    if (!Number.isFinite(sec) || sec <= 0) continue
+    if (
+      !Number.isFinite(b.open) ||
+      !Number.isFinite(b.high) ||
+      !Number.isFinite(b.low) ||
+      !Number.isFinite(b.close)
+    ) {
+      continue
+    }
+    bySec.set(sec, b)
+  }
+  return Array.from(bySec.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([, bar]) => bar)
+}
 
 function formatSpread(bid: number, ask: number, symbol?: string): string {
   const diff = ask - bid
-  if (diff <= 0) return '0.00000'
+  if (diff <= 0) return '0.00'
   const sym = (symbol || '').toUpperCase()
   if (sym.includes('JPY') || sym.includes('XAU')) {
     const pips = diff / 0.01
@@ -50,21 +106,21 @@ function formatSpread(bid: number, ask: number, symbol?: string): string {
     const pips = diff / 0.0001
     return `${diff.toFixed(5)} (${pips.toFixed(1)} pips)`
   }
-  return `${diff.toFixed(5)}`
+  return `${diff.toFixed(2)}`
 }
 
 const lineOptions = computed(() => {
   const options = [
-    { value: 'auto', label: 'Auto (Actif / Dernier)' },
-    { value: 'none', label: 'Aucun' }
+    { value: 'auto', label: 'Auto (Active / Latest)' },
+    { value: 'none', label: 'None' }
   ]
   if (props.positions && props.positions.length > 0) {
-    options.push({ value: 'active_pos', label: 'Position active' })
+    options.push({ value: 'active_pos', label: 'Active Position' })
   }
   props.trades.forEach((trade, idx) => {
     options.push({
       value: `trade_${idx}`,
-      label: `Trade #${idx + 1} (${trade.side === 'BUY' ? 'Achat' : 'Vente'})`
+      label: `Trade #${idx + 1} (${trade.side === 'BUY' ? 'Buy' : 'Sell'})`
     })
   })
   return options
@@ -208,14 +264,14 @@ function updatePriceLines() {
       if (pos.stopLoss && pos.stopLoss > 0) sl = pos.stopLoss
       if (pos.takeProfit && pos.takeProfit > 0) tp = pos.takeProfit
       side = pos.side
-      label = 'Position Active'
+      label = 'Active Position'
     } else if (props.trades && props.trades.length > 0) {
       const lastTrade = props.trades[props.trades.length - 1]
       entry = lastTrade.entryPrice
       if (lastTrade.stopLoss && lastTrade.stopLoss > 0) sl = lastTrade.stopLoss
       if (lastTrade.takeProfit && lastTrade.takeProfit > 0) tp = lastTrade.takeProfit
       side = lastTrade.side
-      label = `Dernier Trade (#${props.trades.length})`
+      label = `Latest Trade (#${props.trades.length})`
     }
   } else if (selectedLineOption.value === 'active_pos') {
     if (props.positions && props.positions.length > 0) {
@@ -224,7 +280,7 @@ function updatePriceLines() {
       if (pos.stopLoss && pos.stopLoss > 0) sl = pos.stopLoss
       if (pos.takeProfit && pos.takeProfit > 0) tp = pos.takeProfit
       side = pos.side
-      label = 'Position Active'
+      label = 'Active Position'
     }
   } else if (selectedLineOption.value.startsWith('trade_')) {
     const idx = parseInt(selectedLineOption.value.replace('trade_', ''))
@@ -427,13 +483,14 @@ function calculateATR(bars: Bar[], period: number): { time: any; value: number }
 function updateIndicators() {
   if (!chart || !props.bars || !props.bars.length) return
 
-  // Nettoyage des anciennes séries d'indicateurs
+  // Clean previous indicator series
   indicatorSeries.forEach(series => chart!.removeSeries(series))
   indicatorSeries = []
 
   if (!showIndicators.value || !props.indicators) return
 
-  const barsData = props.bars
+  const barsData = getCleanBars(props.bars)
+  if (!barsData.length) return
   const overlayColors = [
     '#8B5CF6', // Violet
     '#F59E0B', // Amber
@@ -556,8 +613,11 @@ function updateIndicators() {
 function render() {
   if (!container.value || !props.bars.length) return
 
-  // Map bars data
-  const chartBars = props.bars.map(b => ({
+  const cleanBars = getCleanBars(props.bars)
+  if (!cleanBars.length) return
+
+  // Map bars data (already strictly ascending and deduplicated by timestamp in seconds)
+  const chartBars = cleanBars.map(b => ({
     time: Math.floor(new Date(b.time).getTime() / 1000) as any,
     open: b.open,
     high: b.high,
@@ -565,14 +625,17 @@ function render() {
     close: b.close,
   }))
 
-  // Sort bars by time (lightweight-charts requirement)
-  chartBars.sort((a, b) => (a.time as number) - (b.time as number))
+  const { precision, minMove } = getPricePrecision(props.symbol, chartBars[chartBars.length - 1]?.close)
+  const currentKey = `${props.symbol || ''}:${props.timeframe || ''}:${chartBars[0]?.time || 0}`
+  const shouldFitContent = !chart || currentKey !== lastSymbolOrRunKey
+  lastSymbolOrRunKey = currentKey
 
   const isInitial = !chart
 
   if (isInitial) {
     // Create Chart
     chart = createChart(container.value, {
+      width: container.value.clientWidth || undefined,
       height: props.height ?? 400,
       layout: {
         background: { type: ColorType.Solid, color: '#111317' },
@@ -637,17 +700,25 @@ function render() {
       wickDownColor: '#EF4444',
       priceFormat: {
         type: 'price',
-        precision: 5,
-        minMove: 0.00001,
+        precision,
+        minMove,
       },
     })
 
     chart.timeScale().subscribeVisibleLogicalRangeChange(logicalRange => {
       if (logicalRange !== null && logicalRange.from < 50) {
-        if (props.bars.length > 0) {
-          emit('loadMoreBars', props.bars[0].time)
+        if (cleanBars.length > 0) {
+          emit('loadMoreBars', cleanBars[0].time)
         }
       }
+    })
+  } else if (candlestickSeries) {
+    candlestickSeries.applyOptions({
+      priceFormat: {
+        type: 'price',
+        precision,
+        minMove,
+      },
     })
   }
 
@@ -776,8 +847,8 @@ function render() {
     createSeriesMarkers(candlestickSeries, dedupedMarkers);
   }
 
-  // Only fit content on initial rendering so we don't snap away from user's zoom/pan on ticks
-  if (isInitial && chart) {
+  // Fit content on initial rendering or when switching symbol/run
+  if (shouldFitContent && chart) {
     chart.timeScale().fitContent()
   }
 
@@ -787,7 +858,7 @@ function render() {
 }
 
 function resize() {
-  if (chart && container.value) {
+  if (chart && container.value && container.value.clientWidth > 0) {
     chart.applyOptions({ width: container.value.clientWidth })
   }
 }
@@ -796,10 +867,18 @@ onMounted(async () => {
   await nextTick()
   render()
   window.addEventListener('resize', resize)
+  if (typeof ResizeObserver !== 'undefined' && container.value) {
+    resizeObserver = new ResizeObserver(() => resize())
+    resizeObserver.observe(container.value)
+  }
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', resize)
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
   if (chart) {
     indicatorSeries.forEach(series => chart!.removeSeries(series))
     indicatorSeries = []
@@ -894,15 +973,15 @@ defineExpose({ updateBar, updatePriceLines })
         <span class="font-bold text-gray-100" style="margin-left: 0.2rem;">{{ props.timeframe }}</span>
       </div>
       <div v-if="props.bid && props.ask" class="live-price-strip">
-        <span class="live-price-item"><span class="price-lbl">Bid</span> <span class="price-val bid font-mono">{{ props.bid.toFixed(5) }}</span></span>
-        <span class="live-price-item"><span class="price-lbl">Ask</span> <span class="price-val ask font-mono">{{ props.ask.toFixed(5) }}</span></span>
+        <span class="live-price-item"><span class="price-lbl">Bid</span> <span class="price-val bid font-mono">{{ formatLivePrice(props.bid, props.symbol) }}</span></span>
+        <span class="live-price-item"><span class="price-lbl">Ask</span> <span class="price-val ask font-mono">{{ formatLivePrice(props.ask, props.symbol) }}</span></span>
         <span class="live-price-item"><span class="price-lbl">Spread</span> <span class="price-val spread font-mono">{{ formatSpread(props.bid, props.ask, props.symbol) }}</span></span>
       </div>
       <div style="flex-grow: 1;"></div>
       <div class="legend-toggles">
         <label class="toggle-container">
           <input type="checkbox" v-model="showPendingOrders" />
-          <span>Ordres</span>
+          <span>Orders</span>
         </label>
         <label class="toggle-container">
           <input type="checkbox" v-model="showSlTp" />
@@ -910,12 +989,12 @@ defineExpose({ updateBar, updatePriceLines })
         </label>
         <label class="toggle-container" v-if="props.indicators && props.indicators.length > 0">
           <input type="checkbox" v-model="showIndicators" />
-          <span>Indicateurs</span>
+          <span>Indicators</span>
         </label>
       </div>
       <div style="display: flex; gap: 1rem; align-items: center;">
         <div class="timezone-select-container">
-          <label for="line-select" class="tz-label">Afficher SL/TP :</label>
+          <label for="line-select" class="tz-label">Show SL/TP:</label>
           <select id="line-select" v-model="selectedLineOption" class="tz-select">
             <option v-for="opt in lineOptions" :key="opt.value" :value="opt.value">
               {{ opt.label }}
@@ -923,9 +1002,9 @@ defineExpose({ updateBar, updatePriceLines })
           </select>
         </div>
         <div class="timezone-select-container">
-          <label for="tz-select" class="tz-label">Axe temporel :</label>
+          <label for="tz-select" class="tz-label">Timezone:</label>
           <select id="tz-select" v-model="timezone" class="tz-select">
-            <option value="local">Heure locale</option>
+            <option value="local">Local Time</option>
             <option value="utc">UTC</option>
           </select>
         </div>

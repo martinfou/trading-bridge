@@ -324,6 +324,8 @@ public final class ControlPlaneServer implements AutoCloseable {
     ) {
         DataAvailabilityService dataAvailability = new DataAvailabilityService();
         BacktestController backtestController = new BacktestController();
+        com.martinfou.trading.runtime.generator.StrategyGeneratorService strategyGeneratorService =
+            new com.martinfou.trading.runtime.generator.StrategyGeneratorService();
         io.javalin.json.JavalinJackson jsonMapper = new io.javalin.json.JavalinJackson()
             .updateMapper(m -> m.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule())
                                 .disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS));
@@ -390,6 +392,75 @@ public final class ControlPlaneServer implements AutoCloseable {
                 ctx.json(service.getOrderBook(instrument));
             })
             .get("/api/sq-bridge/status", ctx -> ctx.json(sqBridgeService.status()))
+            .get("/api/generator/status", ctx -> ctx.json(strategyGeneratorService.getStatus()))
+            .get("/api/generator/databank", ctx -> ctx.json(Map.of(
+                "candidates", strategyGeneratorService.listDatabank(),
+                "status", strategyGeneratorService.getStatus()
+            )))
+            .post("/api/generator/start", ctx -> {
+                try {
+                    com.martinfou.trading.runtime.generator.StrategyGeneratorService.GeneratorRequest req =
+                        ctx.bodyAsClass(com.martinfou.trading.runtime.generator.StrategyGeneratorService.GeneratorRequest.class);
+                    String jobId = strategyGeneratorService.start(req);
+                    ctx.status(HttpStatus.ACCEPTED).json(Map.of("jobId", jobId, "status", "RUNNING"));
+                } catch (IllegalStateException e) {
+                    ctx.status(HttpStatus.CONFLICT).json(Map.of("error", e.getMessage()));
+                } catch (Exception e) {
+                    ctx.status(HttpStatus.BAD_REQUEST).json(Map.of("error", e.getMessage() != null ? e.getMessage() : "Invalid generator request"));
+                }
+            })
+            .post("/api/generator/stop", ctx -> {
+                strategyGeneratorService.stop();
+                ctx.json(Map.of("stopped", true));
+            })
+            .post("/api/generator/databank/{id}/promote", ctx -> {
+                String id = ctx.pathParam("id");
+                try {
+                    var updated = strategyGeneratorService.promoteToCatalog(id);
+                    ctx.json(updated);
+                } catch (IllegalArgumentException e) {
+                    ctx.status(HttpStatus.NOT_FOUND).json(Map.of("error", e.getMessage()));
+                } catch (Exception e) {
+                    ctx.status(HttpStatus.INTERNAL_SERVER_ERROR).json(Map.of("error", e.getMessage()));
+                }
+            })
+            .post("/api/generator/databank/{id}/backtest", ctx -> {
+                String id = ctx.pathParam("id");
+                try {
+                    var candidate = strategyGeneratorService.promoteToCatalog(id);
+                    RunManager.StartRunRequest runReq = new RunManager.StartRunRequest(
+                        candidate.id(),
+                        candidate.symbol(),
+                        "BACKTEST",
+                        new BarSourceResolver.BarsSource("year", null, candidate.yearSpec(), null),
+                        10_000.0,
+                        1.0,
+                        0.62,
+                        0.00005,
+                        "BACKTEST",
+                        null,
+                        candidate.timeframe(),
+                        candidate.timeframe(),
+                        null,
+                        null,
+                        null,
+                        true
+                    );
+                    String runId = runManager.startRun(runReq);
+                    ctx.status(HttpStatus.ACCEPTED).json(Map.of("runId", runId, "strategyId", candidate.id()));
+                } catch (Exception e) {
+                    ctx.status(HttpStatus.BAD_REQUEST).json(Map.of("error", e.getMessage() != null ? e.getMessage() : "Failed to launch backtest"));
+                }
+            })
+            .delete("/api/generator/databank/{id}", ctx -> {
+                String id = ctx.pathParam("id");
+                strategyGeneratorService.deleteCandidate(id);
+                ctx.status(HttpStatus.NO_CONTENT);
+            })
+            .delete("/api/generator/databank", ctx -> {
+                strategyGeneratorService.clearDatabank();
+                ctx.status(HttpStatus.NO_CONTENT);
+            })
             .post("/api/sq-bridge/process-inbox", ctx -> {
                 SqBridgeService.ProcessInboxResponse response = sqBridgeService.processInboxAsync();
                 if (response.accepted()) {
@@ -912,7 +983,18 @@ public final class ControlPlaneServer implements AutoCloseable {
                 List<Map<String, Object>> items = new ArrayList<>();
                 java.util.Set<String> seenIds = new java.util.HashSet<>();
 
-                runManager.list(null).forEach(r -> {
+                java.util.List<RunRecord> allRecords = new ArrayList<>(runManager.list(null));
+                try {
+                    for (RunRecord stored : runManager.runRecordStore().listAll()) {
+                        if (allRecords.stream().noneMatch(r -> r.runId().equals(stored.runId()))) {
+                            allRecords.add(stored);
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to list persisted run records from RunRecordStore: {}", e.getMessage());
+                }
+
+                allRecords.forEach(r -> {
                     Map<String, Object> m = new LinkedHashMap<>();
                     m.put("runId", r.runId());
                     m.put("strategyId", r.strategyId());
@@ -1017,7 +1099,8 @@ public final class ControlPlaneServer implements AutoCloseable {
             })
             .get("/api/runs/{runId}", ctx -> {
                 String runId = ctx.pathParam("runId");
-                Optional<RunRecord> recordOpt = runManager.getRun(runId);
+                Optional<RunRecord> recordOpt = runManager.getRun(runId)
+                    .or(() -> runManager.runRecordStore().get(runId));
                 if (recordOpt.isPresent()) {
                     ctx.json(toRunJson(runManager, recordOpt.get()));
                 } else {
@@ -1049,6 +1132,7 @@ public final class ControlPlaneServer implements AutoCloseable {
             .get("/api/runs/{runId}/export", ctx -> {
                 String runId = ctx.pathParam("runId");
                 RunRecord record = runManager.getRun(runId)
+                    .or(() -> runManager.runRecordStore().get(runId))
                     .orElseThrow(() -> new NotFoundException("Run not found: " + runId));
                 var deployment = promoteService.deploymentStore().get(record.strategyId());
                 String format = ctx.queryParam("format");
@@ -1062,7 +1146,8 @@ public final class ControlPlaneServer implements AutoCloseable {
             })
             .get("/api/runs/{runId}/trades", ctx -> {
                 String runId = ctx.pathParam("runId");
-                Optional<RunRecord> recordOpt = runManager.getRun(runId);
+                Optional<RunRecord> recordOpt = runManager.getRun(runId)
+                    .or(() -> runManager.runRecordStore().get(runId));
                 List<com.martinfou.trading.core.Trade> trades;
                 if (recordOpt.isPresent()) {
                     trades = runManager.getTrades(runId);
@@ -1082,7 +1167,8 @@ public final class ControlPlaneServer implements AutoCloseable {
             })
             .get("/api/runs/{runId}/trades/summary", ctx -> {
                 String runId = ctx.pathParam("runId");
-                Optional<RunRecord> recordOpt = runManager.getRun(runId);
+                Optional<RunRecord> recordOpt = runManager.getRun(runId)
+                    .or(() -> runManager.runRecordStore().get(runId));
                 List<com.martinfou.trading.core.Trade> trades;
                 if (recordOpt.isPresent()) {
                     trades = runManager.getTrades(runId);
@@ -1138,7 +1224,8 @@ public final class ControlPlaneServer implements AutoCloseable {
             })
             .get("/api/runs/{runId}/equity-curve", ctx -> {
                 String runId = ctx.pathParam("runId");
-                Optional<RunRecord> recordOpt = runManager.getRun(runId);
+                Optional<RunRecord> recordOpt = runManager.getRun(runId)
+                    .or(() -> runManager.runRecordStore().get(runId));
                 List<?> curve = null;
                 if (recordOpt.isPresent()) {
                     RunRecord record = recordOpt.get();
@@ -1174,7 +1261,8 @@ public final class ControlPlaneServer implements AutoCloseable {
             })
             .get("/api/runs/{runId}/weekly-stats", ctx -> {
                 String runId = ctx.pathParam("runId");
-                Optional<RunRecord> recordOpt = runManager.getRun(runId);
+                Optional<RunRecord> recordOpt = runManager.getRun(runId)
+                    .or(() -> runManager.runRecordStore().get(runId));
                 List<Map<String, Object>> trades = null;
                 double initialCapital = 10000.0;
                 
@@ -1257,6 +1345,7 @@ public final class ControlPlaneServer implements AutoCloseable {
             .get("/api/runs/{runId}/monte-carlo", ctx -> {
                 String runId = ctx.pathParam("runId");
                 RunRecord record = runManager.getRun(runId)
+                    .or(() -> runManager.runRecordStore().get(runId))
                     .orElseThrow(() -> new NotFoundException("Run not found: " + runId));
                 
                 int runs = parseIntParam(ctx.queryParam("runs"), 1000);
@@ -1349,6 +1438,7 @@ public final class ControlPlaneServer implements AutoCloseable {
             .get("/api/runs/{runId}/bars", ctx -> {
                 String runId = ctx.pathParam("runId");
                 RunRecord record = runManager.getRun(runId)
+                    .or(() -> runManager.runRecordStore().get(runId))
                     .orElseThrow(() -> new NotFoundException("Run not found: " + runId));
                 RunConfigSnapshot config = RunConfigSnapshot.fromRecord(record);
                 Integer limit = ctx.queryParam("limit") != null ? Integer.parseInt(ctx.queryParam("limit")) : null;
@@ -1376,6 +1466,7 @@ public final class ControlPlaneServer implements AutoCloseable {
             .get("/api/events/{runId}/audit", ctx -> {
                 String runId = ctx.pathParam("runId");
                 runManager.getRun(runId)
+                    .or(() -> runManager.runRecordStore().get(runId))
                     .orElseThrow(() -> new NotFoundException("Run not found: " + runId));
 
                 String typeParam = ctx.queryParam("type");

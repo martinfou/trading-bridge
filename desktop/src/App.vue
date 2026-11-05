@@ -65,6 +65,7 @@ onUnmounted(() => {
 
 const nav = [
   { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/generator', label: 'Strategy Gen', icon: Zap },
   { path: '/wfa', label: 'Walk-Forward', icon: TrendingUp },
   { path: '/data-manager', label: 'Data Manager', icon: Database },
   { path: '/strategies', label: 'Strategies', icon: Cpu },

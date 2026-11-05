@@ -9,10 +9,12 @@ import CompareView from './views/CompareView.vue'
 import LiveTradingView from './views/LiveTradingView.vue'
 import DataManagerView from './views/DataManagerView.vue'
 import WfaView from './views/WfaView.vue'
+import StrategyGeneratorView from './views/StrategyGeneratorView.vue'
 
 const routes = [
   { path: '/', redirect: '/dashboard' },
   { path: '/dashboard', name: 'dashboard', component: DashboardView },
+  { path: '/generator', name: 'generator', component: StrategyGeneratorView },
   { path: '/wfa', name: 'wfa', component: WfaView },
   { path: '/results', name: 'results', component: BacktestHistoryView },
   { path: '/results/:runId', name: 'results-details', component: ResultsView },

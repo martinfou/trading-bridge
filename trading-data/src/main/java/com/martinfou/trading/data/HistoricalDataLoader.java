@@ -109,13 +109,13 @@ public final class HistoricalDataLoader {
     /** Loads native bars (.bars store or direct IBKR/standard CSV) for exactly this timeframe, or throws IOException. */
     private static List<Bar> loadNative(String symbol, String spec, String tf, Path barsDir) throws IOException {
         try {
-            return loadYearSpec(symbol, spec, tf, barsDir);
+            return BarStore.sanitizeChronological(loadYearSpec(symbol, spec, tf, barsDir));
         } catch (IOException | RuntimeException ignored) {
             // fall through to direct CSV
         }
         Path directCsv = Path.of("data/historical/csv", symbol.toUpperCase() + "_" + tf.toUpperCase() + "_" + spec + ".csv");
         if (Files.isRegularFile(directCsv)) {
-            return DataLoader.loadAutoCSV(directCsv, symbol);
+            return BarStore.sanitizeChronological(DataLoader.loadAutoCSV(directCsv, symbol));
         }
         throw new IOException("No native " + tf + " data for " + symbol + " " + spec);
     }
@@ -161,7 +161,7 @@ public final class HistoricalDataLoader {
         }
         agg.completePeriod();
         agg.getLastCompletedBar().ifPresent(aggregated::add);
-        return aggregated;
+        return BarStore.sanitizeChronological(aggregated);
     }
 
     /** Loads bars from a file path (.bars or CSV). */
@@ -173,11 +173,11 @@ public final class HistoricalDataLoader {
     public static List<Bar> loadPath(Path path, String symbol) throws IOException {
         String name = path.getFileName().toString().toLowerCase();
         if (name.endsWith(".bars")) {
-            return loadBarStoreFile(path, symbolFromBarStorePath(path, symbol));
+            return BarStore.sanitizeChronological(loadBarStoreFile(path, symbolFromBarStorePath(path, symbol)));
         }
         if (name.endsWith(".csv")) {
             String sym = inferSymbol(path, symbol);
-            return DataLoader.loadAutoCSV(path, sym);
+            return BarStore.sanitizeChronological(DataLoader.loadAutoCSV(path, sym));
         }
         throw new IOException("Unsupported file: " + path);
     }
@@ -190,7 +190,7 @@ public final class HistoricalDataLoader {
         String timeframe = tf != null ? tf.toUpperCase() : "H1";
         Optional<Path> csv = findDukascopyCsv(symbol, year, timeframe);
         if (csv.isPresent()) {
-            return DataLoader.loadDukascopyCSV(csv.get(), symbol);
+            return BarStore.sanitizeChronological(DataLoader.loadDukascopyCSV(csv.get(), symbol));
         }
         var store = new BarStore(symbol, timeframe + "_" + year, barsDir);
         store.open();
@@ -206,7 +206,7 @@ public final class HistoricalDataLoader {
         for (int y = startYear; y <= endYear; y++) {
             merged.addAll(loadYear(symbol, y, tf, barsDir));
         }
-        return merged;
+        return BarStore.sanitizeChronological(merged);
     }
 
     public static List<Bar> loadYearSpec(String symbol, String spec, Path barsDir) throws IOException {
@@ -246,7 +246,7 @@ public final class HistoricalDataLoader {
         }
         String source = availability.minYear() + "-" + availability.maxYear()
             + " (" + availability.years().size() + " year(s))";
-        return new LoadResult(merged, symbol, source);
+        return new LoadResult(BarStore.sanitizeChronological(merged), symbol, source);
     }
 
     public static String inferSymbol(Path path, String fallback) {

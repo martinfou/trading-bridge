@@ -61,10 +61,12 @@ public class BarStore {
     // ──────── Ecriture ────────
 
     /** Convertit des CSV bars en format binaire et les sauvegarde */
-    public void write(List<Bar> bars) throws IOException {
+    public void write(List<Bar> rawBars) throws IOException {
+        List<Bar> bars = sanitizeChronological(rawBars);
         Files.createDirectories(filePath.getParent());
         try (var file = new RandomAccessFile(filePath.toFile(), "rw")) {
             var channel = file.getChannel();
+            channel.truncate((long) bars.size() * BAR_SIZE);
             buffer = channel.map(FileChannel.MapMode.READ_WRITE, 0, 
                 (long) bars.size() * BAR_SIZE);
             buffer.order(DATA_BYTE_ORDER);
@@ -80,6 +82,40 @@ public class BarStore {
             this.barCount = bars.size();
             channel.close();
         }
+    }
+
+    /**
+     * Ensures bars are strictly ascending by timestamp with no duplicate timestamps.
+     * Fast-paths in O(N) without allocation when already strictly sorted.
+     */
+    public static List<Bar> sanitizeChronological(List<Bar> raw) {
+        if (raw == null || raw.size() <= 1) {
+            return raw == null ? List.of() : raw;
+        }
+        boolean strictlyIncreasing = true;
+        long prevMs = Long.MIN_VALUE;
+        for (Bar b : raw) {
+            if (b == null || b.timestamp() == null) {
+                strictlyIncreasing = false;
+                break;
+            }
+            long ms = b.timestamp().toEpochMilli();
+            if (ms <= prevMs) {
+                strictlyIncreasing = false;
+                break;
+            }
+            prevMs = ms;
+        }
+        if (strictlyIncreasing) {
+            return raw;
+        }
+        TreeMap<Instant, Bar> byTime = new TreeMap<>();
+        for (Bar b : raw) {
+            if (b != null && b.timestamp() != null) {
+                byTime.putIfAbsent(b.timestamp(), b);
+            }
+        }
+        return new ArrayList<>(byTime.values());
     }
 
     /** Convertit un CSV en binaire */
@@ -187,7 +223,7 @@ public class BarStore {
         for (int i = 0; i < barCount; i++) {
             list.add(get(i));
         }
-        return list;
+        return sanitizeChronological(list);
     }
 
     /** Sous-liste: barres dans un range de dates */

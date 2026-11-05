@@ -288,9 +288,6 @@ onUnmounted(() => {
           <span class="info-label">Candle TF</span>
           <span class="info-value">
             {{ run.configSnapshot.strategyTimeframe }}
-            <span v-if="run.configSnapshot.dataTimeframe && run.configSnapshot.dataTimeframe !== run.configSnapshot.strategyTimeframe" style="font-size: 0.75rem; color: #9CA3AF;">
-              (from {{ run.configSnapshot.dataTimeframe }})
-            </span>
           </span>
         </div>
       </div>
@@ -356,6 +353,7 @@ onUnmounted(() => {
             :pending-orders="run?.pendingOrders"
             :indicators="run?.indicators"
             :height="450"
+            :symbol="run.symbol"
             :timeframe="run.configSnapshot?.strategyTimeframe"
             @loadMoreBars="handleLoadMoreBars"
           />
