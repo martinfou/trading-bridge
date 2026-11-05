@@ -332,8 +332,12 @@ public record StrategyGenome(
     }
 
     public Strategy toExecutableStrategy(String overrideSymbol) {
+        return toExecutableStrategy(overrideSymbol, 60);
+    }
+
+    public Strategy toExecutableStrategy(String overrideSymbol, int minTradeBarIndex) {
         String sym = (overrideSymbol != null && !overrideSymbol.isBlank()) ? overrideSymbol : this.symbol;
-        return new GenomeExecutableStrategy(this, sym);
+        return new GenomeExecutableStrategy(this, sym, minTradeBarIndex);
     }
 
     /**
@@ -894,6 +898,7 @@ public record StrategyGenome(
     public static final class GenomeExecutableStrategy implements Strategy {
         private final StrategyGenome genome;
         private String symbol;
+        private final int minTradeBarIndex;
         private final List<Bar> history = new ArrayList<>();
         private final List<Order> pendingOrders = new ArrayList<>();
 
@@ -911,8 +916,13 @@ public record StrategyGenome(
         private int armedBarsRemaining = 0;
 
         public GenomeExecutableStrategy(StrategyGenome genome, String symbol) {
+            this(genome, symbol, 60);
+        }
+
+        public GenomeExecutableStrategy(StrategyGenome genome, String symbol, int minTradeBarIndex) {
             this.genome = genome;
             this.symbol = (symbol != null && !symbol.isBlank()) ? symbol : genome.symbol();
+            this.minTradeBarIndex = Math.max(60, minTradeBarIndex);
         }
 
         @Override
@@ -936,7 +946,7 @@ public record StrategyGenome(
         public void onBar(Bar bar) {
             history.add(bar);
             int idx = history.size() - 1;
-            if (idx < 60) {
+            if (idx < minTradeBarIndex) {
                 return;
             }
 

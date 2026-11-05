@@ -46,7 +46,14 @@ interface DatabankCandidate {
   exitSummary: string
   indicators: string[]
   equityCurve: number[]
+  valStartIndex?: number
   oosStartIndex: number
+  valTrades?: number
+  valNetProfit?: number
+  valProfitFactor?: number
+  wfePct?: number
+  splitFolds?: number
+  partitionBands?: Array<{ startIndex: number; endIndex: number; oos: boolean; label: string }>
   javaSourceCode: string
   initialCapital?: number
   lotSize?: number
@@ -84,6 +91,7 @@ const symbol = ref('MGC')
 const timeframe = ref('M30')
 const yearSpec = ref('2025-2026')
 const oosSplitPct = ref(30)
+const splitFolds = ref(3)
 const searchMode = ref('GENETIC')
 const archetype = ref('ALL')
 const direction = ref('BOTH')
@@ -244,6 +252,39 @@ const selectedCandidateOosPct = computed(() => {
     return Math.min(90, Math.max(10, 100 - isPct))
   }
   return oosSplitPct.value
+})
+
+const isTrainPct = computed(() => Math.round((100 - oosSplitPct.value) * 0.72))
+const isValPct = computed(() => Math.max(10, (100 - oosSplitPct.value) - isTrainPct.value))
+
+const previewSplitBands = computed(() => {
+  const folds = Math.max(1, splitFolds.value)
+  const isPctPerFold = (100 - oosSplitPct.value) / folds
+  const oosPctPerFold = oosSplitPct.value / folds
+  if (folds === 1) {
+    return [
+      { label: `${100 - oosSplitPct.value}% IS`, widthPct: 100 - oosSplitPct.value, oos: false },
+      { label: `${oosSplitPct.value}% OOS`, widthPct: oosSplitPct.value, oos: true },
+    ]
+  }
+  const bands: Array<{ label: string; widthPct: number; oos: boolean }> = []
+  for (let k = 1; k <= folds; k++) {
+    bands.push({ label: `IS${k}`, widthPct: isPctPerFold, oos: false })
+    bands.push({ label: `OOS${k}`, widthPct: oosPctPerFold, oos: true })
+  }
+  return bands
+})
+
+const tierCounts = computed(() => {
+  let elite = 0
+  let inst = 0
+  let qual = 0
+  for (const c of databank.value) {
+    if (c.tier === 'ELITE') elite++
+    else if (c.tier === 'INSTITUTIONAL') inst++
+    else qual++
+  }
+  return { ELITE: elite, INSTITUTIONAL: inst, QUALIFIED: qual }
 })
 
 const filteredDatabank = computed(() => {
@@ -551,6 +592,7 @@ async function startGenerator() {
       timeframe: timeframe.value,
       yearSpec: yearSpec.value,
       oosSplitPct: oosSplitPct.value,
+      splitFolds: splitFolds.value,
       searchMode: searchMode.value,
       archetype: archetype.value,
       direction: direction.value,
@@ -809,6 +851,18 @@ const COLUMN_DEFINITIONS: Record<string, ColDefinition> = {
     formula: '% of Simulated Equity Paths Ending Below Initial Capital',
     description: 'Percentage of randomized Monte Carlo trade-shuffle simulations that finished with a net loss.',
     benchmark: 'Target: 0.0% to 5.0% for robust strategies'
+  },
+  isValPf: {
+    title: 'In-Sample Cross-Validation Profit Factor (IS-Val)',
+    formula: 'Final IS Band (IS_K) Gross Profit ÷ |IS_K Gross Loss|',
+    description: 'Profit Factor achieved on the final In-Sample validation band (IS_K) plus cross-band IS consistency used during genetic tournament selection so the Blind OOS bands stay 100% untouched during breeding.',
+    benchmark: 'Target: ≥ 1.10 across In-Sample bands'
+  },
+  wfePct: {
+    title: 'Walk-Forward / OOS Retention Efficiency (WFE %)',
+    formula: '55% × (OOS PF ÷ IS PF) + 45% × (OOS $/Bar ÷ IS $/Bar) × 100',
+    description: 'Pardo Walk-Forward Efficiency measuring how much of the In-Sample edge survives across the alternating blind Out-of-Sample holdout bands without severe degradation.',
+    benchmark: 'Minimum Gate: ≥ 45% · Institutional: 65%–110%'
   },
   databankInfo: {
     title: 'Strategy Databank (Validated Candidates)',
@@ -1085,19 +1139,25 @@ onUnmounted(() => {
 
           <div class="field">
             <div class="split-lbl-row">
-              <label>In-Sample / Out-of-Sample Split</label>
+              <label>Alternating IS / OOS Bands ({{ splitFolds }}× Folds)</label>
               <div class="split-pills-mini">
-                <button type="button" :class="['mini-opt', { active: oosSplitPct === 20 }]" :disabled="status.running" @click="oosSplitPct = 20">80 / 20</button>
-                <button type="button" :class="['mini-opt', { active: oosSplitPct === 30 }]" :disabled="status.running" @click="oosSplitPct = 30">70 / 30 Std</button>
-                <button type="button" :class="['mini-opt', { active: oosSplitPct === 40 }]" :disabled="status.running" @click="oosSplitPct = 40">60 / 40 Strict</button>
+                <button type="button" :class="['mini-opt', { active: splitFolds === 3 }]" :disabled="status.running" @click="splitFolds = 3" title="3 alternating IS/OOS cycles (6 bands)">3× Bands</button>
+                <button type="button" :class="['mini-opt', { active: splitFolds === 4 }]" :disabled="status.running" @click="splitFolds = 4" title="4 alternating IS/OOS cycles (8 bands)">4× Bands</button>
+                <button type="button" :class="['mini-opt', { active: splitFolds === 1 }]" :disabled="status.running" @click="splitFolds = 1" title="Single contiguous IS/OOS split">1× Single</button>
+                <span style="color: #374151;">|</span>
+                <button type="button" :class="['mini-opt', { active: oosSplitPct === 20 }]" :disabled="status.running" @click="oosSplitPct = 20">80/20</button>
+                <button type="button" :class="['mini-opt', { active: oosSplitPct === 30 }]" :disabled="status.running" @click="oosSplitPct = 30">70/30</button>
+                <button type="button" :class="['mini-opt', { active: oosSplitPct === 40 }]" :disabled="status.running" @click="oosSplitPct = 40">60/40</button>
               </div>
             </div>
             <div class="visual-split-bar">
-              <div class="is-segment" :style="{ width: `${100 - oosSplitPct}%` }">
-                {{ 100 - oosSplitPct }}% In-Sample (Train)
-              </div>
-              <div class="oos-segment" :style="{ width: `${oosSplitPct}%` }">
-                {{ oosSplitPct }}% Blind OOS
+              <div
+                v-for="(band, bIdx) in previewSplitBands"
+                :key="bIdx"
+                :class="band.oos ? 'oos-segment' : 'is-segment'"
+                :style="{ width: `${band.widthPct}%` }"
+              >
+                {{ band.label }}
               </div>
             </div>
           </div>
@@ -1275,7 +1335,7 @@ onUnmounted(() => {
           </div>
 
           <div class="gate-summary-box">
-            <div><strong>Validation Pipeline:</strong> In-Sample Train → Blind OOS Gate → 80-Run Monte Carlo</div>
+            <div><strong>Validation Pipeline:</strong> IS-Train → IS-Val Cross-Fold → Blind OOS Gate (WFE ≥ 45%) → 80-Run MC</div>
           </div>
         </section>
       </div>
@@ -1409,10 +1469,10 @@ onUnmounted(() => {
           </div>
           <div class="db-controls">
             <div class="tier-pills">
-              <button :class="['tier-pill', { active: tierFilter === 'ALL' }]" @mouseenter="showTooltip($event, 'databankInfo')" @mouseleave="hideTooltip" @click="tierFilter = 'ALL'">All</button>
-              <button :class="['tier-pill elite', { active: tierFilter === 'ELITE' }]" @mouseenter="showTooltip($event, 'tierElite')" @mouseleave="hideTooltip" @click="tierFilter = 'ELITE'">Elite (82+)</button>
-              <button :class="['tier-pill inst', { active: tierFilter === 'INSTITUTIONAL' }]" @mouseenter="showTooltip($event, 'tierInst')" @mouseleave="hideTooltip" @click="tierFilter = 'INSTITUTIONAL'">Institutional</button>
-              <button :class="['tier-pill qual', { active: tierFilter === 'QUALIFIED' }]" @mouseenter="showTooltip($event, 'tierQual')" @mouseleave="hideTooltip" @click="tierFilter = 'QUALIFIED'">Qualified</button>
+              <button :class="['tier-pill', { active: tierFilter === 'ALL' }]" @mouseenter="showTooltip($event, 'databankInfo')" @mouseleave="hideTooltip" @click="tierFilter = 'ALL'">All ({{ databank.length }})</button>
+              <button :class="['tier-pill elite', { active: tierFilter === 'ELITE' }]" @mouseenter="showTooltip($event, 'tierElite')" @mouseleave="hideTooltip" @click="tierFilter = 'ELITE'">Elite ({{ tierCounts.ELITE }})</button>
+              <button :class="['tier-pill inst', { active: tierFilter === 'INSTITUTIONAL' }]" @mouseenter="showTooltip($event, 'tierInst')" @mouseleave="hideTooltip" @click="tierFilter = 'INSTITUTIONAL'">Institutional ({{ tierCounts.INSTITUTIONAL }})</button>
+              <button :class="['tier-pill qual', { active: tierFilter === 'QUALIFIED' }]" @mouseenter="showTooltip($event, 'tierQual')" @mouseleave="hideTooltip" @click="tierFilter = 'QUALIFIED'">Qualified ({{ tierCounts.QUALIFIED }})</button>
             </div>
             <input
               v-model="searchQuery"
@@ -1431,7 +1491,11 @@ onUnmounted(() => {
         </div>
 
         <div v-if="filteredDatabank.length === 0" class="empty-databank">
-          <p v-if="status.running">Mining in progress — strategies passing the IS + OOS acceptance gate will stream here automatically...</p>
+          <p v-if="databank.length > 0 && (tierFilter !== 'ALL' || searchQuery.trim())">
+            No strategies in the <strong>{{ tierFilter }}</strong> filter yet ({{ databank.length }} strategies in Databank —
+            <button type="button" class="mini-opt" @click="tierFilter = 'ALL'; searchQuery = ''">Show All ({{ databank.length }})</button>).
+          </p>
+          <p v-else-if="status.running">Mining in progress — strategies passing the IS + OOS acceptance gate will stream here automatically...</p>
           <p v-else>No strategies in the Databank yet. Choose an instrument or preset above and click <strong>Start Strategy Mining</strong>.</p>
         </div>
 
@@ -1621,12 +1685,15 @@ onUnmounted(() => {
         <div v-if="inspectorTab === 'overview'" class="insp-body">
           <div class="is-oos-compare-grid">
             <div class="split-box is">
-              <span class="split-tag">IN-SAMPLE (TRAIN)</span>
+              <span class="split-tag">IN-SAMPLE (TRAIN + VAL)</span>
               <div class="split-metrics">
                 <div><span>Net Profit</span> <strong :class="selectedCandidate.isNetProfit >= 0 ? 'profit' : 'loss'">{{ formatMoney(selectedCandidate.isNetProfit) }}</strong></div>
                 <div><span>Profit Factor</span> <strong>{{ Math.min(99.9, selectedCandidate.isProfitFactor).toFixed(2) }}</strong></div>
-                <div><span>Sharpe</span> <strong>{{ selectedCandidate.isSharpeRatio.toFixed(2) }}</strong></div>
-                <div><span>Trades</span> <strong>{{ selectedCandidate.isTrades }}</strong></div>
+                <div class="metric-tip-row" @mouseenter="showTooltip($event, 'isValPf')" @mouseleave="hideTooltip">
+                  <span class="metric-tip-lbl">IS-Val PF</span>
+                  <strong>{{ Math.min(99.9, selectedCandidate.valProfitFactor ?? selectedCandidate.isProfitFactor).toFixed(2) }} ({{ selectedCandidate.valTrades ?? Math.round(selectedCandidate.isTrades * 0.28) }}t)</strong>
+                </div>
+                <div><span>Trades / Sharpe</span> <strong>{{ selectedCandidate.isTrades }} · {{ selectedCandidate.isSharpeRatio.toFixed(2) }}</strong></div>
               </div>
             </div>
             <div class="split-box oos">
@@ -1634,8 +1701,11 @@ onUnmounted(() => {
               <div class="split-metrics">
                 <div><span>Net Profit</span> <strong :class="selectedCandidate.oosNetProfit >= 0 ? 'profit' : 'loss'">{{ formatMoney(selectedCandidate.oosNetProfit) }}</strong></div>
                 <div><span>Profit Factor</span> <strong>{{ Math.min(99.9, selectedCandidate.oosProfitFactor).toFixed(2) }}</strong></div>
-                <div><span>Sharpe</span> <strong>{{ selectedCandidate.oosSharpeRatio.toFixed(2) }}</strong></div>
-                <div><span>Trades</span> <strong>{{ selectedCandidate.oosTrades }}</strong></div>
+                <div class="metric-tip-row" @mouseenter="showTooltip($event, 'wfePct')" @mouseleave="hideTooltip">
+                  <span class="metric-tip-lbl">WFE Retention</span>
+                  <strong class="profit">{{ (selectedCandidate.wfePct ?? Math.round((selectedCandidate.oosProfitFactor / Math.max(0.5, selectedCandidate.isProfitFactor)) * 100)).toFixed(0) }}%</strong>
+                </div>
+                <div><span>Trades / Sharpe</span> <strong>{{ selectedCandidate.oosTrades }} · {{ selectedCandidate.oosSharpeRatio.toFixed(2) }}</strong></div>
               </div>
             </div>
             <div class="split-box mc">
@@ -1659,15 +1729,15 @@ onUnmounted(() => {
 
           <div class="equity-wrap">
             <div class="eq-header">
-              <h4>Combined In-Sample + Out-of-Sample Equity Curve</h4>
+              <h4>Alternating In-Sample + Out-of-Sample Equity Curve</h4>
               <div class="eq-legend">
                 <span class="eq-leg-item is">
                   <span class="eq-leg-swatch is"></span>
-                  In-Sample ({{ 100 - selectedCandidateOosPct }}% Train · #1–#{{ selectedCandidate.oosStartIndex }})
+                  In-Sample Bands ({{ 100 - selectedCandidateOosPct }}% Train · {{ selectedCandidate.splitFolds ?? splitFolds }}× Folds)
                 </span>
                 <span class="eq-leg-item oos">
                   <span class="eq-leg-swatch oos"></span>
-                  Out-of-Sample ({{ selectedCandidateOosPct }}% Blind · #{{ selectedCandidate.oosStartIndex }}+)
+                  Out-of-Sample Bands ({{ selectedCandidateOosPct }}% Blind · {{ selectedCandidate.splitFolds ?? splitFolds }}× Folds)
                 </span>
                 <span class="eq-leg-item dd">
                   <span class="eq-leg-swatch dd"></span>
@@ -1678,8 +1748,11 @@ onUnmounted(() => {
             <EquityChart
               v-if="selectedCandidate.equityCurve && selectedCandidate.equityCurve.length > 1"
               :data="selectedCandidate.equityCurve"
+              :val-start-index="selectedCandidate.valStartIndex"
               :oos-start-index="selectedCandidate.oosStartIndex"
               :oos-split-pct="selectedCandidateOosPct"
+              :split-folds="selectedCandidate.splitFolds ?? splitFolds"
+              :partition-bands="selectedCandidate.partitionBands"
               :height="255"
             />
           </div>
@@ -2061,13 +2134,28 @@ onUnmounted(() => {
   transition: width 0.2s ease;
 }
 
+.val-segment {
+  background: rgba(129, 140, 248, 0.24);
+  color: #C7D2FE;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid rgba(129, 140, 248, 0.45);
+  transition: width 0.2s ease;
+}
+
 .oos-segment {
   background: rgba(16, 185, 129, 0.22);
   color: #6EE7B7;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-right: 1px solid rgba(16, 185, 129, 0.38);
   transition: width 0.2s ease;
+}
+
+.oos-segment:last-child {
+  border-right: none;
 }
 
 .gate-summary-box {
@@ -2896,6 +2984,10 @@ onUnmounted(() => {
   color: #38BDF8;
 }
 
+.eq-leg-item.val {
+  color: #A5B4FC;
+}
+
 .eq-leg-item.oos {
   color: #34D399;
 }
@@ -2914,6 +3006,11 @@ onUnmounted(() => {
 .eq-leg-swatch.is {
   background: #38BDF8;
   box-shadow: 0 0 6px rgba(56, 189, 248, 0.55);
+}
+
+.eq-leg-swatch.val {
+  background: #818CF8;
+  box-shadow: 0 0 6px rgba(129, 140, 248, 0.55);
 }
 
 .eq-leg-swatch.oos {

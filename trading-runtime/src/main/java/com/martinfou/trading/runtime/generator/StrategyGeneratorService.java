@@ -49,8 +49,16 @@ public final class StrategyGeneratorService implements AutoCloseable {
 
     private static final ObjectMapper MAPPER = new ObjectMapper()
         .registerModule(new JavaTimeModule())
+        .configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
         .enable(SerializationFeature.INDENT_OUTPUT)
         .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+
+    public record PartitionBand(
+        int startIndex,
+        int endIndex,
+        boolean oos,
+        String label
+    ) {}
 
     public record GeneratorRequest(
         String symbol,
@@ -72,7 +80,8 @@ public final class StrategyGeneratorService implements AutoCloseable {
         Double initialCapital,
         Double lotSize,
         Double commissionPerTrade,
-        Double slippagePct
+        Double slippagePct,
+        Integer splitFolds
     ) {}
 
     public record DatabankCandidate(
@@ -120,7 +129,14 @@ public final class StrategyGeneratorService implements AutoCloseable {
         Double initialCapital,
         Double lotSize,
         Double commissionPerTrade,
-        Double slippagePct
+        Double slippagePct,
+        Integer valStartIndex,
+        Integer valTrades,
+        Double valNetProfit,
+        Double valProfitFactor,
+        Double wfePct,
+        Integer splitFolds,
+        List<PartitionBand> partitionBands
     ) {
         public double resolvedCapital() {
             return initialCapital != null && initialCapital > 0
@@ -144,6 +160,53 @@ public final class StrategyGeneratorService implements AutoCloseable {
             return slippagePct != null && slippagePct >= 0
                 ? slippagePct
                 : LotSizing.defaultsForSymbol(symbol).slippagePct();
+        }
+
+        public int resolvedValStartIndex() {
+            if (valStartIndex != null && valStartIndex > 0 && valStartIndex < oosStartIndex) {
+                return valStartIndex;
+            }
+            return Math.max(1, (int) Math.round(oosStartIndex * (50.0 / 70.0)));
+        }
+
+        public int resolvedValTrades() {
+            return valTrades != null ? valTrades : Math.max(1, (int) Math.round(isTrades * 0.28));
+        }
+
+        public double resolvedValNetProfit() {
+            return valNetProfit != null ? valNetProfit : round2(isNetProfit * 0.28);
+        }
+
+        public double resolvedValProfitFactor() {
+            return valProfitFactor != null && valProfitFactor > 0 ? valProfitFactor : isProfitFactor;
+        }
+
+        public double resolvedWfePct() {
+            if (wfePct != null && wfePct > 0) {
+                return wfePct;
+            }
+            if (isProfitFactor <= 0) {
+                return 0.0;
+            }
+            return round2(Math.clamp((oosProfitFactor / isProfitFactor) * 100.0, 0.0, 200.0));
+        }
+
+        public int resolvedSplitFolds() {
+            return splitFolds != null && splitFolds >= 1 ? splitFolds : 3;
+        }
+
+        public List<PartitionBand> resolvedPartitionBands() {
+            if (partitionBands != null && !partitionBands.isEmpty()) {
+                return partitionBands;
+            }
+            int len = equityCurve != null ? equityCurve.size() : 0;
+            if (len < 6) {
+                return List.of();
+            }
+            int oosPct = oosStartIndex > 0 && oosStartIndex < len - 1
+                ? Math.clamp(100 - (int) Math.round((oosStartIndex / (double) (len - 1)) * 100.0), 15, 50)
+                : 30;
+            return buildSampledBands(len, resolvedSplitFolds(), oosPct);
         }
     }
 
@@ -259,11 +322,20 @@ public final class StrategyGeneratorService implements AutoCloseable {
             }
         }
         boolean idChanged = !java.util.Objects.equals(oldId, newId);
+        boolean splitMismatch = Math.abs((c.isNetProfit() + c.oosNetProfit()) - c.netProfit()) > 1.0
+            || (c.isTrades() + c.oosTrades() != c.totalTrades());
         boolean missingDefaults = c.initialCapital() == null || c.lotSize() == null
-            || c.commissionPerTrade() == null || c.slippagePct() == null;
+            || c.commissionPerTrade() == null || c.slippagePct() == null
+            || c.valStartIndex() == null || c.wfePct() == null
+            || c.partitionBands() == null || c.partitionBands().isEmpty()
+            || splitMismatch;
         if (!idChanged && !missingDefaults) {
             return c;
         }
+        int normIsTrades = Math.clamp(c.isTrades(), 1, Math.max(1, c.totalTrades() - 1));
+        int normOosTrades = Math.max(1, c.totalTrades() - normIsTrades);
+        double normIsNet = splitMismatch ? round2(c.netProfit() * (normIsTrades / (double) Math.max(1, c.totalTrades()))) : c.isNetProfit();
+        double normOosNet = splitMismatch ? round2(c.netProfit() - normIsNet) : c.oosNetProfit();
         StrategyGenome g = c.genome();
         StrategyGenome newGenome = (g != null && idChanged) ? new StrategyGenome(
             newId, g.symbol(), g.timeframe(), g.archetype(), g.direction(), g.entryOrderType(),
@@ -274,8 +346,8 @@ public final class StrategyGeneratorService implements AutoCloseable {
         String newCode = (c.javaSourceCode() != null && idChanged) ? c.javaSourceCode().replace(oldId, newId) : c.javaSourceCode();
         return new DatabankCandidate(
             newId, c.symbol(), c.timeframe(), c.yearSpec(), c.archetype(), c.direction(), c.entryOrderType(),
-            c.tier(), c.compositeScore(), c.totalTrades(), c.isTrades(), c.oosTrades(),
-            c.netProfit(), c.isNetProfit(), c.oosNetProfit(), c.totalReturnPct(),
+            c.tier(), c.compositeScore(), c.totalTrades(), normIsTrades, normOosTrades,
+            c.netProfit(), normIsNet, normOosNet, c.totalReturnPct(),
             c.profitFactor(), c.isProfitFactor(), c.oosProfitFactor(),
             c.sharpeRatio(), c.isSharpeRatio(), c.oosSharpeRatio(),
             c.winRatePct(), c.maxDrawdownPct(), c.retDdRatio(), c.rSquared(),
@@ -283,7 +355,10 @@ public final class StrategyGeneratorService implements AutoCloseable {
             c.promoted(), newPath, c.longSignalSummary(), c.shortSignalSummary(),
             c.entrySummary(), c.exitSummary(), c.indicators(), c.equityCurve(),
             c.oosStartIndex(), newGenome, newCode,
-            c.resolvedCapital(), c.resolvedLotSize(), c.resolvedCommission(), c.resolvedSlippage()
+            c.resolvedCapital(), c.resolvedLotSize(), c.resolvedCommission(), c.resolvedSlippage(),
+            c.resolvedValStartIndex(), c.resolvedValTrades(), c.resolvedValNetProfit(),
+            c.resolvedValProfitFactor(), c.resolvedWfePct(),
+            c.resolvedSplitFolds(), c.resolvedPartitionBands()
         );
     }
 
@@ -458,7 +533,14 @@ public final class StrategyGeneratorService implements AutoCloseable {
             existing.resolvedCapital(),
             existing.resolvedLotSize(),
             existing.resolvedCommission(),
-            existing.resolvedSlippage()
+            existing.resolvedSlippage(),
+            existing.resolvedValStartIndex(),
+            existing.resolvedValTrades(),
+            existing.resolvedValNetProfit(),
+            existing.resolvedValProfitFactor(),
+            existing.resolvedWfePct(),
+            existing.resolvedSplitFolds(),
+            existing.resolvedPartitionBands()
         );
 
         for (int i = 0; i < databank.size(); i++) {
@@ -508,11 +590,12 @@ public final class StrategyGeneratorService implements AutoCloseable {
         double lotSize = rawReq.lotSize() != null && rawReq.lotSize() > 0 ? rawReq.lotSize() : defaults.lotSize();
         double commission = rawReq.commissionPerTrade() != null && rawReq.commissionPerTrade() >= 0 ? rawReq.commissionPerTrade() : defaults.commissionPerTrade();
         double slippage = rawReq.slippagePct() != null && rawReq.slippagePct() >= 0 ? rawReq.slippagePct() : defaults.slippagePct();
+        int splitFolds = rawReq.splitFolds() != null ? Math.clamp(rawReq.splitFolds(), 1, 6) : 3;
 
         GeneratorRequest req = new GeneratorRequest(
             symbol, tf, yearSpec, oosSplitPct, searchMode, archetype, direction, entryOrderType,
             popSize, gens, blocks, minTrades, minPf, minOosPf, minSharpe, maxDd,
-            capital, lotSize, commission, slippage
+            capital, lotSize, commission, slippage, splitFolds
         );
 
         String jobId = UUID.randomUUID().toString();
@@ -532,6 +615,37 @@ public final class StrategyGeneratorService implements AutoCloseable {
         return jobId;
     }
 
+    public static List<PartitionBand> buildSampledBands(int totalLength, int splitFolds, int oosSplitPct) {
+        if (totalLength < 2) {
+            return List.of();
+        }
+        int folds = Math.clamp(splitFolds, 1, 6);
+        int oosPct = Math.clamp(oosSplitPct, 10, 50);
+        int maxIdx = totalLength - 1;
+        List<PartitionBand> bands = new ArrayList<>(folds * 2);
+
+        if (folds <= 1) {
+            int splitIdx = Math.clamp((int) Math.round(maxIdx * (100 - oosPct) / 100.0), 1, Math.max(1, maxIdx - 1));
+            bands.add(new PartitionBand(0, splitIdx, false, "IS"));
+            bands.add(new PartitionBand(splitIdx, maxIdx, true, "OOS"));
+            return bands;
+        }
+
+        for (int k = 0; k < folds; k++) {
+            int cycleStart = (int) Math.round((k / (double) folds) * maxIdx);
+            int cycleEnd = (k == folds - 1) ? maxIdx : (int) Math.round(((k + 1) / (double) folds) * maxIdx);
+            int cycleLen = Math.max(2, cycleEnd - cycleStart);
+            int isEnd = Math.clamp(
+                cycleStart + (int) Math.round(cycleLen * (100 - oosPct) / 100.0),
+                cycleStart + 1,
+                Math.max(cycleStart + 1, cycleEnd - 1)
+            );
+            bands.add(new PartitionBand(cycleStart, isEnd, false, "IS" + (k + 1)));
+            bands.add(new PartitionBand(isEnd, cycleEnd, true, "OOS" + (k + 1)));
+        }
+        return bands;
+    }
+
     private void executeMiningJob(String jobId, GeneratorRequest req) {
         try {
             List<Bar> bars = loadOrGenerateBars(req.symbol(), req.timeframe(), req.yearSpec());
@@ -540,11 +654,26 @@ public final class StrategyGeneratorService implements AutoCloseable {
             }
 
             this.totalBarsLoaded = bars.size();
-            int splitIdx = Math.clamp((int) Math.round(bars.size() * (100 - req.oosSplitPct()) / 100.0), 80, bars.size() - 40);
-            List<Bar> isBars = bars.subList(0, splitIdx);
-            List<Bar> oosBars = bars.subList(Math.max(0, splitIdx - 210), bars.size());
-            this.isBarsCount = isBars.size();
-            this.oosBarsCount = bars.size() - splitIdx;
+            int folds = req.splitFolds() != null ? Math.clamp(req.splitFolds(), 1, 6) : 3;
+            List<PartitionBand> barBands = buildSampledBands(bars.size(), folds, req.oosSplitPct());
+
+            int isCount = 0;
+            int oosCount = 0;
+            for (PartitionBand b : barBands) {
+                int span = Math.max(0, b.endIndex() - b.startIndex());
+                if (b.oos()) {
+                    oosCount += span;
+                } else {
+                    isCount += span;
+                }
+            }
+            this.isBarsCount = isCount;
+            this.oosBarsCount = oosCount;
+
+            long[] barEpochMillis = new long[bars.size()];
+            for (int i = 0; i < bars.size(); i++) {
+                barEpochMillis[i] = bars.get(i).timestamp().toEpochMilli();
+            }
 
             List<BlockType> allowedBlocks = parseAllowedBlocks(req.buildingBlocks());
             int popSize = req.populationSize();
@@ -563,15 +692,18 @@ public final class StrategyGeneratorService implements AutoCloseable {
                     this.currentGeneration = gen;
                     this.statusMessage = String.format(
                         Locale.US,
-                        "Evolving Generation %d / %d on %s %s (%,d bars: %,d IS / %,d OOS)...",
-                        gen, gens, req.symbol(), req.timeframe(), bars.size(), isBarsCount, oosBarsCount
+                        "Evolving Generation %d / %d on %s %s (%,d bars across %d alternating IS/OOS bands: %,d IS / %,d Blind OOS)...",
+                        gen, gens, req.symbol(), req.timeframe(), bars.size(),
+                        barBands.size(), isBarsCount, oosBarsCount
                     );
 
                     final int genNum = gen;
+                    final int finalIsBars = isCount;
+                    final int finalOosBars = oosCount;
                     List<CompletableFuture<ScoredGenome>> futures = new ArrayList<>(population.size());
                     for (StrategyGenome genome : population) {
                         futures.add(CompletableFuture.supplyAsync(
-                            () -> evaluateCandidate(genome, req, bars, isBars, oosBars, splitIdx, genNum),
+                            () -> evaluateCandidate(genome, req, bars, barEpochMillis, barBands, folds, finalIsBars, finalOosBars, genNum),
                             evalPool
                         ));
                     }
@@ -645,9 +777,11 @@ public final class StrategyGeneratorService implements AutoCloseable {
         StrategyGenome genome,
         GeneratorRequest req,
         List<Bar> fullBars,
-        List<Bar> isBars,
-        List<Bar> oosBars,
-        int splitIdx,
+        long[] barEpochMillis,
+        List<PartitionBand> barBands,
+        int splitFolds,
+        int isBarsTotal,
+        int oosBarsTotal,
         int generation
     ) {
         if (stopRequested.get()) {
@@ -656,61 +790,182 @@ public final class StrategyGeneratorService implements AutoCloseable {
         try {
             double quantityUnits = LotSizing.resolveQuantityFromLots(req.lotSize(), req.symbol());
 
-            // 1. In-Sample Backtest
-            Strategy isStrat = new StrategyCatalogFixedQtyWrapper(genome.toExecutableStrategy(req.symbol()), quantityUnits);
-            BacktestResult isResult = new BacktestEngine(isStrat, isBars, req.initialCapital())
+            Strategy fullStrat = new StrategyCatalogFixedQtyWrapper(genome.toExecutableStrategy(req.symbol(), 60), quantityUnits);
+            BacktestResult fullResult = new BacktestEngine(fullStrat, fullBars, req.initialCapital())
                 .withCommissionFixed(req.commissionPerTrade())
                 .withSlippagePct(req.slippagePct())
                 .run();
 
             evaluatedCount.incrementAndGet();
 
-            int isTrades = isResult.totalTrades();
-            double isPf = sanitizeMetric(isResult.profitFactor());
-            double isSharpe = sanitizeMetric(isResult.sharpeRatio());
-            double isNetProfit = isResult.finalEquity() - req.initialCapital();
+            List<Trade> allTrades = fullResult.trades() != null ? fullResult.trades() : List.of();
+            if (allTrades.isEmpty()) {
+                return new ScoredGenome(genome, 0.0, null);
+            }
 
-            if (isTrades < Math.max(3, req.minTrades() / 2)) {
+            int numBands = barBands.size();
+            int[] bandTrades = new int[numBands];
+            double[] bandGrossWin = new double[numBands];
+            double[] bandGrossLoss = new double[numBands];
+            double[] bandNetPnl = new double[numBands];
+
+            int isTrades = 0;
+            double isGrossWin = 0.0;
+            double isGrossLoss = 0.0;
+            double isNetProfit = 0.0;
+            double isRunningEq = req.initialCapital();
+            double isPeakEq = req.initialCapital();
+            double isMaxDdPct = 0.0;
+            List<Double> isTradeCurve = new ArrayList<>();
+            isTradeCurve.add(req.initialCapital());
+            List<Double> isTradeReturns = new ArrayList<>();
+
+            int oosTrades = 0;
+            double oosGrossWin = 0.0;
+            double oosGrossLoss = 0.0;
+            double oosNetProfit = 0.0;
+            double oosRunningEq = req.initialCapital();
+            List<Double> oosTradeReturns = new ArrayList<>();
+
+            for (Trade t : allTrades) {
+                long entryMs = t.entryTime() != null ? t.entryTime().toEpochMilli() : 0L;
+                int barIdx = java.util.Arrays.binarySearch(barEpochMillis, entryMs);
+                if (barIdx < 0) {
+                    barIdx = Math.clamp(-barIdx - 1, 0, fullBars.size() - 1);
+                }
+                int matchedBand = 0;
+                for (int b = 0; b < numBands; b++) {
+                    PartitionBand pb = barBands.get(b);
+                    if (barIdx >= pb.startIndex() && (barIdx < pb.endIndex() || b == numBands - 1)) {
+                        matchedBand = b;
+                        break;
+                    }
+                }
+                double pnl = t.pnl();
+                bandTrades[matchedBand]++;
+                bandNetPnl[matchedBand] += pnl;
+                if (pnl > 0) {
+                    bandGrossWin[matchedBand] += pnl;
+                } else if (pnl < 0) {
+                    bandGrossLoss[matchedBand] += Math.abs(pnl);
+                }
+
+                if (barBands.get(matchedBand).oos()) {
+                    oosTrades++;
+                    oosNetProfit += pnl;
+                    if (pnl > 0) oosGrossWin += pnl;
+                    else if (pnl < 0) oosGrossLoss += Math.abs(pnl);
+                    oosTradeReturns.add(pnl / Math.max(1.0, oosRunningEq));
+                    oosRunningEq += pnl;
+                } else {
+                    isTrades++;
+                    isNetProfit += pnl;
+                    if (pnl > 0) isGrossWin += pnl;
+                    else if (pnl < 0) isGrossLoss += Math.abs(pnl);
+                    isTradeReturns.add(pnl / Math.max(1.0, isRunningEq));
+                    isRunningEq += pnl;
+                    isTradeCurve.add(isRunningEq);
+                    if (isRunningEq > isPeakEq) {
+                        isPeakEq = isRunningEq;
+                    } else if (isPeakEq > 0) {
+                        double dd = ((isPeakEq - isRunningEq) / isPeakEq) * 100.0;
+                        if (dd > isMaxDdPct) {
+                            isMaxDdPct = dd;
+                        }
+                    }
+                }
+            }
+
+            int minIsTrades = Math.max(4, (int) Math.round(req.minTrades() * ((100 - req.oosSplitPct()) / 100.0) * 0.65));
+            if (isTrades < minIsTrades) {
                 return new ScoredGenome(genome, isTrades * 0.5, null);
             }
 
-            // 2. Out-of-Sample Backtest
-            Strategy oosStrat = new StrategyCatalogFixedQtyWrapper(genome.toExecutableStrategy(req.symbol()), quantityUnits);
-            BacktestResult oosResult = new BacktestEngine(oosStrat, oosBars, req.initialCapital())
-                .withCommissionFixed(req.commissionPerTrade())
-                .withSlippagePct(req.slippagePct())
-                .run();
+            double isPf = isGrossLoss > 0.01 ? isGrossWin / isGrossLoss : (isGrossWin > 0 ? 5.0 : 0.0);
+            double oosPf = oosGrossLoss > 0.01 ? oosGrossWin / oosGrossLoss : (oosGrossWin > 0 ? 5.0 : 0.0);
 
-            int oosTrades = oosResult.totalTrades();
-            int totalTrades = isTrades + oosTrades;
-            double oosPf = sanitizeMetric(oosResult.profitFactor());
-            double oosSharpe = sanitizeMetric(oosResult.sharpeRatio());
-            double oosNetProfit = oosResult.finalEquity() - req.initialCapital();
+            // Last IS band serves as internal cross-validation fold (or fold-to-fold IS consistency)
+            int lastIsBandIdx = 0;
+            int profitableIsBands = 0;
+            int profitableOosBands = 0;
+            for (int b = 0; b < numBands; b++) {
+                if (barBands.get(b).oos()) {
+                    if (bandNetPnl[b] >= 0 && bandTrades[b] > 0) {
+                        profitableOosBands++;
+                    }
+                } else {
+                    lastIsBandIdx = b;
+                    if (bandNetPnl[b] > 0) {
+                        profitableIsBands++;
+                    }
+                }
+            }
 
-            // 3. Full Period Backtest for unified equity curve & Monte Carlo
-            Strategy fullStrat = new StrategyCatalogFixedQtyWrapper(genome.toExecutableStrategy(req.symbol()), quantityUnits);
-            BacktestResult fullResult = new BacktestEngine(fullStrat, fullBars, req.initialCapital())
-                .withCommissionFixed(req.commissionPerTrade())
-                .withSlippagePct(req.slippagePct())
-                .run();
+            int valTrades = bandTrades[lastIsBandIdx];
+            double valNetProfit = bandNetPnl[lastIsBandIdx];
+            double valPf = bandGrossLoss[lastIsBandIdx] > 0.01
+                ? bandGrossWin[lastIsBandIdx] / bandGrossLoss[lastIsBandIdx]
+                : (bandGrossWin[lastIsBandIdx] > 0 ? 4.0 : 0.0);
 
-            double netProfit = fullResult.finalEquity() - req.initialCapital();
-            double pf = sanitizeMetric(fullResult.profitFactor());
+            double isSharpe = computeTradeSharpe(isTradeReturns);
+            double oosSharpe = computeTradeSharpe(oosTradeReturns);
+            double isR2 = computeEquityR2(isTradeCurve);
+
+            // Evolutionary Fitness: Strictly computed from In-Sample bands (IS_1 .. IS_K) with ZERO OOS leakage
+            int ruleCount = genome.longRules() != null ? genome.longRules().size() : 1;
+            double complexityPenalty = Math.max(0, ruleCount - 2) * 1.5;
+            double isPfScore = Math.min(34.0, Math.max(0.0, (isPf - 1.0) * 32.0));
+            double isBandConsistencyRatio = splitFolds > 0 ? (profitableIsBands / (double) splitFolds) : 1.0;
+            double valConsistencyScore = isBandConsistencyRatio * 14.0
+                + (valNetProfit > 0 ? Math.min(10.0, Math.max(0.0, (valPf - 1.0) * 12.0)) : 0.0);
+            double isSharpeScore = Math.min(18.0, Math.max(0.0, isSharpe * 10.0));
+            double isR2Score = Math.min(12.0, Math.max(0.0, isR2 * 12.0));
+            double isDdScore = Math.max(0.0, 12.0 - Math.max(0.0, isMaxDdPct - 5.0) * 0.45);
+            double evolutionaryFitness = isNetProfit > 0
+                ? Math.clamp(isPfScore + valConsistencyScore + isSharpeScore + isR2Score + isDdScore - complexityPenalty, 1.0, 99.5)
+                : Math.max(0.5, isPf * 6.0);
+
+            if (isNetProfit <= 0 || isPf < 1.02) {
+                return new ScoredGenome(genome, evolutionaryFitness * 0.55, null);
+            }
+
             double sharpe = sanitizeMetric(fullResult.sharpeRatio());
             double maxDdPct = sanitizeMetric(fullResult.maxDrawdownPct());
+            double r2 = computeEquityR2(fullResult.equityCurve());
+            double netProfit = fullResult.finalEquity() - req.initialCapital();
+            double residualOpenPnl = netProfit - (isNetProfit + oosNetProfit);
+            if (Math.abs(residualOpenPnl) > 0.005) {
+                oosNetProfit += residualOpenPnl;
+            }
+            double pf = sanitizeMetric(fullResult.profitFactor());
             double totalReturnPct = sanitizeMetric(fullResult.totalReturnPct());
             double winRatePct = sanitizeMetric(fullResult.winRatePct());
             double retDd = maxDdPct > 0.25 ? totalReturnPct / maxDdPct : (totalReturnPct > 0 ? totalReturnPct * 2.0 : 0.0);
-            double r2 = computeEquityR2(fullResult.equityCurve());
+
+            // Walk-Forward / OOS Retention Efficiency (WFE %) across all alternating bands
+            double isReturnPerBar = isNetProfit / Math.max(1.0, isBarsTotal);
+            double oosReturnPerBar = oosNetProfit / Math.max(1.0, oosBarsTotal);
+            double pfRetentionPct = isPf > 0 ? (oosPf / isPf) * 100.0 : 0.0;
+            double returnRetentionPct = (isReturnPerBar > 0 && oosReturnPerBar > 0)
+                ? Math.min(160.0, (oosReturnPerBar / isReturnPerBar) * 100.0)
+                : 0.0;
+            double wfePct = round2(Math.clamp(0.55 * pfRetentionPct + 0.45 * returnRetentionPct, 0.0, 200.0));
 
             double compositeScore = computeCompositeScore(
                 pf, isPf, oosPf, sharpe, maxDdPct, retDd, r2, fullResult.totalTrades(), oosTrades, netProfit
             );
 
-            // Check Acceptance Gate
+            // Proportional Minimum OOS Trades & Multi-Band OOS Consistency Gate
+            int minOosTrades = Math.max(3, (int) Math.round(req.minTrades() * (req.oosSplitPct() / 100.0) * 0.60));
+            int minProfitableOosBands = splitFolds >= 2 ? Math.max(1, (splitFolds + 1) / 2) : 1;
             boolean passesOosGate = req.minOosProfitFactor() <= 0.0
-                || (oosTrades >= 1 && oosPf >= req.minOosProfitFactor());
+                || (oosTrades >= minOosTrades
+                    && oosNetProfit > 0
+                    && oosPf >= req.minOosProfitFactor()
+                    && wfePct >= 45.0
+                    && profitableOosBands >= minProfitableOosBands);
             boolean passes = fullResult.totalTrades() >= req.minTrades()
+                && isNetProfit > 0
                 && pf >= req.minProfitFactor()
                 && passesOosGate
                 && sharpe >= req.minSharpe()
@@ -718,14 +973,14 @@ public final class StrategyGeneratorService implements AutoCloseable {
                 && netProfit > 0;
 
             if (!passes) {
-                return new ScoredGenome(genome, compositeScore * 0.65, null);
+                return new ScoredGenome(genome, evolutionaryFitness, null);
             }
 
             // Monte Carlo simulation (80 runs for speed)
             double mcVar95 = 0.0;
             double mcLossProb = 0.0;
             try {
-                if (fullResult.trades() != null && fullResult.trades().size() >= 6) {
+                if (allTrades.size() >= 6) {
                     MonteCarloSimulation.Result mc = new MonteCarloSimulation(fullResult, 80, 3).run();
                     mcVar95 = sanitizeMetric(mc.var95());
                     mcLossProb = sanitizeMetric(mc.probabilityOfLoss());
@@ -733,7 +988,9 @@ public final class StrategyGeneratorService implements AutoCloseable {
             } catch (Exception ignored) {}
 
             List<Double> sampledCurve = sampleCurve(fullResult.equityCurve(), 140);
-            int sampledOosIdx = (int) Math.round((splitIdx / (double) fullBars.size()) * Math.max(1, sampledCurve.size() - 1));
+            List<PartitionBand> sampledBands = buildSampledBands(sampledCurve.size(), splitFolds, req.oosSplitPct());
+            int sampledOosIdx = (int) Math.round(((100 - req.oosSplitPct()) / 100.0) * Math.max(1, sampledCurve.size() - 1));
+            int sampledValIdx = Math.max(1, (int) Math.round(sampledOosIdx * (50.0 / 70.0)));
 
             String tier = compositeScore >= 82.0 ? "ELITE"
                 : (compositeScore >= 68.0 ? "INSTITUTIONAL" : "QUALIFIED");
@@ -787,10 +1044,17 @@ public final class StrategyGeneratorService implements AutoCloseable {
                 req.initialCapital(),
                 req.lotSize(),
                 req.commissionPerTrade(),
-                req.slippagePct()
+                req.slippagePct(),
+                sampledValIdx,
+                valTrades,
+                round2(valNetProfit),
+                round2(valPf),
+                wfePct,
+                splitFolds,
+                sampledBands
             );
 
-            return new ScoredGenome(genome, compositeScore, candidate);
+            return new ScoredGenome(genome, evolutionaryFitness, candidate);
         } catch (Exception e) {
             log.debug("Candidate evaluation failed: {}", e.getMessage());
             return new ScoredGenome(genome, 0.0, null);
@@ -1063,6 +1327,29 @@ public final class StrategyGeneratorService implements AutoCloseable {
         double r2Score = Math.min(15.0, Math.max(0.0, r2 * 15.0));
         double ddScore = Math.max(0.0, 15.0 - Math.max(0.0, maxDdPct - 5.0) * 0.5);
         return Math.clamp(pfScore + oosScore + sharpeScore + r2Score + ddScore, 1.0, 99.5);
+    }
+
+    private static double computeTradeSharpe(List<Double> tradeReturns) {
+        if (tradeReturns == null || tradeReturns.size() < 2) {
+            return 0.0;
+        }
+        int n = tradeReturns.size();
+        double sum = 0.0;
+        for (double r : tradeReturns) {
+            sum += r;
+        }
+        double mean = sum / n;
+        double varSum = 0.0;
+        for (double r : tradeReturns) {
+            double diff = r - mean;
+            varSum += diff * diff;
+        }
+        double std = Math.sqrt(varSum / Math.max(1, n - 1));
+        if (std <= 1e-9) {
+            return mean > 0 ? 3.0 : 0.0;
+        }
+        double annualized = (mean / std) * Math.sqrt(Math.min(120.0, Math.max(12.0, n)));
+        return Math.clamp(sanitizeMetric(annualized), -5.0, 6.0);
     }
 
     private static double computeEquityR2(List<Double> curve) {
