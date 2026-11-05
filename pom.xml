@@ -35,7 +35,19 @@
         <langchain4j.version>0.33.0</langchain4j.version>
         <hikaricp.version>5.1.0</hikaricp.version>
         <mockito.version>5.11.0</mockito.version>
+        <tws-api.version>1045.01</tws-api.version>
     </properties>
+
+    <repositories>
+        <!-- Repo-local Maven repository for artifacts not published to Maven Central
+             (Interactive Brokers TWS API). See third-party/README.md. -->
+        <repository>
+            <id>local-third-party</id>
+            <url>file://${maven.multiModuleProjectDirectory}/third-party/m2</url>
+            <releases><enabled>true</enabled></releases>
+            <snapshots><enabled>false</enabled></snapshots>
+        </repository>
+    </repositories>
 
     <dependencyManagement>
         <dependencies>
@@ -141,6 +153,11 @@
                 <groupId>org.ta4j</groupId>
                 <artifactId>ta4j-core</artifactId>
                 <version>0.18</version>
+            </dependency>
+            <dependency>
+                <groupId>com.interactivebrokers</groupId>
+                <artifactId>tws-api</artifactId>
+                <version>${tws-api.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

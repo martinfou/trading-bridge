@@ -1,6 +1,7 @@
 FROM maven:3-eclipse-temurin-21 AS build
 WORKDIR /app
 COPY pom.xml .
+COPY third-party/ third-party/
 COPY trading-core/pom.xml trading-core/
 COPY trading-backtest/pom.xml trading-backtest/
 COPY trading-genetics/pom.xml trading-genetics/

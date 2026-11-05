@@ -144,3 +144,6 @@ data/state/
 
 # IBKR futures lane persistent state & fill logs (Story 46.11 / F4)
 data-futures/
+
+# Repo-local Maven repo for artifacts not on Maven Central (see third-party/README.md)
+!third-party/m2/**/*.jar

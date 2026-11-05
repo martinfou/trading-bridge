@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata>
+  <groupId>com.interactivebrokers</groupId>
+  <artifactId>tws-api</artifactId>
+  <versioning>
+    <release>1045.01</release>
+    <versions>
+      <version>1045.01</version>
+    </versions>
+    <lastUpdated>20261105192450</lastUpdated>
+  </versioning>
+</metadata>

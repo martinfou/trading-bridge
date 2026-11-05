@@ -96,7 +96,8 @@ class IbkrOrderRefGateTest {
 
     private Path repositoryRoot() {
         Path current = Paths.get("").toAbsolutePath();
-        while (current != null && !Files.isDirectory(current.resolve(".git"))) {
+        // exists() rather than isDirectory(): in a git worktree or submodule, .git is a file.
+        while (current != null && !Files.exists(current.resolve(".git"))) {
             current = current.getParent();
         }
         if (current == null) {

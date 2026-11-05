@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.interactivebrokers</groupId>
+  <artifactId>tws-api</artifactId>
+  <version>1045.01</version>
+  <name>Interactive Brokers TWS API (official Java client, unmodified)</name>
+  <description>Built from the official IB TWS API v1045.01 Java sources. IB does not publish to Maven Central.</description>
+  <dependencies>
+    <dependency>
+      <groupId>com.google.protobuf</groupId>
+      <artifactId>protobuf-java</artifactId>
+      <version>4.29.5</version>
+    </dependency>
+  </dependencies>
+</project>
