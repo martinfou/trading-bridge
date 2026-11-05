@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useControlPlaneConfig } from '@/composables/controlPlaneConfig'
+import { useCostPresets } from '@/composables/useCostPresets'
 import { useStatusBar } from '@/composables/useStatusBar'
 import { useStrategyCatalog } from '@/composables/useStrategyCatalog'
 import EquityChart from '@/components/EquityChart.vue'
@@ -47,6 +48,10 @@ interface DatabankCandidate {
   equityCurve: number[]
   oosStartIndex: number
   javaSourceCode: string
+  initialCapital?: number
+  lotSize?: number
+  commissionPerTrade?: number
+  slippagePct?: number
 }
 
 interface GeneratorStatus {
@@ -70,6 +75,7 @@ interface GeneratorStatus {
 
 const router = useRouter()
 const { controlPlaneUrl } = useControlPlaneConfig()
+const { getPresetForSymbol } = useCostPresets()
 const { setStatus } = useStatusBar()
 const { fetchCatalog } = useStrategyCatalog()
 
@@ -88,12 +94,22 @@ const generations = ref(10)
 const minTrades = ref(12)
 const minProfitFactor = ref(1.15)
 const minOosProfitFactor = ref(1.02)
-const minSharpe = ref(0.40)
+const minSharpe = ref(0.30)
 const maxDrawdownPct = ref(25.0)
 const initialCapital = ref(10000)
 const lotSize = ref(1.0)
 const commissionPerTrade = ref(0.62)
 const slippagePct = ref(0.00005)
+
+const activePreset = computed(() => getPresetForSymbol(symbol.value))
+
+watch(symbol, (newSym) => {
+  const preset = getPresetForSymbol(newSym)
+  initialCapital.value = preset.capital
+  lotSize.value = preset.lotSize
+  commissionPerTrade.value = preset.commissionPerTrade
+  slippagePct.value = preset.slippagePct
+})
 
 interface BuildingBlockMeta {
   id: string
@@ -301,6 +317,7 @@ function applyPreset(preset: 'mgc' | 'mnq' | 'mes' | 'aapl' | 'eurusd' | 'gbpjpy
     initialCapital.value = 10000
     lotSize.value = 1.0
     commissionPerTrade.value = 0.62
+    slippagePct.value = 0.00005
   } else if (preset === 'mnq') {
     symbol.value = 'MNQ'
     timeframe.value = 'M15'
@@ -310,6 +327,7 @@ function applyPreset(preset: 'mgc' | 'mnq' | 'mes' | 'aapl' | 'eurusd' | 'gbpjpy
     initialCapital.value = 10000
     lotSize.value = 1.0
     commissionPerTrade.value = 0.62
+    slippagePct.value = 0.00005
   } else if (preset === 'mes') {
     symbol.value = 'MES'
     timeframe.value = 'H1'
@@ -319,6 +337,7 @@ function applyPreset(preset: 'mgc' | 'mnq' | 'mes' | 'aapl' | 'eurusd' | 'gbpjpy
     initialCapital.value = 10000
     lotSize.value = 1.0
     commissionPerTrade.value = 0.62
+    slippagePct.value = 0.00005
   } else if (preset === 'aapl') {
     symbol.value = 'AAPL'
     timeframe.value = 'M30'
@@ -326,8 +345,9 @@ function applyPreset(preset: 'mgc' | 'mnq' | 'mes' | 'aapl' | 'eurusd' | 'gbpjpy
     archetype.value = 'MOMENTUM'
     entryOrderType.value = 'ALL'
     initialCapital.value = 10000
-    lotSize.value = 1.0
-    commissionPerTrade.value = 0.50
+    lotSize.value = 10.0
+    commissionPerTrade.value = 1.00
+    slippagePct.value = 0.0002
   } else if (preset === 'eurusd') {
     symbol.value = 'EUR_USD'
     timeframe.value = 'H1'
@@ -335,8 +355,9 @@ function applyPreset(preset: 'mgc' | 'mnq' | 'mes' | 'aapl' | 'eurusd' | 'gbpjpy
     archetype.value = 'TREND_FOLLOWING'
     entryOrderType.value = 'MARKET'
     initialCapital.value = 10000
-    lotSize.value = 0.1
+    lotSize.value = 0.10
     commissionPerTrade.value = 0.70
+    slippagePct.value = 0.00005
   } else if (preset === 'gbpjpy') {
     symbol.value = 'GBP_JPY'
     timeframe.value = 'H1'
@@ -344,8 +365,9 @@ function applyPreset(preset: 'mgc' | 'mnq' | 'mes' | 'aapl' | 'eurusd' | 'gbpjpy
     archetype.value = 'BREAKOUT'
     entryOrderType.value = 'STOP'
     initialCapital.value = 10000
-    lotSize.value = 0.1
+    lotSize.value = 0.10
     commissionPerTrade.value = 0.70
+    slippagePct.value = 0.00005
   }
 }
 
@@ -606,7 +628,19 @@ async function openInDashboard(candidate: DatabankCandidate) {
       }
     }
     await fetchCatalog(true).catch(() => {})
-    router.push({ path: '/dashboard', query: { strategyId: candidate.id, symbol: candidate.symbol } })
+    const fallbackPreset = getPresetForSymbol(candidate.symbol)
+    router.push({
+      path: '/dashboard',
+      query: {
+        strategyId: candidate.id,
+        symbol: candidate.symbol,
+        timeframe: candidate.timeframe,
+        capital: String(candidate.initialCapital ?? fallbackPreset.capital),
+        lotSize: String(candidate.lotSize ?? fallbackPreset.lotSize),
+        commission: String(candidate.commissionPerTrade ?? fallbackPreset.commissionPerTrade),
+        slippage: String(candidate.slippagePct ?? fallbackPreset.slippagePct),
+      }
+    })
   } catch (err: any) {
     setStatus(err.message || 'Failed to open strategy in Dashboard', 'error')
   } finally {
@@ -1074,8 +1108,14 @@ onUnmounted(() => {
               <input type="number" v-model.number="initialCapital" step="1000" :disabled="status.running" />
             </div>
             <div class="field">
-              <label>Order Size (Lots / Qty)</label>
-              <input type="number" v-model.number="lotSize" step="0.01" :disabled="status.running" />
+              <label>Order Size ({{ activePreset.unitLabel }})</label>
+              <input
+                type="number"
+                v-model.number="lotSize"
+                :step="activePreset.assetClass === 'FOREX' ? 0.01 : 1"
+                :min="activePreset.assetClass === 'FOREX' ? 0.01 : 1"
+                :disabled="status.running"
+              />
             </div>
           </div>
         </section>
@@ -1534,7 +1574,10 @@ onUnmounted(() => {
             </div>
             <p class="insp-sub">
               <strong>{{ selectedCandidate.symbol }}</strong> · {{ selectedCandidate.timeframe }} ({{ selectedCandidate.yearSpec }}) ·
-              Generation #{{ selectedCandidate.generationFound }}
+              Gen #{{ selectedCandidate.generationFound }} ·
+              {{ formatMoney(selectedCandidate.initialCapital || getPresetForSymbol(selectedCandidate.symbol).capital) }} Cap ·
+              {{ selectedCandidate.lotSize ?? getPresetForSymbol(selectedCandidate.symbol).lotSize }} Lot/Qty ·
+              ${{ (selectedCandidate.commissionPerTrade ?? getPresetForSymbol(selectedCandidate.symbol).commissionPerTrade).toFixed(2) }} Comm
             </p>
           </div>
           <div class="insp-actions">

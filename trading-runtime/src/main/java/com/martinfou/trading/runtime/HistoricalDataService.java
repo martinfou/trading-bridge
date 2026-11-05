@@ -449,17 +449,32 @@ public final class HistoricalDataService implements AutoCloseable {
 
     public static List<Bar> generateMultiAssetBars(String symbol, int year, String tf) {
         List<Bar> bars = new ArrayList<>();
-        double basePrice = switch (symbol.toUpperCase()) {
-            case "MES", "SPY" -> 4200.0 + (year - 2015) * 120.0;
-            case "MNQ", "QQQ" -> 14500.0 + (year - 2015) * 450.0;
-            case "M2K", "IWM", "IJR", "VB", "SCHA" -> 190.0 + (year - 2015) * 6.0;
+        String normSym = symbol == null ? "MGC" : symbol.trim().toUpperCase(Locale.ROOT).replace('/', '_');
+        double basePrice = switch (normSym) {
+            case "MES", "ES", "SPY" -> 4200.0 + (year - 2015) * 120.0;
+            case "MNQ", "NQ", "QQQ" -> 14500.0 + (year - 2015) * 450.0;
+            case "M2K", "RTY", "IWM", "IJR", "VB", "SCHA" -> 190.0 + (year - 2015) * 6.0;
             case "EMD", "MDY" -> 2600.0 + (year - 2015) * 60.0;
-            case "MGC", "GC" -> 2000.0 + (year - 2015) * 80.0;
+            case "MGC", "GC", "XAU_USD" -> 2000.0 + (year - 2015) * 80.0;
             case "AAPL" -> 150.0 + (year - 2015) * 10.0;
-            case "NVDA", "TSLA", "PLTR", "SOXL" -> 120.0 + (year - 2015) * 15.0;
+            case "NVDA", "TSLA", "PLTR", "SOXL", "MSFT", "AMZN", "META", "GOOGL", "AMD", "NFLX", "JPM" -> 120.0 + (year - 2015) * 15.0;
+            case "EUR_USD" -> 1.0850;
+            case "GBP_USD" -> 1.2750;
+            case "USD_JPY" -> 148.0;
+            case "GBP_JPY" -> 188.0;
+            case "EUR_JPY" -> 162.0;
+            case "AUD_USD" -> 0.6600;
+            case "NZD_USD" -> 0.6050;
+            case "USD_CAD" -> 1.3600;
+            case "USD_CHF" -> 0.8850;
             default -> 100.0 + (year - 2015) * 5.0;
         };
-        if (basePrice < 10.0) basePrice = 10.0;
+        boolean isQuoteUnderFive = switch (normSym) {
+            case "EUR_USD", "GBP_USD", "AUD_USD", "NZD_USD", "USD_CAD", "USD_CHF", "EUR_GBP" -> true;
+            default -> false;
+        };
+        double minFloor = isQuoteUnderFive ? Math.max(0.10, basePrice * 0.4) : 10.0;
+        if (basePrice < minFloor) basePrice = minFloor;
 
         Random rand = new Random(Objects.hash(symbol, year, tf));
         LocalDate date = LocalDate.of(year, 1, 1);
@@ -494,11 +509,11 @@ public final class HistoricalDataService implements AutoCloseable {
                 Instant dayStart = date.atTime(8, 0).toInstant(ZoneOffset.UTC);
                 for (int i = 0; i < barsPerDay; i++) {
                     Instant barTime = dayStart.plusSeconds(i * stepSeconds);
-                    double drift = (rand.nextDouble() - 0.495) * (basePrice * 0.003);
+                    double drift = (rand.nextDouble() - 0.495) * (basePrice * 0.0025);
                     double open = currentPrice;
-                    double close = Math.max(1.0, open + drift);
-                    double high = Math.max(open, close) + rand.nextDouble() * (basePrice * 0.0015);
-                    double low = Math.min(open, close) - rand.nextDouble() * (basePrice * 0.0015);
+                    double close = Math.max(minFloor, open + drift);
+                    double high = Math.max(open, close) + rand.nextDouble() * (basePrice * 0.0012);
+                    double low = Math.max(minFloor * 0.5, Math.min(open, close) - rand.nextDouble() * (basePrice * 0.0012));
                     long vol = 500 + rand.nextInt(2500);
 
                     bars.add(new Bar(symbol, barTime, open, high, low, close, vol));

@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useControlPlaneConfig } from '@/composables/controlPlaneConfig'
 import { useControlPlane } from '@/composables/useControlPlane'
+import { useCostPresets } from '@/composables/useCostPresets'
 import type { InstrumentDefinition } from '@/types/control-plane'
 import WfaTimeline from '@/components/WfaTimeline.vue'
 import WfaParameterStability from '@/components/WfaParameterStability.vue'
@@ -24,6 +25,7 @@ import {
 
 const { controlPlaneUrl } = useControlPlaneConfig()
 const { getInstruments } = useControlPlane()
+const { getPresetForSymbol } = useCostPresets()
 
 // ── State ─────────────────────────────────────────────────────────────
 const selectedStrategy = ref('LtCrossMomentum')
@@ -34,6 +36,11 @@ const inSampleDays = ref(180)
 const outOfSampleDays = ref(60)
 const isAnchored = ref(false)
 const initialCapital = ref(10000)
+
+watch(selectedSymbol, (newSym) => {
+  const preset = getPresetForSymbol(newSym)
+  initialCapital.value = preset.capital
+})
 
 interface ParamRange {
   name: string
@@ -89,6 +96,8 @@ const symbolsByAssetClass = computed(() => {
 
   return {
     FUTURES: futures.length > 0 ? futures : [
+      { symbol: 'MGC', name: 'Micro Gold ($10/oz)', badge: 'Futures' },
+      { symbol: 'GC', name: 'Gold Futures ($100/oz)', badge: 'Futures' },
       { symbol: 'MES', name: 'Micro E-mini S&P 500 ($5/pt)', badge: 'Futures' },
       { symbol: 'M2K', name: 'Micro Russell 2000 Small Cap ($5/pt)', badge: 'Futures' },
       { symbol: 'EMD', name: 'E-mini S&P MidCap 400 ($100/pt)', badge: 'Futures' },

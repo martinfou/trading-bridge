@@ -10,6 +10,11 @@ import { RotateCcw, AlertTriangle, Zap } from '@lucide/vue'
 const props = defineProps<{
   preselectedStrategy?: string
   preselectedSymbol?: string
+  preselectedCapital?: number
+  preselectedLotSize?: number
+  preselectedCommission?: number
+  preselectedSlippage?: number
+  preselectedTimeframe?: string
   isDownloading?: boolean
 }>()
 
@@ -32,31 +37,35 @@ export interface FormInstrument {
 const DEFAULT_INSTRUMENTS: FormInstrument[] = [
   // CME Micro & Mini Futures
   { symbol: 'MGC', displayName: 'MGC — Micro Gold ($10/oz)', assetClass: 'FUTURES', defaultCapital: 10000, defaultLotSize: 1, defaultCommission: 0.62 },
-  { symbol: 'GC', displayName: 'GC — Gold Futures ($100/oz)', assetClass: 'FUTURES', defaultCapital: 50000, defaultLotSize: 1, defaultCommission: 1.50 },
-  { symbol: 'MES', displayName: 'MES — Micro E-mini S&P 500 ($5/pt)', assetClass: 'FUTURES', defaultCapital: 50000, defaultLotSize: 1, defaultCommission: 0.62 },
-  { symbol: 'MNQ', displayName: 'MNQ — Micro E-mini Nasdaq 100 ($2/pt)', assetClass: 'FUTURES', defaultCapital: 50000, defaultLotSize: 1, defaultCommission: 0.62 },
-  { symbol: 'M2K', displayName: 'M2K — Micro E-mini Russell 2000 ($5/pt)', assetClass: 'FUTURES', defaultCapital: 50000, defaultLotSize: 1, defaultCommission: 0.62 },
-  { symbol: 'EMD', displayName: 'EMD — E-mini S&P MidCap 400 ($100/pt)', assetClass: 'FUTURES', defaultCapital: 50000, defaultLotSize: 1, defaultCommission: 1.25 },
+  { symbol: 'GC', displayName: 'GC — Gold Futures ($100/oz)', assetClass: 'FUTURES', defaultCapital: 50000, defaultLotSize: 1, defaultCommission: 2.10 },
+  { symbol: 'MES', displayName: 'MES — Micro E-mini S&P 500 ($5/pt)', assetClass: 'FUTURES', defaultCapital: 10000, defaultLotSize: 1, defaultCommission: 0.62 },
+  { symbol: 'MNQ', displayName: 'MNQ — Micro E-mini Nasdaq 100 ($2/pt)', assetClass: 'FUTURES', defaultCapital: 10000, defaultLotSize: 1, defaultCommission: 0.62 },
+  { symbol: 'M2K', displayName: 'M2K — Micro E-mini Russell 2000 ($5/pt)', assetClass: 'FUTURES', defaultCapital: 10000, defaultLotSize: 1, defaultCommission: 0.62 },
+  { symbol: 'EMD', displayName: 'EMD — E-mini S&P MidCap 400 ($100/pt)', assetClass: 'FUTURES', defaultCapital: 50000, defaultLotSize: 1, defaultCommission: 2.10 },
 
   // Forex Majors & Crosses
-  { symbol: 'EUR/USD', displayName: 'EUR/USD — Euro / US Dollar', assetClass: 'FOREX', defaultCapital: 1000, defaultLotSize: 0.01, defaultCommission: 0.07 },
-  { symbol: 'GBP/USD', displayName: 'GBP/USD — British Pound / US Dollar', assetClass: 'FOREX', defaultCapital: 1000, defaultLotSize: 0.01, defaultCommission: 0.07 },
-  { symbol: 'USD/JPY', displayName: 'USD/JPY — US Dollar / Japanese Yen', assetClass: 'FOREX', defaultCapital: 1000, defaultLotSize: 0.01, defaultCommission: 0.07 },
-  { symbol: 'USD/CHF', displayName: 'USD/CHF — US Dollar / Swiss Franc', assetClass: 'FOREX', defaultCapital: 1000, defaultLotSize: 0.01, defaultCommission: 0.07 },
-  { symbol: 'AUD/USD', displayName: 'AUD/USD — Australian Dollar / US Dollar', assetClass: 'FOREX', defaultCapital: 1000, defaultLotSize: 0.01, defaultCommission: 0.07 },
-  { symbol: 'NZD/USD', displayName: 'NZD/USD — New Zealand Dollar / US Dollar', assetClass: 'FOREX', defaultCapital: 1000, defaultLotSize: 0.01, defaultCommission: 0.07 },
-  { symbol: 'USD/CAD', displayName: 'USD/CAD — US Dollar / Canadian Dollar', assetClass: 'FOREX', defaultCapital: 1000, defaultLotSize: 0.01, defaultCommission: 0.07 },
-  { symbol: 'EUR/JPY', displayName: 'EUR/JPY — Euro / Japanese Yen', assetClass: 'FOREX', defaultCapital: 1000, defaultLotSize: 0.01, defaultCommission: 0.07 },
-  { symbol: 'GBP/JPY', displayName: 'GBP/JPY — British Pound / Japanese Yen', assetClass: 'FOREX', defaultCapital: 1000, defaultLotSize: 0.01, defaultCommission: 0.07 },
-  { symbol: 'XAU/USD', displayName: 'XAU/USD — Spot Gold', assetClass: 'FOREX', defaultCapital: 1000, defaultLotSize: 0.01, defaultCommission: 0.07 },
+  { symbol: 'EUR/USD', displayName: 'EUR/USD — Euro / US Dollar', assetClass: 'FOREX', defaultCapital: 10000, defaultLotSize: 0.10, defaultCommission: 0.70 },
+  { symbol: 'GBP/USD', displayName: 'GBP/USD — British Pound / US Dollar', assetClass: 'FOREX', defaultCapital: 10000, defaultLotSize: 0.10, defaultCommission: 0.70 },
+  { symbol: 'USD/JPY', displayName: 'USD/JPY — US Dollar / Japanese Yen', assetClass: 'FOREX', defaultCapital: 10000, defaultLotSize: 0.10, defaultCommission: 0.70 },
+  { symbol: 'USD/CHF', displayName: 'USD/CHF — US Dollar / Swiss Franc', assetClass: 'FOREX', defaultCapital: 10000, defaultLotSize: 0.10, defaultCommission: 0.70 },
+  { symbol: 'AUD/USD', displayName: 'AUD/USD — Australian Dollar / US Dollar', assetClass: 'FOREX', defaultCapital: 10000, defaultLotSize: 0.10, defaultCommission: 0.70 },
+  { symbol: 'NZD/USD', displayName: 'NZD/USD — New Zealand Dollar / US Dollar', assetClass: 'FOREX', defaultCapital: 10000, defaultLotSize: 0.10, defaultCommission: 0.70 },
+  { symbol: 'USD/CAD', displayName: 'USD/CAD — US Dollar / Canadian Dollar', assetClass: 'FOREX', defaultCapital: 10000, defaultLotSize: 0.10, defaultCommission: 0.70 },
+  { symbol: 'EUR/JPY', displayName: 'EUR/JPY — Euro / Japanese Yen', assetClass: 'FOREX', defaultCapital: 10000, defaultLotSize: 0.10, defaultCommission: 0.70 },
+  { symbol: 'GBP/JPY', displayName: 'GBP/JPY — British Pound / Japanese Yen', assetClass: 'FOREX', defaultCapital: 10000, defaultLotSize: 0.10, defaultCommission: 0.70 },
+  { symbol: 'XAU/USD', displayName: 'XAU/USD — Spot Gold', assetClass: 'FOREX', defaultCapital: 10000, defaultLotSize: 0.10, defaultCommission: 0.70 },
 
-  // US Small/Mid Cap Equities & ETFs
-  { symbol: 'IJR', displayName: 'IJR — iShares Core S&P Small-Cap ETF', assetClass: 'EQUITY', defaultCapital: 10000, defaultLotSize: 10, defaultCommission: 0.00 },
-  { symbol: 'VB', displayName: 'VB — Vanguard Small-Cap ETF', assetClass: 'EQUITY', defaultCapital: 10000, defaultLotSize: 10, defaultCommission: 0.00 },
-  { symbol: 'SCHA', displayName: 'SCHA — Schwab U.S. Small-Cap ETF', assetClass: 'EQUITY', defaultCapital: 10000, defaultLotSize: 10, defaultCommission: 0.00 },
-  { symbol: 'PLTR', displayName: 'PLTR — Palantir Technologies', assetClass: 'EQUITY', defaultCapital: 10000, defaultLotSize: 10, defaultCommission: 0.00 },
-  { symbol: 'TSLA', displayName: 'TSLA — Tesla Inc.', assetClass: 'EQUITY', defaultCapital: 10000, defaultLotSize: 10, defaultCommission: 0.00 },
-  { symbol: 'SOXL', displayName: 'SOXL — Direxion Daily Semi Bull 3X', assetClass: 'EQUITY', defaultCapital: 10000, defaultLotSize: 10, defaultCommission: 0.00 },
+  // US Equities & ETFs
+  { symbol: 'AAPL', displayName: 'AAPL — Apple Inc.', assetClass: 'EQUITY', defaultCapital: 10000, defaultLotSize: 10, defaultCommission: 1.00 },
+  { symbol: 'NVDA', displayName: 'NVDA — NVIDIA Corp.', assetClass: 'EQUITY', defaultCapital: 10000, defaultLotSize: 10, defaultCommission: 1.00 },
+  { symbol: 'SPY', displayName: 'SPY — SPDR S&P 500 ETF', assetClass: 'EQUITY', defaultCapital: 10000, defaultLotSize: 10, defaultCommission: 1.00 },
+  { symbol: 'QQQ', displayName: 'QQQ — Invesco QQQ Trust', assetClass: 'EQUITY', defaultCapital: 10000, defaultLotSize: 10, defaultCommission: 1.00 },
+  { symbol: 'IJR', displayName: 'IJR — iShares Core S&P Small-Cap ETF', assetClass: 'EQUITY', defaultCapital: 10000, defaultLotSize: 10, defaultCommission: 1.00 },
+  { symbol: 'VB', displayName: 'VB — Vanguard Small-Cap ETF', assetClass: 'EQUITY', defaultCapital: 10000, defaultLotSize: 10, defaultCommission: 1.00 },
+  { symbol: 'SCHA', displayName: 'SCHA — Schwab U.S. Small-Cap ETF', assetClass: 'EQUITY', defaultCapital: 10000, defaultLotSize: 10, defaultCommission: 1.00 },
+  { symbol: 'PLTR', displayName: 'PLTR — Palantir Technologies', assetClass: 'EQUITY', defaultCapital: 10000, defaultLotSize: 10, defaultCommission: 1.00 },
+  { symbol: 'TSLA', displayName: 'TSLA — Tesla Inc.', assetClass: 'EQUITY', defaultCapital: 10000, defaultLotSize: 10, defaultCommission: 1.00 },
+  { symbol: 'SOXL', displayName: 'SOXL — Direxion Daily Semi Bull 3X', assetClass: 'EQUITY', defaultCapital: 10000, defaultLotSize: 10, defaultCommission: 1.00 },
 ]
 
 const { getStrategies, startRun, loading, error, getBrokerAccounts, getInstruments, getHistoricalDataStatus } = useControlPlane()
@@ -98,10 +107,10 @@ const selectedStartYear = ref(2020)
 const selectedEndYear = ref(2025)
 
 const isCostUserModified = ref<boolean>(false)
-const capital = ref(1000)
-const lotSize = ref(0.01)
-const commission = ref(0.07)
-const slippage = ref(0.0001)
+const capital = ref(10000)
+const lotSize = ref(0.10)
+const commission = ref(0.70)
+const slippage = ref(0.00005)
 
 const activeCostPreset = computed(() => {
   if (selectedSymbols.value.length > 0) {
@@ -271,30 +280,57 @@ onMounted(async () => {
     if (savedEndYear) {
       selectedEndYear.value = parseInt(savedEndYear) || 2025
     }
-    const savedCapital = localStorage.getItem('bt_capital')
-    if (savedCapital) capital.value = parseInt(savedCapital) || 1000
-    const savedLotSize = localStorage.getItem('bt_lotSize')
-    if (savedLotSize) lotSize.value = parseFloat(savedLotSize) || 0.01
-    const savedCommission = localStorage.getItem('bt_commission')
-    if (savedCommission) commission.value = parseFloat(savedCommission) || 0.07
-    const savedSlippage = localStorage.getItem('bt_slippage')
-    if (savedSlippage) slippage.value = parseFloat(savedSlippage) || 0.0001
     const savedDataTf = localStorage.getItem('bt_dataTimeframe')
     if (savedDataTf) dataTimeframe.value = savedDataTf
     const savedStratTf = localStorage.getItem('bt_strategyTimeframe')
     if (savedStratTf) strategyTimeframe.value = savedStratTf
     const savedAccountId = localStorage.getItem('bt_accountId')
     if (savedAccountId) selectedAccountId.value = savedAccountId
+
+    if (props.preselectedTimeframe) {
+      strategyTimeframe.value = props.preselectedTimeframe
+      dataTimeframe.value = props.preselectedTimeframe
+    }
+
+    // Apply instrument defaults for the active symbol, then apply any explicit preselected overrides
+    applyCostPreset(true)
+    applyPreselectedOverridesIfActive()
   } catch (e: any) {
     emit('error', `Failed to load initialization data: ${e.message}`)
   }
 })
 
+const pendingPreselectedOverrides = ref(true)
+
+function applyPreselectedOverridesIfActive() {
+  if (!pendingPreselectedOverrides.value) return
+  if (props.preselectedCapital && props.preselectedCapital > 0) {
+    capital.value = props.preselectedCapital
+  }
+  if (props.preselectedLotSize && props.preselectedLotSize > 0) {
+    lotSize.value = props.preselectedLotSize
+  }
+  if (props.preselectedCommission !== undefined && props.preselectedCommission >= 0) {
+    commission.value = props.preselectedCommission
+  }
+  if (props.preselectedSlippage !== undefined && props.preselectedSlippage >= 0) {
+    slippage.value = props.preselectedSlippage
+  }
+}
+
+watch(
+  () => [props.preselectedSymbol, props.preselectedCapital, props.preselectedLotSize, props.preselectedCommission, props.preselectedSlippage],
+  () => {
+    pendingPreselectedOverrides.value = true
+    applyPreselectedOverridesIfActive()
+  },
+)
+
 // Setup watchers to save to localStorage
 watch(selectedStrategy, (val) => localStorage.setItem('bt_selectedStrategy', val))
-watch(selectedSymbols, (val) => {
+watch(selectedSymbols, (val, oldVal) => {
   localStorage.setItem('bt_selectedSymbols', JSON.stringify(val))
-  if (val.length === 1) {
+  if (val.length >= 1 && (!oldVal || val[0] !== oldVal[0])) {
     applyInstrumentDefaults(val[0])
   }
 }, { deep: true })
@@ -302,10 +338,6 @@ watch(yearSelectionMode, (val) => localStorage.setItem('bt_yearSelectionMode', v
 watch(selectedYear, (val) => localStorage.setItem('bt_selectedYear', val.toString()))
 watch(selectedStartYear, (val) => localStorage.setItem('bt_selectedStartYear', val.toString()))
 watch(selectedEndYear, (val) => localStorage.setItem('bt_selectedEndYear', val.toString()))
-watch(capital, (val) => localStorage.setItem('bt_capital', val.toString()))
-watch(lotSize, (val) => localStorage.setItem('bt_lotSize', val.toString()))
-watch(commission, (val) => localStorage.setItem('bt_commission', val.toString()))
-watch(slippage, (val) => localStorage.setItem('bt_slippage', val.toString()))
 watch(dataTimeframe, (val) => localStorage.setItem('bt_dataTimeframe', val))
 watch(strategyTimeframe, (val) => localStorage.setItem('bt_strategyTimeframe', val))
 watch(runMode, (val) => {
@@ -378,25 +410,40 @@ function applyCostPreset(force = false) {
 }
 
 function onManualCostInput() {
+  pendingPreselectedOverrides.value = false
   isCostUserModified.value = true
 }
 
 function resetToPreset() {
+  pendingPreselectedOverrides.value = false
   applyCostPreset(true)
 }
 
-function applyInstrumentDefaults(sym: string) {
-  applyCostPreset(false)
+function applyInstrumentDefaults(_sym: string) {
+  applyCostPreset(true)
+  if (
+    pendingPreselectedOverrides.value &&
+    props.preselectedSymbol &&
+    _sym.replace('/', '_') === props.preselectedSymbol.replace('/', '_')
+  ) {
+    applyPreselectedOverridesIfActive()
+  } else {
+    pendingPreselectedOverrides.value = false
+  }
 }
 
 function toggleSymbol(sym: string) {
+  const prevPrimary = selectedSymbols.value[0]
   const idx = selectedSymbols.value.indexOf(sym)
   if (idx >= 0) {
     selectedSymbols.value.splice(idx, 1)
   } else {
     selectedSymbols.value.push(sym)
   }
-  applyCostPreset(false)
+  if (selectedSymbols.value[0] && selectedSymbols.value[0] !== prevPrimary) {
+    pendingPreselectedOverrides.value = false
+    applyCostPreset(true)
+  }
 }
 
 function onStrategySelected(strat: Strategy) {
@@ -416,7 +463,12 @@ function onStrategySelected(strat: Strategy) {
       dataTimeframe.value = strategyTimeframe.value
     }
   }
-  applyCostPreset(false)
+  applyCostPreset(true)
+  if (props.preselectedStrategy && strat.id === props.preselectedStrategy) {
+    applyPreselectedOverridesIfActive()
+  } else {
+    pendingPreselectedOverrides.value = false
+  }
 }
 
 function onStrategyChange() {

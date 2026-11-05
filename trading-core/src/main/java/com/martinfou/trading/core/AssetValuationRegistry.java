@@ -10,7 +10,8 @@ import java.util.Set;
 public final class AssetValuationRegistry {
 
     private static final Set<String> KNOWN_EQUITIES = Set.of(
-        "IWM", "MDY", "AAPL", "MSFT", "SPY", "QQQ", "AMZN", "NVDA", "TSLA", "GOOGL", "META"
+        "IWM", "MDY", "IJR", "VB", "SCHA", "PLTR", "SOXL",
+        "AAPL", "MSFT", "SPY", "QQQ", "AMZN", "NVDA", "TSLA", "GOOGL", "META", "AMD", "NFLX", "JPM"
     );
 
     private AssetValuationRegistry() {}

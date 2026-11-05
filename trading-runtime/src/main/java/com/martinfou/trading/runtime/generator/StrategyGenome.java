@@ -2,6 +2,7 @@ package com.martinfou.trading.runtime.generator;
 
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.FuturesRegistry;
+import com.martinfou.trading.core.LotSizing;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.core.Strategy;
 
@@ -352,6 +353,7 @@ public record StrategyGenome(
         sb.append("package com.martinfou.trading.strategies.sqimported;\n\n");
         sb.append("import com.martinfou.trading.core.Bar;\n");
         sb.append("import com.martinfou.trading.core.FuturesRegistry;\n");
+        sb.append("import com.martinfou.trading.core.LotSizing;\n");
         sb.append("import com.martinfou.trading.core.Order;\n");
         sb.append("import com.martinfou.trading.core.Strategy;\n");
         sb.append("import java.util.ArrayList;\n");
@@ -491,7 +493,8 @@ public record StrategyGenome(
         sb.append("        double safePt = Math.max(ptDist, minOffset);\n");
         sb.append("        double sl = side == Order.Side.BUY ? quantize(price - safeSl) : quantize(price + safeSl);\n");
         sb.append("        double tp = side == Order.Side.BUY ? quantize(price + safePt) : quantize(price - safePt);\n");
-        sb.append("        pendingOrders.add(new Order(symbol, side, Order.Type.MARKET, 1.0, price)\n");
+        sb.append("        double qty = LotSizing.resolveQuantityFromLots(null, symbol);\n");
+        sb.append("        pendingOrders.add(new Order(symbol, side, Order.Type.MARKET, qty, price)\n");
         sb.append("            .withStrategyId(\"").append(id).append("\")\n");
         sb.append("            .withStopLoss(sl)\n");
         sb.append("            .withTakeProfit(tp));\n");
@@ -504,7 +507,8 @@ public record StrategyGenome(
         sb.append("    private void closePosition(Bar bar) {\n");
         sb.append("        if (!inTrade || positionSide == null) return;\n");
         sb.append("        Order.Side exitSide = positionSide == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;\n");
-        sb.append("        pendingOrders.add(new Order(symbol, exitSide, Order.Type.MARKET, 1.0, bar.close())\n");
+        sb.append("        double qty = LotSizing.resolveQuantityFromLots(null, symbol);\n");
+        sb.append("        pendingOrders.add(new Order(symbol, exitSide, Order.Type.MARKET, qty, bar.close())\n");
         sb.append("            .withStrategyId(\"").append(id).append("\")\n");
         sb.append("            .asCloseOnly());\n");
         sb.append("        this.inTrade = false;\n");
@@ -1223,7 +1227,8 @@ public record StrategyGenome(
             double sl = side == Order.Side.BUY ? quantize(price - safeSl) : quantize(price + safeSl);
             double tp = side == Order.Side.BUY ? quantize(price + safePt) : quantize(price - safePt);
 
-            Order order = new Order(symbol, side, Order.Type.MARKET, 1.0, price)
+            double qty = LotSizing.resolveQuantityFromLots(null, symbol);
+            Order order = new Order(symbol, side, Order.Type.MARKET, qty, price)
                 .withStrategyId(genome.id())
                 .withStopLoss(sl)
                 .withTakeProfit(tp);
@@ -1241,7 +1246,8 @@ public record StrategyGenome(
                 return;
             }
             Order.Side exitSide = positionSide == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
-            Order closeOrder = new Order(symbol, exitSide, Order.Type.MARKET, 1.0, bar.close())
+            double qty = LotSizing.resolveQuantityFromLots(null, symbol);
+            Order closeOrder = new Order(symbol, exitSide, Order.Type.MARKET, qty, bar.close())
                 .withStrategyId(genome.id())
                 .asCloseOnly();
             pendingOrders.add(closeOrder);

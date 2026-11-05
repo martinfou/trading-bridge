@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onUnmounted, onMounted } from 'vue'
+import { ref, computed, watch, onUnmounted, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Key } from '@lucide/vue'
 import { useControlPlane } from '@/composables/useControlPlane'
@@ -41,12 +41,35 @@ const selectedRunId = ref<string>('')
 const viewError = ref<string | null>(null)
 const polling = ref(false)
 
+function parseOptionalNumber(val: unknown): number | undefined {
+  if (typeof val !== 'string') return undefined
+  const n = parseFloat(val)
+  return Number.isFinite(n) ? n : undefined
+}
+
 const preselectedStrategy = ref<string | undefined>(
   typeof route.query.strategyId === 'string' ? route.query.strategyId : undefined,
 )
 const preselectedSymbol = ref<string | undefined>(
   typeof route.query.symbol === 'string' ? route.query.symbol : undefined,
 )
+const preselectedCapital = ref<number | undefined>(parseOptionalNumber(route.query.capital))
+const preselectedLotSize = ref<number | undefined>(parseOptionalNumber(route.query.lotSize))
+const preselectedCommission = ref<number | undefined>(parseOptionalNumber(route.query.commission))
+const preselectedSlippage = ref<number | undefined>(parseOptionalNumber(route.query.slippage))
+const preselectedTimeframe = ref<string | undefined>(
+  typeof route.query.timeframe === 'string' ? route.query.timeframe : undefined,
+)
+
+watch(() => route.query, (q) => {
+  preselectedStrategy.value = typeof q.strategyId === 'string' ? q.strategyId : undefined
+  preselectedSymbol.value = typeof q.symbol === 'string' ? q.symbol : undefined
+  preselectedCapital.value = parseOptionalNumber(q.capital)
+  preselectedLotSize.value = parseOptionalNumber(q.lotSize)
+  preselectedCommission.value = parseOptionalNumber(q.commission)
+  preselectedSlippage.value = parseOptionalNumber(q.slippage)
+  preselectedTimeframe.value = typeof q.timeframe === 'string' ? q.timeframe : undefined
+})
 
 const pollTimers = ref<ReturnType<typeof setInterval>[]>([])
 
@@ -349,6 +372,11 @@ onUnmounted(() => {
       @error="onFormError"
       :preselected-strategy="preselectedStrategy"
       :preselected-symbol="preselectedSymbol"
+      :preselected-capital="preselectedCapital"
+      :preselected-lot-size="preselectedLotSize"
+      :preselected-commission="preselectedCommission"
+      :preselected-slippage="preselectedSlippage"
+      :preselected-timeframe="preselectedTimeframe"
     />
 
     <div v-if="viewError" class="banner error">{{ viewError }}</div>

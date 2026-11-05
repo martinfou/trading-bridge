@@ -26,8 +26,16 @@ public final class FuturesRegistry {
         register(new FuturesContract("M2K", "Micro E-mini Russell 2000", "CME", "USD", 5.0, 0.10, 0.50, 800.0, 650.0));
         register(new FuturesContract("EMD", "E-mini S&P MidCap 400", "CME", "USD", 100.0, 0.10, 10.0, 4500.0, 3800.0));
         register(new FuturesContract("MNQ", "Micro E-mini Nasdaq 100", "CME", "USD", 2.0, 0.25, 0.50, 1800.0, 1500.0));
+        register(new FuturesContract("MYM", "Micro E-mini Dow", "CBOT", "USD", 0.5, 1.00, 0.50, 1000.0, 900.0));
+        register(new FuturesContract("MCL", "Micro WTI Crude Oil", "NYMEX", "USD", 100.0, 0.01, 1.00, 900.0, 800.0));
         register(new FuturesContract("MGC", "Micro Gold", "COMEX", "USD", 10.0, 0.10, 1.00, 1400.0, 1200.0));
         register(new FuturesContract("GC", "Gold Futures", "COMEX", "USD", 100.0, 0.10, 10.00, 11000.0, 10000.0));
+        register(new FuturesContract("ES", "E-mini S&P 500", "CME", "USD", 50.0, 0.25, 12.50, 12000.0, 10000.0));
+        register(new FuturesContract("NQ", "E-mini Nasdaq 100", "CME", "USD", 20.0, 0.25, 5.00, 18000.0, 15000.0));
+        register(new FuturesContract("RTY", "E-mini Russell 2000", "CME", "USD", 50.0, 0.10, 5.00, 8000.0, 6500.0));
+        register(new FuturesContract("YM", "E-mini Dow", "CBOT", "USD", 5.0, 1.00, 5.00, 10000.0, 9000.0));
+        register(new FuturesContract("CL", "WTI Crude Oil", "NYMEX", "USD", 1000.0, 0.01, 10.00, 9000.0, 8000.0));
+        register(new FuturesContract("SI", "Silver Futures", "COMEX", "USD", 5000.0, 0.005, 25.00, 14000.0, 12500.0));
     }
 
     public static void register(FuturesContract contract) {

@@ -116,8 +116,36 @@ public final class StrategyGeneratorService implements AutoCloseable {
         List<Double> equityCurve,
         int oosStartIndex,
         StrategyGenome genome,
-        String javaSourceCode
-    ) {}
+        String javaSourceCode,
+        Double initialCapital,
+        Double lotSize,
+        Double commissionPerTrade,
+        Double slippagePct
+    ) {
+        public double resolvedCapital() {
+            return initialCapital != null && initialCapital > 0
+                ? initialCapital
+                : LotSizing.defaultsForSymbol(symbol).capital();
+        }
+
+        public double resolvedLotSize() {
+            return lotSize != null && lotSize > 0
+                ? lotSize
+                : LotSizing.defaultsForSymbol(symbol).lotSize();
+        }
+
+        public double resolvedCommission() {
+            return commissionPerTrade != null && commissionPerTrade >= 0
+                ? commissionPerTrade
+                : LotSizing.defaultsForSymbol(symbol).commissionPerTrade();
+        }
+
+        public double resolvedSlippage() {
+            return slippagePct != null && slippagePct >= 0
+                ? slippagePct
+                : LotSizing.defaultsForSymbol(symbol).slippagePct();
+        }
+    }
 
     private final Path storageDir;
     private final Path databankFile;
@@ -181,7 +209,7 @@ public final class StrategyGeneratorService implements AutoCloseable {
                 if (loaded != null) {
                     for (DatabankCandidate c : loaded) {
                         DatabankCandidate norm = stripSqPrefix(c);
-                        if (!norm.id().equals(c.id())) {
+                        if (norm != c) {
                             migrated = true;
                         }
                         if (databank.stream().noneMatch(existing -> existing.id().equals(norm.id()))) {
@@ -195,7 +223,7 @@ public final class StrategyGeneratorService implements AutoCloseable {
                 if (promoted != null) {
                     for (DatabankCandidate c : promoted) {
                         DatabankCandidate norm = stripSqPrefix(c);
-                        if (!norm.id().equals(c.id())) {
+                        if (norm != c) {
                             migrated = true;
                         }
                         promotedCatalog.put(norm.id(), norm);
@@ -218,25 +246,32 @@ public final class StrategyGeneratorService implements AutoCloseable {
     }
 
     private static DatabankCandidate stripSqPrefix(DatabankCandidate c) {
-        if (c == null || c.id() == null || !c.id().startsWith("Sq") || c.id().length() <= 4) {
-            return c;
-        }
-        if (c.symbol() != null && c.symbol().toUpperCase(Locale.ROOT).startsWith("SQ")) {
-            return c;
+        if (c == null) {
+            return null;
         }
         String oldId = c.id();
-        String newId = oldId.substring(2);
-        if (!Character.isUpperCase(newId.charAt(0))) {
+        String newId = oldId;
+        if (oldId != null && oldId.startsWith("Sq") && oldId.length() > 4
+            && (c.symbol() == null || !c.symbol().toUpperCase(Locale.ROOT).startsWith("SQ"))) {
+            String candidateId = oldId.substring(2);
+            if (Character.isUpperCase(candidateId.charAt(0))) {
+                newId = candidateId;
+            }
+        }
+        boolean idChanged = !java.util.Objects.equals(oldId, newId);
+        boolean missingDefaults = c.initialCapital() == null || c.lotSize() == null
+            || c.commissionPerTrade() == null || c.slippagePct() == null;
+        if (!idChanged && !missingDefaults) {
             return c;
         }
         StrategyGenome g = c.genome();
-        StrategyGenome newGenome = g != null ? new StrategyGenome(
+        StrategyGenome newGenome = (g != null && idChanged) ? new StrategyGenome(
             newId, g.symbol(), g.timeframe(), g.archetype(), g.direction(), g.entryOrderType(),
             g.longRules(), g.shortRules(), g.stopEntryLookback(), g.stopEntryAtrMult(), g.stopOrderValidBars(),
             g.atrPeriod(), g.slAtrMult(), g.tpAtrMult(), g.trailingAtrMult(), g.maxBarsInTrade()
-        ) : null;
-        String newPath = c.javaFilePath() != null ? c.javaFilePath().replace(oldId + ".java", newId + ".java") : null;
-        String newCode = c.javaSourceCode() != null ? c.javaSourceCode().replace(oldId, newId) : null;
+        ) : g;
+        String newPath = (c.javaFilePath() != null && idChanged) ? c.javaFilePath().replace(oldId + ".java", newId + ".java") : c.javaFilePath();
+        String newCode = (c.javaSourceCode() != null && idChanged) ? c.javaSourceCode().replace(oldId, newId) : c.javaSourceCode();
         return new DatabankCandidate(
             newId, c.symbol(), c.timeframe(), c.yearSpec(), c.archetype(), c.direction(), c.entryOrderType(),
             c.tier(), c.compositeScore(), c.totalTrades(), c.isTrades(), c.oosTrades(),
@@ -247,7 +282,8 @@ public final class StrategyGeneratorService implements AutoCloseable {
             c.mcVar95(), c.mcLossProbPct(), c.generationFound(), c.createdAt(),
             c.promoted(), newPath, c.longSignalSummary(), c.shortSignalSummary(),
             c.entrySummary(), c.exitSummary(), c.indicators(), c.equityCurve(),
-            c.oosStartIndex(), newGenome, newCode
+            c.oosStartIndex(), newGenome, newCode,
+            c.resolvedCapital(), c.resolvedLotSize(), c.resolvedCommission(), c.resolvedSlippage()
         );
     }
 
@@ -286,7 +322,11 @@ public final class StrategyGeneratorService implements AutoCloseable {
             desc,
             c.archetype(),
             List.of(c.timeframe()),
-            sym -> genome.toExecutableStrategy(sym)
+            sym -> {
+                String targetSym = (sym != null && !sym.isBlank()) ? sym : c.symbol();
+                double defaultUnits = LotSizing.resolveQuantityFromLots(c.resolvedLotSize(), targetSym);
+                return new StrategyCatalogFixedQtyWrapper(genome.toExecutableStrategy(targetSym), defaultUnits);
+            }
         );
     }
 
@@ -414,7 +454,11 @@ public final class StrategyGeneratorService implements AutoCloseable {
             existing.equityCurve(),
             existing.oosStartIndex(),
             existing.genome(),
-            existing.javaSourceCode()
+            existing.javaSourceCode(),
+            existing.resolvedCapital(),
+            existing.resolvedLotSize(),
+            existing.resolvedCommission(),
+            existing.resolvedSlippage()
         );
 
         for (int i = 0; i < databank.size(); i++) {
@@ -457,12 +501,13 @@ public final class StrategyGeneratorService implements AutoCloseable {
         int minTrades = rawReq.minTrades() != null ? Math.max(1, rawReq.minTrades()) : 15;
         double minPf = rawReq.minProfitFactor() != null ? rawReq.minProfitFactor() : 1.15;
         double minOosPf = rawReq.minOosProfitFactor() != null ? rawReq.minOosProfitFactor() : 1.05;
-        double minSharpe = rawReq.minSharpe() != null ? rawReq.minSharpe() : 0.5;
+        double minSharpe = rawReq.minSharpe() != null ? rawReq.minSharpe() : 0.3;
         double maxDd = rawReq.maxDrawdownPct() != null ? rawReq.maxDrawdownPct() : 25.0;
-        double capital = rawReq.initialCapital() != null && rawReq.initialCapital() > 0 ? rawReq.initialCapital() : 10_000.0;
-        double lotSize = rawReq.lotSize() != null && rawReq.lotSize() > 0 ? rawReq.lotSize() : 1.0;
-        double commission = rawReq.commissionPerTrade() != null && rawReq.commissionPerTrade() >= 0 ? rawReq.commissionPerTrade() : 0.62;
-        double slippage = rawReq.slippagePct() != null && rawReq.slippagePct() >= 0 ? rawReq.slippagePct() : 0.00005;
+        LotSizing.InstrumentDefaults defaults = LotSizing.defaultsForSymbol(symbol);
+        double capital = rawReq.initialCapital() != null && rawReq.initialCapital() > 0 ? rawReq.initialCapital() : defaults.capital();
+        double lotSize = rawReq.lotSize() != null && rawReq.lotSize() > 0 ? rawReq.lotSize() : defaults.lotSize();
+        double commission = rawReq.commissionPerTrade() != null && rawReq.commissionPerTrade() >= 0 ? rawReq.commissionPerTrade() : defaults.commissionPerTrade();
+        double slippage = rawReq.slippagePct() != null && rawReq.slippagePct() >= 0 ? rawReq.slippagePct() : defaults.slippagePct();
 
         GeneratorRequest req = new GeneratorRequest(
             symbol, tf, yearSpec, oosSplitPct, searchMode, archetype, direction, entryOrderType,
@@ -609,7 +654,7 @@ public final class StrategyGeneratorService implements AutoCloseable {
             return null;
         }
         try {
-            double quantityUnits = LotSizing.resolveQuantityUnits(req.lotSize(), req.symbol());
+            double quantityUnits = LotSizing.resolveQuantityFromLots(req.lotSize(), req.symbol());
 
             // 1. In-Sample Backtest
             Strategy isStrat = new StrategyCatalogFixedQtyWrapper(genome.toExecutableStrategy(req.symbol()), quantityUnits);
@@ -738,7 +783,11 @@ public final class StrategyGeneratorService implements AutoCloseable {
                 sampledCurve,
                 sampledOosIdx,
                 genome,
-                javaCode
+                javaCode,
+                req.initialCapital(),
+                req.lotSize(),
+                req.commissionPerTrade(),
+                req.slippagePct()
             );
 
             return new ScoredGenome(genome, compositeScore, candidate);
