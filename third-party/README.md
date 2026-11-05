@@ -20,3 +20,4 @@ resolve these artifacts without any manual `install:install-file` step.
 3. Bump `tws-api.version` in the root `pom.xml`, run `./mvnw verify`, delete the old version folder.
 
 Never copy third-party source into a module's `src/` again.
+
