@@ -224,6 +224,7 @@ const highlightedIndex = ref(0)
 
 const filterChips = [
   { id: 'all', label: 'All', type: 'asset', value: 'ALL' },
+  { id: 'sqx', label: '🤖 SQX / Generated', type: 'family', value: 'SQ_IMPORTED' },
   { id: 'futures', label: '⚡ Futures', type: 'asset', value: 'FUTURES' },
   { id: 'forex', label: '💱 Forex', type: 'asset', value: 'FOREX' },
   { id: 'equity', label: '📈 Equities', type: 'asset', value: 'EQUITY' },
@@ -272,7 +273,7 @@ const resetAllFilters = () => {
 
 const getPrimaryAssetClass = (s: Strategy): string => {
   if (s.assetClasses && s.assetClasses.length > 0) return s.assetClasses[0]
-  if (s.id.startsWith('Futures') || s.defaultSymbol.startsWith('MES') || s.defaultSymbol.startsWith('MNQ')) return 'FUTURES'
+  if (s.id.startsWith('Futures') || s.defaultSymbol.startsWith('MES') || s.defaultSymbol.startsWith('MNQ') || s.defaultSymbol.startsWith('MGC') || s.defaultSymbol.startsWith('GC') || s.defaultSymbol.startsWith('M2K') || s.defaultSymbol.startsWith('EMD')) return 'FUTURES'
   if (['IJR', 'VB', 'SCHA', 'PLTR', 'TSLA', 'AAPL'].includes(s.defaultSymbol)) return 'EQUITY'
   return 'FOREX'
 }

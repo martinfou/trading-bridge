@@ -31,6 +31,8 @@ export interface FormInstrument {
 
 const DEFAULT_INSTRUMENTS: FormInstrument[] = [
   // CME Micro & Mini Futures
+  { symbol: 'MGC', displayName: 'MGC — Micro Gold ($10/oz)', assetClass: 'FUTURES', defaultCapital: 10000, defaultLotSize: 1, defaultCommission: 0.62 },
+  { symbol: 'GC', displayName: 'GC — Gold Futures ($100/oz)', assetClass: 'FUTURES', defaultCapital: 50000, defaultLotSize: 1, defaultCommission: 1.50 },
   { symbol: 'MES', displayName: 'MES — Micro E-mini S&P 500 ($5/pt)', assetClass: 'FUTURES', defaultCapital: 50000, defaultLotSize: 1, defaultCommission: 0.62 },
   { symbol: 'MNQ', displayName: 'MNQ — Micro E-mini Nasdaq 100 ($2/pt)', assetClass: 'FUTURES', defaultCapital: 50000, defaultLotSize: 1, defaultCommission: 0.62 },
   { symbol: 'M2K', displayName: 'M2K — Micro E-mini Russell 2000 ($5/pt)', assetClass: 'FUTURES', defaultCapital: 50000, defaultLotSize: 1, defaultCommission: 0.62 },
@@ -59,7 +61,7 @@ const DEFAULT_INSTRUMENTS: FormInstrument[] = [
 
 const { getStrategies, startRun, loading, error, getBrokerAccounts, getInstruments, getHistoricalDataStatus } = useControlPlane()
 const { getPresetForSymbol, getPresetForAssetClass } = useCostPresets()
-const { isCompatibleBasket, inferAssetClass, getStrategy } = useStrategyCatalog()
+const { isCompatibleBasket, inferAssetClass, getStrategy, fetchCatalog } = useStrategyCatalog()
 
 const isSubmitting = ref(false)
 const activeIngestionTasks = ref<any[]>([])
@@ -202,7 +204,8 @@ onMounted(async () => {
     const [strats, accs, insts] = await Promise.all([
       getStrategies(),
       getBrokerAccounts().catch(() => []),
-      getInstruments().catch(() => [])
+      getInstruments().catch(() => []),
+      fetchCatalog(true).catch(() => {})
     ])
     strategies.value = strats
     accounts.value = accs
@@ -398,15 +401,20 @@ function toggleSymbol(sym: string) {
 
 function onStrategySelected(strat: Strategy) {
   selectedStrategy.value = strat.id
-  if (strat.recommendedSymbols && strat.recommendedSymbols.length > 0) {
-    const formatted = strat.recommendedSymbols[0].replace(/_/g, '/')
-    selectedSymbols.value = [formatted]
-  } else if (strat.defaultSymbol) {
+  if (strat.defaultSymbol) {
     const formatted = strat.defaultSymbol.replace(/_/g, '/')
+    selectedSymbols.value = [formatted]
+  } else if (strat.recommendedSymbols && strat.recommendedSymbols.length > 0) {
+    const formatted = strat.recommendedSymbols[0].replace(/_/g, '/')
     selectedSymbols.value = [formatted]
   }
   if (strat.timeframeSuitability && strat.timeframeSuitability.length > 0) {
     strategyTimeframe.value = strat.timeframeSuitability[0]
+    const sVal = timeframeScale[strategyTimeframe.value] || 60
+    const dVal = timeframeScale[dataTimeframe.value] || 60
+    if (dVal > sVal) {
+      dataTimeframe.value = strategyTimeframe.value
+    }
   }
   applyCostPreset(false)
 }

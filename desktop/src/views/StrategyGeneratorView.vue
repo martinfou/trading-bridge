@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useControlPlaneConfig } from '@/composables/controlPlaneConfig'
 import { useStatusBar } from '@/composables/useStatusBar'
+import { useStrategyCatalog } from '@/composables/useStrategyCatalog'
 import EquityChart from '@/components/EquityChart.vue'
 
 interface DatabankCandidate {
@@ -70,6 +71,7 @@ interface GeneratorStatus {
 const router = useRouter()
 const { controlPlaneUrl } = useControlPlaneConfig()
 const { setStatus } = useStatusBar()
+const { fetchCatalog } = useStrategyCatalog()
 
 // Form configuration
 const symbol = ref('MGC')
@@ -253,9 +255,13 @@ async function fetchDatabankAndStatus() {
         status.value = data.status
       }
       if (Array.isArray(data.candidates)) {
+        const prevCount = databank.value.length
         databank.value = data.candidates
         if (!selectedCandidateId.value && databank.value.length > 0) {
           selectedCandidateId.value = databank.value[0].id
+        }
+        if (databank.value.length !== prevCount) {
+          fetchCatalog(true).catch(() => {})
         }
       }
     }
@@ -323,11 +329,27 @@ async function promoteCandidate(candidate: DatabankCandidate) {
     })
     if (res.ok) {
       setStatus(`Promoted ${candidate.id} to Strategy Catalog & wrote Java class!`, 'info')
+      await fetchCatalog(true).catch(() => {})
       await fetchDatabankAndStatus()
     } else {
       const err = await res.json().catch(() => ({}))
       setStatus(err.error || 'Failed to promote strategy', 'error')
     }
+  } finally {
+    actionBusyId.value = null
+  }
+}
+
+async function openInDashboard(candidate: DatabankCandidate) {
+  actionBusyId.value = candidate.id
+  try {
+    if (!candidate.promoted) {
+      await fetch(`${controlPlaneUrl.value}/api/generator/databank/${candidate.id}/promote`, {
+        method: 'POST',
+      })
+    }
+    await fetchCatalog(true).catch(() => {})
+    router.push({ path: '/dashboard', query: { strategyId: candidate.id, symbol: candidate.symbol } })
   } finally {
     actionBusyId.value = null
   }
@@ -792,6 +814,13 @@ onUnmounted(() => {
               @click="promoteCandidate(selectedCandidate)"
             >
               {{ selectedCandidate.promoted ? '✓ Saved in Strategy Catalog' : '💾 Promote to Strategy Catalog' }}
+            </button>
+            <button
+              class="btn-promote-lg"
+              :disabled="actionBusyId === selectedCandidate.id"
+              @click="openInDashboard(selectedCandidate)"
+            >
+              ⚡ Configure in Dashboard
             </button>
             <button
               class="btn-backtest-lg"

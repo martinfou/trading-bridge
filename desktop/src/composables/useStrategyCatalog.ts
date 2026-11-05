@@ -47,9 +47,9 @@ export function useStrategyCatalog() {
 
   watch([selectedAssetClass, selectedFamily, selectedStyle], persistFilters)
 
-  const fetchCatalog = async (force = false) => {
-    if (strategies.value.length > 0 && !force) return
-    loading.value = true
+  const fetchCatalog = async (_force = false) => {
+    const showSpinner = strategies.value.length === 0
+    if (showSpinner) loading.value = true
     error.value = null
     try {
       const list = await getStrategies()
@@ -64,14 +64,14 @@ export function useStrategyCatalog() {
     } catch (err: any) {
       error.value = err?.message || 'Failed to fetch strategy catalog'
     } finally {
-      loading.value = false
+      if (showSpinner) loading.value = false
     }
   }
 
   const inferAssetClass = (symbol: string): AssetClass => {
     if (!symbol) return 'FOREX'
     const sym = symbol.toUpperCase().replace('/', '_')
-    if (sym.startsWith('MES') || sym.startsWith('MNQ') || sym.startsWith('M2K') || sym.startsWith('EMD') || sym.startsWith('ES') || sym.startsWith('NQ')) {
+    if (sym.startsWith('MES') || sym.startsWith('MNQ') || sym.startsWith('M2K') || sym.startsWith('EMD') || sym.startsWith('MGC') || sym.startsWith('GC') || sym.startsWith('ES') || sym.startsWith('NQ')) {
       return 'FUTURES'
     }
     if (['IJR', 'VB', 'SCHA', 'PLTR', 'TSLA', 'SOXL', 'AAPL', 'NVDA', 'SPY', 'QQQ', 'IWM'].includes(sym)) {
@@ -148,21 +148,32 @@ export function useStrategyCatalog() {
   })
 
   const groupedStrategies = computed(() => {
-    const groups: Record<string, Strategy[]> = {}
+    const sqGroup: Strategy[] = []
+    const futuresGroup: Strategy[] = []
+    const propGroup: Strategy[] = []
+    const ltGroup: Strategy[] = []
+    const forexGroup: Strategy[] = []
+
     for (const s of filteredStrategies.value) {
-      let groupName = '💱 Forex Strategies'
-      if (s.assetClasses?.includes('FUTURES') || s.id.startsWith('Futures')) {
-        groupName = '⚡ CME Futures (IBKR)'
+      if (s.family === 'SQ_IMPORTED' || s.family === 'GENERATED' || s.id.startsWith('Sq')) {
+        sqGroup.unshift(s) // Newest generated/promoted strategies first
+      } else if (s.assetClasses?.includes('FUTURES') || s.id.startsWith('Futures')) {
+        futuresGroup.push(s)
       } else if (s.family === 'PROP') {
-        groupName = '🏛️ Prop Mechanical Desk'
+        propGroup.push(s)
       } else if (s.family === 'LONG_TERM') {
-        groupName = '📈 Systematic Multi-Asset / Long-Term'
-      } else if (s.family === 'SQ_IMPORTED') {
-        groupName = '🤖 StrategyQuant Models'
+        ltGroup.push(s)
+      } else {
+        forexGroup.push(s)
       }
-      if (!groups[groupName]) groups[groupName] = []
-      groups[groupName].push(s)
     }
+
+    const groups: Record<string, Strategy[]> = {}
+    if (sqGroup.length > 0) groups['🤖 StrategyQuant & Generated Models'] = sqGroup
+    if (futuresGroup.length > 0) groups['⚡ CME Futures (IBKR)'] = futuresGroup
+    if (propGroup.length > 0) groups['🏛️ Prop Mechanical Desk'] = propGroup
+    if (ltGroup.length > 0) groups['📈 Systematic Multi-Asset / Long-Term'] = ltGroup
+    if (forexGroup.length > 0) groups['💱 Forex Strategies'] = forexGroup
     return groups
   })
 

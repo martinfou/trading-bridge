@@ -34,6 +34,12 @@ public final class SqImportedStrategyCatalog {
         register("SqMgcM30Breakout034297", SqMgcM30Breakout034297::new);
         register("SqMgcM30Breakout011248", SqMgcM30Breakout011248::new);
         register("SqMnqM15Momentum06737", SqMnqM15Momentum06737::new);
+        register("SqMesH1MeanRev29315", SqMesH1MeanRev29315::new);
+        register("SqMesH1MeanRev49622", SqMesH1MeanRev49622::new);
+        register("SqMgcM30MeanRev50426", SqMgcM30MeanRev50426::new);
+        register("SqMgcM30Pullback51084", SqMgcM30Pullback51084::new);
+        register("SqMgcM30Trend28281", SqMgcM30Trend28281::new);
+        register("SqMnqH1Momentum66294", SqMnqH1Momentum66294::new);
     }
 
     private SqImportedStrategyCatalog() {}

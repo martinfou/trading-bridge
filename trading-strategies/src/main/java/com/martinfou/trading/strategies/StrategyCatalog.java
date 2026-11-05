@@ -314,9 +314,8 @@ public final class StrategyCatalog {
         String resolvedSymbol = (defaultSymbol != null && !defaultSymbol.isBlank()) ? defaultSymbol : "EUR_USD";
         List<String> assetClasses = resolveAssetClasses(id, resolvedFamily, resolvedSymbol);
         List<String> recommendedSymbols = new ArrayList<>(resolveRecommendedSymbols(id, resolvedFamily, resolvedSymbol, assetClasses));
-        if (!recommendedSymbols.contains(resolvedSymbol)) {
-            recommendedSymbols.addFirst(resolvedSymbol);
-        }
+        recommendedSymbols.remove(resolvedSymbol);
+        recommendedSymbols.addFirst(resolvedSymbol);
         ENTRIES.put(id, new Registration(
             resolvedFamily,
             resolvedSymbol,

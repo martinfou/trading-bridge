@@ -130,6 +130,7 @@ public final class StrategyGeneratorService implements AutoCloseable {
     });
 
     private final CopyOnWriteArrayList<DatabankCandidate> databank = new CopyOnWriteArrayList<>();
+    private final Map<String, DatabankCandidate> promotedCatalog = new java.util.concurrent.ConcurrentHashMap<>();
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicBoolean stopRequested = new AtomicBoolean(false);
 
@@ -151,8 +152,16 @@ public final class StrategyGeneratorService implements AutoCloseable {
     public StrategyGeneratorService() {
         this(
             RuntimeDataPaths.defaultDataDirectory().resolve("generator"),
-            Path.of("trading-strategies/src/main/java/com/martinfou/trading/strategies/sqimported")
+            resolveSqImportedDir()
         );
+    }
+
+    private static Path resolveSqImportedDir() {
+        Path repoRoot = RuntimeDataPaths.scriptsDirectory().getParent();
+        if (repoRoot != null) {
+            return repoRoot.resolve("trading-strategies/src/main/java/com/martinfou/trading/strategies/sqimported");
+        }
+        return Path.of("trading-strategies/src/main/java/com/martinfou/trading/strategies/sqimported");
     }
 
     public StrategyGeneratorService(Path storageDir, Path sqImportedSourceDir) {
@@ -176,14 +185,16 @@ public final class StrategyGeneratorService implements AutoCloseable {
                 List<DatabankCandidate> promoted = MAPPER.readValue(promotedFile.toFile(), new TypeReference<>() {});
                 if (promoted != null) {
                     for (DatabankCandidate c : promoted) {
+                        promotedCatalog.put(c.id(), c);
                         registerInCatalog(c);
                     }
                 }
             }
             for (DatabankCandidate c : databank) {
                 if (c.promoted()) {
-                    registerInCatalog(c);
+                    promotedCatalog.put(c.id(), c);
                 }
+                registerInCatalog(c);
             }
         } catch (Exception e) {
             log.warn("Failed to load persisted StrategyGenerator databank: {}", e.getMessage());
@@ -194,8 +205,12 @@ public final class StrategyGeneratorService implements AutoCloseable {
         try {
             Files.createDirectories(storageDir);
             MAPPER.writeValue(databankFile.toFile(), new ArrayList<>(databank));
-            List<DatabankCandidate> promoted = databank.stream().filter(DatabankCandidate::promoted).toList();
-            MAPPER.writeValue(promotedFile.toFile(), promoted);
+            for (DatabankCandidate c : databank) {
+                if (c.promoted()) {
+                    promotedCatalog.put(c.id(), c);
+                }
+            }
+            MAPPER.writeValue(promotedFile.toFile(), new ArrayList<>(promotedCatalog.values()));
         } catch (Exception e) {
             log.warn("Failed to persist generator databank: {}", e.getMessage());
         }
@@ -285,6 +300,23 @@ public final class StrategyGeneratorService implements AutoCloseable {
             Files.writeString(targetJava, existing.javaSourceCode());
             javaPathStr = targetJava.toString();
             log.info("Wrote generated strategy source to {}", targetJava);
+            Path catalogJava = sqImportedSourceDir.resolve("SqImportedStrategyCatalog.java");
+            if (Files.isRegularFile(catalogJava)) {
+                String catalogContent = Files.readString(catalogJava);
+                String regLine = "register(\"" + existing.id() + "\", " + existing.id() + "::new);";
+                if (!catalogContent.contains(regLine)) {
+                    int idx = catalogContent.indexOf("    private SqImportedStrategyCatalog()");
+                    if (idx > 0) {
+                        int closeBrace = catalogContent.lastIndexOf("    }", idx);
+                        if (closeBrace > 0) {
+                            String updatedCatalog = catalogContent.substring(0, closeBrace)
+                                + "        " + regLine + "\n"
+                                + catalogContent.substring(closeBrace);
+                            Files.writeString(catalogJava, updatedCatalog);
+                        }
+                    }
+                }
+            }
         } catch (Exception e) {
             log.warn("Could not write Java file for {} (registering in runtime catalog anyway): {}", id, e.getMessage());
         }
@@ -457,6 +489,7 @@ public final class StrategyGeneratorService implements AutoCloseable {
                             }
                             if (sg.candidate != null) {
                                 databank.add(sg.candidate);
+                                registerInCatalog(sg.candidate);
                                 passedCount.incrementAndGet();
                             }
                         }
