@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Start the Trading Bridge desktop app (Electron + Vite dev server).
+# Usage: ./tb gui   (or ./scripts/run-desktop.sh)
 
 # Exit immediately if a command exits with a non-zero status
 set -e
@@ -61,8 +63,8 @@ echo "Prerequisites OK."
 echo ""
 
 # Resolve the root directory of the project
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
 
 echo "=== 1. Setting up Java Environment ==="
 # Detect JAVA_HOME on macOS if not set
@@ -78,7 +80,7 @@ else
 fi
 
 echo "=== 2. Setting up Frontend ==="
-cd "$SCRIPT_DIR/desktop"
+cd "$ROOT/desktop"
 if [ ! -d "node_modules" ]; then
   echo "node_modules not found in desktop directory, installing dependencies..."
   npm install

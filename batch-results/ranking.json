@@ -1,7 +1,0 @@
-[
-{"rank":1,"name":"EMA_23","type":"Breakout","sharpe":-16469.7657,"profitFactor":0.5641,"maxDrawdownPct":0.01,"totalReturnPct":-0.01,"totalTrades":56,"winRatePct":41.07,"robustness":25.5},
-{"rank":2,"name":"SMA_58","type":"Breakout","sharpe":-5626.4301,"profitFactor":0.2302,"maxDrawdownPct":0.00,"totalReturnPct":-0.00,"totalTrades":2,"winRatePct":50.00,"robustness":33.1},
-{"rank":3,"name":"SMA_14","type":"Breakout","sharpe":-5618.7487,"profitFactor":0.2075,"maxDrawdownPct":0.00,"totalReturnPct":-0.00,"totalTrades":2,"winRatePct":50.00,"robustness":33.0},
-{"rank":4,"name":"SMA_32","type":"Breakout","sharpe":-5071.6468,"profitFactor":0.2140,"maxDrawdownPct":0.00,"totalReturnPct":-0.00,"totalTrades":2,"winRatePct":50.00,"robustness":33.0},
-{"rank":5,"name":"SMA_25","type":"Trend","sharpe":-79956.8835,"profitFactor":0.3123,"maxDrawdownPct":0.00,"totalReturnPct":-0.00,"totalTrades":7,"winRatePct":42.86,"robustness":33.0}
-]

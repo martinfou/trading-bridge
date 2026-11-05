@@ -22,7 +22,7 @@ Write-Host "Prerequisites OK."
 Write-Host ""
 
 $ScriptDir = Split-Path -Parent -Path $MyInvocation.MyCommand.Definition
-$Root = Resolve-Path $ScriptDir | Select-Object -ExpandProperty Path
+$Root = Resolve-Path (Join-Path $ScriptDir "..") | Select-Object -ExpandProperty Path
 Set-Location $Root
 
 Write-Host "=== 1. Setting up Java Environment ==="

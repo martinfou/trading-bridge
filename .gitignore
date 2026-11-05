@@ -151,3 +151,13 @@ data-futures/
 # Local-only files (never commit: account statements, machine env)
 transactions_*.csv
 deploy/*.env
+
+# Runtime state (written by the running platform, never committed)
+data/runtime/generator/databank.json
+.strategy-lab-state.json
+
+# Local tool caches / scratch
+.pytest_cache/
+scratch/
+.crush/
+.claude/

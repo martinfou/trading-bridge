@@ -18,12 +18,11 @@ trading-backtest/     BacktestEngine, RunContext, rapports PDF/HTML
 trading-data/         HistoricalDataLoader, OANDA price client
 trading-strategies/   55+ stratégies prop (créatives, génétiques)
 trading-broker/       OANDA v20 + IBKR (paper/live)
-trading-runtime/      Serveur HTTP, promote gates, event store
+trading-runtime/      Serveur HTTP, promote gates, event store, kill switch
 trading-examples/     CLI RunBacktest, golden tests
 trading-genetics/     Optimisation génétique offline
 trading-parser/       Parsing XML StrategyQuant → Java (🚧)
 trading-tui/          Client terminal JLine3
-trading-runtime/      Control plane, promote gates, kill switch
 ```
 
 Le module `trading-core` est le socle sans dépendances internes. Tout est orienté autour de l'interface `Strategy` :
@@ -42,6 +41,17 @@ une classe Java, une liste de `Bar` en entrée, une file d'ordres `Order` en sor
 
 ```bash
 mvn clean install
+```
+
+### Run
+
+`./tb` is the single entry point:
+
+```bash
+./tb              # interactive TUI (auto-starts the control plane on :8080)
+./tb /help        # one-shot CLI commands, e.g. ./tb /list, ./tb /backtest <id> --sample
+./tb gui          # desktop app (Electron)
+./tb server       # control plane in the foreground
 ```
 
 ### Backtest d'une stratégie
