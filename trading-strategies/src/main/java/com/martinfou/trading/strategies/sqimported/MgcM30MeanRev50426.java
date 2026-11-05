@@ -8,22 +8,22 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * SqMnqH1Momentum66294 — Native Evolutionary Strategy Generator (MNQ H1 MOMENTUM).
+ * MgcM30MeanRev50426 — Native Evolutionary Strategy Generator (MGC M30 MEAN_REVERSION).
  *
- * <p>Backtest KPIs: Score 48.9, Net Profit $3562.04, Profit Factor 1.52 (OOS PF 1.02), Sharpe 0.93, Max DD 12.9%, Trades 58.</p>
+ * <p>Backtest KPIs: Score 74.0, Net Profit $1910.64, Profit Factor 1.73 (OOS PF 1.90), Sharpe 0.55, Max DD 8.4%, Trades 28.</p>
  *
  * <ul>
- *   <li>Instrument: MNQ (H1)</li>
- *   <li>Archetype: MOMENTUM (BOTH)</li>
- *   <li>Long Signal: Close[0] &gt; SuperTrend(25, 1.7) AND ATR(25)[0] &gt; 1.24 * ATR(50)[1]</li>
- *   <li>Short Signal: Close[0] &lt; SuperTrend(25, 1.7) AND ATR(25)[0] &gt; 1.24 * ATR(50)[1]</li>
- *   <li>Entry Type: Stop Breakout at Highest/Lowest(50)[1] ± 0.24 × ATR(14) (Valid 6 bars)</li>
- *   <li>Exit Rules: SL: 1.6 × ATR(14) | PT: 2.3 × ATR(14) | Trail: 2.4 × ATR | Time Exit: 38 bars</li>
+ *   <li>Instrument: MGC (M30)</li>
+ *   <li>Archetype: MEAN_REVERSION (BOTH)</li>
+ *   <li>Long Signal: RSI(100)[2] &lt; 40 (Oversold)</li>
+ *   <li>Short Signal: RSI(100)[2] &gt; 60 (Overbought)</li>
+ *   <li>Entry Type: Stop Breakout at Highest/Lowest(50)[1] ± 0.54 × ATR(20) (Valid 7 bars)</li>
+ *   <li>Exit Rules: SL: 2.4 × ATR(20) | PT: 3.7 × ATR(20) | Time Exit: 62 bars</li>
  * </ul>
  */
-public class SqMnqH1Momentum66294 implements Strategy {
+public class MgcM30MeanRev50426 implements Strategy {
 
-    private static final String DEFAULT_SYMBOL = "MNQ";
+    private static final String DEFAULT_SYMBOL = "MGC";
     private String symbol;
     private final List<Bar> history = new ArrayList<>();
     private final List<Order> pendingOrders = new ArrayList<>();
@@ -40,17 +40,17 @@ public class SqMnqH1Momentum66294 implements Strategy {
     private double armedPtDist = 0.0;
     private int armedBarsRemaining = 0;
 
-    public SqMnqH1Momentum66294() {
+    public MgcM30MeanRev50426() {
         this(DEFAULT_SYMBOL);
     }
 
-    public SqMnqH1Momentum66294(String symbol) {
+    public MgcM30MeanRev50426(String symbol) {
         this.symbol = (symbol != null && !symbol.isBlank()) ? symbol : DEFAULT_SYMBOL;
     }
 
     @Override
     public String name() {
-        return "SqMnqH1Momentum66294";
+        return "MgcM30MeanRev50426";
     }
 
     @Override
@@ -69,7 +69,7 @@ public class SqMnqH1Momentum66294 implements Strategy {
     public void onBar(Bar bar) {
         history.add(bar);
         if (history.size() < 61) return;
-        double atr = calcAtr(14, 0);
+        double atr = calcAtr(20, 0);
         if (atr <= 0) return;
 
         if (inTrade) {
@@ -81,15 +81,9 @@ public class SqMnqH1Momentum66294 implements Strategy {
                 closePosition(bar);
                 return;
             }
-            if (barsInTrade >= 38) {
+            if (barsInTrade >= 62) {
                 closePosition(bar);
                 return;
-            }
-            double trailDist = 2.40 * atr;
-            if (positionSide == Order.Side.BUY) {
-                stopLoss = Math.max(stopLoss, quantize(bar.close() - trailDist));
-            } else if (positionSide == Order.Side.SELL) {
-                stopLoss = Math.min(stopLoss, quantize(bar.close() + trailDist));
             }
             return;
         }
@@ -108,28 +102,28 @@ public class SqMnqH1Momentum66294 implements Strategy {
             if (armedBarsRemaining <= 0) clearArmed();
         }
 
-        double slDist = quantize(1.57 * atr);
-        double ptDist = quantize(2.31 * atr);
+        double slDist = quantize(2.40 * atr);
+        double ptDist = quantize(3.70 * atr);
 
         if (evaluateLong()) {
             double hh = calcHighestHigh(50, 1);
-            double stopPrice = quantize(hh + 0.24 * atr);
+            double stopPrice = quantize(hh + 0.54 * atr);
             if (bar.close() >= stopPrice && stopPrice > 0) {
                 executeEntry(Order.Side.BUY, bar.close(), slDist, ptDist);
                 clearArmed();
                 return;
             } else if (stopPrice > 0) {
-                armOrder(Order.Side.BUY, stopPrice, slDist, ptDist, 6);
+                armOrder(Order.Side.BUY, stopPrice, slDist, ptDist, 7);
             }
         }
         if (evaluateShort()) {
             double ll = calcLowestLow(50, 1);
-            double stopPrice = quantize(ll - 0.24 * atr);
+            double stopPrice = quantize(ll - 0.54 * atr);
             if (bar.close() <= stopPrice && stopPrice > 0) {
                 executeEntry(Order.Side.SELL, bar.close(), slDist, ptDist);
                 clearArmed();
             } else if (stopPrice > 0) {
-                armOrder(Order.Side.SELL, stopPrice, slDist, ptDist, 6);
+                armOrder(Order.Side.SELL, stopPrice, slDist, ptDist, 7);
             }
         }
     }
@@ -141,7 +135,7 @@ public class SqMnqH1Momentum66294 implements Strategy {
         double sl = side == Order.Side.BUY ? quantize(price - safeSl) : quantize(price + safeSl);
         double tp = side == Order.Side.BUY ? quantize(price + safePt) : quantize(price - safePt);
         pendingOrders.add(new Order(symbol, side, Order.Type.MARKET, 1.0, price)
-            .withStrategyId("SqMnqH1Momentum66294")
+            .withStrategyId("MgcM30MeanRev50426")
             .withStopLoss(sl)
             .withTakeProfit(tp));
         this.inTrade = true;
@@ -155,7 +149,7 @@ public class SqMnqH1Momentum66294 implements Strategy {
         if (!inTrade || positionSide == null) return;
         Order.Side exitSide = positionSide == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
         pendingOrders.add(new Order(symbol, exitSide, Order.Type.MARKET, 1.0, bar.close())
-            .withStrategyId("SqMnqH1Momentum66294")
+            .withStrategyId("MgcM30MeanRev50426")
             .asCloseOnly());
         this.inTrade = false;
         this.positionSide = null;
@@ -179,11 +173,11 @@ public class SqMnqH1Momentum66294 implements Strategy {
     }
 
     private boolean evaluateLong() {
-        return (getClose(0) > ((calcHighestHigh(25, 1) + calcLowestLow(25, 1)) * 0.5 + 0.85 * calcAtr(25, 1))) && (calcAtr(50, 1) > 0 && calcAtr(25, 0) > 1.24 * calcAtr(50, 1));
+        return (calcRsi(100, 2) < 40.0);
     }
 
     private boolean evaluateShort() {
-        return (getClose(0) < ((calcHighestHigh(25, 1) + calcLowestLow(25, 1)) * 0.5 - 0.85 * calcAtr(25, 1))) && (calcAtr(50, 1) > 0 && calcAtr(25, 0) > 1.24 * calcAtr(50, 1));
+        return (calcRsi(100, 2) > 60.0);
     }
 
     private double getClose(int shift) {

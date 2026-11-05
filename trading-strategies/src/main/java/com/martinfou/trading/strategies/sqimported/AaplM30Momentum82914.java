@@ -8,22 +8,20 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * SqMgcM30Pullback51084 — Native Evolutionary Strategy Generator (MGC M30 PULLBACK).
- *
- * <p>Backtest KPIs: Score 40.8, Net Profit $12792.50, Profit Factor 1.22 (OOS PF 1.15), Sharpe 1.29, Max DD 25.0%, Trades 395.</p>
+ * AaplM30Momentum82914 — Native Evolutionary Strategy Generator (AAPL M30 MOMENTUM).
  *
  * <ul>
- *   <li>Instrument: MGC (M30)</li>
- *   <li>Archetype: PULLBACK (BOTH)</li>
- *   <li>Long Signal: Close[2] &gt; EMA(40)[2]</li>
- *   <li>Short Signal: Close[2] &lt; EMA(40)[2]</li>
- *   <li>Entry Type: Stop Breakout at Highest/Lowest(50)[1] ± 0.61 × ATR(20) (Valid 4 bars)</li>
- *   <li>Exit Rules: SL: 2.5 × ATR(20) | PT: 4.5 × ATR(20) | Trail: 1.8 × ATR | Time Exit: 47 bars</li>
+ *   <li>Instrument: AAPL (M30)</li>
+ *   <li>Archetype: MOMENTUM (BOTH)</li>
+ *   <li>Long Signal: Close[0] &gt; SuperTrend(25, 2.5) AND Close[0] &gt; BBUpper(25, 1.7)</li>
+ *   <li>Short Signal: Close[0] &lt; SuperTrend(25, 2.5) AND Close[0] &lt; BBLower(25, 1.7)</li>
+ *   <li>Entry Type: Stop Breakout at Highest/Lowest(28)[1] ± 1.12 × ATR(14) (Valid 3 bars)</li>
+ *   <li>Exit Rules: SL: 1.4 × ATR(14) | PT: 2.3 × ATR(14) | Time Exit: 52 bars</li>
  * </ul>
  */
-public class SqMgcM30Pullback51084 implements Strategy {
+public class AaplM30Momentum82914 implements Strategy {
 
-    private static final String DEFAULT_SYMBOL = "MGC";
+    private static final String DEFAULT_SYMBOL = "AAPL";
     private String symbol;
     private final List<Bar> history = new ArrayList<>();
     private final List<Order> pendingOrders = new ArrayList<>();
@@ -40,17 +38,17 @@ public class SqMgcM30Pullback51084 implements Strategy {
     private double armedPtDist = 0.0;
     private int armedBarsRemaining = 0;
 
-    public SqMgcM30Pullback51084() {
+    public AaplM30Momentum82914() {
         this(DEFAULT_SYMBOL);
     }
 
-    public SqMgcM30Pullback51084(String symbol) {
+    public AaplM30Momentum82914(String symbol) {
         this.symbol = (symbol != null && !symbol.isBlank()) ? symbol : DEFAULT_SYMBOL;
     }
 
     @Override
     public String name() {
-        return "SqMgcM30Pullback51084";
+        return "AaplM30Momentum82914";
     }
 
     @Override
@@ -69,7 +67,7 @@ public class SqMgcM30Pullback51084 implements Strategy {
     public void onBar(Bar bar) {
         history.add(bar);
         if (history.size() < 61) return;
-        double atr = calcAtr(20, 0);
+        double atr = calcAtr(14, 0);
         if (atr <= 0) return;
 
         if (inTrade) {
@@ -81,15 +79,9 @@ public class SqMgcM30Pullback51084 implements Strategy {
                 closePosition(bar);
                 return;
             }
-            if (barsInTrade >= 47) {
+            if (barsInTrade >= 52) {
                 closePosition(bar);
                 return;
-            }
-            double trailDist = 1.80 * atr;
-            if (positionSide == Order.Side.BUY) {
-                stopLoss = Math.max(stopLoss, quantize(bar.close() - trailDist));
-            } else if (positionSide == Order.Side.SELL) {
-                stopLoss = Math.min(stopLoss, quantize(bar.close() + trailDist));
             }
             return;
         }
@@ -108,28 +100,28 @@ public class SqMgcM30Pullback51084 implements Strategy {
             if (armedBarsRemaining <= 0) clearArmed();
         }
 
-        double slDist = quantize(2.50 * atr);
-        double ptDist = quantize(4.50 * atr);
+        double slDist = quantize(1.39 * atr);
+        double ptDist = quantize(2.33 * atr);
 
         if (evaluateLong()) {
-            double hh = calcHighestHigh(50, 1);
-            double stopPrice = quantize(hh + 0.61 * atr);
+            double hh = calcHighestHigh(28, 1);
+            double stopPrice = quantize(hh + 1.12 * atr);
             if (bar.close() >= stopPrice && stopPrice > 0) {
                 executeEntry(Order.Side.BUY, bar.close(), slDist, ptDist);
                 clearArmed();
                 return;
             } else if (stopPrice > 0) {
-                armOrder(Order.Side.BUY, stopPrice, slDist, ptDist, 4);
+                armOrder(Order.Side.BUY, stopPrice, slDist, ptDist, 3);
             }
         }
         if (evaluateShort()) {
-            double ll = calcLowestLow(50, 1);
-            double stopPrice = quantize(ll - 0.61 * atr);
+            double ll = calcLowestLow(28, 1);
+            double stopPrice = quantize(ll - 1.12 * atr);
             if (bar.close() <= stopPrice && stopPrice > 0) {
                 executeEntry(Order.Side.SELL, bar.close(), slDist, ptDist);
                 clearArmed();
             } else if (stopPrice > 0) {
-                armOrder(Order.Side.SELL, stopPrice, slDist, ptDist, 4);
+                armOrder(Order.Side.SELL, stopPrice, slDist, ptDist, 3);
             }
         }
     }
@@ -141,7 +133,7 @@ public class SqMgcM30Pullback51084 implements Strategy {
         double sl = side == Order.Side.BUY ? quantize(price - safeSl) : quantize(price + safeSl);
         double tp = side == Order.Side.BUY ? quantize(price + safePt) : quantize(price - safePt);
         pendingOrders.add(new Order(symbol, side, Order.Type.MARKET, 1.0, price)
-            .withStrategyId("SqMgcM30Pullback51084")
+            .withStrategyId("AaplM30Momentum82914")
             .withStopLoss(sl)
             .withTakeProfit(tp));
         this.inTrade = true;
@@ -155,7 +147,7 @@ public class SqMgcM30Pullback51084 implements Strategy {
         if (!inTrade || positionSide == null) return;
         Order.Side exitSide = positionSide == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
         pendingOrders.add(new Order(symbol, exitSide, Order.Type.MARKET, 1.0, bar.close())
-            .withStrategyId("SqMgcM30Pullback51084")
+            .withStrategyId("AaplM30Momentum82914")
             .asCloseOnly());
         this.inTrade = false;
         this.positionSide = null;
@@ -179,11 +171,13 @@ public class SqMgcM30Pullback51084 implements Strategy {
     }
 
     private boolean evaluateLong() {
-        return (getClose(2) > calcEma(40, 2));
+        return (getClose(0) > ((calcHighestHigh(25, 1) + calcLowestLow(25, 1)) * 0.5 + 1.25 * calcAtr(25, 1)))
+            && (getClose(0) > (calcSma(25, 1) + 1.70 * calcStdDev(25, 1, calcSma(25, 1))));
     }
 
     private boolean evaluateShort() {
-        return (getClose(2) < calcEma(40, 2));
+        return (getClose(0) < ((calcHighestHigh(25, 1) + calcLowestLow(25, 1)) * 0.5 - 1.25 * calcAtr(25, 1)))
+            && (getClose(0) < (calcSma(25, 1) - 1.70 * calcStdDev(25, 1, calcSma(25, 1))));
     }
 
     private double getClose(int shift) {
@@ -200,27 +194,16 @@ public class SqMgcM30Pullback51084 implements Strategy {
         return sum / (endIdx - startIdx + 1);
     }
 
-    private double calcEma(int period, int shift) {
+    private double calcStdDev(int period, int shift, double mean) {
         int endIdx = history.size() - 1 - shift;
-        int startIdx = Math.max(0, endIdx - period * 2);
-        if (endIdx < startIdx) return 0.0;
-        double k = 2.0 / (period + 1.0);
-        double ema = history.get(startIdx).close();
-        for (int i = startIdx + 1; i <= endIdx; i++) ema = (history.get(i).close() - ema) * k + ema;
-        return ema;
-    }
-
-    private double calcRsi(int period, int shift) {
-        int endIdx = history.size() - 1 - shift;
-        int startIdx = Math.max(1, endIdx - period + 1);
-        if (endIdx < startIdx) return 50.0;
-        double gains = 0.0, losses = 0.0;
+        int startIdx = Math.max(0, endIdx - period + 1);
+        if (endIdx <= startIdx) return 0.0;
+        double sumSq = 0.0;
         for (int i = startIdx; i <= endIdx; i++) {
-            double diff = history.get(i).close() - history.get(i - 1).close();
-            if (diff > 0) gains += diff; else losses -= diff;
+            double d = history.get(i).close() - mean;
+            sumSq += d * d;
         }
-        if (losses == 0.0) return 100.0;
-        return 100.0 - (100.0 / (1.0 + gains / losses));
+        return Math.sqrt(sumSq / (endIdx - startIdx + 1));
     }
 
     private double calcAtr(int period, int shift) {

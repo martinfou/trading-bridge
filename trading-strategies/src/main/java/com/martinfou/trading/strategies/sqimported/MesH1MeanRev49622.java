@@ -8,22 +8,22 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * SqMgcM30Trend28281 — Native Evolutionary Strategy Generator (MGC M30 TREND_FOLLOWING).
+ * MesH1MeanRev49622 — Native Evolutionary Strategy Generator (MES H1 MEAN_REVERSION).
  *
- * <p>Backtest KPIs: Score 40.0, Net Profit $10455.56, Profit Factor 1.20 (OOS PF 1.18), Sharpe 1.17, Max DD 24.7%, Trades 333.</p>
+ * <p>Backtest KPIs: Score 58.2, Net Profit $4343.66, Profit Factor 1.46 (OOS PF 1.61), Sharpe 1.04, Max DD 18.3%, Trades 101.</p>
  *
  * <ul>
- *   <li>Instrument: MGC (M30)</li>
- *   <li>Archetype: TREND_FOLLOWING (BOTH)</li>
- *   <li>Long Signal: EMA(80)[1] &gt; SMA(90)[2]</li>
- *   <li>Short Signal: EMA(80)[1] &lt; SMA(90)[2]</li>
- *   <li>Entry Type: Stop Breakout at Highest/Lowest(50)[1] ± 0.57 × ATR(14) (Valid 2 bars)</li>
- *   <li>Exit Rules: SL: 2.3 × ATR(14) | PT: 4.7 × ATR(14) | Trail: 1.7 × ATR | Time Exit: 60 bars</li>
+ *   <li>Instrument: MES (H1)</li>
+ *   <li>Archetype: MEAN_REVERSION (BOTH)</li>
+ *   <li>Long Signal: RSI(14)[1] &lt; 36 (Oversold)</li>
+ *   <li>Short Signal: RSI(14)[1] &gt; 64 (Overbought)</li>
+ *   <li>Entry Type: Stop Breakout at Highest/Lowest(14)[1] ± 1.11 × ATR(20) (Valid 4 bars)</li>
+ *   <li>Exit Rules: SL: 2.3 × ATR(20) | PT: 5.5 × ATR(20) | Trail: 2.0 × ATR | Time Exit: 55 bars</li>
  * </ul>
  */
-public class SqMgcM30Trend28281 implements Strategy {
+public class MesH1MeanRev49622 implements Strategy {
 
-    private static final String DEFAULT_SYMBOL = "MGC";
+    private static final String DEFAULT_SYMBOL = "MES";
     private String symbol;
     private final List<Bar> history = new ArrayList<>();
     private final List<Order> pendingOrders = new ArrayList<>();
@@ -40,17 +40,17 @@ public class SqMgcM30Trend28281 implements Strategy {
     private double armedPtDist = 0.0;
     private int armedBarsRemaining = 0;
 
-    public SqMgcM30Trend28281() {
+    public MesH1MeanRev49622() {
         this(DEFAULT_SYMBOL);
     }
 
-    public SqMgcM30Trend28281(String symbol) {
+    public MesH1MeanRev49622(String symbol) {
         this.symbol = (symbol != null && !symbol.isBlank()) ? symbol : DEFAULT_SYMBOL;
     }
 
     @Override
     public String name() {
-        return "SqMgcM30Trend28281";
+        return "MesH1MeanRev49622";
     }
 
     @Override
@@ -69,7 +69,7 @@ public class SqMgcM30Trend28281 implements Strategy {
     public void onBar(Bar bar) {
         history.add(bar);
         if (history.size() < 61) return;
-        double atr = calcAtr(14, 0);
+        double atr = calcAtr(20, 0);
         if (atr <= 0) return;
 
         if (inTrade) {
@@ -81,11 +81,11 @@ public class SqMgcM30Trend28281 implements Strategy {
                 closePosition(bar);
                 return;
             }
-            if (barsInTrade >= 60) {
+            if (barsInTrade >= 55) {
                 closePosition(bar);
                 return;
             }
-            double trailDist = 1.70 * atr;
+            double trailDist = 2.00 * atr;
             if (positionSide == Order.Side.BUY) {
                 stopLoss = Math.max(stopLoss, quantize(bar.close() - trailDist));
             } else if (positionSide == Order.Side.SELL) {
@@ -109,27 +109,27 @@ public class SqMgcM30Trend28281 implements Strategy {
         }
 
         double slDist = quantize(2.30 * atr);
-        double ptDist = quantize(4.70 * atr);
+        double ptDist = quantize(5.50 * atr);
 
         if (evaluateLong()) {
-            double hh = calcHighestHigh(50, 1);
-            double stopPrice = quantize(hh + 0.57 * atr);
+            double hh = calcHighestHigh(14, 1);
+            double stopPrice = quantize(hh + 1.11 * atr);
             if (bar.close() >= stopPrice && stopPrice > 0) {
                 executeEntry(Order.Side.BUY, bar.close(), slDist, ptDist);
                 clearArmed();
                 return;
             } else if (stopPrice > 0) {
-                armOrder(Order.Side.BUY, stopPrice, slDist, ptDist, 2);
+                armOrder(Order.Side.BUY, stopPrice, slDist, ptDist, 4);
             }
         }
         if (evaluateShort()) {
-            double ll = calcLowestLow(50, 1);
-            double stopPrice = quantize(ll - 0.57 * atr);
+            double ll = calcLowestLow(14, 1);
+            double stopPrice = quantize(ll - 1.11 * atr);
             if (bar.close() <= stopPrice && stopPrice > 0) {
                 executeEntry(Order.Side.SELL, bar.close(), slDist, ptDist);
                 clearArmed();
             } else if (stopPrice > 0) {
-                armOrder(Order.Side.SELL, stopPrice, slDist, ptDist, 2);
+                armOrder(Order.Side.SELL, stopPrice, slDist, ptDist, 4);
             }
         }
     }
@@ -141,7 +141,7 @@ public class SqMgcM30Trend28281 implements Strategy {
         double sl = side == Order.Side.BUY ? quantize(price - safeSl) : quantize(price + safeSl);
         double tp = side == Order.Side.BUY ? quantize(price + safePt) : quantize(price - safePt);
         pendingOrders.add(new Order(symbol, side, Order.Type.MARKET, 1.0, price)
-            .withStrategyId("SqMgcM30Trend28281")
+            .withStrategyId("MesH1MeanRev49622")
             .withStopLoss(sl)
             .withTakeProfit(tp));
         this.inTrade = true;
@@ -155,7 +155,7 @@ public class SqMgcM30Trend28281 implements Strategy {
         if (!inTrade || positionSide == null) return;
         Order.Side exitSide = positionSide == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
         pendingOrders.add(new Order(symbol, exitSide, Order.Type.MARKET, 1.0, bar.close())
-            .withStrategyId("SqMgcM30Trend28281")
+            .withStrategyId("MesH1MeanRev49622")
             .asCloseOnly());
         this.inTrade = false;
         this.positionSide = null;
@@ -179,11 +179,11 @@ public class SqMgcM30Trend28281 implements Strategy {
     }
 
     private boolean evaluateLong() {
-        return (calcEma(80, 1) > calcSma(90, 2));
+        return (calcRsi(14, 1) < 36.0);
     }
 
     private boolean evaluateShort() {
-        return (calcEma(80, 1) < calcSma(90, 2));
+        return (calcRsi(14, 1) > 64.0);
     }
 
     private double getClose(int shift) {

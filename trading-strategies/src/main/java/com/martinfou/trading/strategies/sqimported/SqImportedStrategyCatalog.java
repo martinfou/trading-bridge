@@ -34,17 +34,17 @@ public final class SqImportedStrategyCatalog {
         register("SqMgcM30Breakout034297", SqMgcM30Breakout034297::new);
         register("SqMgcM30Breakout011248", SqMgcM30Breakout011248::new);
         register("SqMnqM15Momentum06737", SqMnqM15Momentum06737::new);
-        register("SqMesH1MeanRev29315", SqMesH1MeanRev29315::new);
-        register("SqMesH1MeanRev49622", SqMesH1MeanRev49622::new);
-        register("SqMgcM30MeanRev50426", SqMgcM30MeanRev50426::new);
-        register("SqMgcM30Pullback51084", SqMgcM30Pullback51084::new);
-        register("SqMgcM30Trend28281", SqMgcM30Trend28281::new);
-        register("SqMnqH1Momentum66294", SqMnqH1Momentum66294::new);
-        register("SqMnqH1MeanRev91321", SqMnqH1MeanRev91321::new);
-        register("SqMgcM30Momentum86612", SqMgcM30Momentum86612::new);
-        register("SqAaplM30Momentum82914", SqAaplM30Momentum82914::new);
-        register("SqMgcH1Trend29170", SqMgcH1Trend29170::new);
-        register("SqMgcH1Trend64270", SqMgcH1Trend64270::new);
+        register("MesH1MeanRev29315", MesH1MeanRev29315::new);
+        register("MesH1MeanRev49622", MesH1MeanRev49622::new);
+        register("MgcM30MeanRev50426", MgcM30MeanRev50426::new);
+        register("MgcM30Pullback51084", MgcM30Pullback51084::new);
+        register("MgcM30Trend28281", MgcM30Trend28281::new);
+        register("MnqH1Momentum66294", MnqH1Momentum66294::new);
+        register("MnqH1MeanRev91321", MnqH1MeanRev91321::new);
+        register("MgcM30Momentum86612", MgcM30Momentum86612::new);
+        register("AaplM30Momentum82914", AaplM30Momentum82914::new);
+        register("MgcH1Trend29170", MgcH1Trend29170::new);
+        register("MgcH1Trend64270", MgcH1Trend64270::new);
     }
 
     private SqImportedStrategyCatalog() {}
@@ -71,11 +71,11 @@ public final class SqImportedStrategyCatalog {
         }
         String upper = key.toUpperCase();
         if (upper.contains("GOLD") || upper.contains("MGC")) return "MGC";
-        if (upper.startsWith("SQGC")) return "GC";
+        if (upper.startsWith("GC") || upper.startsWith("SQGC")) return "GC";
         if (upper.contains("MNQ")) return "MNQ";
-        if (upper.startsWith("SQNQ")) return "NQ";
+        if (upper.startsWith("NQ") || upper.startsWith("SQNQ")) return "NQ";
         if (upper.contains("MES")) return "MES";
-        if (upper.startsWith("SQES")) return "ES";
+        if (upper.startsWith("ES") || upper.startsWith("SQES")) return "ES";
         if (upper.contains("AAPL")) return "AAPL";
         if (upper.contains("NVDA")) return "NVDA";
         if (upper.contains("TSLA")) return "TSLA";

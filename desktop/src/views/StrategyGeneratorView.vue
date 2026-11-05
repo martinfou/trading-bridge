@@ -648,7 +648,7 @@ const COLUMN_DEFINITIONS: Record<string, ColDefinition> = {
   },
   id: {
     title: 'Strategy ID & Catalog Status',
-    formula: 'Sq<Symbol><Timeframe><Archetype><GenomeHash>',
+    formula: '<Symbol><Timeframe><Archetype><GenomeHash>',
     description: 'Unique deterministic identifier generated from the instrument, timeframe, trading style, and rule genome. Strategies marked "SAVED" are compiled into trading-strategies.',
     benchmark: 'Click any row to inspect its Equity Curve, Rule DNA & Java source code'
   },

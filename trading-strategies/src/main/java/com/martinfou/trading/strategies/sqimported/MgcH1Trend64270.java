@@ -8,20 +8,20 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * SqMgcM30MeanRev50426 — Native Evolutionary Strategy Generator (MGC M30 MEAN_REVERSION).
+ * MgcH1Trend64270 — Native Evolutionary Strategy Generator (MGC H1 TREND_FOLLOWING).
  *
- * <p>Backtest KPIs: Score 74.0, Net Profit $1910.64, Profit Factor 1.73 (OOS PF 1.90), Sharpe 0.55, Max DD 8.4%, Trades 28.</p>
+ * <p>Backtest KPIs: Score 64.9, Net Profit $9852.00, Profit Factor 1.51 (OOS PF 1.31), Sharpe 1.71, Max DD 12.2%, Trades 175.</p>
  *
  * <ul>
- *   <li>Instrument: MGC (M30)</li>
- *   <li>Archetype: MEAN_REVERSION (BOTH)</li>
- *   <li>Long Signal: RSI(100)[2] &lt; 40 (Oversold)</li>
- *   <li>Short Signal: RSI(100)[2] &gt; 60 (Overbought)</li>
- *   <li>Entry Type: Stop Breakout at Highest/Lowest(50)[1] ± 0.54 × ATR(20) (Valid 7 bars)</li>
- *   <li>Exit Rules: SL: 2.4 × ATR(20) | PT: 3.7 × ATR(20) | Time Exit: 62 bars</li>
+ *   <li>Instrument: MGC (H1)</li>
+ *   <li>Archetype: TREND_FOLLOWING (BOTH)</li>
+ *   <li>Long Signal: MACD(40, 50)[3] &gt; 0 & Rising</li>
+ *   <li>Short Signal: MACD(40, 50)[3] &lt; 0 & Falling</li>
+ *   <li>Entry Type: Stop Breakout at Highest/Lowest(50)[1] ± 0.73 × ATR(14) (Valid 2 bars)</li>
+ *   <li>Exit Rules: SL: 1.5 × ATR(14) | PT: 3.5 × ATR(14) | Trail: 2.9 × ATR | Time Exit: 58 bars</li>
  * </ul>
  */
-public class SqMgcM30MeanRev50426 implements Strategy {
+public class MgcH1Trend64270 implements Strategy {
 
     private static final String DEFAULT_SYMBOL = "MGC";
     private String symbol;
@@ -40,17 +40,17 @@ public class SqMgcM30MeanRev50426 implements Strategy {
     private double armedPtDist = 0.0;
     private int armedBarsRemaining = 0;
 
-    public SqMgcM30MeanRev50426() {
+    public MgcH1Trend64270() {
         this(DEFAULT_SYMBOL);
     }
 
-    public SqMgcM30MeanRev50426(String symbol) {
+    public MgcH1Trend64270(String symbol) {
         this.symbol = (symbol != null && !symbol.isBlank()) ? symbol : DEFAULT_SYMBOL;
     }
 
     @Override
     public String name() {
-        return "SqMgcM30MeanRev50426";
+        return "MgcH1Trend64270";
     }
 
     @Override
@@ -69,7 +69,7 @@ public class SqMgcM30MeanRev50426 implements Strategy {
     public void onBar(Bar bar) {
         history.add(bar);
         if (history.size() < 61) return;
-        double atr = calcAtr(20, 0);
+        double atr = calcAtr(14, 0);
         if (atr <= 0) return;
 
         if (inTrade) {
@@ -81,9 +81,15 @@ public class SqMgcM30MeanRev50426 implements Strategy {
                 closePosition(bar);
                 return;
             }
-            if (barsInTrade >= 62) {
+            if (barsInTrade >= 58) {
                 closePosition(bar);
                 return;
+            }
+            double trailDist = 2.85 * atr;
+            if (positionSide == Order.Side.BUY) {
+                stopLoss = Math.max(stopLoss, quantize(bar.close() - trailDist));
+            } else if (positionSide == Order.Side.SELL) {
+                stopLoss = Math.min(stopLoss, quantize(bar.close() + trailDist));
             }
             return;
         }
@@ -102,28 +108,28 @@ public class SqMgcM30MeanRev50426 implements Strategy {
             if (armedBarsRemaining <= 0) clearArmed();
         }
 
-        double slDist = quantize(2.40 * atr);
-        double ptDist = quantize(3.70 * atr);
+        double slDist = quantize(1.53 * atr);
+        double ptDist = quantize(3.45 * atr);
 
         if (evaluateLong()) {
             double hh = calcHighestHigh(50, 1);
-            double stopPrice = quantize(hh + 0.54 * atr);
+            double stopPrice = quantize(hh + 0.73 * atr);
             if (bar.close() >= stopPrice && stopPrice > 0) {
                 executeEntry(Order.Side.BUY, bar.close(), slDist, ptDist);
                 clearArmed();
                 return;
             } else if (stopPrice > 0) {
-                armOrder(Order.Side.BUY, stopPrice, slDist, ptDist, 7);
+                armOrder(Order.Side.BUY, stopPrice, slDist, ptDist, 2);
             }
         }
         if (evaluateShort()) {
             double ll = calcLowestLow(50, 1);
-            double stopPrice = quantize(ll - 0.54 * atr);
+            double stopPrice = quantize(ll - 0.73 * atr);
             if (bar.close() <= stopPrice && stopPrice > 0) {
                 executeEntry(Order.Side.SELL, bar.close(), slDist, ptDist);
                 clearArmed();
             } else if (stopPrice > 0) {
-                armOrder(Order.Side.SELL, stopPrice, slDist, ptDist, 7);
+                armOrder(Order.Side.SELL, stopPrice, slDist, ptDist, 2);
             }
         }
     }
@@ -135,7 +141,7 @@ public class SqMgcM30MeanRev50426 implements Strategy {
         double sl = side == Order.Side.BUY ? quantize(price - safeSl) : quantize(price + safeSl);
         double tp = side == Order.Side.BUY ? quantize(price + safePt) : quantize(price - safePt);
         pendingOrders.add(new Order(symbol, side, Order.Type.MARKET, 1.0, price)
-            .withStrategyId("SqMgcM30MeanRev50426")
+            .withStrategyId("MgcH1Trend64270")
             .withStopLoss(sl)
             .withTakeProfit(tp));
         this.inTrade = true;
@@ -149,7 +155,7 @@ public class SqMgcM30MeanRev50426 implements Strategy {
         if (!inTrade || positionSide == null) return;
         Order.Side exitSide = positionSide == Order.Side.BUY ? Order.Side.SELL : Order.Side.BUY;
         pendingOrders.add(new Order(symbol, exitSide, Order.Type.MARKET, 1.0, bar.close())
-            .withStrategyId("SqMgcM30MeanRev50426")
+            .withStrategyId("MgcH1Trend64270")
             .asCloseOnly());
         this.inTrade = false;
         this.positionSide = null;
@@ -173,16 +179,36 @@ public class SqMgcM30MeanRev50426 implements Strategy {
     }
 
     private boolean evaluateLong() {
-        return (calcRsi(100, 2) < 40.0);
+        return ((calcEma(40, 3) - calcEma(50, 3)) > 0 && (calcEma(40, 3) - calcEma(50, 3)) > (calcEma(40, 4) - calcEma(50, 4)));
     }
 
     private boolean evaluateShort() {
-        return (calcRsi(100, 2) > 60.0);
+        return ((calcEma(40, 3) - calcEma(50, 3)) < 0 && (calcEma(40, 3) - calcEma(50, 3)) < (calcEma(40, 4) - calcEma(50, 4)));
     }
 
     private double getClose(int shift) {
         int idx = Math.max(0, history.size() - 1 - shift);
         return history.get(idx).close();
+    }
+
+    private double getOpen(int shift) {
+        int idx = Math.max(0, history.size() - 1 - shift);
+        return history.get(idx).open();
+    }
+
+    private double getHigh(int shift) {
+        int idx = Math.max(0, history.size() - 1 - shift);
+        return history.get(idx).high();
+    }
+
+    private double getLow(int shift) {
+        int idx = Math.max(0, history.size() - 1 - shift);
+        return history.get(idx).low();
+    }
+
+    private double getVolume(int shift) {
+        int idx = Math.max(0, history.size() - 1 - shift);
+        return Math.max(1.0, history.get(idx).volume());
     }
 
     private double calcSma(int period, int shift) {
@@ -202,6 +228,15 @@ public class SqMgcM30MeanRev50426 implements Strategy {
         double ema = history.get(startIdx).close();
         for (int i = startIdx + 1; i <= endIdx; i++) ema = (history.get(i).close() - ema) * k + ema;
         return ema;
+    }
+
+    private double calcStdDev(int period, int shift, double mean) {
+        int endIdx = history.size() - 1 - shift;
+        int startIdx = Math.max(0, endIdx - period + 1);
+        if (endIdx <= startIdx) return 0.0;
+        double sumSq = 0.0;
+        for (int i = startIdx; i <= endIdx; i++) { double d = history.get(i).close() - mean; sumSq += d * d; }
+        return Math.sqrt(sumSq / (endIdx - startIdx + 1));
     }
 
     private double calcRsi(int period, int shift) {
@@ -247,6 +282,71 @@ public class SqMgcM30MeanRev50426 implements Strategy {
         double min = Double.POSITIVE_INFINITY;
         for (int i = startIdx; i <= endIdx; i++) min = Math.min(min, history.get(i).low());
         return min == Double.POSITIVE_INFINITY ? 0.0 : min;
+    }
+
+    private double calcStochK(int period, int shift) {
+        double hh = calcHighestHigh(period, shift);
+        double ll = calcLowestLow(period, shift);
+        if (hh <= ll) return 50.0;
+        return ((getClose(shift) - ll) / (hh - ll)) * 100.0;
+    }
+
+    private double calcCci(int period, int shift) {
+        double mean = calcSma(period, shift);
+        double sd = calcStdDev(period, shift, mean);
+        if (sd <= 0.0) return 0.0;
+        return (getClose(shift) - mean) / (0.015 * sd);
+    }
+
+    private double calcVwap(int period, int shift) {
+        int endIdx = history.size() - 1 - shift;
+        int startIdx = Math.max(0, endIdx - period + 1);
+        if (endIdx < startIdx) return getClose(shift);
+        double pv = 0.0, vol = 0.0;
+        for (int i = startIdx; i <= endIdx; i++) {
+            Bar b = history.get(i);
+            double v = Math.max(1.0, b.volume());
+            double typ = (b.high() + b.low() + b.close()) / 3.0;
+            pv += typ * v;
+            vol += v;
+        }
+        return vol > 0 ? pv / vol : getClose(shift);
+    }
+
+    private double calcAvgVolume(int period, int shift) {
+        int endIdx = history.size() - 1 - shift;
+        int startIdx = Math.max(0, endIdx - period + 1);
+        if (endIdx < startIdx) return 1.0;
+        double sum = 0.0;
+        for (int i = startIdx; i <= endIdx; i++) sum += Math.max(1.0, history.get(i).volume());
+        return sum / (endIdx - startIdx + 1);
+    }
+
+    private double calcLinRegSlope(int period, int shift) {
+        int n = Math.max(3, period);
+        int endIdx = history.size() - 1 - shift;
+        int startIdx = Math.max(0, endIdx - n + 1);
+        int count = endIdx - startIdx + 1;
+        if (count < 3) return 0.0;
+        double sumX = 0.0, sumY = 0.0, sumXY = 0.0, sumX2 = 0.0;
+        for (int i = 0; i < count; i++) {
+            double y = history.get(startIdx + i).close();
+            sumX += i; sumY += y; sumXY += i * y; sumX2 += (double) i * i;
+        }
+        double denom = count * sumX2 - sumX * sumX;
+        return Math.abs(denom) > 1e-9 ? (count * sumXY - sumX * sumY) / denom : 0.0;
+    }
+
+    private double calcEfficiencyRatio(int period, int shift) {
+        int endIdx = history.size() - 1 - shift;
+        int startIdx = Math.max(1, endIdx - period + 1);
+        if (endIdx <= startIdx) return 0.5;
+        double net = Math.abs(history.get(endIdx).close() - history.get(startIdx - 1).close());
+        double path = 0.0;
+        for (int i = startIdx; i <= endIdx; i++) {
+            path += Math.abs(history.get(i).close() - history.get(i - 1).close());
+        }
+        return path > 0.0 ? net / path : 0.0;
     }
 
     private double quantize(double price) {

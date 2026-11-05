@@ -175,18 +175,29 @@ public final class StrategyGeneratorService implements AutoCloseable {
     private void loadPersistedState() {
         try {
             Files.createDirectories(storageDir);
+            boolean migrated = false;
             if (Files.isRegularFile(databankFile)) {
                 List<DatabankCandidate> loaded = MAPPER.readValue(databankFile.toFile(), new TypeReference<>() {});
                 if (loaded != null) {
-                    databank.addAll(loaded);
+                    for (DatabankCandidate c : loaded) {
+                        DatabankCandidate norm = stripSqPrefix(c);
+                        if (!norm.id().equals(c.id())) {
+                            migrated = true;
+                        }
+                        databank.add(norm);
+                    }
                 }
             }
             if (Files.isRegularFile(promotedFile)) {
                 List<DatabankCandidate> promoted = MAPPER.readValue(promotedFile.toFile(), new TypeReference<>() {});
                 if (promoted != null) {
                     for (DatabankCandidate c : promoted) {
-                        promotedCatalog.put(c.id(), c);
-                        registerInCatalog(c);
+                        DatabankCandidate norm = stripSqPrefix(c);
+                        if (!norm.id().equals(c.id())) {
+                            migrated = true;
+                        }
+                        promotedCatalog.put(norm.id(), norm);
+                        registerInCatalog(norm);
                     }
                 }
             }
@@ -196,9 +207,40 @@ public final class StrategyGeneratorService implements AutoCloseable {
                 }
                 registerInCatalog(c);
             }
+            if (migrated) {
+                persistDatabank();
+            }
         } catch (Exception e) {
             log.warn("Failed to load persisted StrategyGenerator databank: {}", e.getMessage());
         }
+    }
+
+    private static DatabankCandidate stripSqPrefix(DatabankCandidate c) {
+        if (c == null || c.id() == null || !c.id().startsWith("Sq") || c.id().length() <= 2) {
+            return c;
+        }
+        String oldId = c.id();
+        String newId = oldId.substring(2);
+        StrategyGenome g = c.genome();
+        StrategyGenome newGenome = g != null ? new StrategyGenome(
+            newId, g.symbol(), g.timeframe(), g.archetype(), g.direction(), g.entryOrderType(),
+            g.longRules(), g.shortRules(), g.stopEntryLookback(), g.stopEntryAtrMult(), g.stopOrderValidBars(),
+            g.atrPeriod(), g.slAtrMult(), g.tpAtrMult(), g.trailingAtrMult(), g.maxBarsInTrade()
+        ) : null;
+        String newPath = c.javaFilePath() != null ? c.javaFilePath().replace(oldId + ".java", newId + ".java") : null;
+        String newCode = c.javaSourceCode() != null ? c.javaSourceCode().replace(oldId, newId) : null;
+        return new DatabankCandidate(
+            newId, c.symbol(), c.timeframe(), c.yearSpec(), c.archetype(), c.direction(), c.entryOrderType(),
+            c.tier(), c.compositeScore(), c.totalTrades(), c.isTrades(), c.oosTrades(),
+            c.netProfit(), c.isNetProfit(), c.oosNetProfit(), c.totalReturnPct(),
+            c.profitFactor(), c.isProfitFactor(), c.oosProfitFactor(),
+            c.sharpeRatio(), c.isSharpeRatio(), c.oosSharpeRatio(),
+            c.winRatePct(), c.maxDrawdownPct(), c.retDdRatio(), c.rSquared(),
+            c.mcVar95(), c.mcLossProbPct(), c.generationFound(), c.createdAt(),
+            c.promoted(), newPath, c.longSignalSummary(), c.shortSignalSummary(),
+            c.entrySummary(), c.exitSummary(), c.indicators(), c.equityCurve(),
+            c.oosStartIndex(), newGenome, newCode
+        );
     }
 
     private synchronized void persistDatabank() {
@@ -738,7 +780,7 @@ public final class StrategyGeneratorService implements AutoCloseable {
         String cleanSym = formatCamelSymbol(req.symbol());
         String cleanArch = formatCamelArchetype(arch);
         int serial = rng.nextInt(10000, 99999);
-        String id = "Sq" + cleanSym + req.timeframe().toUpperCase(Locale.ROOT) + cleanArch + serial;
+        String id = cleanSym + req.timeframe().toUpperCase(Locale.ROOT) + cleanArch + serial;
 
         String orderType = "ALL".equalsIgnoreCase(req.entryOrderType())
             ? (rng.nextBoolean() ? "STOP" : "MARKET")
@@ -888,7 +930,7 @@ public final class StrategyGeneratorService implements AutoCloseable {
         ThreadLocalRandom rng = ThreadLocalRandom.current();
         String cleanSym = formatCamelSymbol(req.symbol());
         String cleanArch = formatCamelArchetype(p1.archetype());
-        String id = "Sq" + cleanSym + req.timeframe().toUpperCase(Locale.ROOT) + cleanArch + rng.nextInt(10000, 99999);
+        String id = cleanSym + req.timeframe().toUpperCase(Locale.ROOT) + cleanArch + rng.nextInt(10000, 99999);
 
         List<RuleGene> longRules = new ArrayList<>();
         if (!p1.longRules().isEmpty()) {
