@@ -28,6 +28,8 @@ let isAreaSeries: ISeriesApi<'Area'> | null = null
 let oosAreaSeries: ISeriesApi<'Area'> | null = null
 let drawdownSeries: ISeriesApi<'Histogram'> | null = null
 let resizeObserver: ResizeObserver | null = null
+let splitTimer: number | null = null
+let lastTimes: number[] = []
 
 const splitX = ref<number | null>(null)
 const plotWidth = ref<number>(0)
@@ -41,8 +43,8 @@ const hasOosSplit = computed(() => {
 })
 
 const inSamplePctLabel = computed(() => {
-  if (typeof props.oosSplitPct === 'number' && props.oosSplitPct > 0) {
-    return `${100 - props.oosSplitPct}%`
+  if (typeof props.oosSplitPct === 'number' && props.oosSplitPct > 0 && props.oosSplitPct < 100) {
+    return `${100 - Math.round(props.oosSplitPct)}%`
   }
   if (hasOosSplit.value && props.data.length > 1) {
     return `${Math.round(((props.oosStartIndex ?? 0) / (props.data.length - 1)) * 100)}%`
@@ -51,8 +53,8 @@ const inSamplePctLabel = computed(() => {
 })
 
 const outOfSamplePctLabel = computed(() => {
-  if (typeof props.oosSplitPct === 'number' && props.oosSplitPct > 0) {
-    return `${props.oosSplitPct}%`
+  if (typeof props.oosSplitPct === 'number' && props.oosSplitPct > 0 && props.oosSplitPct < 100) {
+    return `${Math.round(props.oosSplitPct)}%`
   }
   if (hasOosSplit.value && props.data.length > 1) {
     return `${100 - Math.round(((props.oosStartIndex ?? 0) / (props.data.length - 1)) * 100)}%`
@@ -100,15 +102,19 @@ function updateSplitOverlay(times: number[]) {
   }
   const totalWidth = container.value.clientWidth
   const rightScaleWidth = chart.priceScale('right').width() || 62
-  const currentPlotWidth = Math.max(100, totalWidth - rightScaleWidth)
+  if (totalWidth <= rightScaleWidth + 20) {
+    splitX.value = null
+    return
+  }
+  const currentPlotWidth = totalWidth - rightScaleWidth
   plotWidth.value = currentPlotWidth
 
   const oosIdx = Math.min(props.data.length - 1, Math.max(1, props.oosStartIndex ?? 0))
   const splitTime = times[oosIdx]
   const coord = splitTime !== undefined ? chart.timeScale().timeToCoordinate(splitTime as any) : null
 
-  if (coord !== null && coord !== undefined && coord > 0 && coord < currentPlotWidth) {
-    splitX.value = Math.round(coord)
+  if (coord !== null && coord !== undefined) {
+    splitX.value = Math.max(0, Math.min(currentPlotWidth, Math.round(coord)))
   } else {
     // Proportional fallback before canvas layout settles
     splitX.value = Math.round((oosIdx / Math.max(1, props.data.length - 1)) * currentPlotWidth)
@@ -159,6 +165,7 @@ async function render() {
   })
 
   const times = generateTimes(props.data.length, props.periodStart, props.periodEnd)
+  lastTimes = times
 
   if (hasOosSplit.value) {
     const oosIdx = Math.min(props.data.length - 1, Math.max(1, props.oosStartIndex ?? 0))
@@ -252,9 +259,13 @@ async function render() {
   chart.timeScale().fitContent()
 
   // Update the IS/OOS visual split overlay after fitContent
+  if (splitTimer !== null) {
+    clearTimeout(splitTimer)
+    splitTimer = null
+  }
   requestAnimationFrame(() => {
     updateSplitOverlay(times)
-    setTimeout(() => updateSplitOverlay(times), 60)
+    splitTimer = window.setTimeout(() => updateSplitOverlay(times), 60)
   })
 
   chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
@@ -266,7 +277,9 @@ function resize() {
   if (chart && container.value) {
     chart.applyOptions({ height: props.height ?? 200, width: container.value.clientWidth })
     chart.timeScale().fitContent()
-    const times = generateTimes(props.data.length, props.periodStart, props.periodEnd)
+    const times = lastTimes.length === props.data.length
+      ? lastTimes
+      : generateTimes(props.data.length, props.periodStart, props.periodEnd)
     requestAnimationFrame(() => updateSplitOverlay(times))
   }
 }
@@ -287,6 +300,10 @@ watch(() => props.periodEnd, render)
 watch(() => props.height, resize)
 
 onUnmounted(() => {
+  if (splitTimer !== null) {
+    clearTimeout(splitTimer)
+    splitTimer = null
+  }
   resizeObserver?.disconnect()
   resizeObserver = null
   chart?.remove()

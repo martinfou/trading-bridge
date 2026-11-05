@@ -184,7 +184,9 @@ public final class StrategyGeneratorService implements AutoCloseable {
                         if (!norm.id().equals(c.id())) {
                             migrated = true;
                         }
-                        databank.add(norm);
+                        if (databank.stream().noneMatch(existing -> existing.id().equals(norm.id()))) {
+                            databank.add(norm);
+                        }
                     }
                 }
             }
@@ -216,11 +218,17 @@ public final class StrategyGeneratorService implements AutoCloseable {
     }
 
     private static DatabankCandidate stripSqPrefix(DatabankCandidate c) {
-        if (c == null || c.id() == null || !c.id().startsWith("Sq") || c.id().length() <= 2) {
+        if (c == null || c.id() == null || !c.id().startsWith("Sq") || c.id().length() <= 4) {
+            return c;
+        }
+        if (c.symbol() != null && c.symbol().toUpperCase(Locale.ROOT).startsWith("SQ")) {
             return c;
         }
         String oldId = c.id();
         String newId = oldId.substring(2);
+        if (!Character.isUpperCase(newId.charAt(0))) {
+            return c;
+        }
         StrategyGenome g = c.genome();
         StrategyGenome newGenome = g != null ? new StrategyGenome(
             newId, g.symbol(), g.timeframe(), g.archetype(), g.direction(), g.entryOrderType(),
@@ -323,11 +331,13 @@ public final class StrategyGeneratorService implements AutoCloseable {
 
     public void deleteCandidate(String id) {
         databank.removeIf(c -> c.id().equals(id));
+        promotedCatalog.remove(id);
         persistDatabank();
     }
 
     public void clearDatabank() {
         databank.clear();
+        promotedCatalog.clear();
         persistDatabank();
     }
 
@@ -487,7 +497,7 @@ public final class StrategyGeneratorService implements AutoCloseable {
             this.totalBarsLoaded = bars.size();
             int splitIdx = Math.clamp((int) Math.round(bars.size() * (100 - req.oosSplitPct()) / 100.0), 80, bars.size() - 40);
             List<Bar> isBars = bars.subList(0, splitIdx);
-            List<Bar> oosBars = bars.subList(Math.max(0, splitIdx - 60), bars.size());
+            List<Bar> oosBars = bars.subList(Math.max(0, splitIdx - 210), bars.size());
             this.isBarsCount = isBars.size();
             this.oosBarsCount = bars.size() - splitIdx;
 
@@ -536,6 +546,8 @@ public final class StrategyGeneratorService implements AutoCloseable {
                                         && existing.timeframe().equals(sg.candidate.timeframe())
                                         && existing.entryOrderType().equals(sg.candidate.entryOrderType())
                                         && existing.longSignalSummary().equals(sg.candidate.longSignalSummary())
+                                        && existing.shortSignalSummary().equals(sg.candidate.shortSignalSummary())
+                                        && existing.entrySummary().equals(sg.candidate.entrySummary())
                                         && existing.exitSummary().equals(sg.candidate.exitSummary())
                                     )
                                 );
@@ -934,12 +946,21 @@ public final class StrategyGeneratorService implements AutoCloseable {
 
         List<RuleGene> longRules = new ArrayList<>();
         if (!p1.longRules().isEmpty()) {
-            longRules.add(p1.longRules().getFirst().mutate());
+            RuleGene first = rng.nextDouble() < 0.25
+                ? randomRuleForBlock(pickBlockForArchetype(p1.archetype(), allowedBlocks, 0, rng), p1.archetype(), rng)
+                : p1.longRules().getFirst().mutate();
+            longRules.add(first);
+        } else {
+            longRules.add(randomRuleForBlock(pickBlockForArchetype(p1.archetype(), allowedBlocks, 0, rng), p1.archetype(), rng));
         }
+        RuleGene secondCandidate = null;
         if (p2.longRules().size() > 1 && rng.nextBoolean()) {
-            longRules.add(p2.longRules().get(1).mutate());
+            secondCandidate = p2.longRules().get(1).mutate();
         } else if (p1.longRules().size() > 1 && rng.nextBoolean()) {
-            longRules.add(p1.longRules().get(1).mutate());
+            secondCandidate = p1.longRules().get(1).mutate();
+        }
+        if (secondCandidate != null && secondCandidate.blockType() != longRules.getFirst().blockType()) {
+            longRules.add(secondCandidate);
         }
 
         double sl = round2((p1.slAtrMult() + p2.slAtrMult()) * 0.5 + rng.nextDouble(-0.25, 0.25));
@@ -947,6 +968,7 @@ public final class StrategyGeneratorService implements AutoCloseable {
         sl = Math.clamp(sl, 1.0, 3.8);
         tp = Math.clamp(tp, sl * 1.15, 7.5);
 
+        List<RuleGene> rulesCopy = List.copyOf(longRules);
         return new StrategyGenome(
             id,
             req.symbol(),
@@ -954,8 +976,8 @@ public final class StrategyGeneratorService implements AutoCloseable {
             p1.archetype(),
             req.direction(),
             rng.nextBoolean() ? p1.entryOrderType() : p2.entryOrderType(),
-            longRules,
-            longRules,
+            rulesCopy,
+            rulesCopy,
             rng.nextBoolean() ? p1.stopEntryLookback() : p2.stopEntryLookback(),
             round2(Math.clamp((p1.stopEntryAtrMult() + p2.stopEntryAtrMult()) * 0.5, 0.1, 1.6)),
             rng.nextBoolean() ? p1.stopOrderValidBars() : p2.stopOrderValidBars(),
@@ -1029,7 +1051,13 @@ public final class StrategyGeneratorService implements AutoCloseable {
     }
 
     private static String formatCamelSymbol(String sym) {
-        String clean = sym.replace("_", "").replace("/", "").toLowerCase(Locale.ROOT);
+        String clean = (sym == null ? "Mgc" : sym).replaceAll("[^A-Za-z0-9]", "").toLowerCase(Locale.ROOT);
+        if (clean.isEmpty()) {
+            return "Mgc";
+        }
+        if (Character.isDigit(clean.charAt(0))) {
+            clean = "s" + clean;
+        }
         if (clean.length() == 6) {
             return Character.toUpperCase(clean.charAt(0)) + clean.substring(1, 3)
                 + Character.toUpperCase(clean.charAt(3)) + clean.substring(4);

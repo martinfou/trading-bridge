@@ -92,12 +92,12 @@ public record StrategyGenome(
                     ? String.format(Locale.US, "Close[0] > SuperTrend(%d, %.1f)", period1, threshold)
                     : String.format(Locale.US, "Close[0] < SuperTrend(%d, %.1f)", period1, threshold);
                 case BOLLINGER_BANDS -> {
-                    if (threshold > 0) {
+                    double std = Math.abs(threshold) > 0.1 ? Math.abs(threshold) : 2.0;
+                    if (threshold >= 0) {
                         yield isLong
-                            ? String.format(Locale.US, "Close[0] > BBUpper(%d, %.1f)", period1, threshold)
-                            : String.format(Locale.US, "Close[0] < BBLower(%d, %.1f)", period1, threshold);
+                            ? String.format(Locale.US, "Close[0] > BBUpper(%d, %.1f)", period1, std)
+                            : String.format(Locale.US, "Close[0] < BBLower(%d, %.1f)", period1, std);
                     } else {
-                        double std = Math.abs(threshold);
                         yield isLong
                             ? String.format(Locale.US, "Close[0] < BBLower(%d, %.1f) (Oversold Dip)", period1, std)
                             : String.format(Locale.US, "Close[0] > BBUpper(%d, %.1f) (Overbought Spike)", period1, std);
@@ -119,8 +119,8 @@ public record StrategyGenome(
                 case ADX_REGIME -> String.format(Locale.US, "ADX(%d)[%d] > %.0f", period1, shift1, threshold);
                 case ATR_EXPANSION -> String.format(Locale.US, "ATR(%d)[0] > %.2f * ATR(%d)[1]", period1, threshold, period2);
                 case DAILY_HIGH_LOW -> isLong
-                    ? String.format(Locale.US, "DailyHigh[%d] > DailyHigh[%d]", Math.max(1, shift1), Math.max(2, shift2))
-                    : String.format(Locale.US, "DailyLow[%d] < DailyLow[%d]", Math.max(1, shift1), Math.max(2, shift2));
+                    ? String.format(Locale.US, "DailyHigh[%d] > DailyHigh[%d]", Math.max(1, shift1), Math.max(2, shift2) + 8)
+                    : String.format(Locale.US, "DailyLow[%d] < DailyLow[%d]", Math.max(1, shift1), Math.max(2, shift2) + 8);
                 case MOMENTUM_ROC -> isLong
                     ? String.format(Locale.US, "Close[0] > Close[%d] + %.2f * ATR(14)", period1, threshold)
                     : String.format(Locale.US, "Close[0] < Close[%d] - %.2f * ATR(14)", period1, threshold);
@@ -176,12 +176,18 @@ public record StrategyGenome(
                 case ENGULFING_PATTERN -> isLong
                     ? String.format(Locale.US, "Bullish Engulfing Bar[0..%d] (Body > %.2f * ATR)", Math.max(1, shift1), Math.max(0.15, threshold))
                     : String.format(Locale.US, "Bearish Engulfing Bar[0..%d] (Body > %.2f * ATR)", Math.max(1, shift1), Math.max(0.15, threshold));
-                case INSIDE_BAR_COIL -> isLong
-                    ? String.format(Locale.US, "InsideBar Coil[%d] & Close[0] > High[1]", Math.max(1, shift1))
-                    : String.format(Locale.US, "InsideBar Coil[%d] & Close[0] < Low[1]", Math.max(1, shift1));
-                case LINEAR_REG_SLOPE -> isLong
-                    ? String.format(Locale.US, "LinRegSlope(%d)[%d] > +%.2f * ATR", period1, shift1, Math.max(0.05, threshold))
-                    : String.format(Locale.US, "LinRegSlope(%d)[%d] < -%.2f * ATR", period1, shift1, Math.max(0.05, threshold));
+                case INSIDE_BAR_COIL -> {
+                    int cs = Math.max(1, shift1);
+                    yield isLong
+                        ? String.format(Locale.US, "InsideBar Coil[%d] & Close[0] > High[%d]", cs, cs)
+                        : String.format(Locale.US, "InsideBar Coil[%d] & Close[0] < Low[%d]", cs, cs);
+                }
+                case LINEAR_REG_SLOPE -> {
+                    double sMult = Math.max(0.02, Math.abs(threshold) * 0.12);
+                    yield isLong
+                        ? String.format(Locale.US, "LinRegSlope(%d)[%d] > +%.3f * ATR", period1, shift1, sMult)
+                        : String.format(Locale.US, "LinRegSlope(%d)[%d] < -%.3f * ATR", period1, shift1, sMult);
+                }
                 case ZSCORE_EXTREME -> {
                     double z = Math.max(0.8, Math.abs(threshold));
                     if (threshold < 0) {
@@ -194,10 +200,13 @@ public record StrategyGenome(
                             : String.format(Locale.US, "ZScore(%d)[%d] < -%.2f (Momentum Thrust)", period1, shift1, z);
                     }
                 }
-                case CHOPPINESS_FILTER -> String.format(Locale.US, "EfficiencyRatio(%d)[%d] > %.2f (Trending Regime)", period1, shift1, Math.clamp(threshold, 0.20, 0.75));
-                case HIGHER_HIGHS_SWING -> isLong
-                    ? String.format(Locale.US, "SwingHigh/Low(%d) Higher-High & Higher-Low", period1)
-                    : String.format(Locale.US, "SwingHigh/Low(%d) Lower-Low & Lower-High", period1);
+                case CHOPPINESS_FILTER -> String.format(Locale.US, "EfficiencyRatio(%d)[%d] > %.2f (Trending Regime)", period1, shift1, Math.clamp(threshold, 0.20, 0.70));
+                case HIGHER_HIGHS_SWING -> {
+                    int sw = Math.max(4, Math.min(20, Math.max(2, period1) / 2));
+                    yield isLong
+                        ? String.format(Locale.US, "SwingHigh/Low(%d) Higher-High & Higher-Low", sw)
+                        : String.format(Locale.US, "SwingHigh/Low(%d) Lower-Low & Lower-High", sw);
+                }
             };
         }
 
@@ -210,7 +219,7 @@ public record StrategyGenome(
                 case BOLLINGER_BANDS -> "Bollinger(" + period1 + ")";
                 case RSI_FILTER -> "RSI(" + period1 + ")";
                 case ADX_REGIME -> "ADX(" + period1 + ")";
-                case ATR_EXPANSION -> "ATR(" + period1 + ")";
+                case ATR_EXPANSION -> "ATR_EXP(" + period1 + ")";
                 case DAILY_HIGH_LOW -> "DailyHighLow";
                 case MOMENTUM_ROC -> "ROC(" + period1 + ")";
                 case MACD_HISTOGRAM -> "MACD(" + period1 + "," + period2 + ")";
@@ -226,7 +235,7 @@ public record StrategyGenome(
                 case LINEAR_REG_SLOPE -> "LinReg(" + period1 + ")";
                 case ZSCORE_EXTREME -> "ZScore(" + period1 + ")";
                 case CHOPPINESS_FILTER -> "KaufmanER(" + period1 + ")";
-                case HIGHER_HIGHS_SWING -> "SwingHHLL(" + period1 + ")";
+                case HIGHER_HIGHS_SWING -> "SwingHHLL(" + Math.max(4, Math.min(20, Math.max(2, period1) / 2)) + ")";
             };
         }
 
@@ -455,13 +464,13 @@ public record StrategyGenome(
             sb.append("                return;\n");
             sb.append("            } else if (stopPrice > 0) {\n");
             sb.append("                armOrder(Order.Side.BUY, stopPrice, slDist, ptDist, ").append(stopOrderValidBars).append(");\n");
+                sb.append("                return;\n");
             sb.append("            }\n");
         } else {
             sb.append("            executeEntry(Order.Side.BUY, bar.close(), slDist, ptDist);\n");
             sb.append("            return;\n");
         }
-        sb.append("        }\n");
-        sb.append("        if (evaluateShort()) {\n");
+        sb.append("        } else if (evaluateShort()) {\n");
         if ("STOP".equalsIgnoreCase(entryOrderType)) {
             sb.append("            double ll = calcLowestLow(").append(stopEntryLookback).append(", 1);\n");
             sb.append("            double stopPrice = quantize(ll - ").append(String.format(Locale.US, "%.2f", stopEntryAtrMult)).append(" * atr);\n");
@@ -751,8 +760,8 @@ public record StrategyGenome(
                     }
                 }
                 case ADX_REGIME -> {
-                    String thAdx = String.format(Locale.US, "%.2f", th * 0.65);
-                    yield "((calcHighestHigh(" + (p1 * 2) + ", " + s1 + ") - calcLowestLow(" + (p1 * 2) + ", " + s1 + ")) > 0 && ((calcAtr(" + p1 + ", " + s1 + ") * " + p1 + " / (calcHighestHigh(" + (p1 * 2) + ", " + s1 + ") - calcLowestLow(" + (p1 * 2) + ", " + s1 + "))) * 25.0) >= " + thAdx + ")";
+                    String thAdx = String.format(Locale.US, "%.2f", th * 0.55);
+                    yield "(calcAtr(" + p1 + ", " + s1 + ") > 0 && (((calcHighestHigh(" + p1 + ", " + s1 + ") - calcLowestLow(" + p1 + ", " + s1 + ")) / (calcAtr(" + p1 + ", " + s1 + ") * Math.sqrt(" + p1 + "))) * 15.0) >= " + thAdx + ")";
                 }
                 case ATR_EXPANSION -> {
                     String thAtr = String.format(Locale.US, "%.2f", th);
@@ -994,14 +1003,13 @@ public record StrategyGenome(
                         return;
                     } else if (stopPrice > 0) {
                         armOrder(Order.Side.BUY, stopPrice, slDist, ptDist, genome.stopOrderValidBars());
+                        return;
                     }
                 } else {
                     executeEntry(Order.Side.BUY, bar.close(), slDist, ptDist);
                     return;
                 }
-            }
-
-            if (allowShort && evaluateRules(genome.shortRules(), false)) {
+            } else if (allowShort && evaluateRules(genome.shortRules(), false)) {
                 if ("STOP".equalsIgnoreCase(genome.entryOrderType())) {
                     double ll = calcLowestLow(genome.stopEntryLookback(), 1);
                     double stopPrice = quantize(ll - genome.stopEntryAtrMult() * atr);
@@ -1083,9 +1091,9 @@ public record StrategyGenome(
                 }
                 case ADX_REGIME -> {
                     double atrFast = calcAtr(p1, s1);
-                    double rangeSlow = calcHighestHigh(p1 * 2, s1) - calcLowestLow(p1 * 2, s1);
-                    double ratio = rangeSlow > 0 ? (atrFast * p1 / rangeSlow) * 25.0 : 0.0;
-                    yield ratio >= (th * 0.65);
+                    double netRange = calcHighestHigh(p1, s1) - calcLowestLow(p1, s1);
+                    double ratio = atrFast > 0 ? (netRange / (atrFast * Math.sqrt(p1))) * 15.0 : 0.0;
+                    yield ratio >= (th * 0.55);
                 }
                 case ATR_EXPANSION -> {
                     double atrFast = calcAtr(p1, 0);

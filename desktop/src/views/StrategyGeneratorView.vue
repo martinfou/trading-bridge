@@ -221,6 +221,15 @@ const selectedCandidate = computed(() => {
   return databank.value[0]
 })
 
+const selectedCandidateOosPct = computed(() => {
+  const c = selectedCandidate.value
+  if (c && Array.isArray(c.equityCurve) && c.equityCurve.length > 1 && c.oosStartIndex > 0) {
+    const isPct = Math.round((c.oosStartIndex / (c.equityCurve.length - 1)) * 100)
+    return Math.min(90, Math.max(10, 100 - isPct))
+  }
+  return oosSplitPct.value
+})
+
 const filteredDatabank = computed(() => {
   const filtered = databank.value.filter(c => {
     if (tierFilter.value !== 'ALL' && c.tier !== tierFilter.value) return false
@@ -229,8 +238,11 @@ const filteredDatabank = computed(() => {
       return (
         c.id.toLowerCase().includes(q) ||
         c.symbol.toLowerCase().includes(q) ||
+        c.timeframe.toLowerCase().includes(q) ||
         c.archetype.toLowerCase().includes(q) ||
-        c.longSignalSummary.toLowerCase().includes(q)
+        c.longSignalSummary.toLowerCase().includes(q) ||
+        c.shortSignalSummary.toLowerCase().includes(q) ||
+        (Array.isArray(c.indicators) && c.indicators.some(ind => ind.toLowerCase().includes(q)))
       )
     }
     return true
@@ -408,7 +420,7 @@ function positionTooltip(event: MouseEvent, col: ColDefinition) {
     ? target.getBoundingClientRect()
     : { left: event.clientX, top: event.clientY, bottom: event.clientY }
   const tooltipWidth = 340
-  const x = Math.min(window.innerWidth - tooltipWidth - 16, Math.max(16, rect.left))
+  const x = Math.max(8, Math.min(window.innerWidth - tooltipWidth - 16, rect.left))
   const y = rect.bottom + 185 > window.innerHeight ? Math.max(12, rect.top - 165) : rect.bottom + 8
   activeTooltip.value = { col, x, y }
 }
@@ -448,11 +460,18 @@ function showIndicatorTooltip(event: MouseEvent, indLabel: string) {
     if (upper.startsWith('SWINGHHLL') && b.id === 'HIGHER_HIGHS_SWING') return true
     if (upper.startsWith('ADX(') && b.id === 'ADX_REGIME') return true
     if (upper.startsWith('DAILYHIGHLOW') && b.id === 'DAILY_HIGH_LOW') return true
-    if (upper.startsWith('ATR(') && b.id === 'ATR_EXPANSION') return true
+    if (upper.startsWith('ATR_EXP') && b.id === 'ATR_EXPANSION') return true
     return false
   })
   if (matched) {
     showBlockTooltip(event, matched)
+  } else if (upper.startsWith('ATR(')) {
+    positionTooltip(event, {
+      title: `ATR Risk & Exit Sizing: ${indLabel}`,
+      formula: 'SL = k₁ × ATR(N) · PT = k₂ × ATR(N) · Trail = k₃ × ATR(N)',
+      description: 'Average True Range volatility measure used to normalize Stop-Loss, Profit-Target, Pending Stop distance, and Trailing Stop across market regimes.',
+      benchmark: 'Automatically adapts stop distance to current instrument volatility',
+    })
   } else {
     positionTooltip(event, {
       title: `Indicator Building Block: ${indLabel}`,
@@ -577,12 +596,19 @@ async function openInDashboard(candidate: DatabankCandidate) {
   actionBusyId.value = candidate.id
   try {
     if (!candidate.promoted) {
-      await fetch(`${controlPlaneUrl.value}/api/generator/databank/${candidate.id}/promote`, {
+      const res = await fetch(`${controlPlaneUrl.value}/api/generator/databank/${candidate.id}/promote`, {
         method: 'POST',
       })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        setStatus(err.error || 'Failed to promote strategy before opening in Dashboard', 'error')
+        return
+      }
     }
     await fetchCatalog(true).catch(() => {})
     router.push({ path: '/dashboard', query: { strategyId: candidate.id, symbol: candidate.symbol } })
+  } catch (err: any) {
+    setStatus(err.message || 'Failed to open strategy in Dashboard', 'error')
   } finally {
     actionBusyId.value = null
   }
@@ -610,26 +636,46 @@ async function runFullBacktest(candidate: DatabankCandidate) {
 }
 
 async function deleteCandidate(id: string) {
-  await fetch(`${controlPlaneUrl.value}/api/generator/databank/${id}`, { method: 'DELETE' })
-  if (selectedCandidateId.value === id) {
-    selectedCandidateId.value = null
+  try {
+    const res = await fetch(`${controlPlaneUrl.value}/api/generator/databank/${id}`, { method: 'DELETE' })
+    if (!res.ok) {
+      setStatus(`Failed to delete ${id}`, 'error')
+      return
+    }
+    if (selectedCandidateId.value === id) {
+      selectedCandidateId.value = null
+    }
+    await fetchDatabankAndStatus()
+  } catch (err: any) {
+    setStatus(err.message || 'Network error deleting strategy', 'error')
   }
-  await fetchDatabankAndStatus()
 }
 
 async function clearAllCandidates() {
-  await fetch(`${controlPlaneUrl.value}/api/generator/databank`, { method: 'DELETE' })
-  selectedCandidateId.value = null
-  await fetchDatabankAndStatus()
+  try {
+    const res = await fetch(`${controlPlaneUrl.value}/api/generator/databank`, { method: 'DELETE' })
+    if (!res.ok) {
+      setStatus('Failed to clear Databank', 'error')
+      return
+    }
+    selectedCandidateId.value = null
+    await fetchDatabankAndStatus()
+  } catch (err: any) {
+    setStatus(err.message || 'Network error clearing Databank', 'error')
+  }
 }
 
-function copyJavaCode() {
+async function copyJavaCode() {
   if (!selectedCandidate.value?.javaSourceCode) return
-  navigator.clipboard.writeText(selectedCandidate.value.javaSourceCode)
-  copiedCode.value = true
-  setTimeout(() => {
-    copiedCode.value = false
-  }, 2000)
+  try {
+    await navigator.clipboard.writeText(selectedCandidate.value.javaSourceCode)
+    copiedCode.value = true
+    setTimeout(() => {
+      copiedCode.value = false
+    }, 2000)
+  } catch {
+    setStatus('Clipboard access denied', 'error')
+  }
 }
 
 interface ColDefinition {
@@ -1574,11 +1620,11 @@ onUnmounted(() => {
               <div class="eq-legend">
                 <span class="eq-leg-item is">
                   <span class="eq-leg-swatch is"></span>
-                  In-Sample ({{ 100 - oosSplitPct }}% Train · #1–#{{ selectedCandidate.oosStartIndex }})
+                  In-Sample ({{ 100 - selectedCandidateOosPct }}% Train · #1–#{{ selectedCandidate.oosStartIndex }})
                 </span>
                 <span class="eq-leg-item oos">
                   <span class="eq-leg-swatch oos"></span>
-                  Out-of-Sample ({{ oosSplitPct }}% Blind · #{{ selectedCandidate.oosStartIndex }}+)
+                  Out-of-Sample ({{ selectedCandidateOosPct }}% Blind · #{{ selectedCandidate.oosStartIndex }}+)
                 </span>
                 <span class="eq-leg-item dd">
                   <span class="eq-leg-swatch dd"></span>
@@ -1590,7 +1636,7 @@ onUnmounted(() => {
               v-if="selectedCandidate.equityCurve && selectedCandidate.equityCurve.length > 1"
               :data="selectedCandidate.equityCurve"
               :oos-start-index="selectedCandidate.oosStartIndex"
-              :oos-split-pct="oosSplitPct"
+              :oos-split-pct="selectedCandidateOosPct"
               :height="255"
             />
           </div>
