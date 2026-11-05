@@ -23,7 +23,19 @@ const route = useRoute()
 const { getHistoricalDataStatus, downloadHistoricalData, deleteHistoricalData, getInstruments } = useControlPlane()
 const { setStatus } = useStatusBar()
 
-const dataTimeframe = ref<'h1' | 'm1'>('h1')
+type CandleTimeframe = 'm1' | 'm5' | 'm15' | 'm30' | 'h1' | 'h4' | 'd1' | 'w1'
+const timeframeOptions: { value: CandleTimeframe; label: string; fullLabel: string }[] = [
+  { value: 'm1', label: 'M1', fullLabel: 'M1 (1-Minute)' },
+  { value: 'm5', label: 'M5', fullLabel: 'M5 (5-Minutes)' },
+  { value: 'm15', label: 'M15', fullLabel: 'M15 (15-Minutes)' },
+  { value: 'm30', label: 'M30', fullLabel: 'M30 (30-Minutes)' },
+  { value: 'h1', label: 'H1', fullLabel: 'H1 (1-Hour)' },
+  { value: 'h4', label: 'H4', fullLabel: 'H4 (4-Hours)' },
+  { value: 'd1', label: 'D1', fullLabel: 'D1 (1-Day)' },
+  { value: 'w1', label: 'W1', fullLabel: 'W1 (1-Week)' }
+]
+
+const dataTimeframe = ref<CandleTimeframe>('h1')
 const selectedAssetCategory = ref<'forex' | 'futures' | 'equities'>('forex')
 const selectedProvider = ref<'yahoo' | 'dukascopy' | 'oanda' | 'ibkr'>('yahoo')
 
@@ -37,7 +49,7 @@ const isUniverseDrawerOpen = ref(false)
 
 const selectedPair = ref('eurusd')
 const selectedYear = ref(new Date().getFullYear())
-const selectedTf = ref<'h1' | 'm1'>('h1')
+const selectedTf = ref<CandleTimeframe>('h1')
 const downloadMode = ref<'single' | 'range' | 'all'>('single')
 const selectedStartYear = ref(2006)
 const selectedEndYear = ref(new Date().getFullYear())
@@ -96,7 +108,10 @@ async function loadInstrumentsUniverse() {
 async function refreshDataStatus() {
   try {
     loadError.value = null
-    const res = await getHistoricalDataStatus(dataTimeframe.value)
+    const [res] = await Promise.all([
+      getHistoricalDataStatus(dataTimeframe.value),
+      loadInstrumentsUniverse()
+    ])
     dataStatus.value = res.status || []
     activeDownloads.value = res.activeDownloads || []
     activeTasks.value = res.activeTasks || []
@@ -305,16 +320,12 @@ onUnmounted(() => {
         <!-- Timeframe Toggle -->
         <div class="tf-selector">
           <button
-            :class="['tf-btn', { active: dataTimeframe === 'h1' }]"
-            @click="dataTimeframe = 'h1'; refreshDataStatus()"
+            v-for="tfOpt in timeframeOptions"
+            :key="tfOpt.value"
+            :class="['tf-btn', { active: dataTimeframe === tfOpt.value }]"
+            @click="dataTimeframe = tfOpt.value; selectedTf = tfOpt.value; refreshDataStatus()"
           >
-            H1 Bars
-          </button>
-          <button
-            :class="['tf-btn', { active: dataTimeframe === 'm1' }]"
-            @click="dataTimeframe = 'm1'; refreshDataStatus()"
-          >
-            M1 Bars
+            {{ tfOpt.label }} Bars
           </button>
         </div>
       </div>
@@ -446,8 +457,9 @@ onUnmounted(() => {
         <div class="field">
           <label>Granularity</label>
           <select v-model="selectedTf" class="form-select">
-            <option value="h1">H1 (1-Hour)</option>
-            <option value="m1">M1 (1-Minute)</option>
+            <option v-for="tfOpt in timeframeOptions" :key="tfOpt.value" :value="tfOpt.value">
+              {{ tfOpt.fullLabel }}
+            </option>
           </select>
         </div>
 

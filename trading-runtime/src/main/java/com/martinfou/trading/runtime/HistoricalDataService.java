@@ -111,17 +111,21 @@ public final class HistoricalDataService implements AutoCloseable {
     }
 
     private Optional<Path> findCsvFile(String pair, String tf, int year) {
-        File[] files = dukascopyDir.toFile().listFiles();
-        if (files == null) return Optional.empty();
-
         String p = pair.toLowerCase().replace("_", "");
         String t = tf.toLowerCase();
         String yStr = String.valueOf(year);
 
-        for (File f : files) {
-            String name = f.getName().toLowerCase();
-            if (name.endsWith(".csv") && name.contains(p) && name.contains(t) && name.contains(yStr)) {
-                return Optional.of(f.toPath());
+        List<Path> csvDirs = List.of(dukascopyDir, repoRoot.resolve("data/historical/csv"));
+        for (Path dir : csvDirs) {
+            File[] files = dir.toFile().listFiles();
+            if (files == null) continue;
+            for (File f : files) {
+                String name = f.getName().toLowerCase(Locale.ROOT);
+                boolean pairMatch = name.startsWith(p + "_") || name.startsWith(p + "-");
+                boolean tfMatch = name.contains("_" + t + "_") || name.contains("-" + t + "-");
+                if (name.endsWith(".csv") && pairMatch && tfMatch && name.contains(yStr)) {
+                    return Optional.of(f.toPath());
+                }
             }
         }
         return Optional.empty();
@@ -288,6 +292,7 @@ public final class HistoricalDataService implements AutoCloseable {
             case "MNQ", "QQQ" -> 14500.0 + (year - 2015) * 450.0;
             case "M2K", "IWM", "IJR", "VB", "SCHA" -> 190.0 + (year - 2015) * 6.0;
             case "EMD", "MDY" -> 2600.0 + (year - 2015) * 60.0;
+            case "MGC", "GC" -> 2000.0 + (year - 2015) * 80.0;
             case "AAPL" -> 150.0 + (year - 2015) * 10.0;
             case "NVDA", "TSLA", "PLTR", "SOXL" -> 120.0 + (year - 2015) * 15.0;
             default -> 100.0 + (year - 2015) * 5.0;
@@ -299,11 +304,31 @@ public final class HistoricalDataService implements AutoCloseable {
         LocalDate endDate = (year == LocalDate.now().getYear()) ? LocalDate.now() : LocalDate.of(year, 12, 31);
 
         double currentPrice = basePrice;
-        long stepSeconds = tf.equalsIgnoreCase("m1") ? 60L : 3600L;
-        int barsPerDay = tf.equalsIgnoreCase("m1") ? 390 : 16;
+        String tfLower = tf == null ? "h1" : tf.toLowerCase(Locale.ROOT);
+        long stepSeconds = switch (tfLower) {
+            case "m1" -> 60L;
+            case "m5" -> 300L;
+            case "m15" -> 900L;
+            case "m30" -> 1800L;
+            case "h4" -> 14400L;
+            case "d1" -> 86400L;
+            case "w1" -> 604800L;
+            default -> 3600L;
+        };
+        int barsPerDay = switch (tfLower) {
+            case "m1" -> 390;
+            case "m5" -> 78;
+            case "m15" -> 26;
+            case "m30" -> 13;
+            case "h4" -> 4;
+            case "d1", "w1" -> 1;
+            default -> 16;
+        };
 
         while (!date.isAfter(endDate)) {
-            if (date.getDayOfWeek().getValue() <= 5) { // Mon-Fri
+            int dow = date.getDayOfWeek().getValue();
+            boolean shouldEmitDay = "w1".equals(tfLower) ? (dow == 1) : (dow <= 5);
+            if (shouldEmitDay) {
                 Instant dayStart = date.atTime(8, 0).toInstant(ZoneOffset.UTC);
                 for (int i = 0; i < barsPerDay; i++) {
                     Instant barTime = dayStart.plusSeconds(i * stepSeconds);

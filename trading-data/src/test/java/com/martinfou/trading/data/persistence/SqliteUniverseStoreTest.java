@@ -56,8 +56,10 @@ class SqliteUniverseStoreTest {
     @Test
     void testListByAssetClass() {
         List<InstrumentDefinition> futures = store.listByAssetClass("FUTURES");
-        assertEquals(4, futures.size());
+        assertEquals(6, futures.size());
         assertTrue(futures.stream().anyMatch(f -> f.symbol().equals("MES")));
+        assertTrue(futures.stream().anyMatch(f -> f.symbol().equals("MGC")));
+        assertTrue(futures.stream().anyMatch(f -> f.symbol().equals("GC")));
 
         List<InstrumentDefinition> forex = store.listByAssetClass("FOREX");
         assertEquals(8, forex.size());

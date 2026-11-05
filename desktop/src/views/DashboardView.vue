@@ -163,9 +163,21 @@ function getRunModeLabel(run: ActiveRun): string {
   return 'Backtest'
 }
 
+type CandleTimeframe = 'm1' | 'm5' | 'm15' | 'm30' | 'h1' | 'h4' | 'd1' | 'w1'
+const timeframeOptions: { value: CandleTimeframe; label: string }[] = [
+  { value: 'm1', label: 'M1' },
+  { value: 'm5', label: 'M5' },
+  { value: 'm15', label: 'M15' },
+  { value: 'm30', label: 'M30' },
+  { value: 'h1', label: 'H1' },
+  { value: 'h4', label: 'H4' },
+  { value: 'd1', label: 'D1' },
+  { value: 'w1', label: 'W1' }
+]
+
 // Historical Data Manager state and methods
 const showDataManager = ref(false)
-const dataTimeframe = ref<'h1' | 'm1'>('h1')
+const dataTimeframe = ref<CandleTimeframe>('h1')
 const dataStatus = ref<any[]>([])
 const activeDownloads = ref<string[]>([])
 const activeTasks = ref<any[]>([])
@@ -174,7 +186,7 @@ const actionLoading = ref(false)
 
 const selectedPair = ref('eurusd')
 const selectedYear = ref(new Date().getFullYear())
-const selectedTf = ref<'h1' | 'm1'>('h1')
+const selectedTf = ref<CandleTimeframe>('h1')
 const downloadMode = ref<'single' | 'range' | 'all'>('single')
 const selectedStartYear = ref(2006)
 const selectedEndYear = ref(new Date().getFullYear())
@@ -432,16 +444,12 @@ onUnmounted(() => {
         <div class="controls-row">
           <div class="tf-selector">
             <button
-              :class="['tf-btn', { active: dataTimeframe === 'h1' }]"
-              @click="dataTimeframe = 'h1'; refreshDataStatus()"
+              v-for="tfOpt in timeframeOptions"
+              :key="tfOpt.value"
+              :class="['tf-btn', { active: dataTimeframe === tfOpt.value }]"
+              @click="dataTimeframe = tfOpt.value; selectedTf = tfOpt.value; refreshDataStatus()"
             >
-              H1 Data
-            </button>
-            <button
-              :class="['tf-btn', { active: dataTimeframe === 'm1' }]"
-              @click="dataTimeframe = 'm1'; refreshDataStatus()"
-            >
-              M1 Data
+              {{ tfOpt.label }} Data
             </button>
           </div>
 
@@ -544,8 +552,9 @@ onUnmounted(() => {
             <div class="field">
               <label>Granularity</label>
               <select v-model="selectedTf">
-                <option value="h1">H1</option>
-                <option value="m1">M1</option>
+                <option v-for="tfOpt in timeframeOptions" :key="tfOpt.value" :value="tfOpt.value">
+                  {{ tfOpt.label }}
+                </option>
               </select>
             </div>
             <button

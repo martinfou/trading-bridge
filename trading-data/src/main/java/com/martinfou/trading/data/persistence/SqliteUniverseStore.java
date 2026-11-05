@@ -92,11 +92,13 @@ public final class SqliteUniverseStore implements AutoCloseable {
             new InstrumentDefinition("NZD_USD", "New Zealand Dollar / US Dollar", "FOREX", 1.0, 0.0001, "USD", false, "NZD_USD"),
             new InstrumentDefinition("USD_CHF", "US Dollar / Swiss Franc", "FOREX", 1.0, 0.0001, "CHF", false, "USD_CHF"),
 
-            // CME Futures
+            // CME / COMEX Futures
             new InstrumentDefinition("MES", "Micro E-mini S&P 500 ($5/pt)", "FUTURES", 5.0, 0.25, "USD", false, "ES=F"),
             new InstrumentDefinition("M2K", "Micro Russell 2000 Small Cap ($5/pt)", "FUTURES", 5.0, 0.10, "USD", false, "RTY=F"),
             new InstrumentDefinition("EMD", "E-mini S&P MidCap 400 ($100/pt)", "FUTURES", 100.0, 0.10, "USD", false, "EMD=F"),
             new InstrumentDefinition("MNQ", "Micro E-mini Nasdaq 100 ($2/pt)", "FUTURES", 2.0, 0.25, "USD", false, "NQ=F"),
+            new InstrumentDefinition("MGC", "Micro Gold ($10/oz)", "FUTURES", 10.0, 0.10, "USD", false, "GC=F"),
+            new InstrumentDefinition("GC", "Gold Futures ($100/oz)", "FUTURES", 100.0, 0.10, "USD", false, "GC=F"),
 
             // US Equities & Minicaps
             new InstrumentDefinition("IWM", "iShares Russell 2000 ETF (Small Cap)", "EQUITIES", 1.0, 0.01, "USD", false, "IWM"),
