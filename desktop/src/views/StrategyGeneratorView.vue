@@ -59,6 +59,12 @@ interface DatabankCandidate {
   lotSize?: number
   commissionPerTrade?: number
   slippagePct?: number
+  sessionSummary?: string
+  entryStartHourEt?: number
+  entryEndHourEt?: number
+  allowedDaysMask?: number
+  exitSessionMode?: string
+  flatCutoffHourEt?: number
 }
 
 interface GeneratorStatus {
@@ -98,6 +104,94 @@ const direction = ref('BOTH')
 const entryOrderType = ref('ALL')
 const populationSize = ref(50)
 const generations = ref(10)
+
+// Session & Gap Protection (America/New_York ET)
+const sessionPreset = ref<'CONTINUOUS' | 'DAY_9_TO_5' | 'NY_RTH' | 'LDN_NY' | 'WEEKEND_FLAT' | 'AUTO' | 'CUSTOM'>('CONTINUOUS')
+const entryStartHourEt = ref<number>(0)
+const entryEndHourEt = ref<number>(24)
+const allowedDaysMask = ref<number>(31)
+const exitSessionMode = ref<string>('CONTINUOUS')
+const flatCutoffHourEt = ref<number>(16)
+
+const isHigherTimeframe = computed(() => timeframe.value === 'H4' || timeframe.value === 'D1')
+
+watch(isHigherTimeframe, (htf) => {
+  if (htf && exitSessionMode.value === 'INTRADAY_FLAT') {
+    exitSessionMode.value = 'WEEKEND_FLAT'
+  }
+})
+
+const weekdayButtons = [
+  { bit: 1, label: 'Mon' },
+  { bit: 2, label: 'Tue' },
+  { bit: 4, label: 'Wed' },
+  { bit: 8, label: 'Thu' },
+  { bit: 16, label: 'Fri' },
+]
+
+function isDayAllowed(bit: number): boolean {
+  return (allowedDaysMask.value & bit) !== 0
+}
+
+function toggleDayBit(bit: number) {
+  const next = allowedDaysMask.value ^ bit
+  if ((next & 31) === 0) return // require at least 1 active trading day
+  allowedDaysMask.value = next & 31
+  if (sessionPreset.value !== 'AUTO') {
+    sessionPreset.value = 'CUSTOM'
+  }
+}
+
+function applySessionPreset(preset: 'CONTINUOUS' | 'DAY_9_TO_5' | 'NY_RTH' | 'LDN_NY' | 'WEEKEND_FLAT' | 'AUTO') {
+  sessionPreset.value = preset
+  if (preset === 'CONTINUOUS') {
+    entryStartHourEt.value = 0
+    entryEndHourEt.value = 24
+    allowedDaysMask.value = 31
+    exitSessionMode.value = 'CONTINUOUS'
+    flatCutoffHourEt.value = 16
+  } else if (preset === 'DAY_9_TO_5') {
+    entryStartHourEt.value = 9
+    entryEndHourEt.value = 16
+    allowedDaysMask.value = 31
+    exitSessionMode.value = 'INTRADAY_FLAT'
+    flatCutoffHourEt.value = 16
+  } else if (preset === 'NY_RTH') {
+    entryStartHourEt.value = 9
+    entryEndHourEt.value = 15
+    allowedDaysMask.value = 31
+    exitSessionMode.value = 'INTRADAY_FLAT'
+    flatCutoffHourEt.value = 16
+  } else if (preset === 'LDN_NY') {
+    entryStartHourEt.value = 8
+    entryEndHourEt.value = 12
+    allowedDaysMask.value = 31
+    exitSessionMode.value = 'INTRADAY_FLAT'
+    flatCutoffHourEt.value = 16
+  } else if (preset === 'WEEKEND_FLAT') {
+    entryStartHourEt.value = 0
+    entryEndHourEt.value = 24
+    allowedDaysMask.value = 31
+    exitSessionMode.value = 'WEEKEND_FLAT'
+    flatCutoffHourEt.value = 16
+  } else if (preset === 'AUTO') {
+    exitSessionMode.value = 'AUTO'
+    flatCutoffHourEt.value = 16
+  }
+}
+
+function onCustomSessionChange() {
+  if (entryEndHourEt.value === entryStartHourEt.value) {
+    entryEndHourEt.value = Math.min(24, entryStartHourEt.value + 1)
+  }
+  if (sessionPreset.value !== 'AUTO') {
+    sessionPreset.value = 'CUSTOM'
+  }
+}
+
+function formatHourEt(h: number): string {
+  return `${String(h).padStart(2, '0')}:00 ET`
+}
 
 const minTrades = ref(12)
 const minProfitFactor = ref(1.15)
@@ -535,6 +629,13 @@ function showIndicatorTooltip(event: MouseEvent, indLabel: string) {
       description: 'Average True Range volatility measure used to normalize Stop-Loss, Profit-Target, Pending Stop distance, and Trailing Stop across market regimes.',
       benchmark: 'Automatically adapts stop distance to current instrument volatility',
     })
+  } else if (upper.startsWith('SESSION(') || upper.startsWith('DAYS(') || upper.startsWith('EODFLAT(') || upper.startsWith('FRIFLAT(')) {
+    positionTooltip(event, {
+      title: `Session & Gap Protection Envelope: ${indLabel}`,
+      formula: 'America/New_York (ET) DST-Aware Schedule & Pre-Cutoff Flatten',
+      description: 'Enforces allowed trading hours/weekdays in New York time, blocks late entries before flatten cutoffs, clears pending STOP orders outside the window, and closes open positions one bar before daily/Friday maintenance breaks.',
+      benchmark: 'Eliminates overnight 17:00–18:00 ET and Friday-to-Sunday weekend gap exposure',
+    })
   } else {
     positionTooltip(event, {
       title: `Indicator Building Block: ${indLabel}`,
@@ -609,6 +710,12 @@ async function startGenerator() {
       lotSize: lotSize.value,
       commissionPerTrade: commissionPerTrade.value,
       slippagePct: slippagePct.value,
+      sessionMode: sessionPreset.value === 'AUTO' ? 'AUTO' : 'CUSTOM',
+      entryStartHourEt: entryStartHourEt.value,
+      entryEndHourEt: entryEndHourEt.value,
+      allowedDaysMask: allowedDaysMask.value,
+      exitSessionMode: exitSessionMode.value,
+      flatCutoffHourEt: flatCutoffHourEt.value,
     }
     const res = await fetch(`${controlPlaneUrl.value}/api/generator/start`, {
       method: 'POST',
@@ -1013,6 +1120,18 @@ const COLUMN_DEFINITIONS: Record<string, ColDefinition> = {
     formula: 'Initial SL + Profit Target + Trailing ATR Stop + Max Bars Time Exit',
     description: 'Every trade is protected by a volatility-scaled Stop-Loss and Profit-Target (multiples of ATR), optional dynamic ATR trailing stop, and a maximum holding-time exit (.asCloseOnly()).',
     benchmark: 'Strictly 1 position at a time — no martingale or position stacking'
+  },
+  cfgSession: {
+    title: 'Session Hours, Day-of-Week & Pre-Gap Flatten (America/New_York ET)',
+    formula: '9-to-5 Intraday Flat · NY RTH · London/NY · Weekend Flat · GA Auto-Discover',
+    description: 'Controls which weekdays (Mon–Fri) and New York (ET) hours allow new entries, and whether open positions are automatically flattened before the 17:00 ET daily break or Friday weekend close.',
+    benchmark: 'Pre-cutoff bar flatten guarantees MARKET close orders fill at the bar open BEFORE the gap'
+  },
+  ruleSessionEnvelope: {
+    title: 'Session Schedule & Gap-Protection Envelope (America/New_York ET)',
+    formula: 'Allowed Days (Mon–Fri) + Entry Window (ET) + Pre-Break Flatten Policy',
+    description: 'Rolling indicators stay warm across all 24/5 bars while entries and pending STOP orders are strictly gated to the active session window and flattened before daily/weekend gaps.',
+    benchmark: '100% parity between in-memory BacktestEngine and exported standalone Java source'
   }
 }
 
@@ -1290,6 +1409,63 @@ onUnmounted(() => {
             >
               🔬 Deep (80×15)
             </button>
+          </div>
+
+          <!-- Session Hours, Day-of-Week & Pre-Gap Flatten Controls (America/New_York ET) -->
+          <div class="session-envelope-box" @mouseenter="showTooltip($event, 'cfgSession')" @mouseleave="hideTooltip">
+            <div class="session-hdr-row">
+              <span class="hover-lbl session-hdr-title">🕒 Session Hours &amp; Gap Protection (NY ET)</span>
+              <span class="session-tz-badge">{{ sessionPreset === 'AUTO' ? '🧬 GA Auto-Discover' : `${formatHourEt(entryStartHourEt)}–${formatHourEt(entryEndHourEt)}` }}</span>
+            </div>
+
+            <div class="session-preset-strip">
+              <button type="button" :class="['mini-opt', { active: sessionPreset === 'CONTINUOUS' }]" :disabled="status.running" @click="applySessionPreset('CONTINUOUS')" title="24/5 continuous session — overnight & weekend hold allowed">24/5 Hold</button>
+              <button type="button" :class="['mini-opt', { active: sessionPreset === 'DAY_9_TO_5' }]" :disabled="status.running" @click="applySessionPreset('DAY_9_TO_5')" title="9-to-5 Intraday: Entries 09:00–16:00 ET, flatten before 17:00 ET daily break">☀️ 9-to-5 Flat</button>
+              <button type="button" :class="['mini-opt', { active: sessionPreset === 'NY_RTH' }]" :disabled="status.running" @click="applySessionPreset('NY_RTH')" title="NY Regular Trading Hours: Entries 09:00–15:00 ET, flatten before 16:00 ET">🔔 NY RTH</button>
+              <button type="button" :class="['mini-opt', { active: sessionPreset === 'LDN_NY' }]" :disabled="status.running" @click="applySessionPreset('LDN_NY')" title="London / NY Overlap: Entries 08:00–12:00 ET, flatten before 16:00 ET">🌍 Ldn/NY</button>
+              <button type="button" :class="['mini-opt', { active: sessionPreset === 'WEEKEND_FLAT' }]" :disabled="status.running" @click="applySessionPreset('WEEKEND_FLAT')" title="Hold overnight Mon–Thu, flatten Friday before weekend close">🛡️ No Wknd Gap</button>
+              <button type="button" :class="['mini-opt', { active: sessionPreset === 'AUTO' }]" :disabled="status.running" @click="applySessionPreset('AUTO')" title="Let Genetic Evolution discover optimal structured session window & weekday mask (-1.5 complexity penalty)">🧬 GA Auto</button>
+            </div>
+
+            <div v-if="sessionPreset !== 'AUTO'" class="session-custom-controls">
+              <div class="weekday-row">
+                <span class="weekday-lbl">Days:</span>
+                <button
+                  v-for="d in weekdayButtons"
+                  :key="d.bit"
+                  type="button"
+                  :class="['day-pill', { active: isDayAllowed(d.bit) }]"
+                  :disabled="status.running"
+                  @click="toggleDayBit(d.bit)"
+                >
+                  {{ d.label }}
+                </button>
+              </div>
+
+              <div class="session-grid-3">
+                <div class="field-mini" :title="isHigherTimeframe ? 'Intraday hour filters are bypassed on H4/D1 bars' : 'Start hour (America/New_York ET)'">
+                  <label>Start ET</label>
+                  <input type="number" v-model.number="entryStartHourEt" min="0" max="23" :disabled="status.running || isHigherTimeframe" @change="onCustomSessionChange" />
+                </div>
+                <div class="field-mini" :title="isHigherTimeframe ? 'Intraday hour filters are bypassed on H4/D1 bars' : 'End hour (America/New_York ET)'">
+                  <label>End ET</label>
+                  <input type="number" v-model.number="entryEndHourEt" min="1" max="24" :disabled="status.running || isHigherTimeframe" @change="onCustomSessionChange" />
+                </div>
+                <div class="field-mini">
+                  <label>Gap Exit Policy</label>
+                  <select v-model="exitSessionMode" :disabled="status.running" @change="onCustomSessionChange">
+                    <option value="CONTINUOUS">Hold 24/5 (No Flat)</option>
+                    <option value="INTRADAY_FLAT" :disabled="isHigherTimeframe">Flat Daily (&lt; {{ flatCutoffHourEt }}:00 ET)</option>
+                    <option value="WEEKEND_FLAT">Flat Friday (&lt; {{ flatCutoffHourEt }}:00 ET)</option>
+                    <option value="AUTO">🧬 GA Auto Exit</option>
+                  </select>
+                </div>
+                <div class="field-mini" title="Flatten cutoff hour in America/New_York ET (12–17 ET)">
+                  <label>Flat ET</label>
+                  <input type="number" v-model.number="flatCutoffHourEt" min="12" max="17" :disabled="status.running || exitSessionMode === 'CONTINUOUS'" @change="onCustomSessionChange" />
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -1776,6 +1952,10 @@ onUnmounted(() => {
             <div class="rule-box exit" @mouseenter="showTooltip($event, 'ruleExitManagement')" @mouseleave="hideTooltip">
               <div class="rule-title hover-lbl">🛡️ ATR Stop-Loss, Profit-Target &amp; Exit</div>
               <div class="rule-code">{{ selectedCandidate.exitSummary }}</div>
+            </div>
+            <div class="rule-box session" style="grid-column: 1 / -1;" @mouseenter="showTooltip($event, 'ruleSessionEnvelope')" @mouseleave="hideTooltip">
+              <div class="rule-title hover-lbl">🕒 Session Schedule &amp; Gap-Protection Envelope (America/New_York ET)</div>
+              <div class="rule-code">{{ selectedCandidate.sessionSummary || 'Mon–Fri | 24h Session | Overnight Hold Allowed' }}</div>
             </div>
           </div>
           <div class="ind-strip">
@@ -3162,6 +3342,116 @@ onUnmounted(() => {
 .metric-tip-row:hover .metric-tip-lbl {
   color: #FBBF24;
   border-bottom-color: #FBBF24;
+}
+
+.session-envelope-box {
+  margin-top: 0.45rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  background: rgba(17, 24, 39, 0.75);
+  border: 1px solid rgba(55, 65, 81, 0.7);
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.session-hdr-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.session-hdr-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #E5E7EB;
+}
+
+.session-tz-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  color: #38BDF8;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+}
+
+.session-preset-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+}
+
+.session-custom-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-top: 0.25rem;
+  border-top: 1px solid rgba(55, 65, 81, 0.45);
+}
+
+.weekday-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.weekday-lbl {
+  font-size: 0.68rem;
+  color: #9CA3AF;
+  margin-right: 0.15rem;
+}
+
+.day-pill {
+  font-size: 0.66rem;
+  font-weight: 600;
+  padding: 0.14rem 0.42rem;
+  border-radius: 4px;
+  background: rgba(31, 41, 55, 0.8);
+  border: 1px solid rgba(75, 85, 99, 0.5);
+  color: #9CA3AF;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.day-pill.active {
+  background: rgba(16, 185, 129, 0.18);
+  border-color: rgba(16, 185, 129, 0.55);
+  color: #34D399;
+}
+
+.session-grid-3 {
+  display: grid;
+  grid-template-columns: 58px 58px 1fr 58px;
+  gap: 0.35rem;
+  align-items: end;
+}
+
+.field-mini {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+
+.field-mini label {
+  font-size: 0.64rem;
+  color: #9CA3AF;
+}
+
+.field-mini input,
+.field-mini select {
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(75, 85, 99, 0.6);
+  border-radius: 5px;
+  color: #F3F4F6;
+  font-size: 0.72rem;
+  padding: 0.22rem 0.38rem;
+}
+
+.rule-box.session {
+  border-left: 3px solid #38BDF8;
 }
 
 :global(.sqx-col-tooltip) {

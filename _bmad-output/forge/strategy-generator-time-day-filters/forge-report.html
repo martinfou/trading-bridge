@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BMad Idea Forge Report — Strategy Generator Time-of-Day, Day-of-Week & Gap Protection</title>
+  <style>
+    :root {
+      --bg: #0b0f17;
+      --panel: #111827;
+      --panel-alt: #162032;
+      --border: #24324b;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --accent: #38bdf8;
+      --emerald: #10b981;
+      --amber: #f59e0b;
+      --rose: #f43f5e;
+      --violet: #a855f7;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+      background: radial-gradient(circle at top right, #172554 0%, var(--bg) 45%);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 2.5rem 1.5rem 4rem;
+    }
+    .container {
+      max-width: 1060px;
+      margin: 0 auto;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 2rem;
+      background: linear-gradient(135deg, rgba(17, 24, 39, 0.96), rgba(15, 23, 42, 0.92));
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 2rem 2.25rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+      position: relative;
+      overflow: hidden;
+    }
+    .eyebrow {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--accent);
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-size: 1.75rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: #f9fafb;
+      margin-bottom: 0.6rem;
+    }
+    .subtitle {
+      color: var(--muted);
+      font-size: 0.95rem;
+      max-width: 680px;
+    }
+    .meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-top: 1rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    .pill {
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      color: #bae6fd;
+      padding: 0.25rem 0.65rem;
+      border-radius: 999px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .seal-wrapper {
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 1.75rem;
+    }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.6rem 1.8rem;
+      margin-bottom: 1.75rem;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+    }
+    h2 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 1.1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      color: #f3f4f6;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+      padding-bottom: 0.65rem;
+    }
+    ul.decision-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.95rem;
+    }
+    ul.decision-list li {
+      background: var(--panel-alt);
+      border-left: 4px solid var(--emerald);
+      padding: 0.9rem 1.1rem;
+      border-radius: 0 10px 10px 0;
+      font-size: 0.92rem;
+    }
+    ul.decision-list.rejected li {
+      border-left-color: var(--rose);
+    }
+    ul.decision-list.cracks li {
+      border-left-color: var(--amber);
+    }
+    .item-title {
+      font-weight: 700;
+      color: #ffffff;
+      display: block;
+      margin-bottom: 0.25rem;
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.84em;
+      background: rgba(15, 23, 42, 0.75);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      padding: 0.12rem 0.4rem;
+      border-radius: 5px;
+      color: #7dd3fc;
+    }
+    .persona-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 1rem;
+    }
+    .persona-card {
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem 1.15rem;
+    }
+    .persona-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 0.45rem;
+    }
+    .persona-icon {
+      font-size: 1.4rem;
+    }
+    .persona-name {
+      font-weight: 700;
+      color: #f9fafb;
+      font-size: 0.95rem;
+    }
+    .persona-role {
+      font-size: 0.76rem;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .persona-quote {
+      font-size: 0.85rem;
+      color: var(--muted);
+      font-style: italic;
+    }
+    footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.82rem;
+      margin-top: 2rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <div class="eyebrow">BMad Forge Idea • Session Report</div>
+        <h1>Strategy Generator: Time-of-Day, Day-of-Week &amp; Gap Protection</h1>
+        <p class="subtitle">
+          Pressure-tested specification for integrating session windows (e.g. 09:00–17:00 ET), weekday filters, and pre-gap position flattening into <code>StrategyGenome</code>, <code>StrategyGeneratorService</code>, and <code>StrategyGeneratorView.vue</code>.
+        </p>
+        <div class="meta-row">
+          <span class="pill">Project: Trading Bridge</span>
+          <span class="pill">User: Martinfou</span>
+          <span class="pill">Slug: strategy-generator-time-day-filters</span>
+          <span class="pill">Zone: America/New_York (ET)</span>
+        </div>
+      </div>
+      <div class="seal-wrapper" aria-label="Outcome Seal: HARDENED">
+        <svg width="148" height="148" viewBox="0 0 160 160" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <radialGradient id="waxGrad" cx="35%" cy="30%" r="70%">
+              <stop offset="0%" stop-color="#34d399" />
+              <stop offset="55%" stop-color="#059669" />
+              <stop offset="100%" stop-color="#064e3b" />
+            </radialGradient>
+            <filter id="dropShadow" x="-15%" y="-15%" width="130%" height="130%">
+              <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#000000" flood-opacity="0.55" />
+            </filter>
+          </defs>
+          <g filter="url(#dropShadow)">
+            <circle cx="80" cy="80" r="68" fill="url(#waxGrad)" stroke="#6ee7b7" stroke-width="2.5" stroke-dasharray="6,3" />
+            <circle cx="80" cy="80" r="56" fill="none" stroke="#a7f3d0" stroke-width="1.8" />
+            <path d="M52 54 L80 38 L108 54 L108 86 C108 106 80 120 80 120 C80 120 52 106 52 86 Z" fill="rgba(6, 78, 59, 0.55)" stroke="#d1fae5" stroke-width="1.5" />
+            <rect x="20" y="66" width="120" height="28" rx="5" fill="#064e3b" stroke="#6ee7b7" stroke-width="2" />
+            <text x="80" y="85" text-anchor="middle" fill="#ecfdf5" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="900" letter-spacing="2.5">HARDENED</text>
+          </g>
+        </svg>
+      </div>
+    </header>
+
+    <section>
+      <h2>🔒 Locked Decisions (What Survived the Forge)</h2>
+      <ul class="decision-list">
+        <li>
+          <span class="item-title">1. Dual-Layer Architecture (Option C: Envelope + GA Regimes)</span>
+          Combine top-level operator-configurable Session &amp; Flat Envelopes (<code>exitSessionMode</code>, <code>entrySessionWindow</code>, <code>allowedDaysMask</code>) with restricted evolvable session/weekday regimes when the GA is set to <code>AUTO</code> or uses time/day building blocks.
+        </li>
+        <li>
+          <span class="item-title">2. Canonical Timezone: <code>America/New_York</code> (ET)</span>
+          All session windows, weekday masks, and pre-gap flatten cutoffs evaluate in <code>ZoneId.of("America/New_York")</code> so <code>09:00–17:00 ET</code> automatically tracks US Daylight Saving Time and stays locked to NY RTH, the <code>17:00–18:00 ET</code> CME maintenance halt, and the <code>17:00 ET</code> FX rollover/triple-swap.
+        </li>
+        <li>
+          <span class="item-title">3. Pre-Cutoff Bar Flatten Mechanic (Proposal 1)</span>
+          Because <code>BacktestEngine</code> fills market orders emitted by <code>strategy.onBar(previousBar)</code> at the <em>next</em> bar's open (<code>bar.open()</code>), <code>INTRADAY_FLAT</code> and <code>WEEKEND_FLAT</code> trigger <code>closePosition(bar)</code> and <code>clearArmed()</code> one bar before the break (using <code>tfMinutes</code>, or defaulting to a <code>16:00 ET</code> flat cutoff) so exits fill before the 17:00 ET rollover spread spike and weekend gap.
+        </li>
+        <li>
+          <span class="item-title">4. Unbroken Indicator Warmth vs. Gated Entries &amp; Armed Stops</span>
+          <code>history.add(bar)</code> always runs on every trading bar so rolling indicators (<code>EMA</code>, <code>SMA</code>, <code>RSI</code>, <code>ATR</code>, <code>Donchian</code>) remain warm and never stitch across sessions. Outside the allowed entry window/weekday (or inside the 60-minute pre-flat entry freeze buffer), new entries are blocked and any pending <code>STOP</code> order (<code>armedSide</code>) is disarmed via <code>clearArmed()</code>.
+        </li>
+        <li>
+          <span class="item-title">5. Hybrid UI Controls + Anti-Overfit GA Guardrails (Proposal C)</span>
+          <code>StrategyGeneratorView.vue</code> provides one-click presets (<code>24/5 Continuous</code>, <code>9-to-5 Intraday Flat</code>, <code>NY RTH</code>, <code>London/NY Overlap</code>, <code>No Weekend Hold</code>, <code>GA Auto-Discover</code>) alongside explicit <code>Start/End Hour ET</code>, <code>Mon–Fri</code> toggles, and <code>Flat EOD / Flat Weekend</code> selectors. When the GA mutates schedules, it is restricted to structured microstructure regimes and incurs a <code>-1.5</code> complexity penalty on <code>evolutionaryFitness</code>.
+        </li>
+        <li>
+          <span class="item-title">6. Higher-Timeframe Guardrail (<code>H4</code> / <code>D1</code>) &amp; 100% Codegen Parity</span>
+          Intraday hour windows and <code>INTRADAY_FLAT</code> apply to <code>M5</code>, <code>M15</code>, <code>M30</code>, and <code>H1</code>; <code>H4</code> and <code>D1</code> bypass intraday hour checks and apply only Day-of-Week filters and <code>WEEKEND_FLAT</code>. <code>GenomeExecutableStrategy</code> and <code>StrategyGenome.toJavaSourceCode()</code> emit identical <code>America/New_York</code> logic, and existing <code>databank.json</code> entries default gracefully when session fields are <code>null</code>.
+        </li>
+      </ul>
+    </section>
+
+    <div class="grid-2">
+      <section style="margin-bottom: 0;">
+        <h2>🛑 What Was Rejected &amp; Why</h2>
+        <ul class="decision-list rejected">
+          <li>
+            <span class="item-title">Entry-Only Time Filter (No Forced Flatten)</span>
+            Filtering entries to 09:00–17:00 ET leaves trades opened at 14:30 ET exposed to overnight rollover spreads and weekend gaps unless paired with an active flatten rule.
+          </li>
+          <li>
+            <span class="item-title">Flattening on the Final 16:30 ET Bar Without Lookahead Buffer</span>
+            In <code>BacktestEngine</code>, an order emitted on the 16:30 ET M30 bar fills at the <em>next</em> bar's open (18:00 ET or Sunday 18:00 ET), eating the exact gap it was meant to avoid.
+          </li>
+          <li>
+            <span class="item-title">Skipping <code>history.add(bar)</code> Outside Active Hours</span>
+            Dropping overnight bars corrupts <code>ATR</code>, <code>EMA</code>, and <code>Donchian</code> calculations at the 09:00 ET open.
+          </li>
+          <li>
+            <span class="item-title">Unconstrained 31-Bit Weekday &amp; Arbitrary Hour GA Mutations</span>
+            On 1–2 year samples (<code>minTrades = 12–15</code>), free-form calendar bitmasks allow the GA to delete 3–4 losing trades and manufacture fake Profit Factor spikes.
+          </li>
+          <li>
+            <span class="item-title">Raw UTC Session Windows</span>
+            Shifts US market open and the 17:00 ET rollover/swap cutoff by 1 hour twice a year during Daylight Saving Time transitions.
+          </li>
+        </ul>
+      </section>
+
+      <section style="margin-bottom: 0;">
+        <h2>⚡ Fault Lines Examined &amp; Survived</h2>
+        <ul class="decision-list cracks">
+          <li>
+            <span class="item-title">Next-Bar Open Fill Timing in <code>BacktestEngine</code></span>
+            Resolved by triggering pre-cutoff flatten using <code>tfMinutes</code> (or <code>16:00 ET</code> cutoff) so the market close order executes on the final pre-break bar open, avoiding both the <code>16:00–17:59 ET</code> spread widening and the <code>17:00 ET</code> break.
+          </li>
+          <li>
+            <span class="item-title">Orphaned Armed Stop Orders (<code>armedSide</code>)</span>
+            Resolved by calling <code>clearArmed()</code> immediately when leaving the entry window or hitting the pre-flat cutoff so stop-breakout orders cannot fire after hours.
+          </li>
+          <li>
+            <span class="item-title">Pay-Spread-to-Flatten Churn Near Cutoff</span>
+            Resolved by enforcing a 60-minute pre-flat entry freeze buffer (e.g., no new entries after <code>15:00 ET</code> when flattening at <code>16:00 ET</code>).
+          </li>
+          <li>
+            <span class="item-title">Silent Zero-Trade Starvation on <code>D1</code> / <code>H4</code></span>
+            Resolved by scoping intraday hour windows and <code>INTRADAY_FLAT</code> strictly to <code>M5..H1</code> while keeping weekday and <code>WEEKEND_FLAT</code> rules active on higher timeframes.
+          </li>
+        </ul>
+      </section>
+    </div>
+
+    <section>
+      <h2>🎭 Personas That Pressure-Tested This Idea</h2>
+      <div class="persona-grid">
+        <div class="persona-card">
+          <div class="persona-header">
+            <span class="persona-icon">🏗️</span>
+            <div>
+              <div class="persona-name">Winston</div>
+              <div class="persona-role">System Architect (Installed)</div>
+            </div>
+          </div>
+          <p class="persona-quote">"Separated operational risk envelopes (9-to-5 &amp; weekend flat) from evolutionary signal genes so risk boundaries aren't left to random mutation."</p>
+        </div>
+        <div class="persona-card">
+          <div class="persona-header">
+            <span class="persona-icon">📉</span>
+            <div>
+              <div class="persona-name">Dr. Elena Vance</div>
+              <div class="persona-role">Quant Overfitting Skeptic (Generated)</div>
+            </div>
+          </div>
+          <p class="persona-quote">"Exposed how unconstrained weekday bitmasks decimate sample size to curve-fit out losing trades, driving the structured regime + complexity penalty design."</p>
+        </div>
+        <div class="persona-card">
+          <div class="persona-header">
+            <span class="persona-icon">🌶️</span>
+            <div>
+              <div class="persona-name">Boundary</div>
+              <div class="persona-role">Edge-Case Hunter (Custom)</div>
+            </div>
+          </div>
+          <p class="persona-quote">"Caught the BacktestEngine next-bar-open fill trap on the 16:30 ET bar, the D1 bar timestamp starvation bug, and databank.json null-deserialization."</p>
+        </div>
+        <div class="persona-card">
+          <div class="persona-header">
+            <span class="persona-icon">⚡</span>
+            <div>
+              <div class="persona-name">Marcus Chen</div>
+              <div class="persona-role">CME/FX Desk Head (Generated)</div>
+            </div>
+          </div>
+          <p class="persona-quote">"Enforced America/New_York (ET) alignment across DST transitions so 9-to-5 rules match NY RTH, CME 17:00 ET maintenance breaks, and 17:00 ET FX swaps."</p>
+        </div>
+        <div class="persona-card">
+          <div class="persona-header">
+            <span class="persona-icon">💻</span>
+            <div>
+              <div class="persona-name">Amelia</div>
+              <div class="persona-role">Senior Software Engineer (Installed)</div>
+            </div>
+          </div>
+          <p class="persona-quote">"Protected rolling indicator state by ensuring history.add(bar) runs on every bar while gating evaluateLong/Short and disarming armedSide outside session windows."</p>
+        </div>
+        <div class="persona-card">
+          <div class="persona-header">
+            <span class="persona-icon">🎯</span>
+            <div>
+              <div class="persona-name">Yui &amp; Grumbal</div>
+              <div class="persona-role">Craftsman &amp; Adversary (Custom)</div>
+            </div>
+          </div>
+          <p class="persona-quote">"Insisted on a pre-flat entry freeze buffer and 100% parity between GenomeExecutableStrategy and StrategyGenome.toJavaSourceCode()."</p>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      Generated by <strong>BMad Forge Idea</strong> • Artifacts written to <code>_bmad-output/forge/strategy-generator-time-day-filters/</code>
+    </footer>
+  </div>
+</body>
+</html>
+

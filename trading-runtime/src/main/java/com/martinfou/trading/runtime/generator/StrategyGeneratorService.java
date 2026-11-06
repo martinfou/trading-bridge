@@ -81,8 +81,45 @@ public final class StrategyGeneratorService implements AutoCloseable {
         Double lotSize,
         Double commissionPerTrade,
         Double slippagePct,
-        Integer splitFolds
-    ) {}
+        Integer splitFolds,
+        String sessionMode,
+        Integer entryStartHourEt,
+        Integer entryEndHourEt,
+        Integer allowedDaysMask,
+        String exitSessionMode,
+        Integer flatCutoffHourEt
+    ) {
+        public GeneratorRequest(
+            String symbol,
+            String timeframe,
+            String yearSpec,
+            Integer oosSplitPct,
+            String searchMode,
+            String archetype,
+            String direction,
+            String entryOrderType,
+            Integer populationSize,
+            Integer generations,
+            List<String> buildingBlocks,
+            Integer minTrades,
+            Double minProfitFactor,
+            Double minOosProfitFactor,
+            Double minSharpe,
+            Double maxDrawdownPct,
+            Double initialCapital,
+            Double lotSize,
+            Double commissionPerTrade,
+            Double slippagePct,
+            Integer splitFolds
+        ) {
+            this(
+                symbol, timeframe, yearSpec, oosSplitPct, searchMode, archetype, direction, entryOrderType,
+                populationSize, generations, buildingBlocks, minTrades, minProfitFactor, minOosProfitFactor,
+                minSharpe, maxDrawdownPct, initialCapital, lotSize, commissionPerTrade, slippagePct, splitFolds,
+                "CONTINUOUS", 0, 24, 31, "CONTINUOUS", 16
+            );
+        }
+    }
 
     public record DatabankCandidate(
         String id,
@@ -136,8 +173,43 @@ public final class StrategyGeneratorService implements AutoCloseable {
         Double valProfitFactor,
         Double wfePct,
         Integer splitFolds,
-        List<PartitionBand> partitionBands
+        List<PartitionBand> partitionBands,
+        String sessionSummary,
+        Integer entryStartHourEt,
+        Integer entryEndHourEt,
+        Integer allowedDaysMask,
+        String exitSessionMode,
+        Integer flatCutoffHourEt
     ) {
+        public String resolvedSessionSummary() {
+            if (sessionSummary != null && !sessionSummary.isBlank()) {
+                return sessionSummary;
+            }
+            if (genome != null) {
+                return genome.sessionSummary();
+            }
+            return "Mon–Fri | 24h Session | Overnight Hold Allowed";
+        }
+
+        public Integer resolvedEntryStartHourEt() {
+            return entryStartHourEt != null ? entryStartHourEt : (genome != null ? genome.resolvedEntryStartHourEt() : 0);
+        }
+
+        public Integer resolvedEntryEndHourEt() {
+            return entryEndHourEt != null ? entryEndHourEt : (genome != null ? genome.resolvedEntryEndHourEt() : 24);
+        }
+
+        public Integer resolvedAllowedDaysMask() {
+            return allowedDaysMask != null ? allowedDaysMask : (genome != null ? genome.resolvedAllowedDaysMask() : 31);
+        }
+
+        public String resolvedExitSessionMode() {
+            return exitSessionMode != null ? exitSessionMode : (genome != null ? genome.resolvedExitSessionMode() : "CONTINUOUS");
+        }
+
+        public Integer resolvedFlatCutoffHourEt() {
+            return flatCutoffHourEt != null ? flatCutoffHourEt : (genome != null ? genome.resolvedFlatCutoffHourEt() : 16);
+        }
         public double resolvedCapital() {
             return initialCapital != null && initialCapital > 0
                 ? initialCapital
@@ -328,6 +400,9 @@ public final class StrategyGeneratorService implements AutoCloseable {
             || c.commissionPerTrade() == null || c.slippagePct() == null
             || c.valStartIndex() == null || c.wfePct() == null
             || c.partitionBands() == null || c.partitionBands().isEmpty()
+            || c.sessionSummary() == null || c.entryStartHourEt() == null
+            || c.entryEndHourEt() == null || c.allowedDaysMask() == null
+            || c.exitSessionMode() == null || c.flatCutoffHourEt() == null
             || splitMismatch;
         if (!idChanged && !missingDefaults) {
             return c;
@@ -340,7 +415,8 @@ public final class StrategyGeneratorService implements AutoCloseable {
         StrategyGenome newGenome = (g != null && idChanged) ? new StrategyGenome(
             newId, g.symbol(), g.timeframe(), g.archetype(), g.direction(), g.entryOrderType(),
             g.longRules(), g.shortRules(), g.stopEntryLookback(), g.stopEntryAtrMult(), g.stopOrderValidBars(),
-            g.atrPeriod(), g.slAtrMult(), g.tpAtrMult(), g.trailingAtrMult(), g.maxBarsInTrade()
+            g.atrPeriod(), g.slAtrMult(), g.tpAtrMult(), g.trailingAtrMult(), g.maxBarsInTrade(),
+            g.entryStartHourEt(), g.entryEndHourEt(), g.allowedDaysMask(), g.exitSessionMode(), g.flatCutoffHourEt()
         ) : g;
         String newPath = (c.javaFilePath() != null && idChanged) ? c.javaFilePath().replace(oldId + ".java", newId + ".java") : c.javaFilePath();
         String newCode = (c.javaSourceCode() != null && idChanged) ? c.javaSourceCode().replace(oldId, newId) : c.javaSourceCode();
@@ -358,7 +434,9 @@ public final class StrategyGeneratorService implements AutoCloseable {
             c.resolvedCapital(), c.resolvedLotSize(), c.resolvedCommission(), c.resolvedSlippage(),
             c.resolvedValStartIndex(), c.resolvedValTrades(), c.resolvedValNetProfit(),
             c.resolvedValProfitFactor(), c.resolvedWfePct(),
-            c.resolvedSplitFolds(), c.resolvedPartitionBands()
+            c.resolvedSplitFolds(), c.resolvedPartitionBands(),
+            c.resolvedSessionSummary(), c.resolvedEntryStartHourEt(), c.resolvedEntryEndHourEt(),
+            c.resolvedAllowedDaysMask(), c.resolvedExitSessionMode(), c.resolvedFlatCutoffHourEt()
         );
     }
 
@@ -540,7 +618,13 @@ public final class StrategyGeneratorService implements AutoCloseable {
             existing.resolvedValProfitFactor(),
             existing.resolvedWfePct(),
             existing.resolvedSplitFolds(),
-            existing.resolvedPartitionBands()
+            existing.resolvedPartitionBands(),
+            existing.resolvedSessionSummary(),
+            existing.resolvedEntryStartHourEt(),
+            existing.resolvedEntryEndHourEt(),
+            existing.resolvedAllowedDaysMask(),
+            existing.resolvedExitSessionMode(),
+            existing.resolvedFlatCutoffHourEt()
         );
 
         for (int i = 0; i < databank.size(); i++) {
@@ -591,11 +675,27 @@ public final class StrategyGeneratorService implements AutoCloseable {
         double commission = rawReq.commissionPerTrade() != null && rawReq.commissionPerTrade() >= 0 ? rawReq.commissionPerTrade() : defaults.commissionPerTrade();
         double slippage = rawReq.slippagePct() != null && rawReq.slippagePct() >= 0 ? rawReq.slippagePct() : defaults.slippagePct();
         int splitFolds = rawReq.splitFolds() != null ? Math.clamp(rawReq.splitFolds(), 1, 6) : 3;
+        String sessionMode = (rawReq.sessionMode() != null && !rawReq.sessionMode().isBlank())
+            ? rawReq.sessionMode().trim().toUpperCase(Locale.ROOT)
+            : "CONTINUOUS";
+        int entryStartHourEt = rawReq.entryStartHourEt() != null ? Math.clamp(rawReq.entryStartHourEt(), 0, 23) : 0;
+        int entryEndHourEt = rawReq.entryEndHourEt() != null ? Math.clamp(rawReq.entryEndHourEt(), 1, 24) : 24;
+        if (entryEndHourEt == entryStartHourEt) {
+            entryEndHourEt = Math.min(24, entryStartHourEt + 1);
+        }
+        int allowedDaysMask = (rawReq.allowedDaysMask() != null && (rawReq.allowedDaysMask() & 31) != 0)
+            ? (rawReq.allowedDaysMask() & 31)
+            : 31;
+        String exitSessionMode = (rawReq.exitSessionMode() != null && !rawReq.exitSessionMode().isBlank())
+            ? rawReq.exitSessionMode().trim().toUpperCase(Locale.ROOT)
+            : "CONTINUOUS";
+        int flatCutoffHourEt = rawReq.flatCutoffHourEt() != null ? Math.clamp(rawReq.flatCutoffHourEt(), 12, 17) : 16;
 
         GeneratorRequest req = new GeneratorRequest(
             symbol, tf, yearSpec, oosSplitPct, searchMode, archetype, direction, entryOrderType,
             popSize, gens, blocks, minTrades, minPf, minOosPf, minSharpe, maxDd,
-            capital, lotSize, commission, slippage, splitFolds
+            capital, lotSize, commission, slippage, splitFolds,
+            sessionMode, entryStartHourEt, entryEndHourEt, allowedDaysMask, exitSessionMode, flatCutoffHourEt
         );
 
         String jobId = UUID.randomUUID().toString();
@@ -726,6 +826,7 @@ public final class StrategyGeneratorService implements AutoCloseable {
                                         && existing.shortSignalSummary().equals(sg.candidate.shortSignalSummary())
                                         && existing.entrySummary().equals(sg.candidate.entrySummary())
                                         && existing.exitSummary().equals(sg.candidate.exitSummary())
+                                        && existing.resolvedSessionSummary().equals(sg.candidate.resolvedSessionSummary())
                                     )
                                 );
                                 if (!isDuplicate) {
@@ -913,7 +1014,9 @@ public final class StrategyGeneratorService implements AutoCloseable {
 
             // Evolutionary Fitness: Strictly computed from In-Sample bands (IS_1 .. IS_K) with ZERO OOS leakage
             int ruleCount = genome.longRules() != null ? genome.longRules().size() : 1;
-            double complexityPenalty = Math.max(0, ruleCount - 2) * 1.5;
+            boolean autoScheduleSearch = "AUTO".equalsIgnoreCase(req.sessionMode()) || "AUTO".equalsIgnoreCase(req.exitSessionMode());
+            double sessionPenalty = (autoScheduleSearch && genome.hasRestrictedSchedule()) ? 1.5 : 0.0;
+            double complexityPenalty = Math.max(0, ruleCount - 2) * 1.5 + sessionPenalty;
             double isPfScore = Math.min(34.0, Math.max(0.0, (isPf - 1.0) * 32.0));
             double isBandConsistencyRatio = splitFolds > 0 ? (profitableIsBands / (double) splitFolds) : 1.0;
             double valConsistencyScore = isBandConsistencyRatio * 14.0
@@ -1051,7 +1154,13 @@ public final class StrategyGeneratorService implements AutoCloseable {
                 round2(valPf),
                 wfePct,
                 splitFolds,
-                sampledBands
+                sampledBands,
+                genome.sessionSummary(),
+                genome.entryStartHourEt(),
+                genome.entryEndHourEt(),
+                genome.allowedDaysMask(),
+                genome.exitSessionMode(),
+                genome.flatCutoffHourEt()
             );
 
             return new ScoredGenome(genome, evolutionaryFitness, candidate);
@@ -1132,10 +1241,42 @@ public final class StrategyGeneratorService implements AutoCloseable {
         double trailAtr = rng.nextDouble() < 0.35 ? round2(rng.nextDouble(1.6, 3.2)) : 0.0;
         int maxBars = rng.nextInt(14, 64);
 
+        boolean autoSession = "AUTO".equalsIgnoreCase(req.sessionMode());
+        boolean higherTf = StrategyGenome.isHigherTimeframe(req.timeframe());
+        int startHourEt = req.entryStartHourEt() != null ? req.entryStartHourEt() : 0;
+        int endHourEt = req.entryEndHourEt() != null ? req.entryEndHourEt() : 24;
+        int daysMask = req.allowedDaysMask() != null ? req.allowedDaysMask() : 31;
+        String exitMode = req.exitSessionMode() != null ? req.exitSessionMode() : "CONTINUOUS";
+        int cutoffHourEt = req.flatCutoffHourEt() != null ? req.flatCutoffHourEt() : 16;
+
+        if (autoSession) {
+            int[] structuredMasks = {31, 31, 15, 30, 14};
+            daysMask = structuredMasks[rng.nextInt(structuredMasks.length)];
+            if (higherTf) {
+                startHourEt = 0;
+                endHourEt = 24;
+            } else {
+                int[][] structuredWindows = {{0, 24}, {9, 16}, {9, 15}, {8, 12}, {3, 8}, {8, 11}};
+                int[] win = structuredWindows[rng.nextInt(structuredWindows.length)];
+                startHourEt = win[0];
+                endHourEt = win[1];
+            }
+        }
+        if (autoSession || "AUTO".equalsIgnoreCase(exitMode)) {
+            if (higherTf) {
+                String[] htfExits = {"CONTINUOUS", "WEEKEND_FLAT"};
+                exitMode = htfExits[rng.nextInt(htfExits.length)];
+            } else {
+                String[] exits = {"CONTINUOUS", "INTRADAY_FLAT", "WEEKEND_FLAT"};
+                exitMode = exits[rng.nextInt(exits.length)];
+            }
+        }
+
         return new StrategyGenome(
             id, req.symbol(), req.timeframe(), arch, req.direction(), orderType,
             longRules, shortRules, stopLookback, stopAtrMult, validBars,
-            atrPeriod, slAtr, tpAtr, trailAtr, maxBars
+            atrPeriod, slAtr, tpAtr, trailAtr, maxBars,
+            startHourEt, endHourEt, daysMask, exitMode, cutoffHourEt
         );
     }
 
@@ -1282,6 +1423,51 @@ public final class StrategyGeneratorService implements AutoCloseable {
         tp = Math.clamp(tp, sl * 1.15, 7.5);
 
         List<RuleGene> rulesCopy = List.copyOf(longRules);
+        boolean autoSession = "AUTO".equalsIgnoreCase(req.sessionMode());
+        boolean higherTf = StrategyGenome.isHigherTimeframe(req.timeframe());
+        int startHourEt = req.entryStartHourEt() != null ? req.entryStartHourEt() : 0;
+        int endHourEt = req.entryEndHourEt() != null ? req.entryEndHourEt() : 24;
+        int daysMask = req.allowedDaysMask() != null ? req.allowedDaysMask() : 31;
+        String exitMode = req.exitSessionMode() != null ? req.exitSessionMode() : "CONTINUOUS";
+        int cutoffHourEt = req.flatCutoffHourEt() != null ? req.flatCutoffHourEt() : 16;
+
+        if (autoSession) {
+            if (rng.nextDouble() < 0.25) {
+                int[] structuredMasks = {31, 31, 15, 30, 14};
+                daysMask = structuredMasks[rng.nextInt(structuredMasks.length)];
+            } else {
+                daysMask = rng.nextBoolean() ? p1.resolvedAllowedDaysMask() : p2.resolvedAllowedDaysMask();
+            }
+            if (higherTf) {
+                startHourEt = 0;
+                endHourEt = 24;
+            } else if (rng.nextDouble() < 0.25) {
+                int[][] structuredWindows = {{0, 24}, {9, 16}, {9, 15}, {8, 12}, {3, 8}, {8, 11}};
+                int[] win = structuredWindows[rng.nextInt(structuredWindows.length)];
+                startHourEt = win[0];
+                endHourEt = win[1];
+            } else if (rng.nextBoolean()) {
+                startHourEt = p1.resolvedEntryStartHourEt();
+                endHourEt = p1.resolvedEntryEndHourEt();
+            } else {
+                startHourEt = p2.resolvedEntryStartHourEt();
+                endHourEt = p2.resolvedEntryEndHourEt();
+            }
+        }
+        if (autoSession || "AUTO".equalsIgnoreCase(exitMode)) {
+            if (rng.nextDouble() < 0.25) {
+                if (higherTf) {
+                    String[] htfExits = {"CONTINUOUS", "WEEKEND_FLAT"};
+                    exitMode = htfExits[rng.nextInt(htfExits.length)];
+                } else {
+                    String[] exits = {"CONTINUOUS", "INTRADAY_FLAT", "WEEKEND_FLAT"};
+                    exitMode = exits[rng.nextInt(exits.length)];
+                }
+            } else {
+                exitMode = rng.nextBoolean() ? p1.resolvedExitSessionMode() : p2.resolvedExitSessionMode();
+            }
+        }
+
         return new StrategyGenome(
             id,
             req.symbol(),
@@ -1298,7 +1484,12 @@ public final class StrategyGeneratorService implements AutoCloseable {
             sl,
             tp,
             rng.nextBoolean() ? p1.trailingAtrMult() : p2.trailingAtrMult(),
-            rng.nextBoolean() ? p1.maxBarsInTrade() : p2.maxBarsInTrade()
+            rng.nextBoolean() ? p1.maxBarsInTrade() : p2.maxBarsInTrade(),
+            startHourEt,
+            endHourEt,
+            daysMask,
+            exitMode,
+            cutoffHourEt
         );
     }
 

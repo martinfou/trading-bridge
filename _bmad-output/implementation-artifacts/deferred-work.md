@@ -187,3 +187,7 @@ Items deferred during code reviews — not blocking current stories.
 - `DukascopyDownloader` / `HistoricalDataCatalog.yearsForSymbol` / `RunManager.lockAndDownload` (`trading-data/.../DukascopyDownloader.java:159`, `HistoricalDataCatalog.java:107`, `RunManager.java:1325`): Dukascopy raw CSV downloader and catalog scanner only natively produce/scan `m1`/`h1` Dukascopy CSVs; non-Forex symbols in `RunManager.lockAndDownload` fall through to Dukascopy warning logs.
 - `HistoricalDataLoader.loadNative` / `HistoricalDataService.generateMultiAssetBars` (`HistoricalDataLoader.java:99`, `HistoricalDataService.java:332`): Pre-existing relative `data/historical/csv` path resolution and `08:00 UTC` synthetic multi-asset bar start timestamp.
 - Desktop timeframe constants (`desktop/src/views/DataManagerView.vue`, `DashboardView.vue`, `BacktestForm.vue`): Consolidate timeframe option lists into a single shared frontend constant module.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-strategy-generator-time-day-filters.md`
+  summary: In `StrategyGenome.GenomeExecutableStrategy.effectiveRules`, when `r0UsesP2` is false and rule index `i == 1` is a dual-period block (`MA_CROSSOVER`, `ATR_EXPANSION`, `MACD_HISTOGRAM`), `this.period2` overrides `r.period1()` while leaving `r.period2()` unchanged.
+  evidence: Pre-existing uncommitted WFA parameter-binding code at `StrategyGenome.java:1456` maps `period2` to the second rule's `period1` slot.

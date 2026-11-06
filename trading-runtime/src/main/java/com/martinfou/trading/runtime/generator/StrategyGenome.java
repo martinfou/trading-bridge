@@ -6,6 +6,9 @@ import com.martinfou.trading.core.LotSizing;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.core.Strategy;
 
+import java.time.DayOfWeek;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -16,7 +19,8 @@ import java.util.concurrent.ThreadLocalRandom;
 /**
  * Complete genetic DNA for a StrategyQuant X-style algorithmic trading strategy.
  * Supports multi-asset execution (Forex, Futures, Commodities, Equities) using ATR-normalized
- * stop-loss, profit-target, trailing-stop, and optional stop-breakout pending entries.
+ * stop-loss, profit-target, trailing-stop, optional stop-breakout pending entries, and
+ * {@code America/New_York} session windows, day-of-week filters, and pre-gap flatten rules.
  */
 public record StrategyGenome(
     String id,
@@ -34,8 +38,209 @@ public record StrategyGenome(
     double slAtrMult,
     double tpAtrMult,
     double trailingAtrMult,
-    int maxBarsInTrade
+    int maxBarsInTrade,
+    Integer entryStartHourEt,
+    Integer entryEndHourEt,
+    Integer allowedDaysMask,
+    String exitSessionMode,
+    Integer flatCutoffHourEt
 ) {
+
+    public static final ZoneId NY_ZONE = ZoneId.of("America/New_York");
+    public static final int ALL_WEEKDAYS_MASK = 31; // Mon(1) | Tue(2) | Wed(4) | Thu(8) | Fri(16)
+
+    public StrategyGenome(
+        String id,
+        String symbol,
+        String timeframe,
+        String archetype,
+        String direction,
+        String entryOrderType,
+        List<RuleGene> longRules,
+        List<RuleGene> shortRules,
+        int stopEntryLookback,
+        double stopEntryAtrMult,
+        int stopOrderValidBars,
+        int atrPeriod,
+        double slAtrMult,
+        double tpAtrMult,
+        double trailingAtrMult,
+        int maxBarsInTrade
+    ) {
+        this(
+            id, symbol, timeframe, archetype, direction, entryOrderType,
+            longRules, shortRules, stopEntryLookback, stopEntryAtrMult, stopOrderValidBars,
+            atrPeriod, slAtrMult, tpAtrMult, trailingAtrMult, maxBarsInTrade,
+            0, 24, ALL_WEEKDAYS_MASK, "CONTINUOUS", 16
+        );
+    }
+
+    public int resolvedEntryStartHourEt() {
+        return entryStartHourEt != null ? Math.clamp(entryStartHourEt, 0, 23) : 0;
+    }
+
+    public int resolvedEntryEndHourEt() {
+        return entryEndHourEt != null ? Math.clamp(entryEndHourEt, 1, 24) : 24;
+    }
+
+    public int resolvedAllowedDaysMask() {
+        int m = allowedDaysMask != null ? (allowedDaysMask & ALL_WEEKDAYS_MASK) : ALL_WEEKDAYS_MASK;
+        return m > 0 ? m : ALL_WEEKDAYS_MASK;
+    }
+
+    public String resolvedExitSessionMode() {
+        if (exitSessionMode == null || exitSessionMode.isBlank()) {
+            return "CONTINUOUS";
+        }
+        String norm = exitSessionMode.trim().toUpperCase(Locale.ROOT);
+        if ("INTRADAY_FLAT".equals(norm) || "WEEKEND_FLAT".equals(norm)) {
+            return norm;
+        }
+        return "CONTINUOUS";
+    }
+
+    public int resolvedFlatCutoffHourEt() {
+        return flatCutoffHourEt != null ? Math.clamp(flatCutoffHourEt, 12, 17) : 16;
+    }
+
+    public static boolean isIntradayTimeframe(String tf) {
+        if (tf == null || tf.isBlank()) {
+            return true;
+        }
+        String u = tf.trim().toUpperCase(Locale.ROOT);
+        return !("D1".equals(u) || "H4".equals(u) || "W1".equals(u) || "1D".equals(u) || "4H".equals(u));
+    }
+
+    public static boolean isHigherTimeframe(String tf) {
+        return !isIntradayTimeframe(tf);
+    }
+
+    public static int timeframeMinutes(String tf) {
+        if (tf == null || tf.isBlank()) {
+            return 30;
+        }
+        return switch (tf.trim().toUpperCase(Locale.ROOT)) {
+            case "M1", "1M" -> 1;
+            case "M5", "5M" -> 5;
+            case "M15", "15M" -> 15;
+            case "M30", "30M" -> 30;
+            case "H1", "1H" -> 60;
+            case "H4", "4H" -> 240;
+            case "D1", "1D" -> 1440;
+            default -> 30;
+        };
+    }
+
+    public boolean hasRestrictedSchedule() {
+        boolean intradayTf = isIntradayTimeframe(timeframe);
+        boolean hourRestricted = intradayTf && (resolvedEntryStartHourEt() > 0 || resolvedEntryEndHourEt() < 24);
+        boolean dayRestricted = resolvedAllowedDaysMask() != ALL_WEEKDAYS_MASK;
+        boolean flatRestricted = !"CONTINUOUS".equals(resolvedExitSessionMode());
+        return hourRestricted || dayRestricted || flatRestricted;
+    }
+
+    public boolean shouldFlattenBeforeGap(Bar bar) {
+        if (bar == null || bar.timestamp() == null) {
+            return false;
+        }
+        String mode = resolvedExitSessionMode();
+        if ("CONTINUOUS".equals(mode)) {
+            return false;
+        }
+        ZonedDateTime et = bar.timestamp().atZone(NY_ZONE);
+        DayOfWeek dow = et.getDayOfWeek();
+        if (dow == DayOfWeek.SATURDAY) {
+            return true;
+        }
+        if (dow == DayOfWeek.SUNDAY && et.getHour() < 18) {
+            return true;
+        }
+        boolean intradayTf = isIntradayTimeframe(timeframe);
+        int tfMin = timeframeMinutes(timeframe);
+        int barStartMinEt = et.getHour() * 60 + et.getMinute();
+        int barEndMinEt = barStartMinEt + (intradayTf ? tfMin : 0);
+        int cutoffMinEt = Math.max(11 * 60, resolvedFlatCutoffHourEt() * 60);
+
+        if (intradayTf && "INTRADAY_FLAT".equals(mode)) {
+            int startH = resolvedEntryStartHourEt();
+            int endH = resolvedEntryEndHourEt();
+            if (startH < endH && (startH > 0 || endH < 24)) {
+                if (et.getHour() < startH || et.getHour() >= endH) {
+                    return true;
+                }
+            }
+            return barStartMinEt < 18 * 60 && barEndMinEt >= cutoffMinEt;
+        }
+        if ("WEEKEND_FLAT".equals(mode) || (!intradayTf && "INTRADAY_FLAT".equals(mode))) {
+            if ("D1".equalsIgnoreCase(timeframe)) {
+                return dow == DayOfWeek.THURSDAY || dow == DayOfWeek.FRIDAY;
+            }
+            if (dow == DayOfWeek.FRIDAY) {
+                return (!intradayTf && et.getHour() >= 12) || (intradayTf && barEndMinEt >= cutoffMinEt);
+            }
+        }
+        return false;
+    }
+
+    public boolean isEntryAllowedAt(Bar bar) {
+        if (bar == null || bar.timestamp() == null) {
+            return true;
+        }
+        if (shouldFlattenBeforeGap(bar)) {
+            return false;
+        }
+        ZonedDateTime et = bar.timestamp().atZone(NY_ZONE);
+        DayOfWeek dow = et.getDayOfWeek();
+        int dowIdx = dow.getValue(); // 1=Mon .. 7=Sun
+        if (dowIdx >= 1 && dowIdx <= 5) {
+            int bit = 1 << (dowIdx - 1);
+            if ((resolvedAllowedDaysMask() & bit) == 0) {
+                return false;
+            }
+        } else if (dow == DayOfWeek.SATURDAY) {
+            return false;
+        } else if (dow == DayOfWeek.SUNDAY) {
+            if (et.getHour() < 18 || (resolvedAllowedDaysMask() & 1) == 0) {
+                return false;
+            }
+        }
+
+        boolean intradayTf = isIntradayTimeframe(timeframe);
+        String mode = resolvedExitSessionMode();
+        int minuteOfDayEt = et.getHour() * 60 + et.getMinute();
+        int cutoffMinEt = resolvedFlatCutoffHourEt() * 60;
+
+        if (intradayTf) {
+            if ("INTRADAY_FLAT".equals(mode)
+                && minuteOfDayEt >= Math.max(10 * 60, cutoffMinEt - 60)
+                && minuteOfDayEt < 18 * 60) {
+                return false;
+            }
+            if ("WEEKEND_FLAT".equals(mode) && dow == DayOfWeek.FRIDAY
+                && minuteOfDayEt >= Math.max(10 * 60, cutoffMinEt - 120)) {
+                return false;
+            }
+            int startH = resolvedEntryStartHourEt();
+            int endH = resolvedEntryEndHourEt();
+            if (startH > 0 || endH < 24) {
+                int h = et.getHour();
+                if (startH < endH) {
+                    if (h < startH || h >= endH) {
+                        return false;
+                    }
+                } else if (startH > endH) {
+                    if (h < startH && h >= endH) {
+                        return false;
+                    }
+                } else {
+                    return false;
+                }
+            }
+        } else if (("WEEKEND_FLAT".equals(mode) || "INTRADAY_FLAT".equals(mode)) && dow == DayOfWeek.FRIDAY) {
+            return false;
+        }
+        return true;
+    }
 
     /**
      * Building block types supported by the native evolutionary generator.
@@ -282,6 +487,50 @@ public record StrategyGenome(
         }
     }
 
+    public String daysLabel() {
+        int mask = resolvedAllowedDaysMask();
+        if (mask == ALL_WEEKDAYS_MASK) {
+            return "Mon–Fri";
+        }
+        if (mask == 15) {
+            return "Mon–Thu (No Fri)";
+        }
+        if (mask == 30) {
+            return "Tue–Fri (No Mon)";
+        }
+        if (mask == 14) {
+            return "Tue–Thu (Midweek)";
+        }
+        String[] names = {"Mon", "Tue", "Wed", "Thu", "Fri"};
+        List<String> active = new ArrayList<>(5);
+        for (int i = 0; i < 5; i++) {
+            if ((mask & (1 << i)) != 0) {
+                active.add(names[i]);
+            }
+        }
+        return active.isEmpty() ? "Mon–Fri" : String.join(",", active);
+    }
+
+    public String sessionSummary() {
+        boolean intradayTf = isIntradayTimeframe(timeframe);
+        int startH = resolvedEntryStartHourEt();
+        int endH = resolvedEntryEndHourEt();
+        String hoursPart = (!intradayTf || (startH <= 0 && endH >= 24))
+            ? "24h Session"
+            : String.format(Locale.US, "%02d:00–%02d:00 ET", startH, endH);
+        String daysPart = daysLabel();
+        String mode = resolvedExitSessionMode();
+        int cutoffH = resolvedFlatCutoffHourEt();
+        String flatPart = switch (mode) {
+            case "INTRADAY_FLAT" -> intradayTf
+                ? String.format(Locale.US, "Flat Daily <= %02d:00 ET & Weekend", cutoffH)
+                : "Flat Fri Weekend";
+            case "WEEKEND_FLAT" -> String.format(Locale.US, "Flat Fri <= %02d:00 ET (No Weekend Gap)", cutoffH);
+            default -> "Overnight Hold Allowed";
+        };
+        return daysPart + " | " + hoursPart + " | " + flatPart;
+    }
+
     public List<String> indicatorsUsed() {
         Set<String> set = new LinkedHashSet<>();
         if (longRules != null) {
@@ -291,6 +540,18 @@ public record StrategyGenome(
             for (RuleGene r : shortRules) set.add(r.indicatorLabel());
         }
         set.add("ATR(" + atrPeriod + ")");
+        if (isIntradayTimeframe(timeframe) && (resolvedEntryStartHourEt() > 0 || resolvedEntryEndHourEt() < 24)) {
+            set.add(String.format(Locale.US, "Session(%02d-%02dET)", resolvedEntryStartHourEt(), resolvedEntryEndHourEt()));
+        }
+        if (resolvedAllowedDaysMask() != ALL_WEEKDAYS_MASK) {
+            set.add("Days(" + daysLabel().replace(" ", "") + ")");
+        }
+        String mode = resolvedExitSessionMode();
+        if ("INTRADAY_FLAT".equals(mode) && isIntradayTimeframe(timeframe)) {
+            set.add(String.format(Locale.US, "EODFlat(%02dET)", resolvedFlatCutoffHourEt()));
+        } else if ("WEEKEND_FLAT".equals(mode) || "INTRADAY_FLAT".equals(mode)) {
+            set.add(String.format(Locale.US, "FriFlat(%02dET)", resolvedFlatCutoffHourEt()));
+        }
         return List.copyOf(set);
     }
 
@@ -309,14 +570,21 @@ public record StrategyGenome(
     }
 
     public String entrySummary() {
-        if ("STOP".equalsIgnoreCase(entryOrderType)) {
-            return String.format(
+        String base = "STOP".equalsIgnoreCase(entryOrderType)
+            ? String.format(
                 Locale.US,
                 "Stop Breakout at Highest/Lowest(%d)[1] ± %.2f × ATR(%d) (Valid %d bars)",
                 stopEntryLookback, stopEntryAtrMult, atrPeriod, stopOrderValidBars
-            );
+            )
+            : "Market Order on Signal Bar Close";
+        if (hasRestrictedSchedule()) {
+            boolean intradayTf = isIntradayTimeframe(timeframe);
+            String hrs = (!intradayTf || (resolvedEntryStartHourEt() <= 0 && resolvedEntryEndHourEt() >= 24))
+                ? "All Hours"
+                : String.format(Locale.US, "%02d:00–%02d:00 ET", resolvedEntryStartHourEt(), resolvedEntryEndHourEt());
+            return base + " [" + daysLabel() + ", " + hrs + "]";
         }
-        return "Market Order on Signal Bar Close";
+        return base;
     }
 
     public String exitSummary() {
@@ -327,6 +595,12 @@ public record StrategyGenome(
         }
         if (maxBarsInTrade > 0) {
             sb.append(" | Time Exit: ").append(maxBarsInTrade).append(" bars");
+        }
+        String mode = resolvedExitSessionMode();
+        if ("INTRADAY_FLAT".equals(mode) && isIntradayTimeframe(timeframe)) {
+            sb.append(String.format(Locale.US, " | EOD & Fri Flat <= %02d:00 ET", resolvedFlatCutoffHourEt()));
+        } else if ("WEEKEND_FLAT".equals(mode) || "INTRADAY_FLAT".equals(mode)) {
+            sb.append(String.format(Locale.US, " | Fri Weekend Flat <= %02d:00 ET", resolvedFlatCutoffHourEt()));
         }
         return sb.toString();
     }
@@ -360,6 +634,9 @@ public record StrategyGenome(
         sb.append("import com.martinfou.trading.core.LotSizing;\n");
         sb.append("import com.martinfou.trading.core.Order;\n");
         sb.append("import com.martinfou.trading.core.Strategy;\n");
+        sb.append("import java.time.DayOfWeek;\n");
+        sb.append("import java.time.ZoneId;\n");
+        sb.append("import java.time.ZonedDateTime;\n");
         sb.append("import java.util.ArrayList;\n");
         sb.append("import java.util.List;\n\n");
 
@@ -373,14 +650,23 @@ public record StrategyGenome(
         sb.append(" * <ul>\n");
         sb.append(" *   <li>Instrument: ").append(symbol).append(" (").append(timeframe).append(")</li>\n");
         sb.append(" *   <li>Archetype: ").append(archetype).append(" (").append(direction).append(")</li>\n");
+        sb.append(" *   <li>Session &amp; Gap Rules: ").append(sessionSummary().replace("<", "&lt;").replace(">", "&gt;")).append("</li>\n");
         sb.append(" *   <li>Long Signal: ").append(longSignalSummary().replace("<", "&lt;").replace(">", "&gt;")).append("</li>\n");
         sb.append(" *   <li>Short Signal: ").append(shortSignalSummary().replace("<", "&lt;").replace(">", "&gt;")).append("</li>\n");
-        sb.append(" *   <li>Entry Type: ").append(entrySummary()).append("</li>\n");
-        sb.append(" *   <li>Exit Rules: ").append(exitSummary()).append("</li>\n");
+        sb.append(" *   <li>Entry Type: ").append(entrySummary().replace("<", "&lt;").replace(">", "&gt;")).append("</li>\n");
+        sb.append(" *   <li>Exit Rules: ").append(exitSummary().replace("<", "&lt;").replace(">", "&gt;")).append("</li>\n");
         sb.append(" * </ul>\n");
         sb.append(" */\n");
         sb.append("public class ").append(id).append(" implements Strategy {\n\n");
         sb.append("    private static final String DEFAULT_SYMBOL = \"").append(symbol).append("\";\n");
+        sb.append("    private static final ZoneId NY_ZONE = ZoneId.of(\"America/New_York\");\n");
+        sb.append("    private static final boolean INTRADAY_TF = ").append(isIntradayTimeframe(timeframe)).append(";\n");
+        sb.append("    private static final int TF_MINUTES = ").append(timeframeMinutes(timeframe)).append(";\n");
+        sb.append("    private static final int ENTRY_START_HOUR_ET = ").append(resolvedEntryStartHourEt()).append(";\n");
+        sb.append("    private static final int ENTRY_END_HOUR_ET = ").append(resolvedEntryEndHourEt()).append(";\n");
+        sb.append("    private static final int ALLOWED_DAYS_MASK = ").append(resolvedAllowedDaysMask()).append(";\n");
+        sb.append("    private static final String EXIT_SESSION_MODE = \"").append(resolvedExitSessionMode()).append("\";\n");
+        sb.append("    private static final int FLAT_CUTOFF_HOUR_ET = ").append(resolvedFlatCutoffHourEt()).append(";\n\n");
         sb.append("    private String symbol;\n");
         sb.append("    private final List<Bar> history = new ArrayList<>();\n");
         sb.append("    private final List<Order> pendingOrders = new ArrayList<>();\n\n");
@@ -420,8 +706,14 @@ public record StrategyGenome(
         sb.append("        if (history.size() < 61) return;\n");
         sb.append("        double atr = calcAtr(").append(atrPeriod).append(", 0);\n");
         sb.append("        if (atr <= 0) return;\n\n");
+        sb.append("        boolean flattenForGap = shouldFlattenBeforeGap(bar);\n\n");
         sb.append("        if (inTrade) {\n");
         sb.append("            barsInTrade++;\n");
+        sb.append("            if (flattenForGap) {\n");
+        sb.append("                closePosition(bar);\n");
+        sb.append("                clearArmed();\n");
+        sb.append("                return;\n");
+        sb.append("            }\n");
         sb.append("            if (positionSide == Order.Side.BUY && (bar.low() <= stopLoss || bar.high() >= takeProfit)) {\n");
         sb.append("                closePosition(bar);\n");
         sb.append("                return;\n");
@@ -443,6 +735,10 @@ public record StrategyGenome(
             sb.append("                stopLoss = Math.min(stopLoss, quantize(bar.close() + trailDist));\n");
             sb.append("            }\n");
         }
+        sb.append("            return;\n");
+        sb.append("        }\n\n");
+        sb.append("        if (!isEntryAllowedAt(bar)) {\n");
+        sb.append("            clearArmed();\n");
         sb.append("            return;\n");
         sb.append("        }\n\n");
         sb.append("        if (armedSide != null && armedBarsRemaining > 0) {\n");
@@ -532,6 +828,60 @@ public record StrategyGenome(
         sb.append("        this.armedSlDist = 0.0;\n");
         sb.append("        this.armedPtDist = 0.0;\n");
         sb.append("        this.armedBarsRemaining = 0;\n");
+        sb.append("    }\n\n");
+        sb.append("    private boolean shouldFlattenBeforeGap(Bar bar) {\n");
+        sb.append("        if (bar == null || bar.timestamp() == null || \"CONTINUOUS\".equals(EXIT_SESSION_MODE)) return false;\n");
+        sb.append("        ZonedDateTime et = bar.timestamp().atZone(NY_ZONE);\n");
+        sb.append("        DayOfWeek dow = et.getDayOfWeek();\n");
+        sb.append("        if (dow == DayOfWeek.SATURDAY) return true;\n");
+        sb.append("        if (dow == DayOfWeek.SUNDAY && et.getHour() < 18) return true;\n");
+        sb.append("        int barStartMinEt = et.getHour() * 60 + et.getMinute();\n");
+        sb.append("        int barEndMinEt = barStartMinEt + (INTRADAY_TF ? TF_MINUTES : 0);\n");
+        sb.append("        int cutoffMinEt = Math.max(11 * 60, FLAT_CUTOFF_HOUR_ET * 60);\n");
+        sb.append("        if (INTRADAY_TF && \"INTRADAY_FLAT\".equals(EXIT_SESSION_MODE)) {\n");
+        sb.append("            if (ENTRY_START_HOUR_ET < ENTRY_END_HOUR_ET && (ENTRY_START_HOUR_ET > 0 || ENTRY_END_HOUR_ET < 24)) {\n");
+        sb.append("                if (et.getHour() < ENTRY_START_HOUR_ET || et.getHour() >= ENTRY_END_HOUR_ET) return true;\n");
+        sb.append("            }\n");
+        sb.append("            return barStartMinEt < 18 * 60 && barEndMinEt >= cutoffMinEt;\n");
+        sb.append("        }\n");
+        sb.append("        if (\"WEEKEND_FLAT\".equals(EXIT_SESSION_MODE) || (!INTRADAY_TF && \"INTRADAY_FLAT\".equals(EXIT_SESSION_MODE))) {\n");
+        sb.append("            if (TF_MINUTES >= 1440) return dow == DayOfWeek.THURSDAY || dow == DayOfWeek.FRIDAY;\n");
+        sb.append("            if (dow == DayOfWeek.FRIDAY) return (!INTRADAY_TF && et.getHour() >= 12) || (INTRADAY_TF && barEndMinEt >= cutoffMinEt);\n");
+        sb.append("        }\n");
+        sb.append("        return false;\n");
+        sb.append("    }\n\n");
+        sb.append("    private boolean isEntryAllowedAt(Bar bar) {\n");
+        sb.append("        if (bar == null || bar.timestamp() == null) return true;\n");
+        sb.append("        if (shouldFlattenBeforeGap(bar)) return false;\n");
+        sb.append("        ZonedDateTime et = bar.timestamp().atZone(NY_ZONE);\n");
+        sb.append("        DayOfWeek dow = et.getDayOfWeek();\n");
+        sb.append("        int dowIdx = dow.getValue();\n");
+        sb.append("        if (dowIdx >= 1 && dowIdx <= 5) {\n");
+        sb.append("            if ((ALLOWED_DAYS_MASK & (1 << (dowIdx - 1))) == 0) return false;\n");
+        sb.append("        } else if (dow == DayOfWeek.SATURDAY) {\n");
+        sb.append("            return false;\n");
+        sb.append("        } else if (dow == DayOfWeek.SUNDAY) {\n");
+        sb.append("            if (et.getHour() < 18 || (ALLOWED_DAYS_MASK & 1) == 0) return false;\n");
+        sb.append("        }\n");
+        sb.append("        int minuteOfDayEt = et.getHour() * 60 + et.getMinute();\n");
+        sb.append("        int cutoffMinEt = FLAT_CUTOFF_HOUR_ET * 60;\n");
+        sb.append("        if (INTRADAY_TF) {\n");
+        sb.append("            if (\"INTRADAY_FLAT\".equals(EXIT_SESSION_MODE) && minuteOfDayEt >= Math.max(10 * 60, cutoffMinEt - 60) && minuteOfDayEt < 18 * 60) return false;\n");
+        sb.append("            if (\"WEEKEND_FLAT\".equals(EXIT_SESSION_MODE) && dow == DayOfWeek.FRIDAY && minuteOfDayEt >= Math.max(10 * 60, cutoffMinEt - 120)) return false;\n");
+        sb.append("            if (ENTRY_START_HOUR_ET > 0 || ENTRY_END_HOUR_ET < 24) {\n");
+        sb.append("                int h = et.getHour();\n");
+        sb.append("                if (ENTRY_START_HOUR_ET < ENTRY_END_HOUR_ET) {\n");
+        sb.append("                    if (h < ENTRY_START_HOUR_ET || h >= ENTRY_END_HOUR_ET) return false;\n");
+        sb.append("                } else if (ENTRY_START_HOUR_ET > ENTRY_END_HOUR_ET) {\n");
+        sb.append("                    if (h < ENTRY_START_HOUR_ET && h >= ENTRY_END_HOUR_ET) return false;\n");
+        sb.append("                } else {\n");
+        sb.append("                    return false;\n");
+        sb.append("                }\n");
+        sb.append("            }\n");
+        sb.append("        } else if ((\"WEEKEND_FLAT\".equals(EXIT_SESSION_MODE) || \"INTRADAY_FLAT\".equals(EXIT_SESSION_MODE)) && dow == DayOfWeek.FRIDAY) {\n");
+        sb.append("            return false;\n");
+        sb.append("        }\n");
+        sb.append("        return true;\n");
         sb.append("    }\n\n");
         sb.append("    private boolean evaluateLong() {\n");
         if ("SHORT_ONLY".equalsIgnoreCase(direction) || longRules == null || longRules.isEmpty()) {
@@ -902,6 +1252,18 @@ public record StrategyGenome(
         private final List<Bar> history = new ArrayList<>();
         private final List<Order> pendingOrders = new ArrayList<>();
 
+        // Mutable parameters for Walk-Forward Optimization & Sensitivity Grid Search
+        private int period1;
+        private int period2;
+        private double threshold;
+        private int atrPeriod;
+        private double slAtrMult;
+        private double tpAtrMult;
+        private double trailingAtrMult;
+        private int maxBarsInTrade;
+        private int stopEntryLookback;
+        private double stopEntryAtrMult;
+
         private boolean inTrade = false;
         private Order.Side positionSide = null;
         private double entryPrice = 0.0;
@@ -923,6 +1285,37 @@ public record StrategyGenome(
             this.genome = genome;
             this.symbol = (symbol != null && !symbol.isBlank()) ? symbol : genome.symbol();
             this.minTradeBarIndex = Math.max(60, minTradeBarIndex);
+
+            List<RuleGene> refRules = (genome.longRules() != null && !genome.longRules().isEmpty())
+                ? genome.longRules()
+                : genome.shortRules();
+            if (refRules != null && !refRules.isEmpty()) {
+                RuleGene r0 = refRules.getFirst();
+                this.period1 = r0.period1();
+                this.threshold = r0.threshold();
+                if (r0.blockType() == BlockType.MA_CROSSOVER || r0.blockType() == BlockType.ATR_EXPANSION || r0.blockType() == BlockType.MACD_HISTOGRAM) {
+                    this.period2 = r0.period2();
+                } else if (refRules.size() > 1) {
+                    this.period2 = refRules.get(1).period1();
+                } else {
+                    this.period2 = Math.max(20, r0.period1() * 2);
+                }
+            } else {
+                this.period1 = 20;
+                this.period2 = 50;
+                this.threshold = 2.0;
+            }
+            this.atrPeriod = genome.atrPeriod();
+            this.slAtrMult = genome.slAtrMult();
+            this.tpAtrMult = genome.tpAtrMult();
+            this.trailingAtrMult = genome.trailingAtrMult();
+            this.maxBarsInTrade = genome.maxBarsInTrade();
+            this.stopEntryLookback = genome.stopEntryLookback();
+            this.stopEntryAtrMult = genome.stopEntryAtrMult();
+        }
+
+        public StrategyGenome genome() {
+            return genome;
         }
 
         @Override
@@ -950,38 +1343,50 @@ public record StrategyGenome(
                 return;
             }
 
-            double atr = calcAtr(genome.atrPeriod(), 0);
+            double atr = calcAtr(Math.max(2, this.atrPeriod), 0);
             if (atr <= 0) {
                 return;
             }
 
+            boolean flattenForGap = genome.shouldFlattenBeforeGap(bar);
+
             if (inTrade) {
                 barsInTrade++;
+                if (flattenForGap) {
+                    closePosition(bar);
+                    clearArmed();
+                    return;
+                }
                 if (positionSide == Order.Side.BUY) {
                     if (bar.low() <= stopLoss || bar.high() >= takeProfit
-                        || (genome.maxBarsInTrade() > 0 && barsInTrade >= genome.maxBarsInTrade())) {
+                        || (this.maxBarsInTrade > 0 && barsInTrade >= this.maxBarsInTrade)) {
                         closePosition(bar);
                         return;
                     }
-                    if (genome.trailingAtrMult() > 0) {
-                        double candidateSl = quantize(bar.close() - genome.trailingAtrMult() * atr);
+                    if (this.trailingAtrMult > 0) {
+                        double candidateSl = quantize(bar.close() - this.trailingAtrMult * atr);
                         if (candidateSl > stopLoss) {
                             stopLoss = candidateSl;
                         }
                     }
                 } else if (positionSide == Order.Side.SELL) {
                     if (bar.high() >= stopLoss || bar.low() <= takeProfit
-                        || (genome.maxBarsInTrade() > 0 && barsInTrade >= genome.maxBarsInTrade())) {
+                        || (this.maxBarsInTrade > 0 && barsInTrade >= this.maxBarsInTrade)) {
                         closePosition(bar);
                         return;
                     }
-                    if (genome.trailingAtrMult() > 0) {
-                        double candidateSl = quantize(bar.close() + genome.trailingAtrMult() * atr);
+                    if (this.trailingAtrMult > 0) {
+                        double candidateSl = quantize(bar.close() + this.trailingAtrMult * atr);
                         if (candidateSl < stopLoss) {
                             stopLoss = candidateSl;
                         }
                     }
                 }
+                return;
+            }
+
+            if (!genome.isEntryAllowedAt(bar)) {
+                clearArmed();
                 return;
             }
 
@@ -1004,13 +1409,13 @@ public record StrategyGenome(
             boolean allowLong = !"SHORT_ONLY".equalsIgnoreCase(genome.direction());
             boolean allowShort = !"LONG_ONLY".equalsIgnoreCase(genome.direction());
 
-            double slDist = quantize(genome.slAtrMult() * atr);
-            double ptDist = quantize(genome.tpAtrMult() * atr);
+            double slDist = quantize(Math.max(0.2, this.slAtrMult) * atr);
+            double ptDist = quantize(Math.max(0.2, this.tpAtrMult) * atr);
 
             if (allowLong && evaluateRules(genome.longRules(), true)) {
                 if ("STOP".equalsIgnoreCase(genome.entryOrderType())) {
-                    double hh = calcHighestHigh(genome.stopEntryLookback(), 1);
-                    double stopPrice = quantize(hh + genome.stopEntryAtrMult() * atr);
+                    double hh = calcHighestHigh(Math.max(2, this.stopEntryLookback), 1);
+                    double stopPrice = quantize(hh + this.stopEntryAtrMult * atr);
                     if (bar.close() >= stopPrice && stopPrice > 0) {
                         executeEntry(Order.Side.BUY, bar.close(), slDist, ptDist);
                         clearArmed();
@@ -1025,8 +1430,8 @@ public record StrategyGenome(
                 }
             } else if (allowShort && evaluateRules(genome.shortRules(), false)) {
                 if ("STOP".equalsIgnoreCase(genome.entryOrderType())) {
-                    double ll = calcLowestLow(genome.stopEntryLookback(), 1);
-                    double stopPrice = quantize(ll - genome.stopEntryAtrMult() * atr);
+                    double ll = calcLowestLow(Math.max(2, this.stopEntryLookback), 1);
+                    double stopPrice = quantize(ll - this.stopEntryAtrMult * atr);
                     if (bar.close() <= stopPrice && stopPrice > 0) {
                         executeEntry(Order.Side.SELL, bar.close(), slDist, ptDist);
                         clearArmed();
@@ -1043,8 +1448,21 @@ public record StrategyGenome(
             if (rules == null || rules.isEmpty()) {
                 return false;
             }
-            for (RuleGene rule : rules) {
-                if (!evaluateSingleRule(rule, isLong)) {
+            for (int i = 0; i < rules.size(); i++) {
+                RuleGene r = rules.get(i);
+                if (i == 0) {
+                    int effP2 = (r.blockType() == BlockType.MA_CROSSOVER || r.blockType() == BlockType.ATR_EXPANSION || r.blockType() == BlockType.MACD_HISTOGRAM)
+                        ? this.period2
+                        : r.period2();
+                    r = new RuleGene(r.blockType(), this.period1, effP2, r.shift1(), r.shift2(), this.threshold);
+                } else if (i == 1) {
+                    RuleGene r0 = rules.getFirst();
+                    boolean r0UsesP2 = (r0.blockType() == BlockType.MA_CROSSOVER || r0.blockType() == BlockType.ATR_EXPANSION || r0.blockType() == BlockType.MACD_HISTOGRAM);
+                    if (!r0UsesP2) {
+                        r = new RuleGene(r.blockType(), this.period2, r.period2(), r.shift1(), r.shift2(), r.threshold());
+                    }
+                }
+                if (!evaluateSingleRule(r, isLong)) {
                     return false;
                 }
             }
