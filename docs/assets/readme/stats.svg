@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="150" viewBox="0 0 1280 150" role="img" aria-labelledby="t">
+  <title id="t">398+ strategies, 3 asset classes, 2 brokers, 4 data sources, 11 modules, 240+ test suites</title>
+  <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Helvetica,Arial,sans-serif">
+    <g transform="translate(0,0)">
+      <rect x="4" y="4" width="200" height="142" rx="16" fill="#111114" stroke="#27272a"/>
+      <text x="24" y="40" font-size="13" font-weight="700" fill="#a1a1aa" letter-spacing="1">STRATEGIES</text>
+      <text x="24" y="96" font-size="48" font-weight="800" fill="#f59e0b">398</text>
+      <text x="24" y="124" font-size="13" fill="#71717a">across 7 families</text>
+    </g>
+    <g transform="translate(213,0)">
+      <rect x="4" y="4" width="200" height="142" rx="16" fill="#111114" stroke="#27272a"/>
+      <text x="24" y="40" font-size="13" font-weight="700" fill="#a1a1aa" letter-spacing="1">ASSET CLASSES</text>
+      <text x="24" y="96" font-size="48" font-weight="800" fill="#3b82f6">3</text>
+      <text x="24" y="124" font-size="13" fill="#71717a">Futures · FX · Equities</text>
+    </g>
+    <g transform="translate(426,0)">
+      <rect x="4" y="4" width="200" height="142" rx="16" fill="#111114" stroke="#27272a"/>
+      <text x="24" y="40" font-size="13" font-weight="700" fill="#a1a1aa" letter-spacing="1">BROKERS</text>
+      <text x="24" y="96" font-size="48" font-weight="800" fill="#a855f7">2</text>
+      <text x="24" y="124" font-size="13" fill="#71717a">OANDA v20 · IBKR TWS</text>
+    </g>
+    <g transform="translate(639,0)">
+      <rect x="4" y="4" width="200" height="142" rx="16" fill="#111114" stroke="#27272a"/>
+      <text x="24" y="40" font-size="13" font-weight="700" fill="#a1a1aa" letter-spacing="1">DATA SOURCES</text>
+      <text x="24" y="96" font-size="48" font-weight="800" fill="#14b8a6">4</text>
+      <text x="24" y="124" font-size="13" fill="#71717a">M1 → W1 candles</text>
+    </g>
+    <g transform="translate(852,0)">
+      <rect x="4" y="4" width="200" height="142" rx="16" fill="#111114" stroke="#27272a"/>
+      <text x="24" y="40" font-size="13" font-weight="700" fill="#a1a1aa" letter-spacing="1">MAVEN MODULES</text>
+      <text x="24" y="96" font-size="48" font-weight="800" fill="#ea580c">11</text>
+      <text x="24" y="124" font-size="13" fill="#71717a">Java 21 · clean layers</text>
+    </g>
+    <g transform="translate(1065,0)">
+      <rect x="4" y="4" width="207" height="142" rx="16" fill="#111114" stroke="#27272a"/>
+      <text x="24" y="40" font-size="13" font-weight="700" fill="#a1a1aa" letter-spacing="1">TEST SUITES</text>
+      <text x="24" y="96" font-size="48" font-weight="800" fill="#10b981">240+</text>
+      <text x="24" y="124" font-size="13" fill="#71717a">golden + parity tests</text>
+    </g>
+  </g>
+</svg>
+

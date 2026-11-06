@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="360" viewBox="0 0 1280 360" role="img" aria-labelledby="t">
+  <title id="t">Trading Bridge CLI and TUI terminal interface</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#09090b"/><stop offset="1" stop-color="#111116"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="360" rx="18" fill="url(#bg)" stroke="#27272a" stroke-width="2"/>
+  <!-- Window header -->
+  <rect width="1280" height="42" rx="18" fill="#18181b"/>
+  <rect y="24" width="1280" height="18" fill="#18181b"/>
+  <circle cx="26" cy="21" r="7" fill="#ef4444"/>
+  <circle cx="48" cy="21" r="7" fill="#f59e0b"/>
+  <circle cx="70" cy="21" r="7" fill="#10b981"/>
+  <text x="640" y="26" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#a1a1aa">./tb — Trading Bridge Quant Research CLI &amp; Interactive TUI (localhost:8080)</text>
+
+  <!-- Left column: CLI commands -->
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14" transform="translate(32,72)">
+    <text y="0" fill="#f59e0b" font-weight="700"># 1. Evolutionary Strategy Generator (24 building blocks + IS/OOS gate)</text>
+    <text y="24" fill="#e4e4e7"><tspan fill="#10b981">$</tspan> ./tb generator start --symbol MES --timeframe H1 --population 120 --generations 30</text>
+    <text y="48" fill="#6ee7b7">✔ Generation 30/30 complete · 14 candidates passed OOS Sharpe &gt; 1.5 &amp; PF &gt; 1.35</text>
+
+    <text y="92" fill="#f59e0b" font-weight="700"># 2. Walk-Forward Analysis (10 folds, anchored / sliding window)</text>
+    <text y="116" fill="#e4e4e7"><tspan fill="#10b981">$</tspan> ./tb wfa run --strategy LtCrossMomentum --symbol MES --folds 10 --is-days 180 --oos-days 60</text>
+    <text y="140" fill="#6ee7b7">✔ ROBUST STRATEGY DETECTED · WFE: 195.3% · OOS Sharpe: 21.76 · Max DD: 0.5%</text>
+
+    <text y="184" fill="#f59e0b" font-weight="700"># 3. Promote to Paper / Live Trading Desk with automated risk guardrails</text>
+    <text y="208" fill="#e4e4e7"><tspan fill="#10b981">$</tspan> ./tb backtest run --strategy LondonOpenRangeBreakout --symbol EUR_USD --preset forex-ecn</text>
+    <text y="232" fill="#93c5fd">→ Parity verified (Backtest == OANDA v20 Hedging Engine) · Ready for Paper Desk</text>
+  </g>
+</svg>
+

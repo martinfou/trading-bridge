@@ -1,69 +1,95 @@
-# Guide de Déploiement et Opérations - Trading Bridge
+# Guide de Déploiement & Opérations — Trading Bridge
 
-Ce document décrit les procédures de déploiement de la plateforme de trading en production ou sur un serveur VPS de trading en direct (Live Trading).
+**Date de mise à jour :** 2026-11-05  
+**Environnements cibles :** Serveur Linux (`trading-vm`), Conteneurs Docker multi-couloirs, Passerelle IB Gateway 10.50 et Packaging Desktop multiplateforme.
+
+> [!CAUTION]
+> **Règle Critique :** L'ancien script `scripts/deploy.sh` a été **définitivement retiré le 2026-10-29** (il quitte immédiatement avec le code d'erreur `2`). Utilisez exclusivement **`scripts/deploy-paper.sh`** et **`scripts/pre-deploy-gate.sh`** pour tout déploiement OANDA Paper.
 
 ---
 
-## 1. Déploiement Docker (VPS Live Trading)
+## 1. Architecture des Couloirs de Déploiement (*Execution Lanes*)
 
-La plateforme de trading en direct s'appuie sur Docker et Docker Compose pour isoler et exécuter les stratégies sur des paires de devises spécifiques.
+La plateforme isole strictement ses environnements d'exécution en **3 couloirs Docker indépendants** afin qu'aucune expérimentation ne puisse impacter les comptes Paper ou Live :
 
-### Structure du Déploiement
-Les services de trading en direct sont déclarés dans le fichier [`docker-compose.yml`](file:///home/martinfou/dev/src/trading-bridge/docker-compose.yml) :
-*   **`trader`** : Exécuteur principal (`LiveStrategyRunner`) faisant tourner les stratégies de référence (ex: `VWPReversion` et `ConsecutiveBarExhaustion`) sur `USD_CHF` (la paire avec le meilleur ratio de Sharpe historique).
-*   **`nfp-week`** : Service dédié aux stratégies de volatilité macroéconomique lors des semaines de publication du rapport NFP américain (ex: Short `EUR_USD`).
-*   **`comp-momentum`** : Stratégie de momentum composite sur la paire `USD_JPY`.
-*   **`month-week`** : Stratégie temporelle mensuelle/hebdomadaire sur la paire `USD_JPY`.
+| Couloir | Fichier Compose | Conteneur | Fichier Env & Compte | Persistance Hôte | Rôle Opérationnel |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **1. OANDA Paper** | `docker-compose.yml` | `trading-live` (`TB_LANE=paper`) | `.env.paper` (Compte Practice `-004`) | `./data/state` & `./logs` | Exécution Paper officielle des **4 stratégies `GBP_JPY` H1 ELITE**. |
+| **2. OANDA Dev / Rehab** | `docker-compose.yml` ou `docker-compose.dev.yml` | `trading-dev` (`TB_LANE=dev`) | `.env.dev` (Compte Practice `-003`) | `./data/state/dev` ou `./data-dev` | Couloir de quarantaine/réhabilitation (5 stratégies manuelles). Piloté via `./scripts/dev-lane.sh`. |
+| **3. IBKR CME Futures Paper** | `docker/docker-compose.futures.yml` | `trading-futures` | Variables hôte (`IBKR_ACCOUNT_ID=DUR967322`, `:4002`) | `./data-futures/state` | Exécution Paper des **3 stratégies `MGC` (Micro Or) M30 ELITE** via `IbkrLiveRunner`. |
 
-### Lancement des Services
-Pour lancer l'ensemble des conteneurs en tâche de fond (mode détaché) :
+---
+
+## 2. Procédure de Déploiement OANDA Paper (`scripts/deploy-paper.sh`)
+
+### 2.1 Vérification Pré-Vol (`scripts/pre-deploy-gate.sh`)
+Avant tout déploiement, exécutez la porte de validation à 3 niveaux :
 ```bash
-docker compose up -d
+./scripts/pre-deploy-gate.sh
 ```
+Ce script vérifie séquentiellement :
+1. `./mvnw -B -DskipITs test` (intégralité des tests unitaires Java).
+2. `docker compose config --quiet` (validité de la configuration Compose).
+3. `python3 scripts/smoke-oanda-readonly.py` (connectivité HTTPS vers `api-fxpractice.oanda.com` et devise du compte `CAD`).
 
-### Surcharger les Stratégies ou Paires
-Vous pouvez personnaliser la stratégie ou la paire de devises ciblée via les variables d'environnement lors de l'appel de Docker Compose :
+### 2.2 Simulation à Blanc (*Dry-Run* par défaut) et Application
 ```bash
-STRATEGY="vwpreversion" STRATEGY_PAIR="EUR_USD" docker compose up -d trader
+# 1. Prévisualiser les opérations sans modifier les conteneurs (Dry-Run par défaut)
+./scripts/deploy-paper.sh
+
+# 2. Exécuter le déploiement atomique
+./scripts/deploy-paper.sh --apply
+```
+**Ce que fait `deploy-paper.sh --apply` automatiquement :**
+* Acquiert un verrou exclusif `flock` (`/tmp/trading-bridge-deploy-$(id -u).lock`).
+* Exécute `pre-deploy-gate.sh` et archive le tag d'image `trading-bridge-paper:pre-deploy` pour rollback instantané.
+* Sauvegarde les fichiers `/tmp/live-strategy-state-*.json` du conteneur actif via `docker cp`.
+* Reconstruit l'image Docker multi-stage (`Dockerfile`), recrée le conteneur sans le démarrer (`docker compose up -d --no-start`), restaure l'état des stratégies (en excluant `paper-trading-status.json` pour éviter tout conflit de permissions), puis démarre le conteneur.
+* Attend un fichier `/tmp/paper-trading-status.json` frais ($\le 300\text{ s}$) et **réconcilie la somme de `activeTrades` avec l'endpoint OANDA `GET /v3/accounts/{id}/openTrades`**.
+
+---
+
+## 3. Déploiement du Couloir IBKR CME Micro Futures (`trading-futures`)
+
+### 3.1 Démarrage et Santé d'IB Gateway (`10.50`)
+```bash
+# Démarrer IB Gateway en mode Paper (port 4002 headless ou 7497 bureau)
+./scripts/ibkr-gateway-up.sh
+
+# Vérifier l'état de santé du socket TCP
+./scripts/ibkr-gateway-health.sh
+```
+> **Sécurité :** `ibkr-gateway-up.sh` et `docker-entrypoint-ibkr.sh` refusent catégoriquement les ports Live (`4001`, `7496`) tant que le mode Paper est configuré.
+
+### 3.2 Lancement du Conteneur `trading-futures`
+```bash
+docker compose -f docker/docker-compose.futures.yml up -d --build
+docker logs -f trading-futures
+```
+* Le conteneur exécute `scripts/docker-entrypoint-ibkr.sh` qui supervise `com.martinfou.trading.runtime.ibkr.IbkrLiveRunner` avec reconnexion à backoff exponentiel (`10 s` $\rightarrow$ `3600 s`).
+* Les journaux de fills et d'attribution de stratégies (`orderRef`) sont persistés dans `data-futures/state/ibkr-fills-journal.json` afin de survivre à tout redémarrage de conteneur.
+
+---
+
+## 4. Gestion du Couloir de Développement Isolé (`scripts/dev-lane.sh`)
+
+```bash
+# Vérifie que .env.dev utilise un compte OANDA distinct de .env.paper, puis démarre trading-dev
+./scripts/dev-lane.sh up
+
+# Consulter l'état et les journaux du couloir dev
+./scripts/dev-lane.sh status
+./scripts/dev-lane.sh logs
 ```
 
 ---
 
-## 2. Configuration et Sécurité (Variables d'Environnement)
+## 5. Maintenance de la Base SQLite & Supervision Continue
 
-Les identifiants et clés d'accès aux courtiers (comme OANDA) ne doivent **jamais** être écrits en dur ou enregistrés dans les fichiers du dépôt.
-
-### Fichier `.env`
-Les conteneurs Docker chargent leurs identifiants depuis le fichier d'environnement situé à l'emplacement :
-`/home/martinfou/projects/trading-dashboard/.env`
-
-Ce fichier doit contenir au minimum les variables suivantes :
-```env
-# Clé d'API OANDA (Practice ou Live)
-OANDA_API_KEY=votre_cle_api_securisee
-
-# Identifiant de compte de trading principal
-OANDA_ACCOUNT_ID=votre_identifiant_de_compte
-
-# Type d'environnement OANDA (practice ou live)
-OANDA_ENV=practice
-```
-
----
-
-## 3. Persistance des Données et Journalisation
-
-Pour garantir que les transactions, rapports de backtests et journaux d'événements survivent aux redémarrages des conteneurs, des volumes Docker sont montés :
-
-*   **Données persistantes** (`./data` ou volume `data`) : Monté sur `/app/data` dans le conteneur. Il contient la base de données SQLite `events.db` et le registre local des comptes courtiers.
-*   **Journaux** (`./logs` ou volume `logs`) : Monté sur `/app/logs` pour stocker les fichiers de logs de l'application Java.
-
----
-
-## 4. Pipeline de Production et CI/CD
-
-Le dépôt intègre des flux GitHub Workflows pour valider et packager la solution.
-
-*   **Fichiers de CI** : Situés sous `.github/workflows/`.
-*   **Vérification de build** : Chaque pull request déclenche une compilation complète et lance la suite des tests unitaires (`mvn test`).
-*   **Packaging automatique** : Des builds matriciels sont configurés pour compiler et packager automatiquement l'application de bureau Electron (`desktop`) pour Linux, Windows et macOS lors du taggage d'une version de release.
+* **Purge et Compactage Automatique (`scripts/prune-db.sh`)** :
+  * Exécuté automatiquement chaque nuit à **`04:17`** par `docker-entrypoint.sh` (ou manuellement via `./scripts/prune-db.sh`).
+  * Supprime par lots de 200 runs les lignes de `trades` et les blobs `equity_curve_json` des backtests de plus de `30` jours (`RETENTION_DAYS=30`) tout en préservant les métriques scalaires dans `backtest_runs`, puis exécute `VACUUM` et `PRAGMA wal_checkpoint(TRUNCATE)`.
+* **Démons de Télémétrie Hermes Web (systemd sur `trading-vm`)** :
+  * `scripts/ibkr_snapshot_push.py` (`clientId=90`, toutes les 5 min).
+  * `scripts/ibkr_pnl_push.py` (`clientId=98`, toutes les heures).
+  * `scripts/sqx_telemetry_pusher.py` (toutes les 4 s lors des campagnes d'évolution SQX).

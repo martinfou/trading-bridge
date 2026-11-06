@@ -1,48 +1,52 @@
-# Présentation Générale - Trading Bridge
+# Présentation Générale du Projet — Trading Bridge
 
-Bienvenue dans la documentation de **Trading Bridge**, une plateforme complète et automatisée de conversion, d'évaluation et de déploiement de stratégies de trading algorithmique.
-
----
-
-## 1. Description du Projet et Objectifs
-
-**Trading Bridge** a pour objectif principal de combler le fossé entre les outils d'optimisation de stratégies (comme StrategyQuant) ou de programmation historique (comme JForex) et l'exécution réelle chez des courtiers. 
-
-La plateforme offre trois grandes fonctionnalités :
-1.  **Parsing & Traduction** : Compilation et génération automatiques de code Java autonome à partir de fichiers de stratégie exportés au format XML.
-2.  **Backtest de Non-Régression (Golden Baseline)** : Moteur de simulation événementielle haute fidélité permettant de valider les performances historiques par rapport à des données réelles de marché (Dukascopy, OANDA).
-3.  **Plan de Contrôle et Supervision** : Un serveur centralisé (`trading-runtime`) sécurisant les comptes courtiers, évaluant le passage des filtres de promotion (Gates) et assurant la coupure d'urgence (Kill Switch), pilotable par le biais d'un client terminal (TUI), d'un tableau de bord Web Laravel ou d'une application de bureau native Electron.
+**Date de mise à jour :** 2026-11-05  
+**Type de projet :** Plateforme Quantitative Multi-Actifs (Monorepo à 4 parties)  
+**Langages principaux :** Java 21, TypeScript 5.7 (Vue 3 / Electron 33), PHP 8.3 (Laravel 13.8), Python 3 / Bash  
+**Architecture :** Monolithe Modulaire Java Orienté Événements + Poste de Travail Natif Electron + Console Web SSR + Pipeline d'Automatisation SQX/Docker
 
 ---
 
-## 2. Structure du Dépôt et Classification
+## 1. Résumé Exécutif
 
-*   **Structure du dépôt** : Monorepo multi-parties.
-*   **Classification d'architecture** : Hybride (Moteur backend Java modulaire orienté services API / Applications clientes découplées).
+**Trading Bridge** est une plateforme d'ingénierie financière et de trading algorithmique de bout en bout conçue pour découvrir, valider, superviser et exécuter des stratégies systématiques sur :
+* **Les Contrats à Terme CME Micro/Mini (`FUTURES`)** : `MES` (S&P 500), `MNQ` (Nasdaq-100), `MGC` (Micro Or), `MCL` (Pétrole), `M2K` via **Interactive Brokers (IBKR TWS / IB Gateway)**.
+* **Le Marché des Changes et Métaux Spot (`FOREX` / `COMMODITIES`)** : Paires majeures/croisées (`EUR_USD`, `GBP_JPY`, `USD_CAD`, etc.) et Or Spot (`XAU_USD`) via **OANDA REST/Stream v20**.
+* **Les Actions Américaines (`EQUITY`)** : Paniers Small-Cap, Momentum et ETFs via IBKR et Yahoo Finance.
 
-### Synthèse des Composants du Monorepo
-
-| Composant | Technologie Principale | Rôle | Lien vers l'Architecture |
-| :--- | :--- | :--- | :--- |
-| **`trading-bridge-java`** | Java 21, Maven 4.x, Javalin, SQLite | Moteur de trading, Plan de contrôle API, persistance, tests de promotion. | [Architecture Java](file:///home/martinfou/dev/src/trading-bridge/docs/architecture-trading-bridge-java.md) |
-| **`trading-bridge-desktop`** | Electron, Vue 3, Vite, TS, Charts | Application de bureau pour lancer les backtests locaux et monitorer le live. | [Architecture Desktop](file:///home/martinfou/dev/src/trading-bridge/docs/architecture-trading-bridge-desktop.md) |
-| **`trading-bridge-dashboard`** | PHP 8.3, Laravel 13, TailwindCSS | Console d'administration Web distante avec rafraîchissement périodique. | [Architecture Dashboard](file:///home/martinfou/dev/src/trading-bridge/docs/architecture-trading-bridge-dashboard.md) |
+La plateforme résout le problème majeur du trading quantitatif — **l'écart entre les backtests théoriques et la réalité d'exécution en production** — en intégrant nativement :
+1. Un **modèle de coûts horaires empiriques (`RealCostModel`)** et un **calculateur exact de swaps et triples rollovers (`SwapCalculator`)**.
+2. Une **double usine de découverte de stratégies** : pont automatisé avec **StrategyQuant X (`sqcli`)** et **Studio Évolutionnaire Natif (`/generator`)** directement intégré au moteur Java.
+3. Un **studio d'analyse Walk-Forward (`/wfa`)** et de simulation **Monte-Carlo** bloquant le surapprentissage avant toute mise en production.
+4. Une **architecture d'exécution multi-couloirs isolée** (`trading-futures`, `trading-live`, `trading-dev`) dotée de garde-fous pré-trade (`OrderTripwire`, `SmallAccountMarginGuard`), de coupe-circuits par stratégie et d'un moteur de détection de dérive statistique (`DriftEngine`).
 
 ---
 
-## 3. Index de la Documentation Technique Développée
+## 2. Structure en 4 Parties du Monorepo
 
-Pour explorer en détail chaque aspect de la plateforme, veuillez consulter les guides spécialisés :
+| ID de Partie | Nom | Type | Emplacement | Résumé Technique |
+| :--- | :--- | :--- | :--- | :--- |
+| **`trading-bridge-java`** | Cœur Java & Plan de Contrôle | `backend` | `/` (11 modules Maven) | Java 21, Javalin 6.7 (`70 endpoints HTTP/WS`), SQLite WAL + HikariCP (`9 tables`), LangChain4j 0.33, Ta4j 0.18, JLine 3.26, OpenPDF, IBKR TWS Protobuf. |
+| **`trading-bridge-desktop`** | Poste de Travail Bureau | `desktop` | `/desktop` | Electron 33, Vue 3.5, TypeScript 5.7, Vite 6, TradingView Lightweight Charts 5 (`9 vues`, `15 composants`, `6 composables`). |
+| **`trading-bridge-dashboard`** | Console Web de Contrôle | `web` | `/dashboard` | PHP 8.3, Laravel 13.8, Blade SSR, Tailwind CSS 4 (Supervision temps réel `/control` + Kill Switch d'urgence). |
+| **`trading-bridge-scripts`** | Automatisation SQX, Télémétrie & Infra | `data` / `infra` | `/scripts`, `/docker`, `/config` | 91 scripts Python/Bash + 20 harnais Java : pilotage `sqcli`, décodeur binaire `.sqx`, démons IBKR/OANDA vers Hermes Web, études Simons 35e–65e, déploiement atomique `deploy-paper.sh`. |
 
-### Guides de Prise en Main & Opérations
-*   **[`Guide de Développement`](file:///home/martinfou/dev/src/trading-bridge/docs/development-guide.md)** : Étapes d'installation locale, commandes de test, compilation et exécution.
-*   **[`Guide de Déploiement et Opérations`](file:///home/martinfou/dev/src/trading-bridge/docs/deployment-guide.md)** : Lancement en production sur VPS avec Docker Compose, et gestion des fichiers d'environnement.
+---
 
-### Architecture & Intégration
-*   **[`Analyse de l'Arborescence`](file:///home/martinfou/dev/src/trading-bridge/docs/source-tree-analysis.md)** : Description détaillée du rôle de chaque module Java et structure des fichiers du dépôt.
-*   **[`Architecture d'Intégration`](file:///home/martinfou/dev/src/trading-bridge/docs/integration-architecture.md)** : Spécifications des communications inter-processus (IPC Electron, requêtes REST, flux de tiques WebSockets).
+## 3. Fonctionnalités Clés de la Plateforme
 
-### Spécifications Données & APIs
-*   **[`Modèles de Données Java`](file:///home/martinfou/dev/src/trading-bridge/docs/data-models-trading-bridge-java.md)** : Modélisation des tables SQLite (`backtest_runs`, `deployments`, `events`, `inspirations`).
-*   **[`Contrats d'APIs Java`](file:///home/martinfou/dev/src/trading-bridge/docs/api-contracts-trading-bridge-java.md)** : Catalogue complet des points de terminaison REST et WebSocket.
-*   **[`Inventaire des Composants Desktop`](file:///home/martinfou/dev/src/trading-bridge/docs/component-inventory-trading-bridge-desktop.md)** : Descriptif des composants Vue et des interfaces de navigation de l'application de bureau.
+* **Studio Évolutionnaire Natif (`/generator`)** : Algorithmes génétiques et recherche Monte-Carlo sur 24 blocs orthogonaux, séparation IS/OOS aveugle sur les courbes d'équité (`EquityChart.vue`), banque de candidats et génération de code Java en 1 clic.
+* **Walk-Forward Analysis (`/wfa`)** : Optimisation glissante ou ancrée, calcul du Walk-Forward Efficiency (WFE), frise chronologique des plis (`WfaTimeline.vue`) et matrice de dérive des paramètres (`WfaParameterStability.vue`).
+* **Gestionnaire de Données Multi-Actifs (`/data-manager`)** : Couverture de 8 unités de temps (`m1` à `w1`) et 4 fournisseurs (`yahoo`, `dukascopy`, `oanda`, `ibkr`) avec cache binaire ultra-rapide (`.bars`) et tiroir de gestion d'univers (`UniverseManagerDrawer.vue`).
+* **Desk d'Exécution & Audit de Dérive (`/live-trading` & `/compare`)** : Multi-courtiers OANDA + IBKR, conversion multi-devises en direct, carnet de sentiment OANDA (`OrderBook.vue`), Kill Switch d'urgence et réconciliation transaction par transaction entre Live/Paper et Backtest.
+
+---
+
+## 4. Points d'Entrée par Profil (Humains & LLMs)
+
+Consultez le **[Guide Multi-Audiences (Humains & Agents LLM)](./guide-audiences-humains-et-llm.md)** ou l'**[Index Principal de la Documentation (`index.md`)](./index.md)** pour accéder directement aux parcours dédiés :
+* **Chercheurs Quantitatifs (Quants)** : Garde-fous, modèles de coûts horaires, études Simons 35e–65e, WFA et SQX.
+* **Traders, Opérateurs de Desk & SRE** : Supervision des 3 couloirs Docker, déploiement atomique `deploy-paper.sh`, Kill Switch et runbooks.
+* **Ingénieurs Logiciels & Architectes** : DAG des 11 modules Maven, contrats des 70 APIs, schémas des 9 tables SQLite et architecture Electron/Vue 3.
+* **Décideurs Produit & Exécutifs** : Vision, gouvernance des risques à 5 niveaux et état du portefeuille actif.
+* **Agents IA (LLMs de Codage, Quant & Ops)** : [`_bmad-output/project-context.md`](../_bmad-output/project-context.md) et invariants stricts sans hallucination.

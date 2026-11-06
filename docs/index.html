@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trading Bridge — Prop-Shop Quant Research & Execution Platform</title>
+  <meta name="description" content="From idea to backtest to live execution. Multi-asset quantitative trading platform in Java 21, Electron + Vue 3, and OANDA v20 / IBKR TWS." />
+  <link rel="icon" href="assets/readme/hero.svg" type="image/svg+xml" />
+  <style>
+    :root {
+      --bg: #09090b;
+      --bg-card: #111115;
+      --bg-elevated: #18181f;
+      --border: #27272a;
+      --border-accent: rgba(245, 158, 11, 0.45);
+      --text: #fafafa;
+      --text-muted: #a1a1aa;
+      --amber: #f59e0b;
+      --orange: #ea580c;
+      --emerald: #10b981;
+      --blue: #3b82f6;
+      --purple: #a855f7;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif; line-height: 1.6; }
+    body {
+      background:
+        radial-gradient(circle at 15% 0%, rgba(245, 158, 11, 0.12), transparent 38%),
+        radial-gradient(circle at 85% 10%, rgba(59, 130, 246, 0.10), transparent 35%),
+        var(--bg);
+      color: var(--text);
+      overflow-x: hidden;
+    }
+    a { color: inherit; text-decoration: none; }
+    .container { max-width: 1240px; margin: 0 auto; padding: 0 24px; }
+
+    .nav {
+      position: sticky; top: 0; z-index: 50;
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+      background: rgba(9, 9, 11, 0.82);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-inner { display: flex; align-items: center; justify-content: space-between; height: 68px; gap: 16px; }
+    .brand { display: flex; align-items: center; gap: 12px; font-weight: 800; font-size: 1.2rem; letter-spacing: -0.02em; }
+    .brand-badge {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.72rem; padding: 3px 8px; border-radius: 999px;
+      background: rgba(16, 185, 129, 0.15); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.4);
+    }
+    .nav-links { display: flex; align-items: center; gap: 24px; font-size: 0.92rem; color: var(--text-muted); }
+    .nav-links a:hover { color: var(--text); }
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 10px 18px; border-radius: 10px; font-weight: 600; font-size: 0.92rem;
+      border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text);
+      cursor: pointer; transition: all 0.18s ease;
+    }
+    .btn:hover { border-color: var(--amber); transform: translateY(-1px); }
+    .btn-primary {
+      background: linear-gradient(90deg, var(--amber), var(--orange));
+      color: #09090b; border: none; font-weight: 700;
+    }
+    .btn-primary:hover { filter: brightness(1.08); }
+
+    .hero { padding: 56px 0 36px; text-align: center; }
+    .hero-banner { width: 100%; border-radius: 20px; border: 1px solid var(--border); box-shadow: 0 24px 60px rgba(0,0,0,0.65); margin-bottom: 28px; }
+    .hero-cta { display: flex; flex-wrap: center; justify-content: center; gap: 14px; margin: 24px 0 32px; }
+    .stats-banner { width: 100%; margin: 12px 0 24px; }
+    .pipeline-banner { width: 100%; border-radius: 16px; border: 1px solid var(--border); margin-top: 16px; }
+
+    section { padding: 64px 0; border-top: 1px solid rgba(255,255,255,0.06); }
+    .section-eyebrow {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: var(--amber); font-size: 0.82rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .section-title { font-size: clamp(1.75rem, 3vw, 2.5rem); font-weight: 800; letter-spacing: -0.02em; margin-bottom: 12px; }
+    .section-desc { color: var(--text-muted); max-width: 760px; font-size: 1.05rem; margin-bottom: 36px; }
+
+    .tabs { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 24px; }
+    .tab-btn {
+      padding: 10px 18px; border-radius: 10px; font-size: 0.9rem; font-weight: 600;
+      background: var(--bg-card); color: var(--text-muted); border: 1px solid var(--border);
+      cursor: pointer; transition: all 0.15s ease;
+    }
+    .tab-btn:hover { color: var(--text); border-color: #3f3f46; }
+    .tab-btn.active {
+      background: rgba(245, 158, 11, 0.14); color: #fbbf24; border-color: var(--amber);
+    }
+    .tab-panel { display: none; background: var(--bg-card); border: 1px solid var(--border); border-radius: 18px; padding: 24px; }
+    .tab-panel.active { display: block; }
+    .tab-header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; margin-bottom: 18px; }
+    .tab-header h3 { font-size: 1.35rem; font-weight: 700; }
+    .tab-header p { color: var(--text-muted); font-size: 0.95rem; max-width: 820px; }
+    .shot-frame {
+      width: 100%; border-radius: 12px; border: 1px solid var(--border);
+      cursor: zoom-in; transition: transform 0.2s ease, border-color 0.2s ease;
+      box-shadow: 0 18px 45px rgba(0,0,0,0.55);
+    }
+    .shot-frame:hover { border-color: var(--amber); transform: scale(1.004); }
+
+    .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); gap: 24px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; }
+    @media (max-width: 640px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } .nav-links { display: none; } }
+
+    .card {
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px;
+      padding: 22px; transition: border-color 0.2s ease, transform 0.2s ease;
+    }
+    .card:hover { border-color: var(--border-accent); transform: translateY(-2px); }
+    .card h3 { font-size: 1.15rem; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+    .card p { color: var(--text-muted); font-size: 0.94rem; }
+    .card img { width: 100%; border-radius: 10px; border: 1px solid var(--border); margin-bottom: 14px; cursor: zoom-in; }
+
+    .code-wrap {
+      position: relative; background: #0d0d11; border: 1px solid var(--border);
+      border-radius: 14px; overflow: hidden; margin-top: 14px;
+    }
+    .code-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 16px; background: #16161d; border-bottom: 1px solid var(--border);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem; color: var(--text-muted);
+    }
+    .copy-btn {
+      background: #27272a; color: var(--text); border: none; border-radius: 6px;
+      padding: 4px 10px; font-size: 0.76rem; cursor: pointer; font-family: inherit;
+    }
+    .copy-btn:hover { background: var(--amber); color: #09090b; font-weight: 700; }
+    pre {
+      padding: 18px; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.86rem; line-height: 1.65; color: #e4e4e7;
+    }
+    .kw { color: #f59e0b; font-weight: 600; }
+    .cm { color: #71717a; }
+    .st { color: #6ee7b7; }
+
+    .lightbox {
+      display: none; position: fixed; inset: 0; z-index: 100;
+      background: rgba(0, 0, 0, 0.9); backdrop-filter: blur(8px);
+      align-items: center; justify-content: center; padding: 24px; cursor: zoom-out;
+    }
+    .lightbox.open { display: flex; }
+    .lightbox img { max-width: 96vw; max-height: 92vh; border-radius: 12px; border: 1px solid var(--amber); }
+
+    footer {
+      padding: 48px 0; border-top: 1px solid var(--border);
+      text-align: center; color: var(--text-muted); font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+
+  <header class="nav">
+    <div class="container nav-inner">
+      <a href="#" class="brand">
+        <span>📈 Trading Bridge</span>
+        <span class="brand-badge">SYSTEM READY</span>
+      </a>
+      <nav class="nav-links">
+        <a href="#tour">Interactive Tour</a>
+        <a href="#gallery">All Screenshots</a>
+        <a href="#features">Why Trading Bridge</a>
+        <a href="#code">Write a Strategy</a>
+        <a href="#quickstart">Quick Start</a>
+        <a href="#architecture">Architecture</a>
+      </nav>
+      <div style="display:flex; gap:10px;">
+        <a class="btn" href="https://github.com/martinfou/trading-bridge" target="_blank" rel="noopener">⭐ GitHub Repo</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="hero">
+      <img class="hero-banner" src="assets/readme/hero.svg" alt="Trading Bridge — From idea to backtest to live execution" />
+      <p style="font-size:1.25rem; color:#d4d4d8; max-width:820px; margin:0 auto;">
+        <em>"Give a solo quantitative trader the firepower of an institutional prop trading desk."</em>
+      </p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="#tour">📸 Explore Interactive Product Tour</a>
+        <a class="btn" href="#quickstart">🚀 Get Started in 60s</a>
+        <a class="btn" href="#code">🧬 Write a Strategy in 30 Lines</a>
+        <a class="btn" href="https://github.com/martinfou/trading-bridge/blob/master/docs/documentation-hub.md" target="_blank" rel="noopener">📚 Documentation Hub</a>
+      </div>
+      <img class="stats-banner" src="assets/readme/stats.svg" alt="Platform KPIs: 398 strategies, 3 asset classes, 2 brokers, 4 data sources, 11 Maven modules, 240+ test suites" />
+      <img class="pipeline-banner" src="assets/readme/pipeline.svg" alt="End-to-end workflow: Ingest -> Generate -> Backtest -> Validate -> Paper -> Live" />
+    </div>
+
+    <!-- Interactive Product Tour -->
+    <section id="tour">
+      <div class="section-eyebrow">Interactive Workstation Tour</div>
+      <h2 class="section-title">Every Stage of Quant Research in One Dark-Mode Studio</h2>
+      <p class="section-desc">
+        Click any workstation tab below to explore live screenshots captured from the latest Electron + Vue 3 Desktop Studio. Click any image to inspect in full-screen high resolution.
+      </p>
+
+      <div class="tabs" role="tablist">
+        <button class="tab-btn active" onclick="switchTab(event, 'tab-gen')">1. Strategy Generator Studio 🧬</button>
+        <button class="tab-btn" onclick="switchTab(event, 'tab-databank')">2. IS/OOS Databank Inspector</button>
+        <button class="tab-btn" onclick="switchTab(event, 'tab-chart')">3. Interactive Trade Chart 📈</button>
+        <button class="tab-btn" onclick="switchTab(event, 'tab-wfa')">4. Walk-Forward Analysis 🔬</button>
+        <button class="tab-btn" onclick="switchTab(event, 'tab-desk')">5. Prop-Shop Trading Desk 🛰️</button>
+        <button class="tab-btn" onclick="switchTab(event, 'tab-data')">6. 20-Year Data Hub (M1–W1)</button>
+        <button class="tab-btn" onclick="switchTab(event, 'tab-cli')">7. ./tb CLI &amp; AI Agent TUI</button>
+      </div>
+
+      <div id="tab-gen" class="tab-panel active">
+        <div class="tab-header">
+          <div>
+            <h3>🧬 Evolutionary Strategy Generator Studio (Live Mining at 56 Strategies/sec)</h3>
+            <p>Mine multi-asset strategies using Genetic Evolution (GA) or Monte-Carlo Mining with alternating 3× / 4× In-Sample &amp; Out-of-Sample bands, 24 institutional signals &amp; filters, and multi-stage acceptance gates.</p>
+          </div>
+        </div>
+        <img class="shot-frame" onclick="openLightbox(this.src)" src="assets/screenshots/01b-generator-mining-active.png" alt="Evolutionary Strategy Generator Studio actively mining strategies" />
+      </div>
+
+      <div id="tab-databank" class="tab-panel">
+        <div class="tab-header">
+          <div>
+            <h3>📊 Strategy Databank &amp; Alternating IS/OOS Equity Inspector</h3>
+            <p>Filter mined strategies by Elite, Institutional, and Qualified tiers. Inspect alternating In-Sample / Out-of-Sample equity bands, Drawdown % overlays, Monte Carlo VaR 95, Signal DNA, and auto-generated Java 21 code.</p>
+          </div>
+        </div>
+        <img class="shot-frame" onclick="openLightbox(this.src)" src="assets/screenshots/02-generator-databank-inspector.png" alt="Strategy Databank and IS/OOS Equity Inspector" />
+      </div>
+
+      <div id="tab-chart" class="tab-panel">
+        <div class="tab-header">
+          <div>
+            <h3>📈 Interactive Candlestick Price &amp; Trade Execution Chart</h3>
+            <p>Inspect every historical trade directly on the candlestick chart with Buy/Sell entry arrows, exit labels, and live Stop-Loss / Take-Profit price lines.</p>
+          </div>
+        </div>
+        <img class="shot-frame" onclick="openLightbox(this.src)" src="assets/screenshots/09-backtest-price-chart.png" alt="Interactive Candlestick Trade Chart" />
+      </div>
+
+      <div id="tab-wfa" class="tab-panel">
+        <div class="tab-header">
+          <div>
+            <h3>🔬 Walk-Forward Analysis (WFA) Hub — Overfitting Prevention</h3>
+            <p>Validate out-of-sample robustness across sliding or anchored folds. Inspect Walk-Forward Efficiency (WFE), OOS Sharpe Ratio, and Parameter Stability &amp; Drift Matrices before promoting any strategy.</p>
+          </div>
+        </div>
+        <img class="shot-frame" onclick="openLightbox(this.src)" src="assets/screenshots/02-wfa-report-loaded.png" alt="Walk-Forward Analysis Hub showing WFE 198.9% and OOS Sharpe 22.17" />
+      </div>
+
+      <div id="tab-desk" class="tab-panel">
+        <div class="tab-header">
+          <div>
+            <h3>🛰️ Prop-Shop Live &amp; Paper Trading Desk</h3>
+            <p>Real-time operations board tracking Live &amp; Paper runners, allocated capital, broker balances, portfolio margin utilization buffers, heartbeat freshness alerts, and 1-click emergency Kill Switches.</p>
+          </div>
+        </div>
+        <img class="shot-frame" onclick="openLightbox(this.src)" src="assets/screenshots/06-trading-desk.png" alt="Prop-Shop Real-Time Trading Desk" />
+      </div>
+
+      <div id="tab-data" class="tab-panel">
+        <div class="tab-header">
+          <div>
+            <h3>🗄️ Historical Data Management Hub (2006–2026 · M1 to W1)</h3>
+            <p>Visual 20-year availability matrix across Forex Majors, CME Futures (<code>EMD</code>, <code>GC</code>, <code>M2K</code>, <code>MES</code>, <code>MGC</code>, <code>MNQ</code>), and US Equities across all 8 timeframes from M1 to W1.</p>
+          </div>
+        </div>
+        <img class="shot-frame" onclick="openLightbox(this.src)" src="assets/screenshots/03-data-manager-futures-active.png" alt="Data Management Hub Futures Coverage" />
+      </div>
+
+      <div id="tab-cli" class="tab-panel">
+        <div class="tab-header">
+          <div>
+            <h3>🤖 Scriptable CLI &amp; Interactive TUI (<code>./tb</code>)</h3>
+            <p>Full 5-pillar GUI parity from any terminal. Built for power quants, SSH workflows, and autonomous LLM research loops.</p>
+          </div>
+        </div>
+        <img class="shot-frame" onclick="openLightbox(this.src)" src="assets/readme/terminal-cli.svg" alt="./tb CLI and TUI terminal interface" />
+      </div>
+    </section>
+
+    <!-- Full Screenshot Gallery -->
+    <section id="gallery">
+      <div class="section-eyebrow">Complete Visual Tour</div>
+      <h2 class="section-title">14 High-Resolution Views from the Latest Release</h2>
+      <p class="section-desc">Click any screenshot below to zoom in full screen.</p>
+
+      <div class="grid-2">
+        <div class="card">
+          <img onclick="openLightbox(this.src)" src="assets/screenshots/03-generator-dna-rules.png" alt="Signal and Filter DNA Inspector" />
+          <h3>🧬 Signal &amp; Filter DNA Inspector</h3>
+          <p>Inspect exact entry formulas, order execution mode, and ATR Stop-Loss / Profit-Target / Trailing &amp; Time Exit rules.</p>
+        </div>
+        <div class="card">
+          <img onclick="openLightbox(this.src)" src="assets/screenshots/04-generator-java-code.png" alt="1-Click Java 21 Codegen" />
+          <h3>💻 1-Click Native Java 21 Codegen</h3>
+          <p>Every generated strategy compiles directly into a clean, self-contained Java <code>Strategy</code> class ready for backtest or live deployment.</p>
+        </div>
+        <div class="card">
+          <img onclick="openLightbox(this.src)" src="assets/screenshots/08-backtest-results-overview.png" alt="Backtest Results & Dual-Axis Equity/Drawdown Chart" />
+          <h3>📈 Backtest Overview &amp; Drawdown % Curve</h3>
+          <p>KPI strip (Sharpe, Profit Factor, Max DD, Win Rate, Return %) paired with a dual-axis Equity + underwater Drawdown % chart.</p>
+        </div>
+        <div class="card">
+          <img onclick="openLightbox(this.src)" src="assets/screenshots/10-backtest-monte-carlo.png" alt="Monte Carlo Path Distribution" />
+          <h3>🎲 100-Run Monte Carlo Path Fan</h3>
+          <p>Visualize 5th, 50th, and 95th percentile equity trajectories alongside 95% VaR and Loss Probability metrics.</p>
+        </div>
+        <div class="card">
+          <img onclick="openLightbox(this.src)" src="assets/screenshots/epic44-cost-presets-futures.png" alt="CME Micro Futures Tiered Cost Presets" />
+          <h3>⚡ CME Micro Futures Cost Presets</h3>
+          <p>Auto-applies exchange + NFA + clearing commissions and tick slippage when selecting <code>MGC</code>, <code>MES</code>, <code>MNQ</code>, or <code>M2K</code>.</p>
+        </div>
+        <div class="card">
+          <img onclick="openLightbox(this.src)" src="assets/screenshots/epic44-strategy-selector-open.png" alt="398-Strategy Command Palette" />
+          <h3>⌘K Strategy Command Palette (398 Models)</h3>
+          <p>Instantaneous filtering across SQX/Generated, Futures, Forex, Equities, Trend, Mean Reversion, and Prop Desk models.</p>
+        </div>
+        <div class="card">
+          <img onclick="openLightbox(this.src)" src="assets/screenshots/04-strategies.png" alt="Strategy Catalog Grid" />
+          <h3>🗂️ 398-Strategy Interactive Catalog</h3>
+          <p>Browse all 7 strategy families with inline indicator formulas, recommended instruments, and 1-click Backtest / WFA / Promote buttons.</p>
+        </div>
+        <div class="card">
+          <img onclick="openLightbox(this.src)" src="assets/screenshots/07-compare.png" alt="Side-by-Side Strategy Compare" />
+          <h3>⚖️ Side-by-Side Strategy Comparison</h3>
+          <p>Compare up to 4 strategies simultaneously across Total Return, Final Equity, Sharpe, Profit Factor, Max Drawdown, and Alignment Drift.</p>
+        </div>
+        <div class="card">
+          <img onclick="openLightbox(this.src)" src="assets/screenshots/05-backtests.png" alt="Backtest History Archive" />
+          <h3>🕒 Backtest History, Heatmaps &amp; Pareto Frontier</h3>
+          <p>Query 700+ historical runs by strategy, symbol, minimum Sharpe, and Profit Factor, or switch to Parameter Heatmap &amp; Pareto Frontier tabs.</p>
+        </div>
+        <div class="card">
+          <img onclick="openLightbox(this.src)" src="assets/screenshots/03-universe-drawer-open.png" alt="Manage Universe and Minicaps" />
+          <h3>🌐 Custom Universe &amp; 1-Click Baskets</h3>
+          <p>Import Small-Cap Core, High-Beta Momentum, or Mega-Cap Leader baskets, or register custom tickers with custom point multipliers and tick sizes.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Why Trading Bridge -->
+    <section id="features">
+      <div class="section-eyebrow">Engineering Highlights</div>
+      <h2 class="section-title">Built for True Backtest ↔ Live Parity</h2>
+      <p class="section-desc">Every architectural decision eliminates the silent discrepancies that destroy retail backtests in live production.</p>
+
+      <div class="grid-3">
+        <div class="card">
+          <h3>🛡️ Zero Look-Ahead by Design</h3>
+          <p>Orders emitted on <code>onBar(bar)</code> fill at the next bar's open with configurable slippage, while past-only indicator history prevents accidental future data leakage.</p>
+        </div>
+        <div class="card">
+          <h3>⚖️ OANDA Hedging &amp; <code>REDUCE_ONLY</code></h3>
+          <p>Models OANDA <code>hedgingEnabled=true</code> behavior: opposite-side orders can coexist as independent hedges, while <code>.asCloseOnly()</code> guarantees clean position reductions.</p>
+        </div>
+        <div class="card">
+          <h3>⚡ CME Futures Realism</h3>
+          <p>Native point multipliers (<code>MGC</code> $10/oz, <code>MES</code> $5/pt, <code>MNQ</code> $2/pt), tick rounding, session-aware D1/W1 boundaries, and tiered exchange + clearing cost presets.</p>
+        </div>
+        <div class="card">
+          <h3>🧬 Evolutionary Strategy Studio</h3>
+          <p>Generate new strategies from 24 building blocks with alternating In-Sample / Out-of-Sample bands, clone deduplication, and 1-click Java codegen.</p>
+        </div>
+        <div class="card">
+          <h3>🎲 1,000-Run Monte Carlo &amp; WFA</h3>
+          <p>Stress-test trade sequences via block-bootstrap Monte Carlo and multi-fold Walk-Forward Optimization with offline PDF and HTML due-diligence reports.</p>
+        </div>
+        <div class="card">
+          <h3>🧪 240+ Automated Test Suites</h3>
+          <p>Deterministic contract tests for MARKET/LIMIT/STOP/SL/TP fills, accounting invariants (<code>totalPnl == sum(pnl) - costs</code>), and Golden Backtest regression checks.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Write a Strategy -->
+    <section id="code">
+      <div class="section-eyebrow">Developer Experience</div>
+      <h2 class="section-title">Write a Strategy in 30 Lines of Pure Java 21</h2>
+      <p class="section-desc">
+        Implement a single interface in <code>trading-core</code>. Your strategy immediately works in the Desktop Studio, Walk-Forward optimizer, CLI batch runner, and live OANDA / IBKR execution engines.
+      </p>
+
+      <div class="code-wrap">
+        <div class="code-bar">
+          <span>MyBreakoutStrategy.java — trading-strategies</span>
+          <button class="copy-btn" onclick="copyCode('strat-code', this)">Copy Java</button>
+        </div>
+        <pre id="strat-code"><code><span class="kw">package</span> com.martinfou.trading.strategies.custom;
+
+<span class="kw">import</span> com.martinfou.trading.core.*;
+<span class="kw">import</span> java.util.*;
+
+<span class="kw">public class</span> MyBreakoutStrategy <span class="kw">implements</span> Strategy {
+    <span class="kw">private final</span> String symbol = <span class="st">"EUR_USD"</span>;
+    <span class="kw">private final</span> List&lt;Bar&gt; history = <span class="kw">new</span> ArrayList&lt;&gt;();
+    <span class="kw">private final</span> List&lt;Order&gt; pending = <span class="kw">new</span> ArrayList&lt;&gt;();
+    <span class="kw">private boolean</span> inTrade = <span class="kw">false</span>;
+
+    <span class="kw">@Override public</span> String name() { <span class="kw">return</span> <span class="st">"MyBreakoutStrategy"</span>; }
+
+    <span class="kw">@Override</span>
+    <span class="kw">public void</span> onBar(Bar bar) {
+        <span class="kw">if</span> (history.size() &gt;= 20) {
+            <span class="kw">double</span> high20 = history.subList(history.size() - 20, history.size())
+                    .stream().mapToDouble(Bar::high).max().orElseThrow();
+            <span class="kw">double</span> low10 = history.subList(history.size() - 10, history.size())
+                    .stream().mapToDouble(Bar::low).min().orElseThrow();
+
+            <span class="kw">if</span> (!inTrade &amp;&amp; bar.close() &gt; high20) {
+                pending.add(<span class="kw">new</span> Order(symbol, Order.Side.BUY, Order.Type.MARKET, 10_000, bar.close())
+                        .withStopLoss(low10)
+                        .withTakeProfit(bar.close() + 2.0 * (bar.close() - low10)));
+                inTrade = <span class="kw">true</span>;
+            } <span class="kw">else if</span> (inTrade &amp;&amp; bar.close() &lt; low10) {
+                pending.add(<span class="kw">new</span> Order(symbol, Order.Side.SELL, Order.Type.MARKET, 10_000, bar.close())
+                        .asCloseOnly()); <span class="cm">// REDUCE_ONLY parity on OANDA v20</span>
+                inTrade = <span class="kw">false</span>;
+            }
+        }
+        history.add(bar);
+    }
+
+    <span class="kw">@Override public void</span> onTick(<span class="kw">double</span> bid, <span class="kw">double</span> ask, <span class="kw">long</span> volume) {}
+    <span class="kw">@Override public</span> List&lt;Order&gt; getPendingOrders() {
+        List&lt;Order&gt; out = <span class="kw">new</span> ArrayList&lt;&gt;(pending);
+        pending.clear();
+        <span class="kw">return</span> out;
+    }
+    <span class="kw">@Override public void</span> reset() { history.clear(); pending.clear(); inTrade = <span class="kw">false</span>; }
+}</code></pre>
+      </div>
+    </section>
+
+    <!-- Quick Start -->
+    <section id="quickstart">
+      <div class="section-eyebrow">Quick Start</div>
+      <h2 class="section-title">Up and Running in 60 Seconds</h2>
+      <p class="section-desc">Requires JDK 21+ (Temurin recommended) and Node.js 20+ for the Desktop Studio.</p>
+
+      <div class="grid-2">
+        <div class="code-wrap">
+          <div class="code-bar">
+            <span>1. Clone, Build &amp; Launch Desktop Studio</span>
+            <button class="copy-btn" onclick="copyCode('qs-1', this)">Copy</button>
+          </div>
+          <pre id="qs-1"><code>git clone https://github.com/martinfou/trading-bridge.git
+cd trading-bridge
+
+<span class="cm"># Build all 11 Maven modules</span>
+./mvnw clean install -DskipTests
+
+<span class="cm"># Launch Control Plane (:8080) + Electron Desktop App</span>
+./start-desktop.sh</code></pre>
+        </div>
+
+        <div class="code-wrap">
+          <div class="code-bar">
+            <span>2. Run Backtests &amp; Quant CLI (./tb)</span>
+            <button class="copy-btn" onclick="copyCode('qs-2', this)">Copy</button>
+          </div>
+          <pre id="qs-2"><code><span class="cm"># Interactive Terminal UI (JLine3)</span>
+./tb
+
+<span class="cm"># Run sample SmaCrossover backtest via Maven</span>
+./mvnw exec:java -pl trading-examples \
+  -Dexec.mainClass="com.martinfou.trading.examples.RunBacktest" \
+  -Dexec.args="--sample"</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- Architecture -->
+    <section id="architecture">
+      <div class="section-eyebrow">Modular Monorepo</div>
+      <h2 class="section-title">11 Clean Java 21 Modules + Desktop &amp; Web Clients</h2>
+      <p class="section-desc">Zero circular dependencies. <code>trading-core</code> has zero internal dependencies, keeping strategy authoring fast and portable.</p>
+
+      <div class="grid-3">
+        <div class="card"><h3>🧱 trading-core</h3><p>Immutable domain records (<code>Bar</code>, <code>Order</code>, <code>Position</code>, <code>Trade</code>) and the core <code>Strategy</code> contract.</p></div>
+        <div class="card"><h3>⚙️ trading-backtest</h3><p>Deterministic <code>BacktestEngine</code>, OANDA hedging, WFA, 1,000-run Monte Carlo, and PDF/HTML reports.</p></div>
+        <div class="card"><h3>🗄️ trading-data</h3><p>Historical loaders for Yahoo/Stooq, Dukascopy, OANDA v20, and IBKR TWS with M1→W1 aggregation.</p></div>
+        <div class="card"><h3>🧠 trading-strategies</h3><p>398+ strategies across Prop, Creative, Generated, Long-Term, News Weekly, Harness, and SQ families.</p></div>
+        <div class="card"><h3>🧬 trading-genetics</h3><p>Evolutionary strategy generator with 24 building blocks, alternating IS/OOS gates, and databank persistence.</p></div>
+        <div class="card"><h3>🔌 trading-broker</h3><p>OANDA v20 REST/Streaming and Interactive Brokers (IBKR TWS) adapters for paper and live trading.</p></div>
+        <div class="card"><h3>🛰️ trading-runtime</h3><p>HTTP Control Plane server (<code>:8080</code>), promote gates, kill switch, and JSONL event store.</p></div>
+        <div class="card"><h3>💻 trading-tui &amp; ./tb</h3><p>Interactive JLine3 TUI and scriptable LLM quant research CLI with full GUI parity.</p></div>
+        <div class="card"><h3>🖥️ desktop/ &amp; dashboard/</h3><p>Electron 33 + Vue 3.5 Desktop Studio and Laravel Mission Control web dashboard.</p></div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>Built with ☕, Java 21, and quantitative rigor by <a href="https://martinfournier.com" style="color:var(--amber);font-weight:600;">Martin Fournier</a> · <a href="https://github.com/martinfou/trading-bridge" style="color:var(--text);">View on GitHub</a></p>
+    </div>
+  </footer>
+
+  <div id="lightbox" class="lightbox" onclick="closeLightbox()">
+    <img id="lightbox-img" src="" alt="Full resolution screenshot" />
+  </div>
+
+  <script>
+    function switchTab(evt, panelId) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      evt.currentTarget.classList.add('active');
+      document.getElementById(panelId).classList.add('active');
+    }
+    function openLightbox(src) {
+      document.getElementById('lightbox-img').src = src;
+      document.getElementById('lightbox').classList.add('open');
+    }
+    function closeLightbox() {
+      document.getElementById('lightbox').classList.remove('open');
+    }
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+    function copyCode(id, btn) {
+      const text = document.getElementById(id).innerText;
+      navigator.clipboard.writeText(text).then(() => {
+        const prev = btn.innerText;
+        btn.innerText = 'Copied!';
+        setTimeout(() => btn.innerText = prev, 1600);
+      });
+    }
+  </script>
+</body>
+</html>

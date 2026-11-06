@@ -1,22 +1,26 @@
-# Modèles de Données - Trading Bridge Dashboard (Laravel)
+# Modèles de Données — Trading Bridge Dashboard (`trading-bridge-dashboard`)
 
-Le tableau de bord Laravel s'appuie sur une base de données SQLite locale nommée `database.sqlite` (située dans `dashboard/database/database.sqlite`) pour le stockage de son propre état interne (utilisateurs, sessions, file d'attente de jobs).
-
-> [!NOTE]
-> Les données de trading réelles (backtests, événements de runs, déploiements) ne sont **pas** stockées dans cette base de données. Elles sont hébergées par le serveur Java et récupérées dynamiquement via l'API REST.
+**Date de mise à jour :** 2026-11-05  
+**Base de données locale :** SQLite (`dashboard/database/database.sqlite`)  
+**ORM :** Laravel Eloquent (`Laravel 13.8`)
 
 ---
 
-## Tables SQLite Standard (Laravel)
+## 1. Architecture Sans État Métier (*Stateless Domain Proxy*)
 
-### 1. Table `users`
-Utilisée pour l'authentification des administrateurs (si activée).
-* **Colonnes clés** : `id`, `name`, `email`, `password`, `remember_token`, `created_at`, `updated_at`.
+Le panneau Web **Trading Bridge Dashboard** (`dashboard/`) ne duplique aucune donnée métier de trading (ni transactions, ni stratégies, ni courbes de capital). Toutes les informations opérationnelles affichées dans la vue `control-room.blade.php` sont récupérées à la volée auprès du serveur Java (`trading-runtime`) via `App\Services\ControlPlaneClient`.
 
-### 2. Table `cache` & `cache_locks`
-Utilisée pour le cache local de l'application et les verrous distribués.
-* **Colonnes cache** : `key` (TEXT, PRIMARY KEY), `value` (TEXT), `expiration` (INTEGER).
+---
 
-### 3. Table `jobs` & `failed_jobs`
-Utilisée pour gérer les tâches de fond asynchrones du tableau de bord.
-* **Colonnes jobs** : `id` (INTEGER, PRIMARY KEY), `queue` (TEXT), `payload` (TEXT), `attempts` (INTEGER), `reserved_at` (INTEGER), `available_at` (INTEGER), `created_at` (INTEGER).
+## 2. Tables d'Infrastructure Laravel Locales (`database/migrations/`)
+
+La base SQLite locale `database/database.sqlite` est utilisée uniquement pour le fonctionnement technique interne du framework Laravel (sessions HTTP, jetons CSRF, cache et files d'attente) :
+
+1. **`0001_01_01_000000_create_users_table.php`** :
+   * `users` (`id`, `name`, `email`, `email_verified_at`, `password`, `remember_token`, `timestamps`) — Modèle `App\Models\User`.
+   * `password_reset_tokens` (`email` PK, `token`, `created_at`).
+   * `sessions` (`id` PK, `user_id`, `ip_address`, `user_agent`, `payload`, `last_activity`) — Stockage des sessions opérateur et des messages flash (`status` / `error`) après activation du Kill Switch.
+2. **`0001_01_01_000001_create_cache_table.php`** :
+   * `cache` (`key` PK, `value`, `expiration`) et `cache_locks` (`key` PK, `owner`, `expiration`).
+3. **`0001_01_01_000002_create_jobs_table.php`** :
+   * `jobs`, `job_batches`, `failed_jobs`.

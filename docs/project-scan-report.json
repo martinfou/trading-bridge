@@ -1,160 +1,196 @@
 {
   "workflow_version": "1.2.0",
   "timestamps": {
-    "started": "2026-06-07T03:59:00Z",
-    "last_updated": "2026-06-07T04:07:00Z",
-    "completed": "2026-06-07T04:07:00Z"
+    "started": "2026-11-05T12:37:55-05:00",
+    "last_updated": "2026-11-05T13:01:55-05:00",
+    "completed": "2026-11-05T13:01:55-05:00"
   },
-  "mode": "initial_scan",
+  "mode": "full_rescan",
   "scan_level": "deep",
-  "project_root": "/home/martinfou/dev/src/trading-bridge",
+  "project_root": "/Volumes/T7/src/trading-bridge",
   "project_knowledge": "docs",
   "completed_steps": [
     {
       "step": "step_1",
       "status": "completed",
-      "timestamp": "2026-06-07T03:59:15Z",
-      "summary": "Classified as monorepo with 3 parts (java: backend, desktop: desktop, dashboard: web)"
+      "timestamp": "2026-11-05T12:43:00-05:00",
+      "summary": "Classified as monorepo with 4 parts (trading-bridge-java: backend, trading-bridge-desktop: desktop, trading-bridge-dashboard: web, trading-bridge-scripts: data/infra)"
     },
     {
       "step": "step_2",
       "status": "completed",
-      "timestamp": "2026-06-07T03:59:30Z",
-      "summary": "Found 21 existing docs"
+      "timestamp": "2026-11-05T12:43:10-05:00",
+      "summary": "Inventoried 65 existing markdown documentation files across docs/, reports/, root, and _bmad-output/."
     },
     {
       "step": "step_3",
       "status": "completed",
-      "timestamp": "2026-06-07T03:59:45Z",
-      "summary": "Tech stack analyzed: Java 21/Maven (Backend), Electron/Vue 3 (Desktop), PHP 8.3/Laravel 13 (Web)"
+      "timestamp": "2026-11-05T12:49:30-05:00",
+      "summary": "Analyzed technology stacks across all 4 parts: Java 21 / Maven 11 modules / Javalin 6.7 / SQLite WAL HikariCP; Electron 33 / Vue 3.5 / Lightweight Charts 5; PHP 8.3 / Laravel 13.8; Python 3 / Bash / sqcli / Docker Compose."
     },
     {
       "step": "step_4",
       "status": "completed",
-      "timestamp": "2026-06-07T04:00:15Z",
-      "summary": "Conditional analysis complete. Generated API contracts and data models documentation for Java and Dashboard parts."
+      "timestamp": "2026-11-05T12:52:00-05:00",
+      "outputs": [
+        "api-contracts-trading-bridge-java.md",
+        "data-models-trading-bridge-java.md",
+        "api-contracts-trading-bridge-dashboard.md",
+        "data-models-trading-bridge-dashboard.md",
+        "data-models-trading-bridge-scripts.md"
+      ],
+      "summary": "Conditional deep scan completed: 70 HTTP/WS endpoints and 9 SQLite tables documented for Java backend; routes/models for Laravel dashboard; binary/JSON schemas for SQX & IBKR/OANDA scripts."
     },
     {
       "step": "step_5",
       "status": "completed",
-      "timestamp": "2026-06-07T04:00:25Z",
-      "summary": "Source tree documented with annotated modules, desktop layout and Laravel dashboard files."
+      "timestamp": "2026-11-05T12:53:20-05:00",
+      "outputs": [
+        "source-tree-analysis.md"
+      ],
+      "summary": "Generated complete annotated source tree across all 4 parts, 11 Maven modules, 9 Vue views, 15 components, and 91 scripts."
     },
     {
       "step": "step_6",
       "status": "completed",
-      "timestamp": "2026-06-07T04:00:30Z",
-      "summary": "Dev/deployment guides written, covering dependencies, local startup, Electron packing and Docker compose config."
+      "timestamp": "2026-11-05T12:56:00-05:00",
+      "outputs": [
+        "development-guide.md",
+        "development-guide-trading-bridge-java.md",
+        "development-guide-trading-bridge-desktop.md",
+        "development-guide-trading-bridge-dashboard.md",
+        "development-guide-trading-bridge-scripts.md",
+        "deployment-guide.md"
+      ],
+      "summary": "Generated global and part-specific development guides plus multi-lane Docker & atomic deploy-paper.sh deployment guide."
     },
     {
       "step": "step_7",
       "status": "completed",
-      "timestamp": "2026-06-07T04:00:40Z",
-      "summary": "Integration architecture documented, including Electron subprocess spawning and HTTP/WS API linkages."
+      "timestamp": "2026-11-05T12:53:22-05:00",
+      "outputs": [
+        "integration-architecture.md",
+        "project-parts.json"
+      ],
+      "summary": "Documented 9 cross-part and external integration flows (Electron JVM spawner, HTTP REST, WebSocket, IBKR TWS socket, OANDA v20, SQX CLI/binary, Hermes Web webhooks) and machine-readable project-parts.json."
     },
     {
       "step": "step_8",
       "status": "completed",
-      "timestamp": "2026-06-07T04:00:50Z",
-      "summary": "Architecture docs written for 3 parts (Java backend, Electron desktop and Laravel dashboard)."
+      "timestamp": "2026-11-05T12:55:00-05:00",
+      "outputs": [
+        "architecture-trading-bridge-java.md",
+        "architecture-trading-bridge-desktop.md",
+        "architecture-trading-bridge-dashboard.md",
+        "architecture-trading-bridge-scripts.md"
+      ],
+      "summary": "Generated comprehensive technical architecture documents for all 4 parts."
     },
     {
       "step": "step_9",
       "status": "completed",
-      "timestamp": "2026-06-07T04:01:00Z",
-      "summary": "All supporting docs written (project-overview.md, component-inventory-trading-bridge-desktop.md, project-parts.json)."
+      "timestamp": "2026-11-05T12:59:00-05:00",
+      "outputs": [
+        "component-inventory-trading-bridge-desktop.md",
+        "component-inventory-trading-bridge-dashboard.md",
+        "guide-audiences-humains-et-llm.md",
+        "project-overview.md",
+        "../_bmad-output/project-context.md"
+      ],
+      "summary": "Generated UI component inventories, project-overview.md, Multi-Audience Hub (4 Human personas + 3 LLM agent contexts), and refreshed _bmad-output/project-context.md."
     },
     {
       "step": "step_10",
       "status": "completed",
-      "timestamp": "2026-06-07T04:01:10Z",
-      "summary": "Master index generated (index.md) linking all generated and reference documents."
+      "timestamp": "2026-11-05T12:59:05-05:00",
+      "outputs": [
+        "index.md"
+      ],
+      "summary": "Generated master index.md with role-based navigation (Humans & LLMs) and part-based navigation with zero incomplete markers."
     },
     {
       "step": "step_11",
       "status": "completed",
-      "timestamp": "2026-06-07T04:06:50Z",
-      "summary": "Generated dashboard component inventory and updated index.md to remove incomplete markers."
+      "timestamp": "2026-11-05T13:01:48-05:00",
+      "summary": "Validation and user review completed with 0 incomplete markers and 0 broken links."
     },
     {
       "step": "step_12",
       "status": "completed",
-      "timestamp": "2026-06-07T04:07:00Z",
+      "timestamp": "2026-11-05T13:01:55-05:00",
       "summary": "Workflow complete"
     }
   ],
   "current_step": "completed",
+  "project_types": [
+    {
+      "part_id": "trading-bridge-java",
+      "project_type_id": "backend",
+      "display_name": "Java 21 Maven Monorepo (11 Modules)"
+    },
+    {
+      "part_id": "trading-bridge-desktop",
+      "project_type_id": "desktop",
+      "display_name": "Electron 33 + Vue 3.5 Desktop App"
+    },
+    {
+      "part_id": "trading-bridge-dashboard",
+      "project_type_id": "web",
+      "display_name": "Laravel 13.8 Web Control Console"
+    },
+    {
+      "part_id": "trading-bridge-scripts",
+      "project_type_id": "data",
+      "display_name": "Python/Shell Research, SQX Automation, Telemetry & Docker Infra"
+    }
+  ],
   "findings": {
     "project_classification": {
       "repository_type": "monorepo",
-      "parts_count": 3,
-      "primary_tech": "Java, TypeScript, PHP",
-      "parts": [
-        {
-          "part_id": "trading-bridge-java",
-          "name": "Trading Bridge Java Core",
-          "root_path": "/home/martinfou/dev/src/trading-bridge",
-          "project_type_id": "backend",
-          "display_name": "Java Backend Monorepo"
-        },
-        {
-          "part_id": "trading-bridge-desktop",
-          "name": "Trading Bridge Desktop App",
-          "root_path": "/home/martinfou/dev/src/trading-bridge/desktop",
-          "project_type_id": "desktop",
-          "display_name": "Electron Desktop Frontend"
-        },
-        {
-          "part_id": "trading-bridge-dashboard",
-          "name": "Trading Bridge Dashboard",
-          "root_path": "/home/martinfou/dev/src/trading-bridge/dashboard",
-          "project_type_id": "web",
-          "display_name": "Laravel Web Dashboard"
-        }
-      ]
+      "parts_count": 4,
+      "primary_language": "Java 21, TypeScript 5.7, PHP 8.3, Python 3",
+      "architecture_type": "Modular Event-Driven Monolith + Native Electron Workstation + SSR Web Proxy + SQX/Docker Pipeline"
     },
-    "existing_docs_count": 21,
-    "technology_stack": {
-      "trading-bridge-java": {
-        "primary_language": "Java 21",
-        "build_system": "Maven 4.x",
-        "web_framework": "Javalin 6.6.0 (Control Plane)",
-        "database": "SQLite JDBC 3.49.1.0",
-        "logging": "SLF4J 2.0.16",
-        "cli_library": "JLine 3.26.3",
-        "ai_integration": "LangChain4j 0.33.0",
-        "test_framework": "JUnit 5.11.0",
-        "json_parser": "Jackson 2.17.2",
-        "architecture_pattern": "Modular Monolith / API-centric Service"
+    "technology_stack": [
+      {
+        "part_id": "trading-bridge-java",
+        "tech_summary": "Java 21, Maven 4 (11 modules), Javalin 6.7.0 (70 routes), SQLite 3.49.1.0 + HikariCP 5.1.0 (9 tables), Jackson 2.17.2, LangChain4j 0.33.0, Ta4j 0.18, JLine 3.26.3, OpenPDF 1.3.40, IBKR TWS API Protobuf 4.29.5"
       },
-      "trading-bridge-desktop": {
-        "primary_language": "TypeScript / JavaScript",
-        "shell_framework": "Electron 33.0.0",
-        "ui_framework": "Vue 3.5.0",
-        "router": "Vue Router 4.5.0",
-        "build_system": "Vite 6.0.0",
-        "charting": "Lightweight Charts 5.0.0",
-        "icons": "Lucide Vue 1.17.0",
-        "architecture_pattern": "MVVM Client + Spawner Process"
+      {
+        "part_id": "trading-bridge-desktop",
+        "tech_summary": "Electron 33.0.0, Vue 3.5.0, Vue Router 4.5.0, TypeScript 5.7.0, Vite 6.0.0, TradingView Lightweight Charts 5.0.0, Lucide Vue 1.17.0, Playwright 1.62.1"
       },
-      "trading-bridge-dashboard": {
-        "primary_language": "PHP 8.3",
-        "framework": "Laravel 13.8",
-        "styling": "TailwindCSS 4.0.0",
-        "bundler": "Vite 8.0.0",
-        "database": "SQLite",
-        "test_framework": "PHPUnit 12.5.12",
-        "architecture_pattern": "MVC Web Application"
+      {
+        "part_id": "trading-bridge-dashboard",
+        "tech_summary": "PHP 8.3, Laravel 13.8, Blade SSR, TailwindCSS 4.0.0, Vite 8.0.0, SQLite, PHPUnit 12.5.12"
+      },
+      {
+        "part_id": "trading-bridge-scripts",
+        "tech_summary": "Python 3 (ibapi, stdlib), Bash, StrategyQuant X CLI (sqcli), Docker Compose (3 lanes: paper, dev, futures), AGY CLI"
       }
-    },
-    "api_analysis": {
-      "trading-bridge-java": "37 HTTP endpoints + 1 WS endpoint documented in docs/api-contracts-trading-bridge-java.md",
-      "trading-bridge-dashboard": "2 web routes documented in docs/api-contracts-trading-bridge-dashboard.md"
-    },
-    "data_analysis": {
-      "trading-bridge-java": "4 SQLite tables (backtest_runs, deployments, events, research_inspirations) documented in docs/data-models-trading-bridge-java.md",
-      "trading-bridge-dashboard": "Standard Laravel local SQLite database (users, cache, jobs) documented in docs/data-models-trading-bridge-dashboard.md"
-    }
+    ],
+    "batches_completed": [
+      {
+        "path": "trading-core..trading-tui (11 Maven modules)",
+        "files_scanned": 1374,
+        "summary": "Scanned all 11 Java modules, extracted DAG, 70 HTTP/WS endpoints, 9 SQLite tables, guardrails, and realism models."
+      },
+      {
+        "path": "desktop/",
+        "files_scanned": 38,
+        "summary": "Scanned Electron main/preload, 9 Vue views, 15 components, and 6 composables."
+      },
+      {
+        "path": "dashboard/",
+        "files_scanned": 24,
+        "summary": "Scanned Laravel 13 routes, ControlRoomController, ControlPlaneClient, Blade views, and tests."
+      },
+      {
+        "path": "scripts/, docker/, config/, docs/",
+        "files_scanned": 185,
+        "summary": "Scanned 91 scripts in scripts/, 20 root run-*.sh harnesses, Dockerfiles/Compose files, live-config.json, and 65 markdown docs."
+      }
+    ]
   },
   "outputs_generated": [
     "project-scan-report.json",
@@ -162,17 +198,26 @@
     "data-models-trading-bridge-java.md",
     "api-contracts-trading-bridge-dashboard.md",
     "data-models-trading-bridge-dashboard.md",
+    "data-models-trading-bridge-scripts.md",
     "source-tree-analysis.md",
     "development-guide.md",
+    "development-guide-trading-bridge-java.md",
+    "development-guide-trading-bridge-desktop.md",
+    "development-guide-trading-bridge-dashboard.md",
+    "development-guide-trading-bridge-scripts.md",
     "deployment-guide.md",
     "integration-architecture.md",
+    "project-parts.json",
     "architecture-trading-bridge-java.md",
     "architecture-trading-bridge-desktop.md",
     "architecture-trading-bridge-dashboard.md",
-    "project-overview.md",
+    "architecture-trading-bridge-scripts.md",
     "component-inventory-trading-bridge-desktop.md",
     "component-inventory-trading-bridge-dashboard.md",
-    "project-parts.json",
-    "index.md"
-  ]
+    "guide-audiences-humains-et-llm.md",
+    "project-overview.md",
+    "index.md",
+    "../_bmad-output/project-context.md"
+  ],
+  "resume_instructions": "Workflow completed"
 }

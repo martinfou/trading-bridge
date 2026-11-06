@@ -1,55 +1,100 @@
 {
   "repository_type": "monorepo",
+  "last_updated": "2026-11-05",
   "parts": [
     {
       "part_id": "trading-bridge-java",
-      "name": "Trading Bridge Java Core",
-      "root_path": "/home/martinfou/dev/src/trading-bridge",
+      "name": "Trading Bridge Java Core & Control Plane",
       "project_type_id": "backend",
-      "display_name": "Java Backend Monorepo",
-      "primary_tech": "Java 21, Maven 4.x"
+      "root_path": "/Volumes/T7/src/trading-bridge",
+      "primary_language": "Java 21",
+      "tech_stack": "Maven 4, Javalin 6.7.0, SQLite JDBC 3.49.1.0, HikariCP 5.1.0, Jackson 2.17.2, LangChain4j 0.33.0, Ta4j 0.18, JLine 3.26.3, OpenPDF 1.3.40, IBKR TWS API Protobuf 4.29.5",
+      "modules": [
+        "trading-core",
+        "trading-data",
+        "trading-strategies",
+        "trading-backtest",
+        "trading-broker",
+        "trading-parser",
+        "trading-genetics",
+        "trading-intelligence",
+        "trading-runtime",
+        "trading-examples",
+        "trading-tui"
+      ],
+      "entry_points": [
+        "trading-runtime/src/main/java/com/martinfou/trading/runtime/api/ControlPlaneMain.java",
+        "trading-strategies/src/main/java/com/martinfou/trading/strategies/live/LiveStrategyRunner.java",
+        "trading-runtime/src/main/java/com/martinfou/trading/runtime/ibkr/IbkrLiveRunner.java",
+        "trading-tui/src/main/java/com/martinfou/trading/tui/TradingTuiMain.java"
+      ]
     },
     {
       "part_id": "trading-bridge-desktop",
       "name": "Trading Bridge Desktop App",
-      "root_path": "/home/martinfou/dev/src/trading-bridge/desktop",
       "project_type_id": "desktop",
-      "display_name": "Electron Desktop Frontend",
-      "primary_tech": "TypeScript, Vue 3, Electron"
+      "root_path": "/Volumes/T7/src/trading-bridge/desktop",
+      "primary_language": "TypeScript 5.7",
+      "tech_stack": "Electron 33.0.0, Vue 3.5.0, Vue Router 4.5.0, Vite 6.0.0, TradingView Lightweight Charts 5.0.0, Lucide Vue 1.17.0, Playwright 1.62.1",
+      "entry_points": [
+        "desktop/electron/main.ts",
+        "desktop/src/main.ts"
+      ]
     },
     {
       "part_id": "trading-bridge-dashboard",
-      "name": "Trading Bridge Dashboard",
-      "root_path": "/home/martinfou/dev/src/trading-bridge/dashboard",
+      "name": "Trading Bridge Web Control Room",
       "project_type_id": "web",
-      "display_name": "Laravel Web Dashboard",
-      "primary_tech": "PHP 8.3, Laravel 13.8"
+      "root_path": "/Volumes/T7/src/trading-bridge/dashboard",
+      "primary_language": "PHP 8.3",
+      "tech_stack": "Laravel 13.8, Blade SSR, TailwindCSS 4.0.0, Vite 8.0.0, SQLite, PHPUnit 12.5.12",
+      "entry_points": [
+        "dashboard/public/index.php",
+        "dashboard/routes/web.php"
+      ]
+    },
+    {
+      "part_id": "trading-bridge-scripts",
+      "name": "Trading Bridge Automation, SQX Pipeline, Telemetry & Docker Infra",
+      "project_type_id": "data",
+      "root_path": "/Volumes/T7/src/trading-bridge/scripts",
+      "primary_language": "Python 3 / Bash",
+      "tech_stack": "Python 3, ibapi, StrategyQuant X CLI (sqcli), Docker Compose, SQLite3 CLI, AGY CLI",
+      "entry_points": [
+        "scripts/sqx_ctrl.py",
+        "scripts/sqx_telemetry_pusher.py",
+        "scripts/sqx_auto_pipeline.py",
+        "scripts/ibkr_pnl_push.py",
+        "scripts/ibkr_snapshot_push.py",
+        "scripts/deploy-paper.sh",
+        "scripts/pre-deploy-gate.sh"
+      ]
     }
   ],
   "integration_points": [
     {
       "from": "trading-bridge-desktop",
       "to": "trading-bridge-java",
-      "type": "Process Spawn",
-      "details": "Electron main process spawns the Java shaded JAR as a background process using system java or embedded JRE."
-    },
-    {
-      "from": "trading-bridge-desktop",
-      "to": "trading-bridge-java",
-      "type": "REST API",
-      "details": "HTTP calls from Vue client to port 8080 (health, runs, strategies catalog, database)."
-    },
-    {
-      "from": "trading-bridge-desktop",
-      "to": "trading-bridge-java",
-      "type": "WebSocket",
-      "details": "Bidirectional stream on ws://localhost:8080/ws/runs/{runId} for real-time tick and order execution events."
+      "type": "Subprocess Spawn + HTTP REST + WebSocket",
+      "details": "Electron main.ts spawns trading-runtime shaded JAR on port 8080; Vue renderer calls 70 HTTP REST endpoints (/api/*) and subscribes to /ws/runs/:runId."
     },
     {
       "from": "trading-bridge-dashboard",
       "to": "trading-bridge-java",
-      "type": "REST API",
-      "details": "HTTP calls from Laravel controller to port 8080 (health check, control room summary, kill switch)."
+      "type": "HTTP REST Polling + Kill Switch POST",
+      "details": "Laravel ControlPlaneClient polls /api/health, /api/control/summary, /api/broker-accounts every 5s and posts emergency stops to /api/strategies/{id}/kill."
+    },
+    {
+      "from": "trading-bridge-java",
+      "to": "OANDA v20 & IBKR TWS Gateway",
+      "type": "HTTPS REST/Stream & TCP Socket (Protobuf)",
+      "details": "OandaBroker/OandaExecutor connect to api-fxpractice.oanda.com; IbkrBroker/IbkrLiveRunner connect to IB Gateway on 127.0.0.1:4002 (clientId=11)."
+    },
+    {
+      "from": "trading-bridge-scripts",
+      "to": "StrategyQuant X & Hermes Web",
+      "type": "CLI Subprocess + Binary .sqx Parser + HTTPS Webhook Push",
+      "details": "sqx_ctrl.py and extract_sqx_backtest.py manage sqcli and parse dailyEquity.bin; sqx_telemetry_pusher.py, ibkr_pnl_push.py, and ibkr_snapshot_push.py push live telemetry to Hermes Web."
     }
   ]
 }

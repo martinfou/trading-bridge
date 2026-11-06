@@ -1,129 +1,110 @@
-# Guide de Développement - Trading Bridge
+# Guide de Développement Global — Trading Bridge
 
-Ce document décrit les procédures d'installation locale, de compilation, d'exécution des tests et de lancement en mode développement pour chaque partie du projet **Trading Bridge**.
-
----
-
-## 1. Partie Java Backend (`trading-bridge-java`)
-
-Le backend est structuré sous forme de monorepo Maven multi-modules nécessitant **Java 21** et **Maven 4.x**.
-
-### Prérequis
-*   **Java Development Kit (JDK)** : Version 21 (Eclipse Temurin recommandé).
-*   **Maven** : Version 4.x (ou le script `./mvnw` fourni à la racine).
-
-### Compilation globale
-Pour nettoyer et compiler l'ensemble du monorepo Maven depuis la racine :
-```bash
-mvn clean install
-```
-*(Remarque : La commande `mvn clean install` doit s'exécuter sans erreur avant toute livraison ou validation).*
-
-### Lancement des Tests
-*   Exécuter tous les tests unitaires :
-    ```bash
-    mvn test
-    ```
-*   Exécuter les tests d'un module spécifique (ex: `trading-parser`) :
-    ```bash
-    mvn test -pl trading-parser
-    ```
-*   *Remarque* : Le test global `GoldenBacktestTest` est automatiquement ignoré si les données historiques locales sous `data/historical/` ne sont pas présentes.
-
-### Commandes d'Exécution (CLI & Serveur)
-*   **Lister les stratégies du catalogue** :
-    ```bash
-    mvn exec:java -pl trading-examples -Dexec.mainClass="com.martinfou.trading.examples.RunBacktest" -Dexec.args="--list"
-    ```
-*   **Lancer un backtest de démonstration (SmaCrossover)** :
-    ```bash
-    mvn exec:java -pl trading-examples -Dexec.mainClass="com.martinfou.trading.examples.RunBacktest" -Dexec.args="--sample"
-    ```
-*   **Lancer un backtest avec une stratégie et une année spécifiques** (ex: LondonOpenRangeBreakout sur EUR_USD pour 2012) :
-    ```bash
-    mvn exec:java -pl trading-examples -Dexec.mainClass="com.martinfou.trading.examples.RunBacktest" -Dexec.args="LondonOpenRangeBreakout EUR_USD 2012"
-    ```
-*   **Lancer le serveur de Plan de Contrôle (API/WebSockets)** :
-    ```bash
-    mvn exec:java -pl trading-runtime -Dexec.mainClass="com.martinfou.trading.runtime.ControlPlaneMain"
-    ```
-    *Le serveur écoute par défaut sur le port `8080`.*
-*   **Lancer la console client interactive (TUI)** :
-    ```bash
-    # Nécessite que le plan de contrôle (ControlPlaneMain) soit déjà en cours d'exécution
-    mvn exec:java -pl trading-tui -Dexec.mainClass="com.martinfou.trading.tui.TradingTuiMain"
-    ```
+**Date de mise à jour :** 2026-11-05  
+**Public cible :** Ingénieurs logiciels, Chercheurs quantitatifs (Quants) et Agents IA de codage
 
 ---
 
-## 2. Partie Application Bureau (`trading-bridge-desktop`)
+## 1. Prérequis Système
 
-L'application de bureau est construite avec **Electron**, **Vue 3**, **Vite** et **TypeScript**.
+| Composant | Version Requise | Vérification |
+| :--- | :--- | :--- |
+| **Java JDK** | **Java 21** (Eclipse Temurin recommandé) | `java -version` |
+| **Maven** | **Maven 3.9+ / 4.x** (ou `./mvnw` inclus) | `./mvnw -version` |
+| **Node.js & NPM** | **Node 20+ / NPM 10+** (pour `desktop/` et `dashboard/`) | `node -v && npm -v` |
+| **PHP & Composer** | **PHP 8.3+ & Composer 2.x** (pour `dashboard/`) | `php -v && composer -V` |
+| **Python** | **Python 3.10+** (pour `scripts/`) | `python3 --version` |
+| **Docker & Compose** | **Docker Engine 24+ & Compose v2** | `docker compose version` |
+| **SQLite3** | **SQLite 3.40+** | `sqlite3 --version` |
 
-### Prérequis
-*   **Node.js** : Version active LTS (ex: ^20 ou ^22).
-*   **Java Runtime Environment (JRE)** (Nécessaire uniquement pour la distribution finale).
-
-### Installation et Lancement en mode Dev
-1.  Se positionner dans le sous-dossier :
-    ```bash
-    cd desktop
-    ```
-2.  Installer les dépendances NPM :
-    ```bash
-    npm install
-    ```
-3.  Lancer le serveur de développement avec rechargement automatique :
-    ```bash
-    npm run electron:dev
-    ```
-
-### Compilation et Packaging
-Avant d'assembler l'application de bureau, il est nécessaire de générer le JAR shaded du plan de contrôle Java :
-1.  Générer le JAR shaded (depuis la racine du monorepo) :
-    ```bash
-    mvn package -pl trading-runtime -am -DskipTests
-    ```
-2.  Copier le JAR shaded et générer la JRE intégrée (depuis le dossier `desktop`) :
-    ```bash
-    mkdir -p desktop-resources/jar
-    cp ../trading-runtime/target/*-shaded.jar desktop-resources/jar/control-plane.jar
-    bash scripts/build-jre.sh desktop-resources/jar/control-plane.jar desktop-resources
-    ```
-3.  Packager l'application selon votre plateforme :
-    *   **Linux (AppImage, deb, pacman)** : `npm run package:linux`
-    *   **macOS (DMG)** : `npm run package:mac`
-    *   **Windows (NSIS)** : `npm run package:win`
+> **Astuce :** Exécutez `./scripts/preflight-check.sh` à la racine du dépôt pour valider automatiquement l'ensemble de votre environnement local.
 
 ---
 
-## 3. Partie Tableau de Bord Web (`trading-bridge-dashboard`)
+## 2. Démarrage Rapide par Partie
 
-Le tableau de bord est une application **Laravel PHP** communiquant avec l'API Java.
-
-### Prérequis
-*   **PHP** : Version 8.3 ou supérieure.
-*   **Composer** : Gestionnaire de dépendances PHP.
-*   **Node.js & NPM**.
-
-### Installation rapide
-1.  Se positionner dans le dossier :
-    ```bash
-    cd dashboard
-    ```
-2.  Lancer le script d'initialisation rapide :
-    ```bash
-    composer run setup
-    ```
-    *Ce script se charge d'installer les dépendances (Composer et NPM), copier le fichier `.env.example`, générer la clé d'application, exécuter les migrations SQLite et générer les assets frontends.*
-
-### Lancement du Serveur de Développement
-Pour démarrer simultanément le serveur de développement Laravel, le processeur de file d'attente (queue listener), le lecteur de logs et Vite :
+### 2.1 Partie 1 — Backend & Moteur Java (`trading-bridge-java`)
 ```bash
-composer run dev
+# Compiler tous les 11 modules et exécuter les tests unitaires
+./mvnw clean install
+
+# Compiler rapidement sans les tests
+./mvnw clean package -DskipTests
+
+# Lancer le serveur Control Plane (HTTP/WS sur http://localhost:8080)
+./start-control-plane.sh
+
+# Lancer le client terminal interactif JLine3 (TUI)
+./start-tui.sh
+
+# Exécuter un backtest en ligne de commande
+./mvnw exec:java -pl trading-examples \
+  -Dexec.mainClass="com.martinfou.trading.examples.RunBacktest" \
+  -Dexec.args="--strategy LondonOpenRangeBreakout --symbol EUR_USD --tf H1"
 ```
 
-### Exécution des Tests
+### 2.2 Partie 2 — Application de Bureau (`trading-bridge-desktop`)
 ```bash
-composer run test
+# Option A : Lanceur racine (compile le JAR si nécessaire et démarre Electron)
+./start-desktop.sh
+
+# Option B : Développement manuel avec rechargement à chaud (HMR)
+cd desktop
+npm install
+npm run electron:dev
+
+# Vérification TypeScript et build de production
+npm run build
 ```
+
+### 2.3 Partie 3 — Console Web (`trading-bridge-dashboard`)
+```bash
+cd dashboard
+composer run setup
+composer run dev   # Démarre Laravel sur http://127.0.0.1:8000/control
+```
+
+### 2.4 Partie 4 — Scripts, SQX & Recherche (`trading-bridge-scripts`)
+```bash
+# Vérifier le statut des projets StrategyQuant X
+python3 scripts/sqx_ctrl.py status
+
+# Tester la connexion lecture seule au compte OANDA Practice (-004)
+python3 scripts/smoke-oanda-readonly.py
+
+# Exécuter les auto-tests du démon de snapshot IBKR
+python3 scripts/ibkr_snapshot_push.py --selftest
+
+# Lancer la revue de code adversariale IA sur vos modifications locales
+./scripts/agy-review.sh
+```
+
+---
+
+## 3. Stratégie de Tests & Validation Qualité
+
+* **Tests Unitaires d'un Module Spécifique** :
+  ```bash
+  ./mvnw test -pl trading-core
+  ./mvnw test -pl trading-backtest
+  ./mvnw test -pl trading-parser
+  ./mvnw test -pl trading-runtime
+  ```
+* **Tests Fonctionnels Dashboard Laravel** :
+  ```bash
+  cd dashboard && composer test
+  ```
+* **Porte Pré-Déploiement Complète** :
+  ```bash
+  ./scripts/pre-deploy-gate.sh
+  ```
+
+---
+
+## 4. Guides de Développement Spécifiques par Partie
+
+Pour les détails propres à chaque sous-système, consultez :
+* **[Guide de Développement — Java Backend](./development-guide-trading-bridge-java.md)**
+* **[Guide de Développement — Desktop Electron/Vue](./development-guide-trading-bridge-desktop.md)**
+* **[Guide de Développement — Dashboard Laravel](./development-guide-trading-bridge-dashboard.md)**
+* **[Guide de Développement — Scripts, SQX & Recherche](./development-guide-trading-bridge-scripts.md)**

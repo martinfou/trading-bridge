@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="260" viewBox="0 0 1280 260" role="img" aria-labelledby="t">
+  <title id="t">Trading Bridge pipeline: Ingest, Generate, Backtest, Validate, Paper, Live</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#0b0b0d"/><stop offset="1" stop-color="#141418"/>
+    </linearGradient>
+    <linearGradient id="flow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3b82f6"/><stop offset="0.5" stop-color="#f59e0b"/><stop offset="1" stop-color="#10b981"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="260" rx="20" fill="url(#bg)"/>
+
+  <line x1="125" y1="110" x2="1155" y2="110" stroke="url(#flow)" stroke-width="4" stroke-opacity="0.35"/>
+  <line x1="125" y1="110" x2="1155" y2="110" stroke="url(#flow)" stroke-width="4" stroke-dasharray="14 18">
+    <animate attributeName="stroke-dashoffset" from="64" to="0" dur="1.2s" repeatCount="indefinite"/>
+  </line>
+
+  <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Helvetica,Arial,sans-serif" text-anchor="middle">
+    <!-- 1 -->
+    <g transform="translate(125,110)">
+      <circle r="46" fill="#0f172a" stroke="#3b82f6" stroke-width="3"/>
+      <text y="12" font-size="34">🗄️</text>
+      <text y="84" font-size="20" font-weight="700" fill="#ffffff">Ingest</text>
+      <text y="108" font-size="14" fill="#a1a1aa">Yahoo · Dukascopy</text>
+      <text y="126" font-size="14" fill="#a1a1aa">OANDA · IBKR</text>
+    </g>
+    <!-- 2 -->
+    <g transform="translate(331,110)">
+      <circle r="46" fill="#1e1b4b" stroke="#8b5cf6" stroke-width="3"/>
+      <text y="12" font-size="34">🧬</text>
+      <text y="84" font-size="20" font-weight="700" fill="#ffffff">Generate</text>
+      <text y="108" font-size="14" fill="#a1a1aa">Genetic search</text>
+      <text y="126" font-size="14" fill="#a1a1aa">24 building blocks</text>
+    </g>
+    <!-- 3 -->
+    <g transform="translate(537,110)">
+      <circle r="46" fill="#1c1408" stroke="#f59e0b" stroke-width="3"/>
+      <text y="12" font-size="34">⚙️</text>
+      <text y="84" font-size="20" font-weight="700" fill="#ffffff">Backtest</text>
+      <text y="108" font-size="14" fill="#a1a1aa">Real costs · hedging</text>
+      <text y="126" font-size="14" fill="#a1a1aa">No look-ahead</text>
+    </g>
+    <!-- 4 -->
+    <g transform="translate(743,110)">
+      <circle r="46" fill="#1f0f05" stroke="#ea580c" stroke-width="3"/>
+      <text y="12" font-size="34">🔬</text>
+      <text y="84" font-size="20" font-weight="700" fill="#ffffff">Validate</text>
+      <text y="108" font-size="14" fill="#a1a1aa">Walk-Forward · OOS</text>
+      <text y="126" font-size="14" fill="#a1a1aa">Monte Carlo</text>
+    </g>
+    <!-- 5 -->
+    <g transform="translate(949,110)">
+      <circle r="46" fill="#082f2a" stroke="#14b8a6" stroke-width="3"/>
+      <text y="12" font-size="34">🧪</text>
+      <text y="84" font-size="20" font-weight="700" fill="#ffffff">Paper</text>
+      <text y="108" font-size="14" fill="#a1a1aa">Docker runners</text>
+      <text y="126" font-size="14" fill="#a1a1aa">Promote gates</text>
+    </g>
+    <!-- 6 -->
+    <g transform="translate(1155,110)">
+      <circle r="46" fill="#052e1c" stroke="#10b981" stroke-width="3"/>
+      <circle r="46" fill="none" stroke="#10b981" stroke-width="2">
+        <animate attributeName="r" values="46;62" dur="1.8s" repeatCount="indefinite"/>
+        <animate attributeName="stroke-opacity" values="0.8;0" dur="1.8s" repeatCount="indefinite"/>
+      </circle>
+      <text y="12" font-size="34">🚀</text>
+      <text y="84" font-size="20" font-weight="700" fill="#ffffff">Live</text>
+      <text y="108" font-size="14" fill="#a1a1aa">Kill switch</text>
+      <text y="126" font-size="14" fill="#a1a1aa">Telemetry</text>
+    </g>
+  </g>
+</svg>
+
