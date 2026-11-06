@@ -205,17 +205,44 @@ Prefer the terminal or building automated LLM research loops? `./tb` auto-starts
 ## 🚀 Get Started in 60 Seconds
 
 ### Prerequisites
-- **JDK 21+** (Eclipse Temurin recommended)
+- **JDK 21+** (Eclipse Temurin or Azul Zulu recommended)
 - **Maven 3.9+** (or use the included `./mvnw` wrapper)
-- **Node.js 20+** *(optional, for the Electron Desktop Studio)*
+- **Node.js 20+** *(required only for the Electron Desktop Studio)*
 
-### 1. Build the Core Engine & Run a Sample Backtest
+### ⚡ Fastest Way to Launch (`./tb` Unified Entry Point)
+Once cloned, `./tb` is your single entry point for the entire platform (auto-compiling and starting the Java Control Plane on `:8080` when needed):
+
+| What you want to run | macOS / Linux | Windows (PowerShell) |
+| :--- | :--- | :--- |
+| 🖥️ **Desktop Studio (Electron + Vue GUI)** | `./tb gui` *(or `bash scripts/run-desktop.sh`)* | `.\scripts\run-desktop.ps1` |
+| 📟 **Interactive Terminal UI (JLine3 TUI)** | `./tb` | `.\scripts\run-tui.ps1` |
+| 🌐 **Control Plane Server only (`:8080`)** | `./tb server` *(or `bash scripts/run-control-plane.sh`)* | `.\scripts\run-control-plane.ps1` |
+| 🤖 **One-shot CLI command** | `./tb strategies list` | `.\tb strategies list` *(Git Bash / WSL)* |
+
+### 1. Clone & Build the Core Engine
 ```bash
-# Clone and build all 11 Java modules
 git clone https://github.com/martinfou/trading-bridge.git
 cd trading-bridge
 ./mvnw clean install -DskipTests
+```
 
+### 2. Launch the Desktop Studio (macOS / Linux / Windows)
+```bash
+# Auto-starts the Java Control Plane (:8080) + Electron Desktop App
+./tb gui                        # macOS / Linux (shortcut for bash scripts/run-desktop.sh)
+.\scripts\run-desktop.ps1       # Windows PowerShell
+```
+
+### 3. Or Drive Everything from the Terminal (`./tb`)
+```bash
+./tb                            # Launch interactive JLine3 Terminal UI (TUI)
+./tb strategies list            # Browse all 398+ strategies from the command line
+./tb generator status           # Inspect evolutionary generator databank
+./tb backtest --help            # Run historical backtests or Walk-Forward Analysis
+```
+
+### 4. Run a Standalone Sample Backtest via Maven
+```bash
 # List all 398+ built-in & generated strategies
 ./mvnw exec:java -pl trading-examples \
   -Dexec.mainClass="com.martinfou.trading.examples.RunBacktest" \
@@ -227,21 +254,7 @@ cd trading-bridge
   -Dexec.args="--sample"
 ```
 
-### 2. Launch the Desktop Studio (macOS / Linux / Windows)
-```bash
-# Starts the Java Control Plane (:8080) + Electron Desktop App automatically
-./start-desktop.sh        # macOS / Linux
-.\start-desktop.ps1       # Windows PowerShell
-```
-
-### 3. Or Drive Everything from the Terminal (`./tb`)
-```bash
-./tb                      # Launch interactive JLine3 Terminal UI (TUI)
-./tb strategies list      # Browse catalog from the command line
-./tb generator status     # Inspect evolutionary generator databank
-```
-
-### 4. Deploy Paper Trading Runners via Docker
+### 5. Deploy Paper Trading Runners via Docker
 ```bash
 # Configure OANDA_API_KEY and OANDA_ACCOUNT_ID in .env
 docker compose build trader && docker compose up -d trader

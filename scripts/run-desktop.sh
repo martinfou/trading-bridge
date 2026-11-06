@@ -66,6 +66,14 @@ echo ""
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+if [ -f "$ROOT/.env" ]; then
+  echo "Loading environment variables from .env"
+  set -a
+  # shellcheck disable=SC1091
+  source "$ROOT/.env"
+  set +a
+fi
+
 echo "=== 1. Setting up Java Environment ==="
 # Detect JAVA_HOME on macOS if not set
 if [ -z "$JAVA_HOME" ]; then
@@ -79,6 +87,19 @@ else
   echo "Using existing JAVA_HOME=$JAVA_HOME"
 fi
 
+PORT="${CONTROL_PLANE_PORT:-8080}"
+SHADED_JAR="$ROOT/trading-runtime/target/trading-runtime-1.0.0-SNAPSHOT-shaded.jar"
+
+if [ -z "${NO_CONTROL_PLANE:-}" ]; then
+  if curl -s -f "http://localhost:${PORT}/api/strategies" >/dev/null 2>&1; then
+    echo "Control Plane already running on port ${PORT} — reusing existing server."
+    export NO_CONTROL_PLANE=true
+  elif [ ! -f "$SHADED_JAR" ]; then
+    echo "Backend JAR not found at $SHADED_JAR — building trading-runtime..."
+    ./mvnw package -pl trading-runtime -am -DskipTests
+  fi
+fi
+
 echo "=== 2. Setting up Frontend ==="
 cd "$ROOT/desktop"
 if [ ! -d "node_modules" ]; then
@@ -87,5 +108,4 @@ if [ ! -d "node_modules" ]; then
 fi
 
 echo "=== 3. Starting Desktop Application ==="
-# Runs Electron dev server (without spawning the Java backend)
-NO_CONTROL_PLANE=true npm run electron:dev
+npm run electron:dev

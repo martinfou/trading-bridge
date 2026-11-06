@@ -52,6 +52,24 @@ if (-not (Test-Path $NodeModules)) {
 }
 
 Write-Host "=== 3. Starting Desktop Application ==="
-# Set environment variable NO_CONTROL_PLANE to true to skip launching the Java backend from desktop client (dev mode)
-$env:NO_CONTROL_PLANE = "true"
+$Port = if ($env:CONTROL_PLANE_PORT) { $env:CONTROL_PLANE_PORT } else { "8080" }
+$ShadedJar = Join-Path $Root "trading-runtime\target\trading-runtime-1.0.0-SNAPSHOT-shaded.jar"
+
+if (-not $env:NO_CONTROL_PLANE) {
+    try {
+        $resp = Invoke-WebRequest -Uri "http://localhost:$Port/api/strategies" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
+        if ($resp.StatusCode -eq 200) {
+            Write-Host "Control Plane already running on port $Port — reusing existing server."
+            $env:NO_CONTROL_PLANE = "true"
+        }
+    } catch {
+        if (-not (Test-Path $ShadedJar)) {
+            Write-Host "Backend JAR not found — building trading-runtime..."
+            Push-Location $Root
+            & .\mvnw.cmd package -pl trading-runtime -am -DskipTests
+            Pop-Location
+        }
+    }
+}
+
 Start-Process -FilePath "cmd.exe" -ArgumentList "/c npm run electron:dev" -NoNewWindow -Wait
