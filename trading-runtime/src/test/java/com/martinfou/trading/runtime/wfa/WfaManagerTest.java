@@ -121,4 +121,46 @@ class WfaManagerTest {
         assertFalse(list.isEmpty());
         assertEquals(wfaId, list.get(0).wfaId());
     }
+
+    @Test
+    void testWfaParameterInspectorAndGeneratedStrategyExecution() throws Exception {
+        var ltParams = WfaParameterInspector.inspect("LtCrossMomentum");
+        assertFalse(ltParams.isEmpty());
+        assertTrue(ltParams.stream().anyMatch(p -> "fastPeriod".equals(p.name())));
+
+        var mgcParams = WfaParameterInspector.inspect("MgcM30Trend28281");
+        assertFalse(mgcParams.isEmpty());
+
+        WfaRunRequest request = new WfaRunRequest(
+            "MgcM30Trend28281",
+            "MGC",
+            "FUTURES",
+            "M30",
+            "2024-01-01T00:00:00Z",
+            "2024-06-01T00:00:00Z",
+            60,
+            20,
+            false,
+            10000.0,
+            List.of(
+                new ParameterRangeDto("period1", 10.0, 20.0, 10.0),
+                new ParameterRangeDto("period2", 30.0, 50.0, 20.0)
+            )
+        );
+
+        String wfaId = manager.startWfaRun(request);
+        long deadline = System.currentTimeMillis() + 15000;
+        WfaProgressResponse finalProgress = null;
+        while (System.currentTimeMillis() < deadline) {
+            var progOpt = manager.getProgress(wfaId);
+            if (progOpt.isPresent() && ("COMPLETED".equals(progOpt.get().status()) || "FAILED".equals(progOpt.get().status()))) {
+                finalProgress = progOpt.get();
+                break;
+            }
+            Thread.sleep(200);
+        }
+
+        assertNotNull(finalProgress);
+        assertEquals("COMPLETED", finalProgress.status(), "Job failed: " + finalProgress.errorMessage());
+    }
 }

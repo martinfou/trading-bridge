@@ -542,7 +542,10 @@ public class WfaEngine implements AutoCloseable {
             }
         }
         if (successCount == 0 && !combinations.isEmpty()) {
-            throw new RuntimeException("100% of grid search backtest combinations failed", lastError);
+            String causeMsg = (lastError != null && lastError.getCause() != null && lastError.getCause().getMessage() != null)
+                ? ": " + lastError.getCause().getMessage()
+                : (lastError != null && lastError.getMessage() != null ? ": " + lastError.getMessage() : "");
+            throw new RuntimeException("100% of grid search backtest combinations failed" + causeMsg, lastError);
         }
         return best;
     }
@@ -681,7 +684,16 @@ public class WfaEngine implements AutoCloseable {
                 throw new IllegalArgumentException("Parameter " + name + " cannot be NaN or Infinite");
             }
             try {
+                Object receiver = target;
                 java.lang.reflect.Field field = getFieldCached(clazz, name);
+                if ((field == null || java.lang.reflect.Modifier.isFinal(field.getModifiers())) && strategy != target) {
+                    java.lang.reflect.Field wrapperField = getFieldCached(strategy.getClass(), name);
+                    if (wrapperField != null && !java.lang.reflect.Modifier.isFinal(wrapperField.getModifiers())
+                        && !java.lang.reflect.Modifier.isStatic(wrapperField.getModifiers())) {
+                        field = wrapperField;
+                        receiver = strategy;
+                    }
+                }
                 if (field == null) {
                     throw new IllegalArgumentException("Field " + name + " not found on strategy " + clazz.getName());
                 }
@@ -697,16 +709,16 @@ public class WfaEngine implements AutoCloseable {
                     if (rounded < Integer.MIN_VALUE || rounded > Integer.MAX_VALUE) {
                         throw new IllegalArgumentException("Value " + val + " for field " + name + " exceeds integer bounds");
                     }
-                    field.set(target, (int) rounded);
+                    field.set(receiver, (int) rounded);
                 } else if (type == double.class || type == Double.class) {
-                    field.set(target, val);
+                    field.set(receiver, val);
                 } else if (type == long.class || type == Long.class) {
-                    field.set(target, Math.round(val));
+                    field.set(receiver, Math.round(val));
                 } else if (type == float.class || type == Float.class) {
                     if (val < -Float.MAX_VALUE || val > Float.MAX_VALUE) {
                         throw new IllegalArgumentException("Value " + val + " for field " + name + " exceeds float bounds");
                     }
-                    field.set(target, (float) val);
+                    field.set(receiver, (float) val);
                 } else {
                     throw new IllegalArgumentException("Unsupported field type: " + type.getName() + " for field " + name);
                 }

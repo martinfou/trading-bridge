@@ -1,5 +1,6 @@
 package com.martinfou.trading.runtime.wfa;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.util.List;
 
 /**
@@ -16,8 +17,33 @@ public record WfaRunRequest(
     int outOfSampleDays,
     boolean isAnchored,
     double initialCapital,
-    List<ParameterRangeDto> parameterRanges
+    List<ParameterRangeDto> parameterRanges,
+    String yearSpec,
+    Double lotSize,
+    Double commissionPerTrade,
+    Double slippagePct
 ) {
+    @JsonIgnore
+    public WfaRunRequest(
+        String strategyName,
+        String symbol,
+        String assetClass,
+        String timeframe,
+        String startDate,
+        String endDate,
+        int inSampleDays,
+        int outOfSampleDays,
+        boolean isAnchored,
+        double initialCapital,
+        List<ParameterRangeDto> parameterRanges
+    ) {
+        this(
+            strategyName, symbol, assetClass, timeframe, startDate, endDate,
+            inSampleDays, outOfSampleDays, isAnchored, initialCapital,
+            parameterRanges, null, null, null, null
+        );
+    }
+
     public WfaRunRequest {
         if (strategyName == null || strategyName.isBlank()) {
             throw new IllegalArgumentException("strategyName cannot be null or blank");
@@ -30,6 +56,10 @@ public record WfaRunRequest(
         }
         if (timeframe == null || timeframe.isBlank()) {
             timeframe = "H1";
+        } else if ("DAILY".equalsIgnoreCase(timeframe.trim()) || "1D".equalsIgnoreCase(timeframe.trim())) {
+            timeframe = "D1";
+        } else {
+            timeframe = timeframe.trim().toUpperCase();
         }
         if (inSampleDays <= 0) {
             inSampleDays = 180;

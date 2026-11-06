@@ -57,6 +57,7 @@ public final class SqImportedStrategyCatalog {
         register("SqAaplM30Momentum82914", AaplM30Momentum82914::new);
         register("SqMgcH1Trend29170", MgcH1Trend29170::new);
         register("SqMgcH1Trend64270", MgcH1Trend64270::new);
+        register("MgcM30Pullback22384", MgcM30Pullback22384::new);
     }
 
     private SqImportedStrategyCatalog() {}

@@ -136,12 +136,17 @@ function waitForControlPlane(): Promise<void> {
 
     function poll() {
       const req = http.get(`http://localhost:${CONTROL_PLANE_PORT}/api/strategies`, (res) => {
+        res.resume()
         if (res.statusCode === 200) {
           console.log('[main] Control plane ready')
           resolve()
         } else {
           retryOrTimeout()
         }
+      })
+      req.setTimeout(2000, () => {
+        req.destroy()
+        retryOrTimeout()
       })
       req.on('error', () => retryOrTimeout())
       req.end()

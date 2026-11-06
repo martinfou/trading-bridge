@@ -91,12 +91,23 @@ PORT="${CONTROL_PLANE_PORT:-8080}"
 SHADED_JAR="$ROOT/trading-runtime/target/trading-runtime-1.0.0-SNAPSHOT-shaded.jar"
 
 if [ -z "${NO_CONTROL_PLANE:-}" ]; then
-  if curl -s -f "http://localhost:${PORT}/api/strategies" >/dev/null 2>&1; then
-    echo "Control Plane already running on port ${PORT} — reusing existing server."
+  if curl -s -f --connect-timeout 1 --max-time 2 "http://localhost:${PORT}/api/strategies" >/dev/null 2>&1; then
+    echo "Control Plane already running and healthy on port ${PORT} — reusing existing server."
     export NO_CONTROL_PLANE=true
-  elif [ ! -f "$SHADED_JAR" ]; then
-    echo "Backend JAR not found at $SHADED_JAR — building trading-runtime..."
-    ./mvnw package -pl trading-runtime -am -DskipTests
+  else
+    # If a stale/hung process is holding port 8080 without responding, clean it up
+    if command -v lsof >/dev/null 2>&1; then
+      STALE_PIDS="$(lsof -t -i :"${PORT}" -sTCP:LISTEN 2>/dev/null || true)"
+      if [ -n "$STALE_PIDS" ]; then
+        echo "Cleaning up unresponsive process on port ${PORT} (PID: ${STALE_PIDS})..."
+        kill -9 $STALE_PIDS 2>/dev/null || true
+        sleep 0.5
+      fi
+    fi
+    if [ ! -f "$SHADED_JAR" ]; then
+      echo "Backend JAR not found at $SHADED_JAR — building trading-runtime..."
+      ./mvnw package -pl trading-runtime -am -DskipTests
+    fi
   fi
 fi
 

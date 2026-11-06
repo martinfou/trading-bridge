@@ -909,6 +909,14 @@ public final class ControlPlaneServer implements AutoCloseable {
                     throw ex;
                 }
             })
+            .get("/api/strategies/{id}/parameters", ctx -> {
+                String strategyId = ctx.pathParam("id");
+                var params = com.martinfou.trading.runtime.wfa.WfaParameterInspector.inspect(strategyId);
+                ctx.json(Map.of(
+                    "strategyId", strategyId,
+                    "parameters", params
+                ));
+            })
             .get("/api/strategies/{id}/deployments", ctx -> {
                 String strategyId = ctx.pathParam("id");
                 if (!StrategyCatalog.contains(strategyId)) {

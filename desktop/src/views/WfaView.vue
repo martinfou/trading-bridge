@@ -3,11 +3,10 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useControlPlaneConfig } from '@/composables/controlPlaneConfig'
 import { useControlPlane } from '@/composables/useControlPlane'
 import { useCostPresets } from '@/composables/useCostPresets'
-import type { InstrumentDefinition } from '@/types/control-plane'
+import type { InstrumentDefinition, Strategy } from '@/types/control-plane'
 import WfaTimeline from '@/components/WfaTimeline.vue'
 import WfaParameterStability from '@/components/WfaParameterStability.vue'
 import StrategySelector from '@/components/StrategySelector.vue'
-import type { Strategy } from '@/types/control-plane'
 import {
   Play,
   RotateCw,
@@ -17,43 +16,86 @@ import {
   History,
   Sliders,
   Sparkles,
-  Zap,
-  Clock,
-  Layers,
-  ChevronRight
+  Layers
 } from '@lucide/vue'
 
 const { controlPlaneUrl } = useControlPlaneConfig()
 const { getInstruments } = useControlPlane()
 const { getPresetForSymbol } = useCostPresets()
 
+// ── Standard Timeframes & Year Ranges ─────────────────────────────────
+const TIMEFRAME_OPTIONS = [
+  { value: 'M1', label: 'M1 (1-Min)' },
+  { value: 'M5', label: 'M5 (5-Min)' },
+  { value: 'M15', label: 'M15 (15-Min)' },
+  { value: 'M30', label: 'M30 (30-Min)' },
+  { value: 'H1', label: 'H1 (1-Hour)' },
+  { value: 'H4', label: 'H4 (4-Hour)' },
+  { value: 'D1', label: 'D1 (Daily)' },
+  { value: 'W1', label: 'W1 (Weekly)' }
+]
+
+const YEAR_RANGE_OPTIONS = [
+  { value: '2024-2025', label: '2024–2025 (2 Yrs)' },
+  { value: '2023-2025', label: '2023–2025 (3 Yrs)' },
+  { value: '2022-2025', label: '2022–2025 (4 Yrs)' },
+  { value: '2020-2025', label: '2020–2025 (6 Yrs)' },
+  { value: '2015-2025', label: '2015–2025 (10 Yrs)' },
+  { value: '2025-2026', label: '2025–2026 (Recent)' }
+]
+
+function normalizeTimeframe(tf?: string | null): string {
+  if (!tf) return 'H1'
+  const clean = tf.trim().toUpperCase()
+  if (clean === 'DAILY' || clean === '1D') return 'D1'
+  if (clean === 'WEEKLY' || clean === '1W') return 'W1'
+  if (TIMEFRAME_OPTIONS.some(o => o.value === clean)) return clean
+  return 'H1'
+}
+
 // ── State ─────────────────────────────────────────────────────────────
 const selectedStrategy = ref('LtCrossMomentum')
 const selectedAssetClass = ref<'FUTURES' | 'EQUITY' | 'FOREX'>('FUTURES')
 const selectedSymbol = ref('MES')
 const selectedTimeframe = ref('H1')
+const selectedYearSpec = ref('2023-2025')
 const inSampleDays = ref(180)
 const outOfSampleDays = ref(60)
 const isAnchored = ref(false)
 const initialCapital = ref(10000)
+const lotSize = ref(1)
+const commissionPerTrade = ref(0.62)
+const slippagePct = ref(0.00005)
+
+function applyInstrumentDefaults(sym: string) {
+  const preset = getPresetForSymbol(sym)
+  initialCapital.value = preset.capital
+  lotSize.value = preset.lotSize
+  commissionPerTrade.value = preset.commissionPerTrade
+  slippagePct.value = preset.slippagePct
+}
 
 watch(selectedSymbol, (newSym) => {
-  const preset = getPresetForSymbol(newSym)
-  initialCapital.value = preset.capital
+  applyInstrumentDefaults(newSym)
 })
 
 interface ParamRange {
   name: string
+  label?: string
+  category?: string
+  defaultValue?: number
   min: number
   max: number
   step: number
 }
 
 const paramRanges = ref<ParamRange[]>([
-  { name: 'fastPeriod', min: 5, max: 20, step: 5 },
-  { name: 'slowPeriod', min: 20, max: 60, step: 10 },
-  { name: 'atrPeriod', min: 10, max: 20, step: 5 }
+  { name: 'fastPeriod', label: 'Fast Period', category: 'SIGNAL', defaultValue: 20, min: 10, max: 30, step: 10 },
+  { name: 'slowPeriod', label: 'Slow Period', category: 'SIGNAL', defaultValue: 100, min: 60, max: 140, step: 40 }
 ])
+
+const discoveredCatalogParams = ref<Array<ParamRange & { activeByDefault?: boolean }>>([])
+const isLoadingParams = ref(false)
 
 const isRunning = ref(false)
 const currentWfaId = ref<string | null>(null)
@@ -71,27 +113,17 @@ let pollInterval: any = null
 let timerInterval: any = null
 
 // ── Multi-Asset Symbols ───────────────────────────────────────────────
-const availableStrategies = [
-  { id: 'LtCrossMomentum', name: 'LT Cross Momentum', description: 'Dual EMA with ATR Volatility Filter' },
-  { id: 'LtSupertrendBreakout', name: 'LT Supertrend Breakout', description: 'ATR Volatility Trend Capture' },
-  { id: 'LtDonchianBreakout', name: 'LT Donchian Breakout', description: 'Turtle-Style 20/55-Day Channel Break' },
-  { id: 'LtMacdReversal', name: 'LT MACD Reversal', description: 'MACD Histogram Momentum Shift' },
-  { id: 'LtRSI3Momentum', name: 'LT RSI-3 Momentum', description: 'Short-Cycle RSI Momentum' },
-  { id: 'LtRangeBreakout', name: 'LT Range Breakout', description: 'Multi-Day Range Expansion' },
-  { id: 'LtSqueezeMomentum', name: 'LT Squeeze Momentum', description: 'TTM Squeeze Volatility Expansion' }
-]
-
 const symbolsByAssetClass = computed(() => {
   const futures = rawUniverse.value
     .filter(i => i.assetClass.toUpperCase() === 'FUTURES')
     .map(i => ({ symbol: i.symbol, name: i.name, badge: 'Futures' }))
-  
+
   const equity = rawUniverse.value
-    .filter(i => i.assetClass.toUpperCase() === 'EQUITIES')
+    .filter(i => i.assetClass.toUpperCase() === 'EQUITIES' || i.assetClass.toUpperCase() === 'EQUITY')
     .map(i => ({ symbol: i.symbol, name: i.name, badge: 'Equities' }))
 
   const forex = rawUniverse.value
-    .filter(i => i.assetClass.toUpperCase() === 'FOREX')
+    .filter(i => i.assetClass.toUpperCase() === 'FOREX' || i.assetClass.toUpperCase() === 'COMMODITIES')
     .map(i => ({ symbol: i.symbol, name: i.name, badge: 'Forex' }))
 
   return {
@@ -114,12 +146,24 @@ const symbolsByAssetClass = computed(() => {
       { symbol: 'EUR_USD', name: 'Euro / US Dollar', badge: 'Forex' },
       { symbol: 'GBP_USD', name: 'British Pound / US Dollar', badge: 'Forex' },
       { symbol: 'USD_JPY', name: 'US Dollar / Japanese Yen', badge: 'Forex' },
-      { symbol: 'AUD_USD', name: 'Australian Dollar / US Dollar', badge: 'Forex' }
+      { symbol: 'AUD_USD', name: 'Australian Dollar / US Dollar', badge: 'Forex' },
+      { symbol: 'XAU_USD', name: 'Spot Gold / US Dollar', badge: 'Forex' }
     ]
   }
 })
 
 const currentSymbols = computed(() => symbolsByAssetClass.value[selectedAssetClass.value] || [])
+
+function inferAssetClassForSymbol(sym: string): 'FUTURES' | 'EQUITY' | 'FOREX' {
+  const s = (sym || '').toUpperCase()
+  if (symbolsByAssetClass.value.FUTURES.some(i => i.symbol === s) || ['MGC', 'GC', 'MES', 'MNQ', 'M2K', 'EMD', 'MYM', 'MCL', 'ES', 'NQ'].includes(s)) {
+    return 'FUTURES'
+  }
+  if (symbolsByAssetClass.value.EQUITY.some(i => i.symbol === s) || ['AAPL', 'SPY', 'QQQ', 'IWM', 'MDY', 'NVDA', 'TSLA', 'PLTR', 'IJR', 'VB', 'SCHA', 'SOXL'].includes(s)) {
+    return 'EQUITY'
+  }
+  return 'FOREX'
+}
 
 function onAssetClassSelect(asset: 'FUTURES' | 'EQUITY' | 'FOREX') {
   selectedAssetClass.value = asset
@@ -141,10 +185,18 @@ async function loadUniverse() {
   }
 }
 
-// ── Presets ───────────────────────────────────────────────────────────
-function applyPreset(preset: 'quick' | 'standard' | 'macro' | 'anchored') {
-  if (preset === 'quick') {
-    inSampleDays.value = 120
+// ── Presets & Live Fold Preview ───────────────────────────────────────
+const activePreset = computed(() => {
+  if (isAnchored.value && inSampleDays.value === 180 && outOfSampleDays.value === 60) return 'anchored'
+  if (!isAnchored.value && inSampleDays.value === 90 && outOfSampleDays.value === 30) return 'intraday'
+  if (!isAnchored.value && inSampleDays.value === 180 && outOfSampleDays.value === 60) return 'standard'
+  if (!isAnchored.value && inSampleDays.value === 365 && outOfSampleDays.value === 90) return 'macro'
+  return ''
+})
+
+function applyPreset(preset: 'intraday' | 'standard' | 'macro' | 'anchored') {
+  if (preset === 'intraday') {
+    inSampleDays.value = 90
     outOfSampleDays.value = 30
     isAnchored.value = false
   } else if (preset === 'standard') {
@@ -162,20 +214,115 @@ function applyPreset(preset: 'quick' | 'standard' | 'macro' | 'anchored') {
   }
 }
 
-// ── Combinations Counter ──────────────────────────────────────────────
+const estimatedSpanDays = computed(() => {
+  const parts = selectedYearSpec.value.split('-').map(Number)
+  if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+    return Math.max(365, (parts[1] - parts[0] + 1) * 365)
+  }
+  return 730
+})
+
+const estimatedFolds = computed(() => {
+  const isD = Math.max(15, inSampleDays.value || 180)
+  const oosD = Math.max(7, outOfSampleDays.value || 60)
+  const remaining = estimatedSpanDays.value - isD
+  if (remaining < oosD) return 1
+  return Math.max(1, Math.floor(remaining / oosD))
+})
+
+// ── Combinations Counter & Parameter Introspection ────────────────────
+function stepsForParam(p: ParamRange): number {
+  if (p.step <= 0 || p.max < p.min) return 1
+  return Math.max(1, Math.round((p.max - p.min) / p.step) + 1)
+}
+
 const totalCombinations = computed(() => {
   if (paramRanges.value.length === 0) return 0
   let count = 1
   for (const p of paramRanges.value) {
-    if (p.step <= 0 || p.max < p.min) continue
-    const steps = Math.floor((p.max - p.min) / p.step) + 1
-    count *= Math.max(1, steps)
+    count *= stepsForParam(p)
   }
   return count
 })
 
-function addParam() {
-  paramRanges.value.push({ name: `param${paramRanges.value.length + 1}`, min: 5, max: 25, step: 5 })
+const inactiveCatalogParams = computed(() => {
+  const activeNames = new Set(paramRanges.value.map(p => p.name))
+  return discoveredCatalogParams.value.filter(p => !activeNames.has(p.name))
+})
+
+async function fetchStrategyParameters(strategyId: string) {
+  if (!strategyId) return
+  isLoadingParams.value = true
+  try {
+    const res = await fetch(`${controlPlaneUrl.value}/api/strategies/${encodeURIComponent(strategyId)}/parameters`)
+    if (res.ok) {
+      const data = await res.json()
+      const list = Array.isArray(data.parameters) ? data.parameters : []
+      if (list.length > 0) {
+        discoveredCatalogParams.value = list.map((p: any) => ({
+          name: p.name,
+          label: p.label || p.name,
+          category: p.category || 'SIGNAL',
+          defaultValue: p.defaultValue,
+          min: Number(p.min),
+          max: Number(p.max),
+          step: Number(p.step),
+          activeByDefault: Boolean(p.activeByDefault)
+        }))
+        const defaults = discoveredCatalogParams.value.filter(p => p.activeByDefault)
+        const chosen = (defaults.length > 0 ? defaults : discoveredCatalogParams.value.slice(0, 2)).map(p => ({
+          name: p.name,
+          label: p.label,
+          category: p.category,
+          defaultValue: p.defaultValue,
+          min: p.min,
+          max: p.max,
+          step: p.step
+        }))
+        paramRanges.value = chosen
+        return
+      }
+    }
+  } catch (err) {
+    console.error('Failed to introspect strategy parameters:', err)
+  } finally {
+    isLoadingParams.value = false
+  }
+  // Fallback if server endpoint unreachable
+  paramRanges.value = [
+    { name: 'slScale', label: 'Stop-Loss Distance Scale (×)', category: 'RISK', defaultValue: 1.0, min: 0.75, max: 1.25, step: 0.25 },
+    { name: 'tpScale', label: 'Take-Profit Distance Scale (×)', category: 'RISK', defaultValue: 1.0, min: 0.75, max: 1.5, step: 0.25 }
+  ]
+}
+
+function addCatalogParam(p: ParamRange) {
+  if (paramRanges.value.some(existing => existing.name === p.name)) return
+  paramRanges.value.push({
+    name: p.name,
+    label: p.label,
+    category: p.category,
+    defaultValue: p.defaultValue,
+    min: p.min,
+    max: p.max,
+    step: p.step
+  })
+}
+
+function addCustomParam() {
+  const nextInactive = inactiveCatalogParams.value[0]
+  if (nextInactive) {
+    addCatalogParam(nextInactive)
+    return
+  }
+  paramRanges.value.push({
+    name: 'warmupBars',
+    label: 'Signal Warmup Filter (Bars)',
+    category: 'FILTER',
+    defaultValue: 20,
+    min: 10,
+    max: 40,
+    step: 15
+  })
 }
 
 function removeParam(index: number) {
@@ -185,35 +332,43 @@ function removeParam(index: number) {
 }
 
 function resetStrategyParams() {
-  if (selectedStrategy.value === 'LtCrossMomentum') {
-    paramRanges.value = [
-      { name: 'fastPeriod', min: 5, max: 20, step: 5 },
-      { name: 'slowPeriod', min: 20, max: 60, step: 10 },
-      { name: 'atrPeriod', min: 10, max: 20, step: 5 }
-    ]
-  } else if (selectedStrategy.value === 'LtBollingerSqueeze') {
-    paramRanges.value = [
-      { name: 'bbPeriod', min: 15, max: 30, step: 5 },
-      { name: 'bbStdDev', min: 1.5, max: 2.5, step: 0.5 },
-      { name: 'kcPeriod', min: 15, max: 30, step: 5 }
-    ]
-  } else {
-    paramRanges.value = [
-      { name: 'period1', min: 10, max: 30, step: 5 },
-      { name: 'period2', min: 30, max: 70, step: 10 }
-    ]
-  }
+  fetchStrategyParameters(selectedStrategy.value)
 }
 
 function onWfaStrategySelected(strat: Strategy) {
   selectedStrategy.value = strat.id
-  if (strat.recommendedSymbols && strat.recommendedSymbols.length > 0) {
-    selectedSymbol.value = strat.recommendedSymbols[0]
+  errorMessage.value = null
+
+  const candidateSym = strat.defaultSymbol
+    || (strat.recommendedSymbols && strat.recommendedSymbols.length > 0 ? strat.recommendedSymbols[0] : null)
+  if (candidateSym) {
+    const inferredClass = inferAssetClassForSymbol(candidateSym)
+    selectedAssetClass.value = inferredClass
+    selectedSymbol.value = candidateSym
+    applyInstrumentDefaults(candidateSym)
   }
+
   if (strat.timeframeSuitability && strat.timeframeSuitability.length > 0) {
-    selectedTimeframe.value = strat.timeframeSuitability[0]
+    const normTf = normalizeTimeframe(strat.timeframeSuitability[0])
+    selectedTimeframe.value = normTf
+    if (['M1', 'M5', 'M15', 'M30'].includes(normTf)) {
+      inSampleDays.value = 90
+      outOfSampleDays.value = 30
+    }
+  } else {
+    // Also infer timeframe from generated strategy naming convention e.g. MgcM30Trend53434
+    const tfMatch = strat.id.match(/(M1|M5|M15|M30|H1|H4|D1|W1)/i)
+    if (tfMatch) {
+      const normTf = normalizeTimeframe(tfMatch[1])
+      selectedTimeframe.value = normTf
+      if (['M1', 'M5', 'M15', 'M30'].includes(normTf)) {
+        inSampleDays.value = 90
+        outOfSampleDays.value = 30
+      }
+    }
   }
-  resetStrategyParams()
+
+  fetchStrategyParameters(strat.id)
 }
 
 // ── API & Polling ─────────────────────────────────────────────────────
@@ -247,12 +402,21 @@ async function startWfa() {
     strategyName: selectedStrategy.value,
     symbol: selectedSymbol.value,
     assetClass: selectedAssetClass.value,
-    timeframe: selectedTimeframe.value,
+    timeframe: normalizeTimeframe(selectedTimeframe.value),
+    yearSpec: selectedYearSpec.value,
     inSampleDays: inSampleDays.value,
     outOfSampleDays: outOfSampleDays.value,
     isAnchored: isAnchored.value,
     initialCapital: initialCapital.value,
-    parameterRanges: paramRanges.value
+    lotSize: lotSize.value,
+    commissionPerTrade: commissionPerTrade.value,
+    slippagePct: slippagePct.value,
+    parameterRanges: paramRanges.value.map(p => ({
+      name: p.name,
+      min: p.min,
+      max: p.max,
+      step: p.step
+    }))
   }
 
   try {
@@ -369,7 +533,9 @@ function formatDate(iso: string): string {
 }
 
 onMounted(() => {
+  applyInstrumentDefaults(selectedSymbol.value)
   loadUniverse()
+  fetchStrategyParameters(selectedStrategy.value)
   fetchPreviousRuns()
 })
 
@@ -410,24 +576,19 @@ onUnmounted(() => {
     <div class="wfa-workspace">
       <!-- LEFT SIDEBAR: Configuration Panel -->
       <aside class="wfa-sidebar">
-        <!-- Preset Selector -->
+        <!-- 1. Strategy & Target Instrument -->
         <div class="sidebar-section">
-          <span class="section-label">
-            <Sparkles class="icon-xs text-amber" />
-            Quick Presets
-          </span>
-          <div class="preset-pills">
-            <button class="preset-pill" @click="applyPreset('quick')">Quick (6 Folds)</button>
-            <button class="preset-pill active" @click="applyPreset('standard')">Standard (10 Folds)</button>
-            <button class="preset-pill" @click="applyPreset('macro')">2-Yr Macro</button>
-            <button class="preset-pill" @click="applyPreset('anchored')">Anchored</button>
-          </div>
-        </div>
+          <span class="section-label">1. Strategy &amp; Market Target</span>
 
-        <!-- Asset Class Selector Tabs -->
-        <div class="sidebar-section">
-          <span class="section-label">Asset Class</span>
-          <div class="asset-tabs">
+          <div class="form-group">
+            <label>Strategy (Auto-detects symbol, timeframe &amp; DNA parameters)</label>
+            <StrategySelector
+              v-model="selectedStrategy"
+              @change="onWfaStrategySelected"
+            />
+          </div>
+
+          <div class="asset-tabs mt-1">
             <button
               class="asset-tab futures"
               :class="{ active: selectedAssetClass === 'FUTURES' }"
@@ -450,11 +611,8 @@ onUnmounted(() => {
               Forex
             </button>
           </div>
-        </div>
 
-        <!-- Target Instrument & Strategy -->
-        <div class="sidebar-section form-grid">
-          <div class="form-group">
+          <div class="form-group mt-1">
             <label>Instrument</label>
             <select v-model="selectedSymbol" class="custom-select">
               <option
@@ -467,25 +625,37 @@ onUnmounted(() => {
             </select>
           </div>
 
-          <div class="form-group">
-            <label>Strategy</label>
-            <StrategySelector
-              v-model="selectedStrategy"
-              @change="onWfaStrategySelected"
-            />
-          </div>
-
-          <div class="form-row-2">
+          <div class="form-row-2 mt-1">
             <div class="form-group">
-              <label>Timeframe</label>
+              <label>Timeframe (M1–W1)</label>
               <select v-model="selectedTimeframe" class="custom-select">
-                <option value="H1">H1 (1-Hour)</option>
-                <option value="Daily">D1 (Daily)</option>
-                <option value="M15">M15 (15-Min)</option>
+                <option
+                  v-for="tf in TIMEFRAME_OPTIONS"
+                  :key="tf.value"
+                  :value="tf.value"
+                >
+                  {{ tf.label }}
+                </option>
               </select>
             </div>
             <div class="form-group">
-              <label>Initial Capital</label>
+              <label>Historical Window</label>
+              <select v-model="selectedYearSpec" class="custom-select">
+                <option
+                  v-for="yr in YEAR_RANGE_OPTIONS"
+                  :key="yr.value"
+                  :value="yr.value"
+                >
+                  {{ yr.label }}
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Tiered Cost & Sizing Row -->
+          <div class="form-row-3 mt-1">
+            <div class="form-group">
+              <label>Capital ($)</label>
               <input
                 v-model.number="initialCapital"
                 type="number"
@@ -493,33 +663,87 @@ onUnmounted(() => {
                 class="custom-input"
               />
             </div>
-          </div>
-        </div>
-
-        <!-- Window Protocol -->
-        <div class="sidebar-section">
-          <span class="section-label">
-            <Layers class="icon-xs" />
-            Window Protocol
-          </span>
-          <div class="form-row-2">
             <div class="form-group">
-              <label>In-Sample Days (IS)</label>
+              <label>{{ selectedAssetClass === 'FUTURES' ? 'Contracts' : (selectedAssetClass === 'EQUITY' ? 'Shares' : 'Lots') }}</label>
               <input
-                v-model.number="inSampleDays"
+                v-model.number="lotSize"
                 type="number"
-                min="30"
-                max="720"
-                step="30"
+                step="0.1"
+                min="0.01"
                 class="custom-input"
               />
             </div>
             <div class="form-group">
-              <label>Out-of-Sample Days (OOS)</label>
+              <label>Comm ($)</label>
+              <input
+                v-model.number="commissionPerTrade"
+                type="number"
+                step="0.1"
+                min="0"
+                class="custom-input"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. Window Protocol & Presets -->
+        <div class="sidebar-section">
+          <div class="section-header-row">
+            <span class="section-label">
+              <Layers class="icon-xs text-amber" />
+              2. Walk-Forward Window Protocol
+            </span>
+          </div>
+
+          <div class="preset-pills">
+            <button
+              class="preset-pill"
+              :class="{ active: activePreset === 'intraday' }"
+              @click="applyPreset('intraday')"
+            >
+              Intraday (90d / 30d)
+            </button>
+            <button
+              class="preset-pill"
+              :class="{ active: activePreset === 'standard' }"
+              @click="applyPreset('standard')"
+            >
+              Standard (180d / 60d)
+            </button>
+            <button
+              class="preset-pill"
+              :class="{ active: activePreset === 'macro' }"
+              @click="applyPreset('macro')"
+            >
+              Macro (365d / 90d)
+            </button>
+            <button
+              class="preset-pill"
+              :class="{ active: activePreset === 'anchored' }"
+              @click="applyPreset('anchored')"
+            >
+              Anchored Expanding
+            </button>
+          </div>
+
+          <div class="form-row-2 mt-1">
+            <div class="form-group">
+              <label>In-Sample Train (Days)</label>
+              <input
+                v-model.number="inSampleDays"
+                type="number"
+                min="15"
+                max="720"
+                step="15"
+                class="custom-input"
+              />
+            </div>
+            <div class="form-group">
+              <label>Out-of-Sample Test (Days)</label>
               <input
                 v-model.number="outOfSampleDays"
                 type="number"
-                min="15"
+                min="7"
                 max="180"
                 step="15"
                 class="custom-input"
@@ -527,40 +751,51 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <label class="checkbox-row mt-2">
+          <label class="checkbox-row mt-1">
             <input type="checkbox" v-model="isAnchored" class="custom-checkbox" />
-            <span>Anchored Expanding Window (vs Sliding)</span>
+            <span>Anchored Expanding Window (vs Rolling Sliding)</span>
           </label>
+
+          <!-- Live Fold Preview Banner -->
+          <div class="fold-preview-strip">
+            <Sparkles class="icon-xs text-accent" />
+            <span>
+              Est. <strong>~{{ estimatedFolds }} {{ isAnchored ? 'Anchored' : 'Sliding' }} Folds</strong>
+              ({{ inSampleDays }}d IS → {{ outOfSampleDays }}d OOS) ·
+              <strong>~{{ estimatedFolds * totalCombinations }}</strong> total backtests
+            </span>
+          </div>
         </div>
 
-        <!-- Parameter Grid Editor -->
+        <!-- 3. Parameter Search Grid -->
         <div class="sidebar-section">
           <div class="section-header-row">
             <span class="section-label">
               <Sliders class="icon-xs" />
-              Parameter Search Grid
+              3. Parameter Search Grid
             </span>
-            <span class="combos-badge">{{ totalCombinations }} combos</span>
+            <span class="combos-badge">{{ totalCombinations }} combos / fold</span>
           </div>
 
           <div class="param-grid-list">
             <div
               v-for="(param, idx) in paramRanges"
-              :key="idx"
+              :key="param.name + '-' + idx"
               class="param-row-card"
             >
               <div class="param-header">
-                <input
-                  v-model="param.name"
-                  type="text"
-                  class="param-name-input"
-                  placeholder="Param name"
-                />
+                <div class="param-title-group">
+                  <span class="param-human-label">{{ param.label || param.name }}</span>
+                  <span class="param-code-pill">{{ param.name }}</span>
+                  <span v-if="param.defaultValue !== undefined" class="param-default-pill">
+                    def: {{ param.defaultValue }}
+                  </span>
+                </div>
                 <button
                   v-if="paramRanges.length > 1"
                   @click="removeParam(idx)"
                   class="btn-icon-del"
-                  title="Remove parameter"
+                  title="Remove parameter from grid"
                 >
                   ×
                 </button>
@@ -569,23 +804,38 @@ onUnmounted(() => {
               <div class="param-controls">
                 <div class="param-val-box">
                   <label>Min</label>
-                  <input v-model.number="param.min" type="number" class="mini-input" />
+                  <input v-model.number="param.min" type="number" step="any" class="mini-input" />
                 </div>
                 <div class="param-val-box">
                   <label>Max</label>
-                  <input v-model.number="param.max" type="number" class="mini-input" />
+                  <input v-model.number="param.max" type="number" step="any" class="mini-input" />
                 </div>
                 <div class="param-val-box">
-                  <label>Step</label>
-                  <input v-model.number="param.step" type="number" class="mini-input" />
+                  <label>Step ({{ stepsForParam(param) }}×)</label>
+                  <input v-model.number="param.step" type="number" step="any" class="mini-input" />
                 </div>
               </div>
             </div>
           </div>
 
+          <!-- One-Click Discovered Strategy Parameters -->
+          <div v-if="inactiveCatalogParams.length > 0" class="available-params-box">
+            <span class="avail-label">+ Add strategy parameter:</span>
+            <div class="avail-chips">
+              <button
+                v-for="avail in inactiveCatalogParams"
+                :key="avail.name"
+                class="avail-chip"
+                @click="addCatalogParam(avail)"
+              >
+                + {{ avail.label || avail.name }}
+              </button>
+            </div>
+          </div>
+
           <div class="param-actions">
-            <button class="btn-text" @click="addParam">+ Add Parameter</button>
-            <button class="btn-text text-muted" @click="resetStrategyParams">Reset Defaults</button>
+            <button class="btn-text" @click="addCustomParam">+ Add Parameter</button>
+            <button class="btn-text text-muted" @click="resetStrategyParams">Reset Strategy Defaults</button>
           </div>
         </div>
 
@@ -598,7 +848,7 @@ onUnmounted(() => {
           >
             <RotateCw v-if="isRunning" class="icon-sm spin" />
             <Play v-else class="icon-sm" />
-            <span>{{ isRunning ? 'Optimizing Folds...' : 'Launch Walk-Forward Analysis' }}</span>
+            <span>{{ isRunning ? 'Optimizing Walk-Forward Folds...' : 'Launch Walk-Forward Analysis' }}</span>
           </button>
         </div>
       </aside>
@@ -625,7 +875,7 @@ onUnmounted(() => {
           </div>
           <div class="running-stats">
             <span>Elapsed: <strong>{{ formatDuration(elapsedSeconds) }}</strong></span>
-            <span>Target: <strong>{{ selectedSymbol }} ({{ selectedTimeframe }})</strong></span>
+            <span>Target: <strong>{{ selectedSymbol }} ({{ selectedTimeframe }} · {{ selectedYearSpec }})</strong></span>
             <span>Grid: <strong>{{ totalCombinations }} iterations per fold</strong></span>
           </div>
         </div>
@@ -648,7 +898,8 @@ onUnmounted(() => {
                   {{ activeReport.robustnessVerdict === 'ROBUST' || activeReport.wfe >= 0.6 ? 'ROBUST STRATEGY DETECTED' : 'OVERFITTING DETECTED (CAUTION)' }}
                 </h3>
                 <p class="verdict-desc">
-                  WFE of {{ (activeReport.wfe * 100).toFixed(1) }}% indicates out-of-sample performance holds up strongly against in-sample optimization.
+                  WFE of {{ (activeReport.wfe * 100).toFixed(1) }}% indicates out-of-sample performance
+                  {{ activeReport.wfe >= 0.6 ? 'holds up strongly against' : 'diverges from' }} in-sample optimization.
                 </p>
               </div>
             </div>
@@ -675,14 +926,14 @@ onUnmounted(() => {
               <span class="kpi-sub">Threshold: &gt; 60%</span>
             </div>
             <div class="kpi-card">
-              <span class="kpi-label">Annualized Return</span>
+              <span class="kpi-label">OOS Total Return</span>
               <span class="kpi-value text-cyan">{{ (activeReport.annualizedReturn ?? 0).toFixed(1) }}%</span>
-              <span class="kpi-sub">Compound yearly growth</span>
+              <span class="kpi-sub">Stitched OOS equity growth</span>
             </div>
             <div class="kpi-card">
-              <span class="kpi-label">Max Drawdown</span>
+              <span class="kpi-label">OOS Max Drawdown</span>
               <span class="kpi-value text-rose">{{ (activeReport.maxDd ?? 0).toFixed(1) }}%</span>
-              <span class="kpi-sub">Worst peak-to-trough</span>
+              <span class="kpi-sub">Worst OOS peak-to-trough</span>
             </div>
           </div>
 
@@ -747,21 +998,21 @@ onUnmounted(() => {
           </div>
           <h3>Ready for Walk-Forward Optimization</h3>
           <p>
-            Configure your strategy and parameter search grid on the left, then click
-            <strong>Launch Walk-Forward Analysis</strong> to evaluate parameter stability and overfitting resistance across sliding multi-asset market regimes.
+            Select any built-in or evolutionary strategy on the left—its native instrument, timeframe (<code>M1</code>–<code>W1</code>),
+            cost preset, and real optimizable DNA parameters are configured automatically.
           </p>
           <div class="feature-bullets">
             <div class="bullet-item">
               <CheckCircle class="icon-xs text-emerald" />
-              <span>Multi-Asset support for CME Futures (MES, M2K), US Equities (IWM, MDY), & Forex</span>
+              <span>All 8 standard timeframes (<code>M1</code>, <code>M5</code>, <code>M15</code>, <code>M30</code>, <code>H1</code>, <code>H4</code>, <code>D1</code>, <code>W1</code>) &amp; multi-year BarStore integration</span>
             </div>
             <div class="bullet-item">
               <CheckCircle class="icon-xs text-emerald" />
-              <span>Walk-Forward Efficiency (WFE) score preventing curve-fitting</span>
+              <span>Automatic strategy DNA &amp; field introspection—no manual parameter name guessing</span>
             </div>
             <div class="bullet-item">
               <CheckCircle class="icon-xs text-emerald" />
-              <span>Parameter stability heatmaps identifying robust parameter islands</span>
+              <span>Walk-Forward Efficiency (WFE) score &amp; parameter stability heatmaps across sliding market regimes</span>
             </div>
           </div>
         </div>
@@ -860,7 +1111,7 @@ onUnmounted(() => {
 /* Main Workspace */
 .wfa-workspace {
   display: grid;
-  grid-template-columns: 360px 1fr;
+  grid-template-columns: 390px 1fr;
   gap: 1.25rem;
   flex: 1;
   min-height: 0;
@@ -874,8 +1125,9 @@ onUnmounted(() => {
   padding: 1rem;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.85rem;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .sidebar-section {
@@ -890,9 +1142,10 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.75rem;
-  font-weight: 600;
+  font-size: 0.74rem;
+  font-weight: 700;
   text-transform: uppercase;
+  letter-spacing: 0.03em;
   color: var(--text-secondary);
 }
 
@@ -907,7 +1160,7 @@ onUnmounted(() => {
   font-weight: 600;
   color: var(--info);
   background: rgba(56, 189, 248, 0.1);
-  padding: 0.15rem 0.4rem;
+  padding: 0.15rem 0.45rem;
   border-radius: 4px;
   border: 1px solid rgba(56, 189, 248, 0.3);
 }
@@ -922,15 +1175,16 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid var(--border);
   color: var(--text-secondary);
-  padding: 0.35rem 0.5rem;
-  border-radius: 4px;
-  font-size: 0.75rem;
+  padding: 0.38rem 0.45rem;
+  border-radius: 5px;
+  font-size: 0.72rem;
+  font-weight: 500;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .preset-pill:hover, .preset-pill.active {
-  background: rgba(217, 119, 6, 0.15);
+  background: rgba(217, 119, 6, 0.16);
   border-color: var(--accent);
   color: var(--text-primary);
 }
@@ -947,7 +1201,7 @@ onUnmounted(() => {
   color: var(--text-secondary);
   padding: 0.4rem 0.25rem;
   border-radius: 4px;
-  font-size: 0.75rem;
+  font-size: 0.74rem;
   font-weight: 500;
   cursor: pointer;
   text-align: center;
@@ -975,26 +1229,40 @@ onUnmounted(() => {
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0.25rem;
+  min-width: 0;
 }
 
 .form-group label {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: var(--text-secondary);
 }
 
 .form-row-2 {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.5rem;
 }
 
+.form-row-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.mt-1 {
+  margin-top: 0.25rem;
+}
+
 .custom-select, .custom-input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   background: #0f0f0f;
   border: 1px solid var(--border);
   border-radius: 4px;
-  padding: 0.45rem 0.6rem;
-  font-size: 0.8rem;
+  padding: 0.42rem 0.55rem;
+  font-size: 0.78rem;
   color: var(--text-primary);
   outline: none;
   transition: border-color 0.15s;
@@ -1008,9 +1276,26 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: 0.75rem;
+  font-size: 0.74rem;
   color: var(--text-secondary);
   cursor: pointer;
+}
+
+.fold-preview-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: rgba(217, 119, 6, 0.08);
+  border: 1px solid rgba(217, 119, 6, 0.28);
+  border-radius: 5px;
+  padding: 0.42rem 0.6rem;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+.fold-preview-strip strong {
+  color: var(--text-primary);
 }
 
 /* Param Grid */
@@ -1024,26 +1309,50 @@ onUnmounted(() => {
   background: #0d0d0d;
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 0.5rem;
+  padding: 0.55rem;
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.45rem;
+  min-width: 0;
 }
 
 .param-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 0.4rem;
 }
 
-.param-name-input {
-  background: transparent;
-  border: none;
-  font-size: 0.75rem;
+.param-title-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.param-human-label {
+  font-size: 0.76rem;
   font-weight: 600;
   color: var(--text-primary);
-  outline: none;
-  width: 80%;
+}
+
+.param-code-pill {
+  font-size: 0.65rem;
+  font-family: monospace;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  padding: 0.05rem 0.32rem;
+  border-radius: 3px;
+}
+
+.param-default-pill {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 0.05rem 0.32rem;
+  border-radius: 3px;
 }
 
 .btn-icon-del {
@@ -1052,46 +1361,93 @@ onUnmounted(() => {
   color: var(--danger);
   cursor: pointer;
   font-size: 1rem;
+  line-height: 1;
+  padding: 0 0.2rem;
 }
 
 .param-controls {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 0.3rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.4rem;
 }
 
 .param-val-box {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
+  min-width: 0;
 }
 
 .param-val-box label {
   font-size: 0.65rem;
   color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .mini-input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   background: #141414;
   border: 1px solid var(--border);
-  border-radius: 3px;
-  padding: 0.25rem 0.35rem;
-  font-size: 0.75rem;
+  border-radius: 4px;
+  padding: 0.3rem 0.4rem;
+  font-size: 0.76rem;
   color: var(--text-primary);
   font-family: monospace;
+}
+
+.mini-input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.available-params-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-top: 0.15rem;
+}
+
+.avail-label {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+.avail-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.avail-chip {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  padding: 0.2rem 0.45rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.avail-chip:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+  background: rgba(217, 119, 6, 0.12);
 }
 
 .param-actions {
   display: flex;
   justify-content: space-between;
-  margin-top: 0.25rem;
+  margin-top: 0.2rem;
 }
 
 .btn-text {
   background: transparent;
   border: none;
   color: var(--accent);
-  font-size: 0.75rem;
+  font-size: 0.74rem;
   cursor: pointer;
   padding: 0;
 }
@@ -1106,7 +1462,7 @@ onUnmounted(() => {
   border: none;
   border-radius: 6px;
   color: #fff;
-  padding: 0.65rem 1rem;
+  padding: 0.68rem 1rem;
   font-size: 0.85rem;
   font-weight: 600;
   display: flex;
