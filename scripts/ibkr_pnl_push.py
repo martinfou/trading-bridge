@@ -243,6 +243,17 @@ class FxRates:
             return None
         candle = candle_for(candles, hour_start)
         if candle is None:
+            # Le fill tombe dans une heure encore ouverte : sa bougie n'existe pas encore. On se rabat
+            # sur la derniere cloture H1 COMPLETE anterieure, deja presente dans la fenetre demandee,
+            # au lieu de refuser un taux qui existe. Un vrai trou de cotation reste un refus.
+            earlier = sorted(
+                (c for c in candles
+                 if c.get("complete") is True
+                 and str(c.get("time", ""))[:19] < hour_start.strftime("%Y-%m-%dT%H:%M:%S")),
+                key=lambda c: str(c.get("time", ""))[:19],
+            )
+            candle = earlier[-1] if earlier else None
+        if candle is None:
             self.errors.append(f"{pair} {hour_start:%Y-%m-%dT%H}: aucune bougie H1 complète à cette heure")
             return None
         self.cache[cache_key] = float(candle["mid"]["c"])
