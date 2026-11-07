@@ -2,13 +2,11 @@ package com.martinfou.trading.strategies;
 
 import com.martinfou.trading.core.Strategy;
 import com.martinfou.trading.strategies.creative.CreativeStrategyCatalog;
-import com.martinfou.trading.strategies.generated.GeneratedStrategyCatalog;
 import com.martinfou.trading.strategies.harness.HarnessStrategyCatalog;
 import com.martinfou.trading.strategies.llmweekly.LlmWeeklyStrategyCatalog;
 import com.martinfou.trading.strategies.longterm.LongTermStrategyCatalog;
 import com.martinfou.trading.strategies.newsweekly.NewsWeeklyStrategyCatalog;
 import com.martinfou.trading.strategies.prop.PropStrategyCatalog;
-import com.martinfou.trading.strategies.sqimported.SqImportedStrategyCatalog;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -17,13 +15,13 @@ import java.util.Map;
 import java.util.function.Function;
 
 /**
- * Unified registry for all compiled strategy families.
+ * Unified registry for all compiled and SQLite-backed generated strategy families.
  * Example strategies (e.g. SmaCrossover) register at runtime from {@code trading-examples}.
  */
 public final class StrategyCatalog {
 
     public enum Family {
-        PROP, SQ_IMPORTED, GENERATED, LONG_TERM, LLM_WEEKLY, NEWS_WEEKLY, CREATIVE, HARNESS, EXAMPLE
+        PROP, GENERATED, LONG_TERM, LLM_WEEKLY, NEWS_WEEKLY, CREATIVE, HARNESS, EXAMPLE
     }
 
     public record Entry(
@@ -118,12 +116,22 @@ public final class StrategyCatalog {
         if (id != null && (id.startsWith("FuturesOpeningRangeBreakout") || id.equals("LondonOpenRangeBreakout") || id.equals("AsianRangeMeanReversion"))) {
             return List.of("M1", "M5", "M15", "H1");
         }
+        if (id != null) {
+            if (id.contains("M5")) return List.of("M5", "M15");
+            if (id.contains("M15")) return List.of("M15", "M30", "H1");
+            if (id.contains("M30")) return List.of("M30", "H1");
+        }
         return List.of("H1", "H4", "D1");
     }
 
     private static List<String> resolveRecommendedSymbols(String id, Family family, String defaultSymbol, List<String> assetClasses) {
         if (assetClasses != null && assetClasses.contains("FUTURES")) {
-            return List.of("MES", "MNQ", "M2K", "EMD");
+            List<String> recs = new ArrayList<>(List.of("MGC", "MNQ", "MES", "M2K", "EMD"));
+            if (defaultSymbol != null && !defaultSymbol.isBlank()) {
+                recs.remove(defaultSymbol);
+                recs.addFirst(defaultSymbol);
+            }
+            return List.copyOf(recs);
         }
         if (assetClasses != null && assetClasses.contains("EQUITY") && !assetClasses.contains("FOREX")) {
             return List.of("IJR", "VB", "SCHA", "PLTR", "TSLA");
@@ -156,7 +164,7 @@ public final class StrategyCatalog {
                 default -> "Trend Following";
             };
         }
-        if (family == Family.SQ_IMPORTED) {
+        if (family == Family.GENERATED) {
             return "Rule-Based";
         }
         if (family == Family.LONG_TERM) {
@@ -192,7 +200,7 @@ public final class StrategyCatalog {
                 default -> List.of();
             };
         }
-        if (family == Family.SQ_IMPORTED) {
+        if (family == Family.GENERATED) {
             return List.of("EMA", "RSI", "Bollinger Bands");
         }
         if (family == Family.LONG_TERM) {
@@ -234,8 +242,8 @@ public final class StrategyCatalog {
                 default -> "Built-in prop mechanical strategy.";
             };
         }
-        if (family == Family.SQ_IMPORTED) {
-            return "Machine-generated strategy imported from StrategyQuant.";
+        if (family == Family.GENERATED) {
+            return "Evolutionary strategy discovered by the Native Strategy Generator.";
         }
         if (family == Family.LONG_TERM) {
             return switch (id) {
@@ -264,12 +272,6 @@ public final class StrategyCatalog {
         PropStrategyCatalog.all().keySet().forEach(id ->
             put(id, Family.PROP, PropStrategyCatalog.defaultSymbol(id),
                 sym -> PropStrategyCatalog.create(id, sym)));
-        SqImportedStrategyCatalog.all().keySet().forEach(id ->
-            put(id, Family.SQ_IMPORTED, SqImportedStrategyCatalog.defaultSymbol(id),
-                sym -> SqImportedStrategyCatalog.create(id)));
-        GeneratedStrategyCatalog.all().keySet().forEach(id ->
-            put(id, Family.GENERATED, GeneratedStrategyCatalog.defaultSymbol(id),
-                sym -> GeneratedStrategyCatalog.create(id, sym)));
         LlmWeeklyStrategyCatalog.all().keySet().forEach(id ->
             put(id, Family.LLM_WEEKLY, LlmWeeklyStrategyCatalog.defaultSymbol(id),
                 sym -> LlmWeeklyStrategyCatalog.create(id, sym)));
@@ -341,7 +343,20 @@ public final class StrategyCatalog {
             throw new IllegalArgumentException("Unknown strategy: " + id);
         }
         Strategy strategy = reg.factory().apply(symbol);
+        if (quantityUnits == null && reg.family() == Family.GENERATED) {
+            return strategy;
+        }
         return new FixedQuantityStrategy(strategy, com.martinfou.trading.core.LotSizing.resolveQuantityUnits(quantityUnits, symbol));
+    }
+
+    public static synchronized void unregister(String id) {
+        if (id != null) {
+            ENTRIES.remove(id);
+        }
+    }
+
+    public static synchronized void unregisterAllGenerated() {
+        ENTRIES.entrySet().removeIf(e -> e.getValue().family() == Family.GENERATED);
     }
 
     public static String defaultSymbol(String id) {

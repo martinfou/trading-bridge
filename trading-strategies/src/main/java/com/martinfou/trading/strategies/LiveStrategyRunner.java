@@ -987,20 +987,6 @@ public class LiveStrategyRunner implements Runnable {
     static Map<String, Class<? extends Strategy>> getStrategyMap() {
         Map<String, Class<? extends Strategy>> map = new LinkedHashMap<>();
         try {
-            map.put("2_14_147", Class.forName("com.martinfou.trading.strategies.sqimported.Strategy_2_14_147_Adapted")
-                .asSubclass(Strategy.class));
-            map.put("2_15_195", Class.forName("com.martinfou.trading.strategies.sqimported.Strategy_2_15_195_Adapted")
-                .asSubclass(Strategy.class));
-            map.put("2_31_175", Class.forName("com.martinfou.trading.strategies.sqimported.Strategy_2_31_175_Converted")
-                .asSubclass(Strategy.class));
-            map.put("2_31_177", Class.forName("com.martinfou.trading.strategies.sqimported.Strategy_2_31_177_Converted")
-                .asSubclass(Strategy.class));
-            map.put("2_32_120", Class.forName("com.martinfou.trading.strategies.sqimported.Strategy_2_32_120_Converted")
-                .asSubclass(Strategy.class));
-            map.put("2_36_190", Class.forName("com.martinfou.trading.strategies.sqimported.Strategy_2_36_190_Converted")
-                .asSubclass(Strategy.class));
-            map.put("2_38_112", Class.forName("com.martinfou.trading.strategies.sqimported.Strategy_2_38_112_Converted")
-                .asSubclass(Strategy.class));
             // Creative Lab strategies
             map.put("nymid", Class.forName("com.martinfou.trading.strategies.creative.NYMidSessionMomentumStrategy")
                 .asSubclass(Strategy.class));
@@ -1028,41 +1014,6 @@ public class LiveStrategyRunner implements Runnable {
                 .asSubclass(Strategy.class));
             // Long-term strategies
             map.put("ltrsi3", Class.forName("com.martinfou.trading.strategies.longterm.LtRSI3Momentum")
-                .asSubclass(Strategy.class));
-            // SQ Imported & Futures strategies
-            map.put("sq-gold-m30", Class.forName("com.martinfou.trading.strategies.sqimported.Strategy_Gold_Breakout_M30")
-                .asSubclass(Strategy.class));
-            map.put("sq_gold_m30", Class.forName("com.martinfou.trading.strategies.sqimported.Strategy_Gold_Breakout_M30")
-                .asSubclass(Strategy.class));
-            map.put("gold_breakout_m30", Class.forName("com.martinfou.trading.strategies.sqimported.Strategy_Gold_Breakout_M30")
-                .asSubclass(Strategy.class));
-            map.put("sq-mnq-m15-momentum-0-4248", Class.forName("com.martinfou.trading.strategies.sqimported.SqMnqM15Momentum04248")
-                .asSubclass(Strategy.class));
-            map.put("sq-mnq-m15-breakout-0-1499", Class.forName("com.martinfou.trading.strategies.sqimported.SqMnqM15Breakout01499")
-                .asSubclass(Strategy.class));
-            map.put("sq-mes-h1-meanrev-0-3553", Class.forName("com.martinfou.trading.strategies.sqimported.SqMesH1MeanRev03553")
-                .asSubclass(Strategy.class));
-            map.put("sq-mes-h1-pullback-0-2700", Class.forName("com.martinfou.trading.strategies.sqimported.SqMesH1Pullback02700")
-                .asSubclass(Strategy.class));
-            map.put("sq-gbpjpy-h1-breakout-3-39-125", Class.forName("com.martinfou.trading.strategies.sqimported.SqGbpJpyH1Breakout339125")
-                .asSubclass(Strategy.class));
-            map.put("sq-gbpjpy-h1-breakout-2-20-102", Class.forName("com.martinfou.trading.strategies.sqimported.SqGbpJpyH1Breakout220102")
-                .asSubclass(Strategy.class));
-            map.put("sq-gbpjpy-h1-breakout-4-5-173", Class.forName("com.martinfou.trading.strategies.sqimported.SqGbpJpyH1Breakout45173")
-                .asSubclass(Strategy.class));
-            map.put("sq-gbpjpy-h1-breakout-4-19-179", Class.forName("com.martinfou.trading.strategies.sqimported.SqGbpJpyH1Breakout419179")
-                .asSubclass(Strategy.class));
-            map.put("sq-mgc-m30-breakout-1-29-102", Class.forName("com.martinfou.trading.strategies.sqimported.SqMgcM30Breakout129102")
-                .asSubclass(Strategy.class));
-            map.put("sq-mgc-m30-breakout-0-24542", Class.forName("com.martinfou.trading.strategies.sqimported.SqMgcM30Breakout024542")
-                .asSubclass(Strategy.class));
-            map.put("sq-mgc-m30-breakout-0-32921", Class.forName("com.martinfou.trading.strategies.sqimported.SqMgcM30Breakout032921")
-                .asSubclass(Strategy.class));
-            map.put("sq-mgc-m30-breakout-0-34297", Class.forName("com.martinfou.trading.strategies.sqimported.SqMgcM30Breakout034297")
-                .asSubclass(Strategy.class));
-            map.put("sq-mgc-m30-breakout-0-11248", Class.forName("com.martinfou.trading.strategies.sqimported.SqMgcM30Breakout011248")
-                .asSubclass(Strategy.class));
-            map.put("sq-mnq-m15-momentum-0-6737", Class.forName("com.martinfou.trading.strategies.sqimported.SqMnqM15Momentum06737")
                 .asSubclass(Strategy.class));
             // The week-of-12-October news entries were retired on 2026-10-21 (D67, executed as D68 in
             // docs/paper-window-log.md): the classes stay in newsweekly/ as an archive, but nothing

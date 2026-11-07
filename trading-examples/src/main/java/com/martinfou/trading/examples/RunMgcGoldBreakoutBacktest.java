@@ -4,9 +4,10 @@ import com.martinfou.trading.backtest.BacktestEngine;
 import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.FillMode;
 import com.martinfou.trading.core.Bar;
+import com.martinfou.trading.core.Strategy;
 import com.martinfou.trading.core.TimeConventions;
 import com.martinfou.trading.core.Trade;
-import com.martinfou.trading.strategies.sqimported.Strategy_Gold_Breakout_M30;
+import com.martinfou.trading.strategies.StrategyCatalog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,7 +24,7 @@ import java.util.List;
 /**
  * Step 2: Institutional Backtest & Cost Model Validation for Micro Gold (MGC).
  *
- * <p>Drives {@link Strategy_Gold_Breakout_M30} on real COMEX M30 bars downloaded from IB Gateway.
+ * <p>Drives {@code LtRangeBreakout} on real COMEX M30 bars downloaded from IB Gateway.
  * Enforces real-world COMEX execution costs ($0.62/contract fee, 1 tick slippage) and zero-martingale sizing.</p>
  */
 public class RunMgcGoldBreakoutBacktest {
@@ -47,7 +48,7 @@ public class RunMgcGoldBreakoutBacktest {
             TimeConventions.toDisplayString(bars.get(0).timestamp()),
             TimeConventions.toDisplayString(bars.get(bars.size() - 1).timestamp()));
 
-        Strategy_Gold_Breakout_M30 strategy = new Strategy_Gold_Breakout_M30("MGC");
+        Strategy strategy = StrategyCatalog.create("LtRangeBreakout", "MGC", 1.0);
 
         BacktestEngine engine = new BacktestEngine(strategy, bars, INITIAL_CAPITAL)
             .withCommissionFixed(COMMISSION_PER_CONTRACT)

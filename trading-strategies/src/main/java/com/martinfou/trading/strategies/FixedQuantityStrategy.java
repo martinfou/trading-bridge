@@ -34,6 +34,11 @@ public final class FixedQuantityStrategy implements Strategy {
     }
 
     @Override
+    public void reconcileInstrument(String symbol) {
+        delegate.reconcileInstrument(symbol);
+    }
+
+    @Override
     public void onBar(Bar bar) {
         delegate.onBar(bar);
     }

@@ -6,7 +6,9 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.core.Strategy;
+import com.martinfou.trading.runtime.generator.StrategyGeneratorService;
 import com.martinfou.trading.strategies.LiveStrategyRunner;
+import com.martinfou.trading.strategies.StrategyCatalog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -16,9 +18,11 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 
 /**
@@ -61,8 +65,34 @@ public final class SqStrategyEvaluator implements Function<List<Bar>, List<Order
         loadCursor();
     }
 
+    private static final Map<String, String> LEGACY_ALIASES = Map.of(
+        "sq-gold-m30", "LtRangeBreakout",
+        "sq_gold_m30", "LtRangeBreakout",
+        "gold_breakout_m30", "LtRangeBreakout",
+        "sq-mgc-m30-breakout-0-24542", "MgcM30Breakout49205",
+        "sq-mgc-m30-breakout-1-29-102", "MgcM30Breakout89854",
+        "sq-mgc-m30-breakout-0-32921", "MgcM30Breakout92728"
+    );
+
+    public static Set<String> validStrategyIds() {
+        StrategyGeneratorService.ensureCatalogLoaded();
+        Set<String> ids = new LinkedHashSet<>(StrategyCatalog.ids());
+        ids.addAll(LEGACY_ALIASES.keySet());
+        try {
+            Method m = LiveStrategyRunner.class.getDeclaredMethod("getStrategyMap");
+            m.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            Map<String, Class<? extends Strategy>> map =
+                (Map<String, Class<? extends Strategy>>) m.invoke(null);
+            ids.addAll(map.keySet());
+        } catch (Exception ignored) {
+        }
+        return ids;
+    }
+
     /**
-     * Instantiates a {@link Strategy} by short name from {@code LiveStrategyRunner.getStrategyMap()}.
+     * Instantiates a {@link Strategy} by id from {@link StrategyCatalog} (including SQLite-backed
+     * generated strategies) or {@code LiveStrategyRunner.getStrategyMap()}.
      * Fails closed with {@link IllegalArgumentException} on an unknown strategy name.
      */
     @SuppressWarnings("unchecked")
@@ -71,6 +101,22 @@ public final class SqStrategyEvaluator implements Function<List<Bar>, List<Order
             throw new IllegalArgumentException("STRATEGY is required and must not be blank");
         }
         String key = strategyName.trim();
+        String targetSymbol = (symbol != null && !symbol.isBlank()) ? symbol.trim().toUpperCase() : "MGC";
+        StrategyGeneratorService.ensureCatalogLoaded();
+
+        String resolvedKey = LEGACY_ALIASES.getOrDefault(key, key);
+        if (StrategyCatalog.contains(resolvedKey)) {
+            Strategy instance = StrategyCatalog.create(resolvedKey, targetSymbol);
+            instance.reconcileInstrument(targetSymbol);
+            return instance;
+        }
+        if ((LEGACY_ALIASES.containsKey(key) || LEGACY_ALIASES.containsValue(key))
+            && StrategyCatalog.contains("LtRangeBreakout")) {
+            Strategy instance = StrategyCatalog.create("LtRangeBreakout", targetSymbol);
+            instance.reconcileInstrument(targetSymbol);
+            return instance;
+        }
+
         try {
             Method m = LiveStrategyRunner.class.getDeclaredMethod("getStrategyMap");
             m.setAccessible(true);
@@ -79,10 +125,10 @@ public final class SqStrategyEvaluator implements Function<List<Bar>, List<Order
             Class<? extends Strategy> clazz = map.get(key);
             if (clazz == null) {
                 throw new IllegalArgumentException(
-                    "Unknown strategy '" + key + "'. Valid strategies: " + map.keySet());
+                    "Unknown strategy '" + key + "'. Valid strategies: " + validStrategyIds());
             }
             Strategy instance = clazz.getDeclaredConstructor().newInstance();
-            instance.reconcileInstrument(symbol);
+            instance.reconcileInstrument(targetSymbol);
             return instance;
         } catch (IllegalArgumentException e) {
             throw e;

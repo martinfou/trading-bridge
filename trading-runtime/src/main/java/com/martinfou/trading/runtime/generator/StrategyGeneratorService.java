@@ -280,12 +280,68 @@ public final class StrategyGeneratorService implements AutoCloseable {
                 : 30;
             return buildSampledBands(len, resolvedSplitFolds(), oosPct);
         }
+
+        public DatabankCandidate withoutJavaSourceCode() {
+            if (javaSourceCode == null) {
+                return this;
+            }
+            return new DatabankCandidate(
+                id, symbol, timeframe, yearSpec, archetype, direction, entryOrderType,
+                tier, compositeScore, totalTrades, isTrades, oosTrades,
+                netProfit, isNetProfit, oosNetProfit, totalReturnPct,
+                profitFactor, isProfitFactor, oosProfitFactor,
+                sharpeRatio, isSharpeRatio, oosSharpeRatio,
+                winRatePct, maxDrawdownPct, retDdRatio, rSquared,
+                mcVar95, mcLossProbPct, generationFound, createdAt,
+                promoted, javaFilePath, longSignalSummary, shortSignalSummary,
+                entrySummary, exitSummary, indicators, equityCurve,
+                oosStartIndex, genome, null,
+                initialCapital, lotSize, commissionPerTrade, slippagePct,
+                valStartIndex, valTrades, valNetProfit, valProfitFactor, wfePct,
+                splitFolds, partitionBands,
+                sessionSummary, entryStartHourEt, entryEndHourEt,
+                allowedDaysMask, exitSessionMode, flatCutoffHourEt
+            );
+        }
+
+        public DatabankCandidate withSynthesizedJavaSourceCode() {
+            if (javaSourceCode != null && !javaSourceCode.isBlank()) {
+                return this;
+            }
+            if (genome == null) {
+                return this;
+            }
+            String synthesized = genome.toJavaSourceCode(
+                netProfit, profitFactor, oosProfitFactor, sharpeRatio, maxDrawdownPct, totalTrades, compositeScore
+            );
+            return new DatabankCandidate(
+                id, symbol, timeframe, yearSpec, archetype, direction, entryOrderType,
+                tier, compositeScore, totalTrades, isTrades, oosTrades,
+                netProfit, isNetProfit, oosNetProfit, totalReturnPct,
+                profitFactor, isProfitFactor, oosProfitFactor,
+                sharpeRatio, isSharpeRatio, oosSharpeRatio,
+                winRatePct, maxDrawdownPct, retDdRatio, rSquared,
+                mcVar95, mcLossProbPct, generationFound, createdAt,
+                promoted, javaFilePath, longSignalSummary, shortSignalSummary,
+                entrySummary, exitSummary, indicators, equityCurve,
+                oosStartIndex, genome, synthesized,
+                initialCapital, lotSize, commissionPerTrade, slippagePct,
+                valStartIndex, valTrades, valNetProfit, valProfitFactor, wfePct,
+                splitFolds, partitionBands,
+                sessionSummary, entryStartHourEt, entryEndHourEt,
+                allowedDaysMask, exitSessionMode, flatCutoffHourEt
+            );
+        }
     }
 
+    private static volatile Path lastLoadedDbPath = null;
+    private static volatile long lastLoadedDbMtime = -1L;
+    private static volatile String lastLoadedFirstId = null;
+
     private final Path storageDir;
-    private final Path databankFile;
-    private final Path promotedFile;
-    private final Path sqImportedSourceDir;
+    private final SqliteStrategyDatabank sqliteDatabank;
+    private final Path legacyDatabankFile;
+    private final Path legacyPromotedFile;
     private final ExecutorService jobExecutor = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "strategy-generator-job");
         t.setDaemon(true);
@@ -313,56 +369,112 @@ public final class StrategyGeneratorService implements AutoCloseable {
     private volatile int oosBarsCount = 0;
 
     public StrategyGeneratorService() {
-        this(
-            RuntimeDataPaths.defaultDataDirectory().resolve("generator"),
-            resolveSqImportedDir()
-        );
+        this(RuntimeDataPaths.defaultDataDirectory().resolve("generator"));
     }
 
-    private static Path resolveSqImportedDir() {
-        Path repoRoot = RuntimeDataPaths.scriptsDirectory().getParent();
-        if (repoRoot != null) {
-            return repoRoot.resolve("trading-strategies/src/main/java/com/martinfou/trading/strategies/sqimported");
-        }
-        return Path.of("trading-strategies/src/main/java/com/martinfou/trading/strategies/sqimported");
-    }
-
-    public StrategyGeneratorService(Path storageDir, Path sqImportedSourceDir) {
+    public StrategyGeneratorService(Path storageDir) {
         this.storageDir = storageDir;
-        this.databankFile = storageDir.resolve("databank.json");
-        this.promotedFile = storageDir.resolve("promoted.json");
-        this.sqImportedSourceDir = sqImportedSourceDir;
+        this.sqliteDatabank = new SqliteStrategyDatabank(storageDir.resolve("strategies.db"));
+        this.legacyDatabankFile = storageDir.resolve("databank.json");
+        this.legacyPromotedFile = storageDir.resolve("promoted.json");
         loadPersistedState();
+    }
+
+    public StrategyGeneratorService(Path storageDir, Path ignoredSourceDir) {
+        this(storageDir);
+    }
+
+    /**
+     * Ensures all strategies persisted in {@code strategies.db} are registered in {@link StrategyCatalog}.
+     */
+    public static synchronized void ensureCatalogLoaded() {
+        try {
+            Path dir = RuntimeDataPaths.defaultDataDirectory().resolve("generator");
+            Path dbFile = dir.resolve("strategies.db").toAbsolutePath().normalize();
+            boolean hasLegacyJson = Files.isRegularFile(dir.resolve("databank.json"))
+                || Files.isRegularFile(dir.resolve("promoted.json"));
+            long mtime = Files.isRegularFile(dbFile) ? Files.getLastModifiedTime(dbFile).toMillis() : -1L;
+            if (!hasLegacyJson
+                && dbFile.equals(lastLoadedDbPath)
+                && mtime == lastLoadedDbMtime
+                && (lastLoadedFirstId == null || StrategyCatalog.contains(lastLoadedFirstId))) {
+                return;
+            }
+            SqliteStrategyDatabank db = new SqliteStrategyDatabank(dbFile);
+            List<DatabankCandidate> rows = db.loadAll();
+            if (rows.isEmpty() && hasLegacyJson) {
+                try (StrategyGeneratorService ignored = new StrategyGeneratorService(dir)) {
+                    // Migrates legacy JSON files and registers strategies in StrategyCatalog
+                }
+                return;
+            }
+            String firstId = null;
+            for (DatabankCandidate raw : rows) {
+                DatabankCandidate c = stripSqPrefix(raw);
+                if (c != null && c.id() != null) {
+                    if (firstId == null) {
+                        firstId = c.id();
+                    }
+                    if (!StrategyCatalog.contains(c.id())) {
+                        registerCandidateInCatalog(c);
+                    }
+                }
+            }
+            lastLoadedDbPath = dbFile;
+            lastLoadedDbMtime = Files.isRegularFile(dbFile) ? Files.getLastModifiedTime(dbFile).toMillis() : -1L;
+            lastLoadedFirstId = firstId;
+        } catch (Exception e) {
+            log.debug("Could not auto-load strategies.db into StrategyCatalog: {}", e.getMessage());
+        }
     }
 
     private void loadPersistedState() {
         try {
             Files.createDirectories(storageDir);
-            boolean migrated = false;
-            if (Files.isRegularFile(databankFile)) {
-                List<DatabankCandidate> loaded = MAPPER.readValue(databankFile.toFile(), new TypeReference<>() {});
+            boolean migratedFromJson = false;
+            boolean renamedInSqlite = false;
+
+            for (DatabankCandidate c : sqliteDatabank.loadAll()) {
+                DatabankCandidate norm = stripSqPrefix(c);
+                if (norm == null || norm.id() == null) {
+                    continue;
+                }
+                if (c.id() != null && !c.id().equals(norm.id())) {
+                    sqliteDatabank.delete(c.id());
+                    renamedInSqlite = true;
+                }
+                if (databank.stream().noneMatch(existing -> existing.id().equals(norm.id()))) {
+                    databank.add(norm);
+                }
+            }
+
+            if (Files.isRegularFile(legacyDatabankFile)) {
+                List<DatabankCandidate> loaded = MAPPER.readValue(legacyDatabankFile.toFile(), new TypeReference<>() {});
                 if (loaded != null) {
                     for (DatabankCandidate c : loaded) {
                         DatabankCandidate norm = stripSqPrefix(c);
-                        if (norm != c) {
-                            migrated = true;
+                        if (norm == null || norm.id() == null) {
+                            continue;
                         }
                         if (databank.stream().noneMatch(existing -> existing.id().equals(norm.id()))) {
                             databank.add(norm);
+                            migratedFromJson = true;
                         }
                     }
                 }
             }
-            if (Files.isRegularFile(promotedFile)) {
-                List<DatabankCandidate> promoted = MAPPER.readValue(promotedFile.toFile(), new TypeReference<>() {});
+            if (Files.isRegularFile(legacyPromotedFile)) {
+                List<DatabankCandidate> promoted = MAPPER.readValue(legacyPromotedFile.toFile(), new TypeReference<>() {});
                 if (promoted != null) {
                     for (DatabankCandidate c : promoted) {
                         DatabankCandidate norm = stripSqPrefix(c);
-                        if (norm != c) {
-                            migrated = true;
+                        if (norm == null || norm.id() == null) {
+                            continue;
                         }
                         promotedCatalog.put(norm.id(), norm);
-                        registerInCatalog(norm);
+                        databank.removeIf(existing -> existing.id().equals(norm.id()));
+                        databank.add(norm);
+                        migratedFromJson = true;
                     }
                 }
             }
@@ -372,8 +484,11 @@ public final class StrategyGeneratorService implements AutoCloseable {
                 }
                 registerInCatalog(c);
             }
-            if (migrated) {
-                persistDatabank();
+            if (migratedFromJson || renamedInSqlite || Files.isRegularFile(legacyDatabankFile) || Files.isRegularFile(legacyPromotedFile)) {
+                if (persistDatabank()) {
+                    Files.deleteIfExists(legacyDatabankFile);
+                    Files.deleteIfExists(legacyPromotedFile);
+                }
             }
         } catch (Exception e) {
             log.warn("Failed to load persisted StrategyGenerator databank: {}", e.getMessage());
@@ -394,6 +509,8 @@ public final class StrategyGeneratorService implements AutoCloseable {
             }
         }
         boolean idChanged = !java.util.Objects.equals(oldId, newId);
+        boolean legacySqPath = (c.javaFilePath() != null && c.javaFilePath().contains("/sqimported/"))
+            || (c.javaSourceCode() != null && c.javaSourceCode().contains("package com.martinfou.trading.strategies.sqimported;"));
         boolean splitMismatch = Math.abs((c.isNetProfit() + c.oosNetProfit()) - c.netProfit()) > 1.0
             || (c.isTrades() + c.oosTrades() != c.totalTrades());
         boolean missingDefaults = c.initialCapital() == null || c.lotSize() == null
@@ -404,7 +521,7 @@ public final class StrategyGeneratorService implements AutoCloseable {
             || c.entryEndHourEt() == null || c.allowedDaysMask() == null
             || c.exitSessionMode() == null || c.flatCutoffHourEt() == null
             || splitMismatch;
-        if (!idChanged && !missingDefaults) {
+        if (!idChanged && !legacySqPath && !missingDefaults) {
             return c;
         }
         int normIsTrades = Math.clamp(c.isTrades(), 1, Math.max(1, c.totalTrades() - 1));
@@ -418,8 +535,23 @@ public final class StrategyGeneratorService implements AutoCloseable {
             g.atrPeriod(), g.slAtrMult(), g.tpAtrMult(), g.trailingAtrMult(), g.maxBarsInTrade(),
             g.entryStartHourEt(), g.entryEndHourEt(), g.allowedDaysMask(), g.exitSessionMode(), g.flatCutoffHourEt()
         ) : g;
-        String newPath = (c.javaFilePath() != null && idChanged) ? c.javaFilePath().replace(oldId + ".java", newId + ".java") : c.javaFilePath();
-        String newCode = (c.javaSourceCode() != null && idChanged) ? c.javaSourceCode().replace(oldId, newId) : c.javaSourceCode();
+        String newPath = c.javaFilePath();
+        if (newPath != null) {
+            if (idChanged) {
+                newPath = newPath.replace(oldId + ".java", newId + ".java");
+            }
+            newPath = newPath.replace("/sqimported/", "/generated/");
+        }
+        String newCode = c.javaSourceCode();
+        if (newCode != null) {
+            if (idChanged) {
+                newCode = newCode.replace(oldId, newId);
+            }
+            newCode = newCode.replace(
+                "package com.martinfou.trading.strategies.sqimported;",
+                "package com.martinfou.trading.strategies.generated;"
+            );
+        }
         return new DatabankCandidate(
             newId, c.symbol(), c.timeframe(), c.yearSpec(), c.archetype(), c.direction(), c.entryOrderType(),
             c.tier(), c.compositeScore(), c.totalTrades(), normIsTrades, normOosTrades,
@@ -440,23 +572,26 @@ public final class StrategyGeneratorService implements AutoCloseable {
         );
     }
 
-    private synchronized void persistDatabank() {
+    private synchronized boolean persistDatabank() {
         try {
-            Files.createDirectories(storageDir);
-            MAPPER.writeValue(databankFile.toFile(), new ArrayList<>(databank));
             for (DatabankCandidate c : databank) {
                 if (c.promoted()) {
                     promotedCatalog.put(c.id(), c);
                 }
             }
-            MAPPER.writeValue(promotedFile.toFile(), new ArrayList<>(promotedCatalog.values()));
+            return sqliteDatabank.upsertAll(new ArrayList<>(databank));
         } catch (Exception e) {
-            log.warn("Failed to persist generator databank: {}", e.getMessage());
+            log.warn("Failed to persist generator databank to SQLite: {}", e.getMessage());
+            return false;
         }
     }
 
     private void registerInCatalog(DatabankCandidate c) {
-        if (c == null || c.genome() == null) {
+        registerCandidateInCatalog(c);
+    }
+
+    private static void registerCandidateInCatalog(DatabankCandidate c) {
+        if (c == null || c.id() == null || c.genome() == null) {
             return;
         }
         StrategyGenome genome = c.genome();
@@ -468,13 +603,13 @@ public final class StrategyGeneratorService implements AutoCloseable {
         );
         StrategyCatalog.registerGenerated(
             c.id(),
-            StrategyCatalog.Family.SQ_IMPORTED,
+            StrategyCatalog.Family.GENERATED,
             c.symbol(),
             c.archetype(),
             c.indicators(),
             desc,
             c.archetype(),
-            List.of(c.timeframe()),
+            c.timeframe() != null ? List.of(c.timeframe()) : List.of("H1"),
             sym -> {
                 String targetSym = (sym != null && !sym.isBlank()) ? sym : c.symbol();
                 double defaultUnits = LotSizing.resolveQuantityFromLots(c.resolvedLotSize(), targetSym);
@@ -525,46 +660,28 @@ public final class StrategyGeneratorService implements AutoCloseable {
     public void deleteCandidate(String id) {
         databank.removeIf(c -> c.id().equals(id));
         promotedCatalog.remove(id);
-        persistDatabank();
+        StrategyCatalog.unregister(id);
+        sqliteDatabank.delete(id);
     }
 
     public void clearDatabank() {
         databank.clear();
         promotedCatalog.clear();
-        persistDatabank();
+        StrategyCatalog.unregisterAllGenerated();
+        sqliteDatabank.deleteAll();
     }
 
     public DatabankCandidate promoteToCatalog(String id) throws IOException {
         DatabankCandidate existing = getCandidate(id)
             .orElseThrow(() -> new IllegalArgumentException("Candidate not found in databank: " + id));
 
-        String javaPathStr = existing.javaFilePath();
-        try {
-            Files.createDirectories(sqImportedSourceDir);
-            Path targetJava = sqImportedSourceDir.resolve(existing.id() + ".java");
-            Files.writeString(targetJava, existing.javaSourceCode());
-            javaPathStr = targetJava.toString();
-            log.info("Wrote generated strategy source to {}", targetJava);
-            Path catalogJava = sqImportedSourceDir.resolve("SqImportedStrategyCatalog.java");
-            if (Files.isRegularFile(catalogJava)) {
-                String catalogContent = Files.readString(catalogJava);
-                String regLine = "register(\"" + existing.id() + "\", " + existing.id() + "::new);";
-                if (!catalogContent.contains(regLine)) {
-                    int idx = catalogContent.indexOf("    private SqImportedStrategyCatalog()");
-                    if (idx > 0) {
-                        int closeBrace = catalogContent.lastIndexOf("    }", idx);
-                        if (closeBrace > 0) {
-                            String updatedCatalog = catalogContent.substring(0, closeBrace)
-                                + "        " + regLine + "\n"
-                                + catalogContent.substring(closeBrace);
-                            Files.writeString(catalogJava, updatedCatalog);
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.warn("Could not write Java file for {} (registering in runtime catalog anyway): {}", id, e.getMessage());
-        }
+        String storageUri = "sqlite://strategies.db#" + existing.id();
+        String sourceToWrite = existing.javaSourceCode() != null
+            ? existing.javaSourceCode().replace(
+                "package com.martinfou.trading.strategies.sqimported;",
+                "package com.martinfou.trading.strategies.generated;"
+            )
+            : "";
 
         DatabankCandidate updated = new DatabankCandidate(
             existing.id(),
@@ -598,7 +715,7 @@ public final class StrategyGeneratorService implements AutoCloseable {
             existing.generationFound(),
             existing.createdAt(),
             true,
-            javaPathStr,
+            storageUri,
             existing.longSignalSummary(),
             existing.shortSignalSummary(),
             existing.entrySummary(),
@@ -607,7 +724,7 @@ public final class StrategyGeneratorService implements AutoCloseable {
             existing.equityCurve(),
             existing.oosStartIndex(),
             existing.genome(),
-            existing.javaSourceCode(),
+            sourceToWrite,
             existing.resolvedCapital(),
             existing.resolvedLotSize(),
             existing.resolvedCommission(),
@@ -633,8 +750,10 @@ public final class StrategyGeneratorService implements AutoCloseable {
                 break;
             }
         }
+        promotedCatalog.put(updated.id(), updated);
         registerInCatalog(updated);
-        persistDatabank();
+        sqliteDatabank.upsert(updated);
+        log.info("Promoted strategy {} in SQLite databank ({})", updated.id(), sqliteDatabank.dbPath());
         return updated;
     }
 
@@ -1134,7 +1253,7 @@ public final class StrategyGeneratorService implements AutoCloseable {
                 generation,
                 Instant.now(),
                 false,
-                "trading-strategies/src/main/java/com/martinfou/trading/strategies/sqimported/" + genome.id() + ".java",
+                "sqlite://strategies.db#" + genome.id(),
                 genome.longSignalSummary(),
                 genome.shortSignalSummary(),
                 genome.entrySummary(),

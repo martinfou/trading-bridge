@@ -165,10 +165,8 @@ class LiveStrategyRunnerInstrumentTest {
     // Story 1.9 — the live config declares all deployed strategies, risk sum <= 3%
     // ========================================================================
 
-    /** The nine strategies that actually run in containers (docker-compose.yml: paper -014 + dev -012). */
+    /** The five strategies that actually run in containers (docker-compose.yml: paper -014 + dev -012). */
     static final List<String> DEPLOYED = List.of(
-        "sq-gbpjpy-h1-breakout-4-5-173", "sq-gbpjpy-h1-breakout-3-39-125",
-        "sq-gbpjpy-h1-breakout-4-19-179", "sq-gbpjpy-h1-breakout-2-20-102",
         "vwpreversion", "consecbar", "ltrsi3", "compmomentum", "monthweekphase");
 
     /**

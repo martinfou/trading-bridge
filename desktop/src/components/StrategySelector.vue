@@ -224,7 +224,7 @@ const highlightedIndex = ref(0)
 
 const filterChips = [
   { id: 'all', label: 'All', type: 'asset', value: 'ALL' },
-  { id: 'sqx', label: '🤖 SQX / Generated', type: 'family', value: 'SQ_IMPORTED' },
+  { id: 'generated', label: '🧬 Generated', type: 'family', value: 'GENERATED' },
   { id: 'futures', label: '⚡ Futures', type: 'asset', value: 'FUTURES' },
   { id: 'forex', label: '💱 Forex', type: 'asset', value: 'FOREX' },
   { id: 'equity', label: '📈 Equities', type: 'asset', value: 'EQUITY' },

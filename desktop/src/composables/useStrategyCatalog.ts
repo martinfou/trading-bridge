@@ -25,7 +25,7 @@ export function useStrategyCatalog() {
       if (saved) {
         const parsed = JSON.parse(saved)
         if (parsed.assetClass) selectedAssetClass.value = parsed.assetClass
-        if (parsed.family) selectedFamily.value = parsed.family
+        if (parsed.family) selectedFamily.value = parsed.family === 'SQ_IMPORTED' ? 'GENERATED' : parsed.family
         if (parsed.style) selectedStyle.value = parsed.style
       }
     } catch {
@@ -122,7 +122,11 @@ export function useStrategyCatalog() {
 
     // Family filter
     if (selectedFamily.value !== 'ALL') {
-      result = result.filter(s => s.family === selectedFamily.value)
+      if (selectedFamily.value === 'GENERATED' || selectedFamily.value === 'SQ_IMPORTED') {
+        result = result.filter(s => s.family === 'GENERATED' || s.family === 'SQ_IMPORTED')
+      } else {
+        result = result.filter(s => s.family === selectedFamily.value)
+      }
     }
 
     // Style filter
@@ -156,7 +160,7 @@ export function useStrategyCatalog() {
 
     for (const s of filteredStrategies.value) {
       if (s.family === 'SQ_IMPORTED' || s.family === 'GENERATED' || s.id.startsWith('Sq')) {
-        sqGroup.unshift(s) // Newest generated/promoted strategies first
+        sqGroup.push(s) // Preserve descending composite_score order from SQLite databank
       } else if (s.assetClasses?.includes('FUTURES') || s.id.startsWith('Futures')) {
         futuresGroup.push(s)
       } else if (s.family === 'PROP') {
@@ -169,7 +173,7 @@ export function useStrategyCatalog() {
     }
 
     const groups: Record<string, Strategy[]> = {}
-    if (sqGroup.length > 0) groups['🤖 StrategyQuant & Generated Models'] = sqGroup
+    if (sqGroup.length > 0) groups['🧬 Generated & Evolved Models'] = sqGroup
     if (futuresGroup.length > 0) groups['⚡ CME Futures (IBKR)'] = futuresGroup
     if (propGroup.length > 0) groups['🏛️ Prop Mechanical Desk'] = propGroup
     if (ltGroup.length > 0) groups['📈 Systematic Multi-Asset / Long-Term'] = ltGroup

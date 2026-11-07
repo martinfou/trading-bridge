@@ -128,11 +128,11 @@ class WfaManagerTest {
         assertFalse(ltParams.isEmpty());
         assertTrue(ltParams.stream().anyMatch(p -> "fastPeriod".equals(p.name())));
 
-        var mgcParams = WfaParameterInspector.inspect("MgcM30Trend28281");
+        var mgcParams = WfaParameterInspector.inspect("MgcM30Breakout49205");
         assertFalse(mgcParams.isEmpty());
 
         WfaRunRequest request = new WfaRunRequest(
-            "MgcM30Trend28281",
+            "MgcM30Breakout49205",
             "MGC",
             "FUTURES",
             "M30",

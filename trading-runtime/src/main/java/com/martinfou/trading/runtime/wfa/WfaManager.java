@@ -150,6 +150,12 @@ public class WfaManager implements AutoCloseable {
             }
 
             LotSizing.InstrumentDefaults defaults = LotSizing.defaultsForSymbol(request.symbol());
+            if (request.strategyName() == null || !StrategyCatalog.contains(request.strategyName())) {
+                com.martinfou.trading.runtime.generator.StrategyGeneratorService.ensureCatalogLoaded();
+            }
+            if (request.strategyName() == null || !StrategyCatalog.contains(request.strategyName())) {
+                throw new IllegalArgumentException("Unknown strategy: " + request.strategyName());
+            }
             double capital = request.initialCapital() > 0 ? request.initialCapital() : defaults.capital();
             double lotSize = request.lotSize() != null && request.lotSize() > 0 ? request.lotSize() : defaults.lotSize();
             double quantityUnits = LotSizing.resolveQuantityFromLots(lotSize, request.symbol());

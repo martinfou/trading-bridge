@@ -93,6 +93,7 @@ lib/
 data/historical
 data/historical/*
 data/runtime/*.db
+!data/runtime/generator/strategies.db
 data/runtime/*.db-shm
 data/runtime/*.db-wal
 

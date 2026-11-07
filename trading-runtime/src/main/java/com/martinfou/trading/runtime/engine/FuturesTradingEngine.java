@@ -98,12 +98,12 @@ public final class FuturesTradingEngine {
                 "Unknown futures symbol '" + cfg.symbol() + "'. Valid symbols: " + FuturesRegistry.all().keySet());
         }
 
-        // 4. Validate strategy in LiveStrategyRunner.getStrategyMap()
-        Map<String, Class<? extends Strategy>> strategyMap = loadStrategyMap();
+        // 4. Validate strategy in StrategyCatalog / SqStrategyEvaluator
+        Set<String> validStrategies = SqStrategyEvaluator.validStrategyIds();
         String strategyKey = cfg.strategy() != null ? cfg.strategy().trim() : "";
-        if (strategyKey.isEmpty() || !strategyMap.containsKey(strategyKey)) {
+        if (strategyKey.isEmpty() || !validStrategies.contains(strategyKey)) {
             throw new IllegalArgumentException(
-                "Unknown strategy '" + cfg.strategy() + "'. Valid strategies: " + strategyMap.keySet());
+                "Unknown strategy '" + cfg.strategy() + "'. Valid strategies: " + validStrategies);
         }
 
         // 5. Validate timeframe & capital & costs
@@ -143,17 +143,6 @@ public final class FuturesTradingEngine {
                     "Refusing to run in 'paper' mode (F5): config must either name the validating backtest "
                     + "in 'validatedBy' or explicitly set 'unvalidated: true'.");
             }
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    public static Map<String, Class<? extends Strategy>> loadStrategyMap() {
-        try {
-            Method m = LiveStrategyRunner.class.getDeclaredMethod("getStrategyMap");
-            m.setAccessible(true);
-            return (Map<String, Class<? extends Strategy>>) m.invoke(null);
-        } catch (Exception e) {
-            throw new IllegalStateException("Unable to inspect LiveStrategyRunner.getStrategyMap()", e);
         }
     }
 

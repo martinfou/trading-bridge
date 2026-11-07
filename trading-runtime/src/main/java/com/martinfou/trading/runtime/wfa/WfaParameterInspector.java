@@ -1,6 +1,7 @@
 package com.martinfou.trading.runtime.wfa;
 
 import com.martinfou.trading.core.Strategy;
+import com.martinfou.trading.runtime.generator.StrategyGeneratorService;
 import com.martinfou.trading.runtime.generator.StrategyGenome;
 import com.martinfou.trading.strategies.StrategyCatalog;
 
@@ -40,7 +41,13 @@ public final class WfaParameterInspector {
     private WfaParameterInspector() {}
 
     public static List<StrategyParamMetadata> inspect(String strategyId) {
-        if (strategyId == null || strategyId.isBlank() || !StrategyCatalog.contains(strategyId)) {
+        if (strategyId == null || strategyId.isBlank()) {
+            return defaultFallbackMetadata();
+        }
+        if (!StrategyCatalog.contains(strategyId)) {
+            StrategyGeneratorService.ensureCatalogLoaded();
+        }
+        if (!StrategyCatalog.contains(strategyId)) {
             return defaultFallbackMetadata();
         }
 

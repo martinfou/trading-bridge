@@ -616,7 +616,7 @@ public record StrategyGenome(
 
     /**
      * Generates a clean, self-contained, compilable Java Strategy source file in
-     * {@code com.martinfou.trading.strategies.sqimported}.
+     * {@code com.martinfou.trading.strategies.generated}.
      */
     public String toJavaSourceCode(
         double netProfit,
@@ -628,7 +628,7 @@ public record StrategyGenome(
         double compositeScore
     ) {
         StringBuilder sb = new StringBuilder(6144);
-        sb.append("package com.martinfou.trading.strategies.sqimported;\n\n");
+        sb.append("package com.martinfou.trading.strategies.generated;\n\n");
         sb.append("import com.martinfou.trading.core.Bar;\n");
         sb.append("import com.martinfou.trading.core.FuturesRegistry;\n");
         sb.append("import com.martinfou.trading.core.LotSizing;\n");

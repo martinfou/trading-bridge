@@ -24,15 +24,26 @@ class StrategyCatalogTest {
         assertEquals(Family.PROP, StrategyCatalog.family("LondonOpenRangeBreakout"));
         assertEquals("EUR_USD", StrategyCatalog.defaultSymbol("LondonOpenRangeBreakout"));
 
-        Strategy sq = StrategyCatalog.create("Strategy_2_14_147_Adapted", "GBP_JPY");
-        assertNotNull(sq);
-        assertEquals(Family.SQ_IMPORTED, StrategyCatalog.family("Strategy_2_14_147_Adapted"));
-        assertEquals("GBP_JPY", StrategyCatalog.defaultSymbol("Strategy_2_14_147_Adapted"));
+        Strategy lt = StrategyCatalog.create("LtCrossMomentum", "EUR_USD");
+        assertNotNull(lt);
+        assertEquals(Family.LONG_TERM, StrategyCatalog.family("LtCrossMomentum"));
+        assertEquals("EUR_USD", StrategyCatalog.defaultSymbol("LtCrossMomentum"));
 
-        Strategy generated = StrategyCatalog.create("MyStrategy", "EUR_USD");
+        StrategyCatalog.registerGenerated(
+            "TestGeneratedBreakout99999",
+            Family.GENERATED,
+            "MGC",
+            "BREAKOUT",
+            java.util.List.of("DONCHIAN_BREAKOUT"),
+            "SQLite-backed generated futures strategy",
+            "BREAKOUT",
+            java.util.List.of("M30"),
+            sym -> StrategyCatalog.create("LtRangeBreakout", sym)
+        );
+        Strategy generated = StrategyCatalog.create("TestGeneratedBreakout99999", "MGC");
         assertNotNull(generated);
-        assertEquals(Family.GENERATED, StrategyCatalog.family("MyStrategy"));
-        assertEquals("EUR_USD", StrategyCatalog.defaultSymbol("MyStrategy"));
+        assertEquals(Family.GENERATED, StrategyCatalog.family("TestGeneratedBreakout99999"));
+        assertEquals("MGC", StrategyCatalog.defaultSymbol("TestGeneratedBreakout99999"));
 
         Strategy harness = StrategyCatalog.create("Harness_NeverTrade", "EUR_USD");
         assertNotNull(harness);
@@ -40,7 +51,7 @@ class StrategyCatalogTest {
         assertEquals("EUR_USD", StrategyCatalog.defaultSymbol("Harness_NeverTrade"));
 
         StrategyCatalog.register("SmaCrossover", Family.EXAMPLE,
-            sym -> StrategyCatalog.create("MyStrategy", sym), "EUR_USD");
+            sym -> StrategyCatalog.create("LtCrossMomentum", sym), "EUR_USD");
         Strategy example = StrategyCatalog.create("SmaCrossover", "EUR_USD");
         assertNotNull(example);
         assertEquals(Family.EXAMPLE, StrategyCatalog.family("SmaCrossover"));
@@ -51,18 +62,17 @@ class StrategyCatalogTest {
     void entriesIncludeAllBuiltInFamilies() {
         assertTrue(StrategyCatalog.entries().size() >= 20);
         assertTrue(StrategyCatalog.ids().contains("LondonOpenRangeBreakout"));
-        assertTrue(StrategyCatalog.ids().contains("Strategy_2_14_147_Adapted"));
-        assertTrue(StrategyCatalog.ids().contains("MyStrategy"));
+        assertTrue(StrategyCatalog.ids().contains("LtCrossMomentum"));
         assertTrue(StrategyCatalog.ids().contains("Harness_DailyRoundTrip"));
     }
 
     @Test
     void registerDuplicateIdThrows() {
         StrategyCatalog.register("DupExample", Family.EXAMPLE,
-            sym -> StrategyCatalog.create("MyStrategy", sym), "EUR_USD");
+            sym -> StrategyCatalog.create("LtCrossMomentum", sym), "EUR_USD");
         assertThrows(IllegalStateException.class, () ->
             StrategyCatalog.register("DupExample", Family.EXAMPLE,
-                sym -> StrategyCatalog.create("MyStrategy", sym), "EUR_USD"));
+                sym -> StrategyCatalog.create("LtCrossMomentum", sym), "EUR_USD"));
     }
 
     @Test

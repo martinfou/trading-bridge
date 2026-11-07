@@ -10,9 +10,10 @@ import com.martinfou.trading.broker.OrderSubmitResult;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.core.Position;
+import com.martinfou.trading.core.Strategy;
 import com.martinfou.trading.data.HistoricalDataLoader;
 import com.martinfou.trading.runtime.ibkr.IbkrLiveRunner;
-import com.martinfou.trading.strategies.sqimported.Strategy_Gold_Breakout_M30;
+import com.martinfou.trading.runtime.ibkr.SqStrategyEvaluator;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -151,7 +152,7 @@ class FuturesTradingEngineTest {
 
         // Direct baseline run identical to RunMgcGoldBreakoutBacktest.main()
         List<Bar> baselineBars = FuturesTradingEngine.loadIbkrOrStandardCsv(csvPath, "MGC");
-        Strategy_Gold_Breakout_M30 baselineStrategy = new Strategy_Gold_Breakout_M30("MGC");
+        com.martinfou.trading.core.Strategy baselineStrategy = SqStrategyEvaluator.instantiateStrategy("sq-gold-m30", "MGC");
         BacktestResult baselineResult = new BacktestEngine(baselineStrategy, baselineBars, 11_270.0)
             .withCommissionFixed(0.62)
             .withSlippageFixed(0.10)
@@ -324,14 +325,14 @@ class FuturesTradingEngineTest {
             }
         }
 
-        BacktestResult csvGoldRes = new BacktestEngine(new Strategy_Gold_Breakout_M30("MGC"), csvBars, 11_270.0)
+        BacktestResult csvGoldRes = new BacktestEngine(SqStrategyEvaluator.instantiateStrategy("sq-gold-m30", "MGC"), csvBars, 11_270.0)
             .withCommissionFixed(0.62)
             .withSlippageFixed(0.10)
             .withFillMode(FillMode.TOUCH)
             .withMarginTracking(true)
             .run();
 
-        BacktestResult barsGoldRes = new BacktestEngine(new Strategy_Gold_Breakout_M30("MGC"), barsWindow, 11_270.0)
+        BacktestResult barsGoldRes = new BacktestEngine(SqStrategyEvaluator.instantiateStrategy("sq-gold-m30", "MGC"), barsWindow, 11_270.0)
             .withCommissionFixed(0.62)
             .withSlippageFixed(0.10)
             .withFillMode(FillMode.TOUCH)
