@@ -232,8 +232,9 @@ export function useControlPlane() {
     return data.runs
   }
 
-  async function getControlSummary(): Promise<any> {
-    return apiGet<any>('/api/control/summary', controlPlaneUrl.value)
+  async function getControlSummary(refresh = false): Promise<any> {
+    const query = refresh ? '?refresh=true' : ''
+    return apiGet<any>(`/api/control/summary${query}`, controlPlaneUrl.value)
   }
 
   async function killStrategy(

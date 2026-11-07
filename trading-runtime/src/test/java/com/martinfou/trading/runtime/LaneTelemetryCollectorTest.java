@@ -146,6 +146,19 @@ class LaneTelemetryCollectorTest {
             StandardCharsets.UTF_8
         );
 
+        Files.writeString(
+            futuresStateDir.resolve("MgcH1Breakout38023-MGC-cursor.json"),
+            """
+            {
+              "strategy": "MgcH1Breakout38023",
+              "symbol": "MGC",
+              "timeframe": "H1",
+              "savedAt": "2026-11-07T01:55:00Z"
+            }
+            """,
+            StandardCharsets.UTF_8
+        );
+
         // Corrupt cursor file should be skipped gracefully
         Files.writeString(futuresStateDir.resolve("corrupt-cursor.json"), "{not-valid-json", StandardCharsets.UTF_8);
 
@@ -217,7 +230,16 @@ class LaneTelemetryCollectorTest {
             Instant.parse("2026-11-07T02:00:00Z")
         );
 
-        assertEquals(3, runs.size());
+        assertEquals(4, runs.size());
+
+        Map<String, Object> mgcH1Run = runs.stream()
+            .filter(r -> "MgcH1Breakout38023".equals(r.get("strategyId")))
+            .findFirst()
+            .orElseThrow();
+        assertEquals("MGC", mgcH1Run.get("symbol"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> mgcH1Snap = (Map<String, Object>) mgcH1Run.get("configSnapshot");
+        assertEquals("H1", mgcH1Snap.get("strategyTimeframe"));
 
         Map<String, Object> gbpRun = runs.stream()
             .filter(r -> "sq-gbpjpy-h1-breakout-4-19-179".equals(r.get("strategyId")))

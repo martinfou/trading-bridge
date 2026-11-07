@@ -554,8 +554,18 @@ public final class ControlPlaneServer implements AutoCloseable {
             .post("/api/weekly-builder/plan", ctx -> respondWeeklyTrigger(ctx, weeklyBuilderService.triggerPlanAsync()))
             .post("/api/weekly-builder/compile", ctx -> respondWeeklyTrigger(ctx, weeklyBuilderService.triggerCompileAsync()))
             .post("/api/weekly-builder/deploy", ctx -> respondWeeklyTrigger(ctx, weeklyBuilderService.triggerDeployAsync()))
-            .get("/control/summary", ctx -> ctx.json(buildEnrichedControlSummary(summaryService)))
-            .get("/api/control/summary", ctx -> ctx.json(buildEnrichedControlSummary(summaryService)))
+            .get("/control/summary", ctx -> {
+                boolean force = "true".equalsIgnoreCase(ctx.queryParam("refresh"))
+                    || "true".equalsIgnoreCase(ctx.queryParam("force"))
+                    || "1".equals(ctx.queryParam("refresh"));
+                ctx.json(buildEnrichedControlSummary(summaryService, force));
+            })
+            .get("/api/control/summary", ctx -> {
+                boolean force = "true".equalsIgnoreCase(ctx.queryParam("refresh"))
+                    || "true".equalsIgnoreCase(ctx.queryParam("force"))
+                    || "1".equals(ctx.queryParam("refresh"));
+                ctx.json(buildEnrichedControlSummary(summaryService, force));
+            })
             .get("/api/telemetry/lanes", ctx -> {
                 String venueId = ctx.queryParam("venueId");
                 String maskedAccountId = ctx.queryParam("maskedAccountId");
@@ -2228,7 +2238,7 @@ public final class ControlPlaneServer implements AutoCloseable {
     private static volatile long cachedBrokerBalancesAtMs = 0L;
     private static volatile List<Map<String, Object>> cachedBrokerBalances = List.of();
 
-    private static Map<String, Object> buildEnrichedControlSummary(ControlSummaryService summaryService) {
+    private static Map<String, Object> buildEnrichedControlSummary(ControlSummaryService summaryService, boolean forceRefresh) {
         Map<String, Object> base = new LinkedHashMap<>(summaryService.buildSummary());
         boolean isTest = com.martinfou.trading.core.guardrails.OrderTripwire.isTestRuntime(
             System.getenv(),
@@ -2237,6 +2247,9 @@ public final class ControlPlaneServer implements AutoCloseable {
             return base;
         }
         try {
+            if (forceRefresh) {
+                RemoteCoreClient.invalidateCache();
+            }
             Object rawRuns = base.get("runs");
             List<Map<String, Object>> combinedRuns = new ArrayList<>();
             java.util.Set<String> seenStrategies = new java.util.HashSet<>();
@@ -2253,20 +2266,21 @@ public final class ControlPlaneServer implements AutoCloseable {
                     }
                 }
             }
-            List<Map<String, Object>> laneRuns = new ArrayList<>(new LaneTelemetryCollector()
-                .collectLaneStrategyRuns(seenStrategies, Instant.now()));
-            for (Map<String, Object> lr : laneRuns) {
-                Object sid = lr.get("strategyId");
-                if (sid != null) {
-                    seenStrategies.add(sid.toString());
-                }
-            }
+            List<Map<String, Object>> laneRuns = new ArrayList<>();
             RemoteCoreClient.RemoteTelemetrySnapshot remote = new RemoteCoreClient()
-                .fetchRemoteTelemetry("ibkr-paper", "", false);
+                .fetchRemoteTelemetry("ibkr-paper", "", forceRefresh);
             for (Map<String, Object> rr : remote.laneRuns()) {
                 Object sid = rr.get("strategyId");
                 if (sid != null && !sid.toString().isBlank() && seenStrategies.add(sid.toString())) {
                     laneRuns.add(rr);
+                }
+            }
+            List<Map<String, Object>> localLaneRuns = new LaneTelemetryCollector()
+                .collectLaneStrategyRuns(seenStrategies, Instant.now());
+            for (Map<String, Object> lr : localLaneRuns) {
+                Object sid = lr.get("strategyId");
+                if (sid != null && !sid.toString().isBlank() && seenStrategies.add(sid.toString())) {
+                    laneRuns.add(lr);
                 }
             }
             if (!laneRuns.isEmpty()) {

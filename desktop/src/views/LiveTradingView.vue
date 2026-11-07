@@ -132,9 +132,16 @@ const selectedTradeVenueFilter = ref<string>('ALL')
 const selectedTradeStateFilter = ref<'ALL' | 'OPEN' | 'CLOSED'>('ALL')
 const selectedTradeStrategyFilter = ref<string>('ALL')
 
+const LEGACY_STRATEGY_ALIASES: Record<string, string> = {
+  'sq-mgc-m30-breakout-0-24542': 'MgcM30Breakout49205',
+  'sq-mgc-m30-breakout-1-29-102': 'MgcM30Breakout89854',
+  'sq-mgc-m30-breakout-0-32921': 'MgcM30Breakout92728'
+}
+
 function cleanStrategyTag(raw?: string | null): string {
   if (!raw) return ''
-  return raw.trim().replace(/_(MGC|MNQ|MES|M2K|MCL|GC|NQ|ES|GBPJPY|GBP_JPY|USDCHF|USD_CHF|USDJPY|USD_JPY|EURUSD|EUR_USD)[A-Z0-9]*$/i, '')
+  const cleaned = raw.trim().replace(/_(MGC|MNQ|MES|M2K|MCL|GC|NQ|ES|GBPJPY|GBP_JPY|USDCHF|USD_CHF|USDJPY|USD_JPY|EURUSD|EUR_USD)[A-Z0-9]*$/i, '')
+  return LEGACY_STRATEGY_ALIASES[cleaned] || cleaned
 }
 
 const allBrokerTrades = computed<BrokerVenueTrade[]>(() => {
@@ -291,9 +298,11 @@ const unifiedStrategyProviders = computed(() => {
       map.set(cleanStrategyTag(r.strategyId), resolveRunProvider(r) === 'IBKR' ? 'IBKR' : 'OANDA')
     }
   }
-  for (const s of brokerStrategySummaries.value) {
-    if (s.strategyId && !map.has(s.strategyId)) {
-      map.set(s.strategyId, s.provider.toUpperCase() === 'IBKR' ? 'IBKR' : 'OANDA')
+  if (map.size === 0) {
+    for (const s of brokerStrategySummaries.value) {
+      if (s.strategyId && !map.has(s.strategyId)) {
+        map.set(s.strategyId, s.provider.toUpperCase() === 'IBKR' ? 'IBKR' : 'OANDA')
+      }
     }
   }
   return map
@@ -548,7 +557,7 @@ async function handleDiscoverOandaAccounts() {
 
 async function fetchSummary(forceBalances = false) {
   try {
-    const data = await getControlSummary()
+    const data = await getControlSummary(forceBalances)
     summary.value = data
     error.value = null
     if (selectedRunId.value) {
@@ -1874,6 +1883,9 @@ onUnmounted(() => {
             <h4 class="strat-title">{{ run.strategyId }}</h4>
             <div style="display: flex; gap: 0.35rem; align-items: center; margin-top: 0.3rem; flex-wrap: wrap;">
               <span class="symbol-badge">{{ run.symbol }}</span>
+              <span v-if="run.configSnapshot?.strategyTimeframe" class="acct-mini-badge font-mono">
+                {{ run.configSnapshot.strategyTimeframe }}
+              </span>
               <span :class="['provider-badge', resolveRunProvider(run).toLowerCase()]">
                 {{ resolveRunProvider(run) }}
               </span>

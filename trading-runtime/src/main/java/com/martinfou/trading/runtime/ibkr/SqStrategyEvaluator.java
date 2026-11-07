@@ -78,6 +78,32 @@ public final class SqStrategyEvaluator implements Function<List<Bar>, List<Order
             : null;
         this.dryRun = dryRun;
         loadCursor();
+        persistCursor();
+    }
+
+    /**
+     * Converts an IBKR bar size or timeframe string (e.g. {@code "30 mins"}, {@code "1 hour"})
+     * into its canonical short timeframe code ({@code "M30"}, {@code "H1"}, etc.).
+     */
+    public static String toShortTimeframeCode(String rawTimeframe) {
+        if (rawTimeframe == null || rawTimeframe.isBlank()) {
+            return "H1";
+        }
+        String norm = rawTimeframe.trim().toLowerCase();
+        return switch (norm) {
+            case "1 min", "1 mins", "m1" -> "M1";
+            case "5 mins", "5 min", "m5" -> "M5";
+            case "15 mins", "15 min", "m15" -> "M15";
+            case "30 mins", "30 min", "m30" -> "M30";
+            case "1 hour", "1 hr", "60 mins", "h1" -> "H1";
+            case "4 hours", "4 hour", "240 mins", "h4" -> "H4";
+            case "1 day", "d", "d1" -> "D1";
+            default -> rawTimeframe.trim().toUpperCase();
+        };
+    }
+
+    public Path cursorFile() {
+        return cursorFile;
     }
 
     private static final Map<String, String> LEGACY_ALIASES = Map.of(
@@ -353,7 +379,7 @@ public final class SqStrategyEvaluator implements Function<List<Bar>, List<Order
     }
 
     public synchronized void persistCursor() {
-        if (cursorFile == null || lastProcessedBarTimestamp == null) {
+        if (cursorFile == null) {
             return;
         }
         try {
@@ -364,7 +390,10 @@ public final class SqStrategyEvaluator implements Function<List<Bar>, List<Order
             ObjectNode root = MAPPER.createObjectNode();
             root.put("strategy", strategyName);
             root.put("symbol", symbol);
-            root.put("lastProcessedBarTimestamp", lastProcessedBarTimestamp.toString());
+            root.put("timeframe", toShortTimeframeCode(timeframe));
+            if (lastProcessedBarTimestamp != null) {
+                root.put("lastProcessedBarTimestamp", lastProcessedBarTimestamp.toString());
+            }
             root.put("savedAt", Instant.now().toString());
             Path tmp = cursorFile.resolveSibling(cursorFile.getFileName().toString() + ".tmp");
             Files.writeString(tmp, MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(root));

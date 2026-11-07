@@ -343,6 +343,14 @@ class IbkrLiveRunnerTest {
             assertEquals("1 hour", runner.evaluators().get(1).timeframe());
             assertEquals(legacyCursorTs, runner.evaluators().get(0).lastProcessedBarTimestamp(),
                 "MgcM30Breakout49205 must inherit legacy sq-mgc-m30-breakout-0-24542 cursor on first boot");
+            assertTrue(java.nio.file.Files.exists(tempDir.resolve("MgcM30Breakout49205-MGC-cursor.json")),
+                "Canonical MgcM30Breakout49205 cursor file must be written on startup");
+            assertTrue(java.nio.file.Files.exists(tempDir.resolve("MgcH1Breakout38023-MGC-cursor.json")),
+                "H1 strategy cursor file must be written on startup even before first bar evaluation");
+            assertTrue(java.nio.file.Files.exists(tempDir.resolve("MnqH1Breakout31697-MNQ-cursor.json")));
+            assertTrue(java.nio.file.Files.exists(tempDir.resolve("MesH1Breakout30808-MES-cursor.json")));
+            assertFalse(java.nio.file.Files.exists(tempDir.resolve("sq-mgc-m30-breakout-0-24542-MGC-cursor.json")),
+                "Orphaned legacy cursor file must be pruned on startup after migration");
             assertEquals(30, runner.scheduler().intervalMinutes(), "Scheduler base cadence must be 30m (fastest slice)");
             assertEquals(Instant.parse("2026-08-19T14:30:05Z"), runner.scheduler().nextTriggerTime());
 

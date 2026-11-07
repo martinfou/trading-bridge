@@ -50,6 +50,11 @@ public final class LaneTelemetryCollector {
         Pattern.compile("_(MGC|MNQ|MES|M2K|MCL|GC|NQ|ES)[A-Z0-9]*$", Pattern.CASE_INSENSITIVE);
     private static final DateTimeFormatter IBKR_TIME_FORMAT =
         DateTimeFormatter.ofPattern("yyyyMMdd HH:mm:ss", Locale.ROOT);
+    private static final Map<String, String> LEGACY_STRATEGY_ALIASES = Map.of(
+        "sq-mgc-m30-breakout-0-24542", "MgcM30Breakout49205",
+        "sq-mgc-m30-breakout-1-29-102", "MgcM30Breakout89854",
+        "sq-mgc-m30-breakout-0-32921", "MgcM30Breakout92728"
+    );
 
     private final List<Path> fillsDirs;
     private final List<Path> pnlStateFiles;
@@ -113,7 +118,6 @@ public final class LaneTelemetryCollector {
         }
         dirs.add(Paths.get("data", "state", "ibkr-paper"));
         dirs.add(Paths.get("data", "state", "ibkr-live"));
-        dirs.add(Paths.get("data", "state", "futures"));
         return dirs;
     }
 
@@ -130,9 +134,7 @@ public final class LaneTelemetryCollector {
     }
 
     private static List<Path> defaultOandaDevStateDirs() {
-        List<Path> dirs = new ArrayList<>();
-        dirs.add(Paths.get("data", "state", "dev"));
-        return dirs;
+        return List.of();
     }
 
     /**
@@ -377,7 +379,24 @@ public final class LaneTelemetryCollector {
      * that are not already present in {@code existingStrategyIds}.
      */
     public List<Map<String, Object>> collectLaneStrategyRuns(Set<String> existingStrategyIds, Instant now) {
-        Set<String> seenStrategies = new HashSet<>(existingStrategyIds != null ? existingStrategyIds : Set.of());
+        Set<String> seenStrategies = new HashSet<>();
+        if (existingStrategyIds != null) {
+            for (String existing : existingStrategyIds) {
+                if (existing == null || existing.isBlank()) continue;
+                seenStrategies.add(existing);
+                String norm = normalizeStrategyRef(existing);
+                seenStrategies.add(norm);
+                String canonical = LEGACY_STRATEGY_ALIASES.get(norm);
+                if (canonical != null) {
+                    seenStrategies.add(canonical);
+                }
+                for (var aliasEntry : LEGACY_STRATEGY_ALIASES.entrySet()) {
+                    if (aliasEntry.getValue().equals(norm)) {
+                        seenStrategies.add(aliasEntry.getKey());
+                    }
+                }
+            }
+        }
         List<Map<String, Object>> runs = new ArrayList<>();
         Instant refNow = now != null ? now : Instant.now();
 
@@ -389,23 +408,43 @@ public final class LaneTelemetryCollector {
         for (Map<String, Object> t : ibkrTrades) {
             String strat = normalizeStrategyRef(strVal(t.get("strategyTag")));
             if (!strat.isBlank()) {
+                String canonicalAlias = LEGACY_STRATEGY_ALIASES.get(strat);
                 if ("CLOSED".equalsIgnoreCase(strVal(t.get("state")))) {
                     double pnl = t.get("realizedPnL") instanceof Number n ? n.doubleValue() : 0.0;
                     ibkrPnlByStrategy.merge(strat, pnl, Double::sum);
                     ibkrCountByStrategy.merge(strat, 1, Integer::sum);
+                    if (canonicalAlias != null) {
+                        ibkrPnlByStrategy.merge(canonicalAlias, pnl, Double::sum);
+                        ibkrCountByStrategy.merge(canonicalAlias, 1, Integer::sum);
+                    }
                 } else if ("OPEN".equalsIgnoreCase(strVal(t.get("state")))) {
                     ibkrOpenCountByStrategy.merge(strat, 1, Integer::sum);
+                    if (canonicalAlias != null) {
+                        ibkrOpenCountByStrategy.merge(canonicalAlias, 1, Integer::sum);
+                    }
                 }
             }
         }
 
-        // 1. IBKR Futures state cursors (data/state/futures/*-cursor.json)
+        // 1. IBKR Futures state cursors (data/state/ibkr-paper/*-cursor.json & data/state/ibkr-live/*-cursor.json)
         for (Path dir : futuresStateDirs) {
             if (dir == null || !Files.isDirectory(dir)) {
                 continue;
             }
+            boolean isLiveDir = dir.getFileName() != null
+                && "ibkr-live".equalsIgnoreCase(dir.getFileName().toString());
+            String mode = isLiveDir ? "LIVE" : "PAPER";
+            String execLabel = isLiveDir ? "LIVE_IBKR" : "PAPER_IBKR";
+            String brokerAcctId = isLiveDir ? "ibkr-live" : "ibkr-paper";
+
             try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir, "*-cursor.json")) {
-                for (Path file : stream) {
+                List<Path> cursorFiles = new ArrayList<>();
+                stream.forEach(cursorFiles::add);
+                // Prefer canonical strategy cursor files before legacy sq-* alias cursors
+                cursorFiles.sort(Comparator
+                    .comparing((Path p) -> p.getFileName().toString().startsWith("sq-") ? 1 : 0)
+                    .thenComparing(p -> p.getFileName().toString()));
+                for (Path file : cursorFiles) {
                     try {
                         JsonNode node = MAPPER.readTree(Files.readString(file, StandardCharsets.UTF_8));
                         String strategyId = textOrDefault(node, "strategy", "");
@@ -414,8 +453,21 @@ public final class LaneTelemetryCollector {
                             continue;
                         }
                         seenStrategies.add(normId);
+                        String canonicalAlias = LEGACY_STRATEGY_ALIASES.get(normId);
+                        if (canonicalAlias != null) {
+                            seenStrategies.add(canonicalAlias);
+                        }
+                        for (var aliasEntry : LEGACY_STRATEGY_ALIASES.entrySet()) {
+                            if (aliasEntry.getValue().equals(normId)) {
+                                seenStrategies.add(aliasEntry.getKey());
+                            }
+                        }
                         String symbol = textOrDefault(node, "symbol", "MGC");
-                        String timeframe = textOrDefault(node, "timeframe", textOrDefault(node, "granularity", "M30"));
+                        String inferredTf = com.martinfou.trading.runtime.ibkr.SqStrategyEvaluator.toShortTimeframeCode(
+                            com.martinfou.trading.runtime.ibkr.SqStrategyEvaluator.resolveTimeframeForStrategy(strategyId, "1 hour")
+                        );
+                        String rawTf = textOrDefault(node, "timeframe", textOrDefault(node, "granularity", inferredTf));
+                        String timeframe = com.martinfou.trading.runtime.ibkr.SqStrategyEvaluator.toShortTimeframeCode(rawTf);
                         String savedAt = textOrDefault(node, "savedAt", textOrDefault(node, "lastProcessedBarTimestamp", ""));
                         Instant lastAt = parseIsoInstant(savedAt);
                         boolean isStale = lastAt != null
@@ -429,9 +481,9 @@ public final class LaneTelemetryCollector {
                         item.put("runId", "lane-futures-" + strategyId);
                         item.put("strategyId", strategyId);
                         item.put("symbol", symbol);
-                        item.put("mode", "PAPER");
+                        item.put("mode", mode);
                         item.put("lane", "futures");
-                        item.put("executionLabel", "PAPER_IBKR");
+                        item.put("executionLabel", execLabel);
                         item.put("status", "RUNNING");
                         item.put("isStale", isStale);
                         if (!savedAt.isBlank()) {
@@ -448,9 +500,9 @@ public final class LaneTelemetryCollector {
                         item.put("gaps", List.of());
                         item.put("eventCount", tradesCount);
                         item.put("configSnapshot", Map.of(
-                            "mode", "PAPER",
-                            "brokerAccountId", "ibkr-paper",
-                            "resolvedExecutionLabel", "PAPER_IBKR",
+                            "mode", mode,
+                            "brokerAccountId", brokerAcctId,
+                            "resolvedExecutionLabel", execLabel,
                             "strategyTimeframe", timeframe,
                             "lane", "futures"
                         ));

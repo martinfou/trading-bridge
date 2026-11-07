@@ -396,6 +396,7 @@ public final class IbkrLiveRunner implements AutoCloseable {
             SymbolTfKey sliceKey = new SymbolTfKey(stratSym, stratTf, stratIntervalMin);
             evaluatorsBySlice.computeIfAbsent(sliceKey, k -> new java.util.ArrayList<>()).add(ev);
         }
+        pruneOrphanedCursors(config.stateDir(), this.evaluators);
         this.evaluator = this.evaluators.isEmpty() ? null : this.evaluators.get(0);
 
         // 7. Build and start() the BarCloseScheduler.
@@ -450,6 +451,33 @@ public final class IbkrLiveRunner implements AutoCloseable {
         this.scheduler.start();
         log.info("[7/7] BarCloseScheduler started for symbols={} strategies={} baseInterval={}m: nextTriggerTime={}",
             targetSymbols, config.strategyNames(), scheduler.intervalMinutes(), scheduler.nextTriggerTime());
+    }
+
+    private static void pruneOrphanedCursors(Path stateDir, List<SqStrategyEvaluator> activeEvaluators) {
+        if (stateDir == null || !java.nio.file.Files.isDirectory(stateDir) || activeEvaluators == null || activeEvaluators.isEmpty()) {
+            return;
+        }
+        java.util.Set<String> activeFileNames = new java.util.HashSet<>();
+        for (SqStrategyEvaluator ev : activeEvaluators) {
+            if (ev.cursorFile() != null && ev.cursorFile().getFileName() != null) {
+                activeFileNames.add(ev.cursorFile().getFileName().toString());
+            }
+        }
+        try (java.nio.file.DirectoryStream<Path> stream = java.nio.file.Files.newDirectoryStream(stateDir, "*-cursor.json")) {
+            for (Path cursor : stream) {
+                String fileName = cursor.getFileName() != null ? cursor.getFileName().toString() : "";
+                if (!fileName.isEmpty() && !activeFileNames.contains(fileName)) {
+                    try {
+                        java.nio.file.Files.deleteIfExists(cursor);
+                        log.info("[6/7] Pruned retired/orphaned cursor file from {}: {}", stateDir, fileName);
+                    } catch (Exception e) {
+                        log.warn("Failed to delete orphaned cursor {}: {}", cursor, e.getMessage());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Failed to scan {} for orphaned cursors: {}", stateDir, e.getMessage());
+        }
     }
 
     public static void validateConfig(RunnerConfig config) {
