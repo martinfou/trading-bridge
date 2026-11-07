@@ -1,7 +1,7 @@
-# docker/docker-compose.futures.yml — IBKR Gateways & Multi-Futures Containers (Paper & Live)
+# docker/docker-compose.ibkr.yml — IBKR Gateways & Multi-Futures Containers (Paper & Live)
 # Usage:
-#   Paper stack (default): docker compose -f docker/docker-compose.futures.yml --project-name tb-futures up -d
-#   Live stack (profile):  docker compose -f docker/docker-compose.futures.yml --project-name tb-futures --profile live up -d ib-gateway-live ibkr-live
+#   Paper stack (default): docker compose -f docker/docker-compose.ibkr.yml --project-name tb-ibkr up -d
+#   Live stack (profile):  docker compose -f docker/docker-compose.ibkr.yml --project-name tb-ibkr --profile live up -d ib-gateway-live ibkr-live
 #
 # Services:
 #   ib-gateway-paper — Headless IB Gateway + IBC in Paper mode (127.0.0.1:4002 -> 4004/tcp)
