@@ -1,19 +1,40 @@
-# docker/docker-compose.futures.yml — IBKR Multi-Futures Containers (ibkr-paper & ibkr-live)
+# docker/docker-compose.futures.yml — IBKR Gateways & Multi-Futures Containers (Paper & Live)
 # Usage:
-#   Paper (default): docker compose -f docker/docker-compose.futures.yml --project-name tb-futures up -d ibkr-paper
-#   Live (profile):  docker compose -f docker/docker-compose.futures.yml --project-name tb-futures --profile live up -d ibkr-live
+#   Paper stack (default): docker compose -f docker/docker-compose.futures.yml --project-name tb-futures up -d
+#   Live stack (profile):  docker compose -f docker/docker-compose.futures.yml --project-name tb-futures --profile live up -d ib-gateway-live ibkr-live
 #
 # Services:
-#   ibkr-paper — Multi-symbol CME Micro Futures (MGC,MNQ,MES) on IB Gateway Paper (:4002, clientId 11/12)
-#   ibkr-live  — Multi-symbol CME Micro Futures (MGC,MNQ,MES) on IB Gateway Live  (:4001, clientId 21/22)
+#   ib-gateway-paper — Headless IB Gateway + IBC in Paper mode (127.0.0.1:4002 -> 4004/tcp)
+#   ibkr-paper       — Multi-symbol CME Micro Futures (MGC,MNQ,MES) on IB Gateway Paper (:4002, clientId 11/12)
+#   ib-gateway-live  — Headless IB Gateway + IBC in Live mode  (127.0.0.1:4001 -> 4003/tcp, profile: live)
+#   ibkr-live        — Multi-symbol CME Micro Futures (MGC,MNQ,MES) on IB Gateway Live  (:4001, clientId 21/22, profile: live)
 
 services:
+  ib-gateway-paper:
+    image: ghcr.io/gnzsnz/ib-gateway:stable
+    container_name: ib-gateway-paper
+    restart: always
+    environment:
+      TWS_USERID: "${TWS_USERID:-}"
+      TWS_PASSWORD: "${TWS_PASSWORD:-}"
+      TRADING_MODE: "paper"
+      READ_ONLY_API: "${READ_ONLY_API:-no}"
+      TWOFA_TIMEOUT_ACTION: "${TWOFA_TIMEOUT_ACTION:-restart}"
+      AUTO_RESTART_TIME: "${AUTO_RESTART_TIME:-11:59 PM}"
+      TIME_ZONE: "${TIME_ZONE:-America/New_York}"
+    ports:
+      - "127.0.0.1:4002:4004"
+    volumes:
+      - ibkr-jts-paper:/home/ibgateway/Jts
+
   ibkr-paper:
     build:
       context: ..
       dockerfile: Dockerfile
     container_name: ibkr-paper
     restart: unless-stopped
+    depends_on:
+      - ib-gateway-paper
     network_mode: "${FUTURES_NETWORK_MODE:-host}"
     entrypoint: ["/app/entrypoint-ibkr.sh"]
     environment:
@@ -48,6 +69,24 @@ services:
           cpus: '0.5'
           memory: 512M
 
+  ib-gateway-live:
+    image: ghcr.io/gnzsnz/ib-gateway:stable
+    container_name: ib-gateway-live
+    profiles: ["live"]
+    restart: always
+    environment:
+      TWS_USERID: "${TWS_LIVE_USERID:-${TWS_USERID:-}}"
+      TWS_PASSWORD: "${TWS_LIVE_PASSWORD:-${TWS_PASSWORD:-}}"
+      TRADING_MODE: "live"
+      READ_ONLY_API: "${READ_ONLY_API:-no}"
+      TWOFA_TIMEOUT_ACTION: "${TWOFA_TIMEOUT_ACTION:-restart}"
+      AUTO_RESTART_TIME: "${AUTO_RESTART_TIME:-11:59 PM}"
+      TIME_ZONE: "${TIME_ZONE:-America/New_York}"
+    ports:
+      - "127.0.0.1:4001:4003"
+    volumes:
+      - ibkr-jts-live:/home/ibgateway/Jts
+
   ibkr-live:
     build:
       context: ..
@@ -55,6 +94,8 @@ services:
     container_name: ibkr-live
     profiles: ["live"]
     restart: unless-stopped
+    depends_on:
+      - ib-gateway-live
     network_mode: "${FUTURES_NETWORK_MODE:-host}"
     entrypoint: ["/app/entrypoint-ibkr.sh"]
     environment:
@@ -88,3 +129,7 @@ services:
         limits:
           cpus: '0.5'
           memory: 512M
+
+volumes:
+  ibkr-jts-paper:
+  ibkr-jts-live:
