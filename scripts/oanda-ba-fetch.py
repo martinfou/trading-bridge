@@ -9,7 +9,7 @@ import os, json, time, sys, urllib.request, urllib.error
 from datetime import datetime, timedelta, timezone
 
 KEY = None
-for line in open(os.path.expanduser("~/projects/trading-bridge/.env.dev")):
+for line in open(os.path.expanduser("~/projects/trading-bridge/.env.paper")):
     if line.strip().startswith("OANDA_API_KEY"):
         KEY = line.split("=", 1)[1].strip().strip('"')
 BASE = "https://api-fxpractice.oanda.com/v3"

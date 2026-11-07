@@ -31,10 +31,9 @@ INTERVAL_SEC="${3:-60}"
 # ────────────────────────────────────────────
 # Source OANDA credentials from .env
 # ────────────────────────────────────────────
-ENV_FILE="$HOME/projects/trading-dashboard/.env"
-if [ ! -f "$ENV_FILE" ] && [ -f "$SCRIPT_DIR/.env" ]; then
-    ENV_FILE="$SCRIPT_DIR/.env"
-fi
+# Live = .env.live uniquement (compte reel). Aucun repli vers un fichier
+# practice : un runner "live" ne doit jamais trader un compte fictif en silence.
+ENV_FILE="$SCRIPT_DIR/.env.live"
 
 if [ -f "$ENV_FILE" ]; then
     # shellcheck source=/dev/null

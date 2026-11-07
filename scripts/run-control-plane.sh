@@ -8,10 +8,17 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-if [ -f .env ]; then
-  echo "Loading environment variables from .env"
-  export $(grep -v '^#' .env | xargs)
-fi
+# .env  -> creds Hermes-web (hub)
+# .env.paper -> creds OANDA practice (les seules creds OANDA du repo, avec .env.live)
+for f in .env .env.paper; do
+  if [ -f "$f" ]; then
+    echo "Loading environment variables from $f"
+    set -a
+    # shellcheck disable=SC1090
+    . "./$f"
+    set +a
+  fi
+done
 
 export TRADING_BRIDGE_ROOT="${TRADING_BRIDGE_ROOT:-$ROOT}"
 export CONTROL_PLANE_PORT="${CONTROL_PLANE_PORT:-8080}"

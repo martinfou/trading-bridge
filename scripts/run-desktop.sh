@@ -66,13 +66,18 @@ echo ""
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+set -a
 if [ -f "$ROOT/.env" ]; then
   echo "Loading environment variables from .env"
-  set -a
   # shellcheck disable=SC1091
   source "$ROOT/.env"
-  set +a
 fi
+if [ -f "$ROOT/.env.paper" ]; then
+  echo "Loading OANDA credentials from .env.paper"
+  # shellcheck disable=SC1091
+  source "$ROOT/.env.paper"
+fi
+set +a
 
 echo "=== 1. Setting up Java Environment ==="
 # Detect JAVA_HOME on macOS if not set
