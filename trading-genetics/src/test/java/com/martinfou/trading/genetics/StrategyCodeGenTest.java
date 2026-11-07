@@ -33,7 +33,7 @@ class StrategyCodeGenTest {
         assertFalse(code.isBlank(), "Generated code must not be blank");
 
         // Verify essential structural elements
-        assertTrue(code.contains("package com.martinfou.trading.strategies.generated;"),
+        assertTrue(code.contains("package com.martinfou.trading.strategies.builtin;"),
             "Must contain expected package declaration");
         assertTrue(code.contains("public class TestStrategy001 implements Strategy"),
             "Must declare class implementing Strategy");
@@ -115,7 +115,7 @@ class StrategyCodeGenTest {
         String code = codeGen.generate(chromosome, "CompilableStrategy");
 
         // Write to a .java file in the temp directory
-        Path pkgDir = tempDir.resolve("com/martinfou/trading/strategies/generated");
+        Path pkgDir = tempDir.resolve("com/martinfou/trading/strategies/builtin");
         Files.createDirectories(pkgDir);
         Path sourceFile = pkgDir.resolve("CompilableStrategy.java");
         Files.writeString(sourceFile, code);
@@ -141,7 +141,7 @@ class StrategyCodeGenTest {
             "Generated code must compile without errors. Compiler output:\n" + compilerOutput);
 
         // Verify the compiled .class file exists
-        Path classFile = tempDir.resolve("classes/com/martinfou/trading/strategies/generated/CompilableStrategy.class");
+        Path classFile = tempDir.resolve("classes/com/martinfou/trading/strategies/builtin/CompilableStrategy.class");
         assertTrue(Files.exists(classFile), "Compiled .class file must exist");
     }
 
@@ -159,7 +159,7 @@ class StrategyCodeGenTest {
                 new java.net.URL[]{tempDir.resolve("classes").toUri().toURL()},
                 getClass().getClassLoader())) {
 
-            Class<?> loaded = loader.loadClass("com.martinfou.trading.strategies.generated.StrategyImpTest");
+            Class<?> loaded = loader.loadClass("com.martinfou.trading.strategies.builtin.StrategyImpTest");
             assertTrue(Strategy.class.isAssignableFrom(loaded),
                 "Generated class must implement " + Strategy.class.getName());
 
@@ -205,7 +205,7 @@ class StrategyCodeGenTest {
                 getClass().getClassLoader())) {
 
             Class<?> loaded = loader.loadClass(
-                "com.martinfou.trading.strategies.generated.SmaCrossoverLive");
+                "com.martinfou.trading.strategies.builtin.SmaCrossoverLive");
             Strategy strategy = (Strategy) loaded.getConstructor(String.class)
                 .newInstance("EUR_USD");
 
@@ -300,7 +300,7 @@ class StrategyCodeGenTest {
 
     /** Writes, compiles, and places generated code in {@code tempDir/classes}. */
     private void compileInTempDir(Path tempDir, String className, String code) throws Exception {
-        Path pkgDir = tempDir.resolve("com/martinfou/trading/strategies/generated");
+        Path pkgDir = tempDir.resolve("com/martinfou/trading/strategies/builtin");
         Files.createDirectories(pkgDir);
         Path sourceFile = pkgDir.resolve(className + ".java");
         Files.writeString(sourceFile, code);

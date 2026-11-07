@@ -93,9 +93,9 @@ public class RunCronStrategyBacktest {
         // Previous run (May 23 batch): all 3 strategies FAILED with 2-7 trades OOS (overfiltering).
         // NEW designs deliberately simple to generate 100+ trades:
         List<Strategy> strategies = new ArrayList<>();
-        strategies.add(new com.martinfou.trading.strategies.creative.TrueRangeMomentumStrategy());
-        strategies.add(new com.martinfou.trading.strategies.creative.WeekendContinuationStrategy());
-        strategies.add(new com.martinfou.trading.strategies.creative.MidMonthExhaustionStrategy());
+        strategies.add(new com.martinfou.trading.strategies.builtin.TrueRangeMomentumStrategy());
+        strategies.add(new com.martinfou.trading.strategies.builtin.WeekendContinuationStrategy());
+        strategies.add(new com.martinfou.trading.strategies.builtin.MidMonthExhaustionStrategy());
 
         String[] categories = {
             "TrueRangeMomentum          (Structure/Technical)",

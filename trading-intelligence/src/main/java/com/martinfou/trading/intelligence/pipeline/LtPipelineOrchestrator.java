@@ -423,7 +423,7 @@ public class LtPipelineOrchestrator {
     private void registerStrategy(StrategySpec spec) {
         String className = spec.name().replaceAll("[^a-zA-Z0-9]", "");
         try {
-            Class<?> strategyClass = Class.forName("com.martinfou.trading.strategies.longterm." + className);
+            Class<?> strategyClass = Class.forName("com.martinfou.trading.strategies.builtin." + className);
             @SuppressWarnings("unchecked")
             var factory = (java.util.function.Function<String, Strategy>)
                 sym -> {

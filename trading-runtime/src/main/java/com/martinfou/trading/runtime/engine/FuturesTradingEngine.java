@@ -14,7 +14,7 @@ import com.martinfou.trading.core.Trade;
 import com.martinfou.trading.data.HistoricalDataLoader;
 import com.martinfou.trading.runtime.ibkr.IbkrLiveRunner;
 import com.martinfou.trading.runtime.ibkr.SqStrategyEvaluator;
-import com.martinfou.trading.strategies.LiveStrategyRunner;
+import com.martinfou.trading.strategies.live.LiveStrategyRunner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

@@ -77,7 +77,7 @@ while true; do
     OUTFILE=$(mktemp)
 
     java -cp "/app/classes/trading-core:/app/classes/trading-data:/app/classes/trading-strategies:/app/classes/trading-broker:/app/classes/trading-parser:/app/libs/*" \
-        com.martinfou.trading.strategies.LiveStrategyRunner \
+        com.martinfou.trading.strategies.live.LiveStrategyRunner \
         "$API_KEY" "$ACCOUNT_ID" $STRATEGY "$GRANULARITY" "$INTERVAL_SEC" 2>&1 | tee "$OUTFILE"
     EXIT_CODE=${PIPESTATUS[0]}
 

@@ -4,7 +4,7 @@ import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.LotSizing;
 import com.martinfou.trading.core.Strategy;
 import com.martinfou.trading.data.HistoricalDataLoader;
-import com.martinfou.trading.strategies.prop.PropStrategyCatalog;
+import com.martinfou.trading.strategies.StrategyCatalog;
 
 import java.io.IOException;
 import java.util.List;
@@ -88,10 +88,11 @@ public class RunPropBacktest {
             }
         }
 
-        for (String key : PropStrategyCatalog.all().keySet()) {
+        for (StrategyCatalog.Entry entry : StrategyCatalog.query(StrategyCatalog.Family.PROP, null, null)) {
+            String key = entry.id();
             String sym = spec != null && spec.unifiedSymbol() != null
                 ? spec.unifiedSymbol()
-                : PropStrategyCatalog.defaultSymbol(key);
+                : StrategyCatalog.defaultSymbol(key);
             List<Bar> bars;
             String dataLabel;
             try {
@@ -120,7 +121,7 @@ public class RunPropBacktest {
                 continue;
             }
 
-            Strategy strategy = PropStrategyCatalog.create(key, sym);
+            Strategy strategy = StrategyCatalog.createRaw(key, sym);
             System.out.printf("--- %s (%s, %s, %,d bars) ---%n",
                 key, sym, dataLabel, bars.size());
             RunBacktest.runStrategy(strategy, bars, capital).printSummary();

@@ -120,7 +120,7 @@ public final class SqBridgeService implements AutoCloseable {
         json.put("latencyMaxMs", latencyBuffer.getMax());
 
         java.util.List<Map<String, Object>> strategiesList = new java.util.ArrayList<>();
-        for (var runner : com.martinfou.trading.strategies.LiveStrategyRunner.getActiveRunners().values()) {
+        for (var runner : com.martinfou.trading.strategies.live.LiveStrategyRunner.getActiveRunners().values()) {
             Map<String, Object> sMap = new java.util.LinkedHashMap<>();
             sMap.put("strategy", runner.getStrategyShortName());
             sMap.put("status", runner.getLivenessStatus());

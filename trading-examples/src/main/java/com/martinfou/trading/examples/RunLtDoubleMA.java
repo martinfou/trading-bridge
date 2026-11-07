@@ -6,7 +6,7 @@ import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.LotSizing;
 import com.martinfou.trading.data.HistoricalDataLoader;
-import com.martinfou.trading.strategies.longterm.LtDoubleMA;
+import com.martinfou.trading.strategies.builtin.LtDoubleMA;
 
 import java.util.List;
 

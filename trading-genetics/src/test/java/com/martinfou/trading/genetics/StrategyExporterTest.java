@@ -68,7 +68,7 @@ class StrategyExporterTest {
         String content = result.sourceCode();
         assertTrue(content.contains("class ExportTest001 implements Strategy"),
             "Generated code must declare the correct class");
-        assertTrue(content.contains("package com.martinfou.trading.strategies.generated;"),
+        assertTrue(content.contains("package com.martinfou.trading.strategies.builtin;"),
             "Generated code must have correct package");
 
         // Clean up
@@ -206,7 +206,7 @@ class StrategyExporterTest {
         assertNotNull(compiler, "System JavaCompiler must be available");
 
         String sourceCode = result.sourceCode();
-        Path pkgDir = tempDir.resolve("com/martinfou/trading/strategies/generated");
+        Path pkgDir = tempDir.resolve("com/martinfou/trading/strategies/builtin");
         Files.createDirectories(pkgDir);
         Path sourceFile = pkgDir.resolve("CompileTest001.java");
         Files.writeString(sourceFile, sourceCode);
@@ -229,7 +229,7 @@ class StrategyExporterTest {
 
         // Verify .class file exists
         Path classFile = classesDir.resolve(
-            "com/martinfou/trading/strategies/generated/CompileTest001.class");
+            "com/martinfou/trading/strategies/builtin/CompileTest001.class");
         assertTrue(Files.exists(classFile), "Compiled .class file must exist");
 
         // Verify it can be loaded and implements Strategy
@@ -238,7 +238,7 @@ class StrategyExporterTest {
                 getClass().getClassLoader())) {
 
             Class<?> loaded = loader.loadClass(
-                "com.martinfou.trading.strategies.generated.CompileTest001");
+                "com.martinfou.trading.strategies.builtin.CompileTest001");
             assertTrue(Strategy.class.isAssignableFrom(loaded),
                 "Generated class must implement " + Strategy.class.getName());
 

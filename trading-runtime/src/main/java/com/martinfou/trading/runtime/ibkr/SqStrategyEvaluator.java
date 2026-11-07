@@ -7,7 +7,7 @@ import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.core.Strategy;
 import com.martinfou.trading.runtime.generator.StrategyGeneratorService;
-import com.martinfou.trading.strategies.LiveStrategyRunner;
+import com.martinfou.trading.strategies.live.LiveStrategyRunner;
 import com.martinfou.trading.strategies.StrategyCatalog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

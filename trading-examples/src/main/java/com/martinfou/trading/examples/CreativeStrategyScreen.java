@@ -47,7 +47,7 @@ public class CreativeStrategyScreen {
         System.out.println("   ✓ " + bars.size() + " bars loaded (" + bars.get(0).timestamp() + " to " + bars.get(bars.size()-1).timestamp() + ")");
 
         // Discover creative strategy classes via filesystem
-        String pkg = "com.martinfou.trading.strategies.creative";
+        String pkg = "com.martinfou.trading.strategies.builtin";
         String pkgPath = pkg.replace('.', '/');
         Path srcDir = Path.of(System.getProperty("user.dir"),
             "trading-strategies/src/main/java", pkgPath);
@@ -79,14 +79,27 @@ public class CreativeStrategyScreen {
 
             try {
                 Class<?> clazz = Class.forName(fqcn);
-                if (!Strategy.class.isAssignableFrom(clazz)) {
-                    results.add(new ScreenResult(cn, 0, 0, 0, 0, 0, 0, 0, false, "not a Strategy"));
+                if (!Strategy.class.isAssignableFrom(clazz)
+                        || java.lang.reflect.Modifier.isAbstract(clazz.getModifiers())) {
                     continue;
                 }
 
-                Strategy strategy = (Strategy) clazz
-                    .getDeclaredConstructor(String.class, String.class)
-                    .newInstance(cn, symbol);
+                Strategy strategy;
+                try {
+                    strategy = (Strategy) clazz
+                        .getDeclaredConstructor(String.class, String.class)
+                        .newInstance(cn, symbol);
+                } catch (NoSuchMethodException e1) {
+                    try {
+                        strategy = (Strategy) clazz
+                            .getDeclaredConstructor(String.class)
+                            .newInstance(symbol);
+                    } catch (NoSuchMethodException e2) {
+                        strategy = (Strategy) clazz
+                            .getDeclaredConstructor()
+                            .newInstance();
+                    }
+                }
 
                 BacktestEngine engine = new BacktestEngine(strategy, bars, CAPITAL)
                     .withCommissionFixed(COMMISSION);
@@ -168,29 +181,26 @@ public class CreativeStrategyScreen {
             }
         }
 
-        // === GIT MV SCRIPT ===
+        // === GIT RM SCRIPT ===
         System.out.println("\n══════════════════════════════════════════════════════════════════");
         System.out.println("📋 REJECTION SCRIPT (run from trading-bridge root):");
         System.out.println();
-        System.out.println("mkdir -p trading-strategies/src/main/java/com/martinfou/trading/strategies/creative/_rejected");
 
         var toReject = results.stream().filter(r -> !r.pass && r.trades > 0).toList();
         if (toReject.isEmpty()) {
             System.out.println("# No strategies to reject — all passed!");
         } else {
             for (var r : toReject) {
-                System.out.printf("git mv trading-strategies/src/main/java/com/martinfou/trading/strategies/creative/%s.java \\%n", r.id);
-                System.out.printf("      trading-strategies/src/main/java/com/martinfou/trading/strategies/creative/_rejected/%n");
+                System.out.printf("git rm trading-strategies/src/main/java/com/martinfou/trading/strategies/builtin/%s.java%n", r.id);
             }
         }
 
-        // Also move crashed ones
+        // Also remove crashed ones
         var crashedMove = results.stream().filter(r -> !r.pass && r.trades == 0 && r.error != null).toList();
         if (!crashedMove.isEmpty()) {
-            System.out.println("# --- Also crashed (move to _rejected too) ---");
+            System.out.println("# --- Also crashed ---");
             for (var r : crashedMove) {
-                System.out.printf("git mv trading-strategies/src/main/java/com/martinfou/trading/strategies/creative/%s.java \\%n", r.id);
-                System.out.printf("      trading-strategies/src/main/java/com/martinfou/trading/strategies/creative/_rejected/%n");
+                System.out.printf("git rm trading-strategies/src/main/java/com/martinfou/trading/strategies/builtin/%s.java%n", r.id);
             }
         }
 

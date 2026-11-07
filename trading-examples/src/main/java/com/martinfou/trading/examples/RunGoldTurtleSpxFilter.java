@@ -7,8 +7,8 @@ import com.martinfou.trading.backtest.RunMode;
 import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.data.HistoricalDataLoader;
-import com.martinfou.trading.strategies.creative.GoldTurtleDxyFilterStrategy;
-import com.martinfou.trading.strategies.creative.GoldTurtleTrendStrategy;
+import com.martinfou.trading.strategies.builtin.GoldTurtleDxyFilterStrategy;
+import com.martinfou.trading.strategies.builtin.GoldTurtleTrendStrategy;
 
 import java.nio.file.*;
 import java.time.*;

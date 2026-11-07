@@ -91,8 +91,8 @@ public class RunWeeklyStrategyBacktest {
 
         // 2. Create strategies
         List<Strategy> strategies = new ArrayList<>();
-        strategies.add(new com.martinfou.trading.strategies.creative.MayExhaustionFadeStrategy());
-        strategies.add(new com.martinfou.trading.strategies.creative.JPYSpecMomentumStrategy());
+        strategies.add(new com.martinfou.trading.strategies.builtin.MayExhaustionFadeStrategy());
+        strategies.add(new com.martinfou.trading.strategies.builtin.JPYSpecMomentumStrategy());
 
         System.out.println("\n📋 2 weekly strategies loaded for backtest\n");
 

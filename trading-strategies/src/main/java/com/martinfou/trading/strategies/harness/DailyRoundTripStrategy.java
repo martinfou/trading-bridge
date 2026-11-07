@@ -1,7 +1,7 @@
 package com.martinfou.trading.strategies.harness;
 
 import com.martinfou.trading.core.Bar;
-import com.martinfou.trading.strategies.prop.PropSessions;
+import com.martinfou.trading.strategies.builtin.PropSessions;
 
 /**
  * One long round-trip per UTC day at configurable hours (default 08:00 enter, 21:00 exit).

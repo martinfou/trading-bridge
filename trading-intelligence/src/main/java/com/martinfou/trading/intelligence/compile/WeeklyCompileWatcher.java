@@ -117,9 +117,9 @@ public final class WeeklyCompileWatcher {
 
     private Result compilePlan(WeeklyPlan plan, Path compilingPlan) throws Exception {
         Path generatedDir = repoRoot.resolve(
-            "trading-strategies/src/main/java/com/martinfou/trading/strategies/llmweekly/generated");
+            "trading-strategies/src/main/java/com/martinfou/trading/strategies/builtin/generated");
         Path registrarFile = repoRoot.resolve(
-            "trading-strategies/src/main/java/com/martinfou/trading/strategies/llmweekly/LlmWeeklyStrategyCatalogRegistrar.java");
+            "trading-strategies/src/main/java/com/martinfou/trading/strategies/builtin/LlmWeeklyStrategyCatalogRegistrar.java");
 
         WeeklyStrategyCodeGenerator.GenerationResult generation =
             codeGenerator.generate(plan, generatedDir, registrarFile);

@@ -7,7 +7,7 @@ import com.martinfou.trading.backtest.RunMode;
 import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.data.HistoricalDataLoader;
-import com.martinfou.trading.strategies.creative.GoldTurtlePyramidStrategy;
+import com.martinfou.trading.strategies.builtin.GoldTurtlePyramidStrategy;
 
 import java.util.List;
 

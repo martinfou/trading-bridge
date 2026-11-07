@@ -49,9 +49,9 @@ else
     echo "STATE: No previous state found"
 fi
 
-# 7. List existing creative strategies
+# 7. List existing built-in strategies
 echo "EXISTING_STRATEGIES:"
-find trading-strategies/src/main/java/com/martinfou/trading/strategies/creative -name "*.java" -exec basename {} .java \; | sort | tr '\n' ' '
+find trading-strategies/src/main/java/com/martinfou/trading/strategies/builtin -name "*.java" -exec basename {} .java \; | sort | tr '\n' ' '
 echo ""
 
 echo "READY"

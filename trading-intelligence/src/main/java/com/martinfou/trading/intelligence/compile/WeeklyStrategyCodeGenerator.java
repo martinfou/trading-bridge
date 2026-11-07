@@ -17,8 +17,8 @@ import java.util.stream.Collectors;
 /** Deterministic Java codegen for weekly template picks T1–T8 (Epic 22.4–22.5). */
 public final class WeeklyStrategyCodeGenerator {
 
-    public static final String GENERATED_PKG = "com.martinfou.trading.strategies.llmweekly.generated";
-    public static final String REGISTRAR_CLASS = "com.martinfou.trading.strategies.llmweekly.LlmWeeklyStrategyCatalogRegistrar";
+    public static final String GENERATED_PKG = "com.martinfou.trading.strategies.builtin.generated";
+    public static final String REGISTRAR_CLASS = "com.martinfou.trading.strategies.builtin.LlmWeeklyStrategyCatalogRegistrar";
 
     private final TemplateRegistry registry;
 
@@ -68,7 +68,7 @@ public final class WeeklyStrategyCodeGenerator {
         return """
             package %s;
 
-            import com.martinfou.trading.strategies.llmweekly.NoTradeWeekStrategy;
+            import com.martinfou.trading.strategies.builtin.NoTradeWeekStrategy;
 
             /** LLM weekly T8 — %s */
             public final class %s extends NoTradeWeekStrategy {
@@ -90,7 +90,7 @@ public final class WeeklyStrategyCodeGenerator {
         return """
             package %s;
 
-            import com.martinfou.trading.strategies.prop.LondonOpenRangeBreakoutStrategy;
+            import com.martinfou.trading.strategies.builtin.LondonOpenRangeBreakoutStrategy;
 
             /** LLM weekly T4 delegate — sources: %s */
             public final class %s extends LondonOpenRangeBreakoutStrategy {
@@ -117,7 +117,7 @@ public final class WeeklyStrategyCodeGenerator {
         return """
             package %s;
 
-            import com.martinfou.trading.strategies.prop.WeeklyOpenGapFadeStrategy;
+            import com.martinfou.trading.strategies.builtin.WeeklyOpenGapFadeStrategy;
 
             /** LLM weekly T5 delegate — sources: %s */
             public final class %s extends WeeklyOpenGapFadeStrategy {
@@ -160,8 +160,8 @@ public final class WeeklyStrategyCodeGenerator {
 
             import com.martinfou.trading.core.Bar;
             import com.martinfou.trading.core.indicators.Indicators;
-            import com.martinfou.trading.strategies.prop.AbstractPropStrategy;
-            import com.martinfou.trading.strategies.prop.PropSessions;
+            import com.martinfou.trading.strategies.builtin.AbstractPropStrategy;
+            import com.martinfou.trading.strategies.builtin.PropSessions;
 
             import java.time.Instant;
             import java.util.LinkedHashMap;
@@ -232,9 +232,9 @@ public final class WeeklyStrategyCodeGenerator {
             template = Files.readString(registrarFile);
         } else {
             template = """
-                package com.martinfou.trading.strategies.llmweekly;
+                package com.martinfou.trading.strategies.builtin;
 
-                import com.martinfou.trading.strategies.llmweekly.generated.*;
+                import com.martinfou.trading.strategies.builtin.generated.*;
 
                 public final class LlmWeeklyStrategyCatalogRegistrar {
                     private LlmWeeklyStrategyCatalogRegistrar() {}

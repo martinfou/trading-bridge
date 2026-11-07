@@ -19,7 +19,7 @@ import java.util.Map;
  */
 public class LtTemplateCodeGenerator {
 
-    private static final String PACKAGE = "com.martinfou.trading.strategies.longterm";
+    private static final String PACKAGE = "com.martinfou.trading.strategies.builtin";
     private static final String SOURCE_DIR = "trading-strategies/src/main/java/"
         + PACKAGE.replace('.', '/');
 

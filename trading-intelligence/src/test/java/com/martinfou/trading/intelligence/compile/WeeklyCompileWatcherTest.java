@@ -38,10 +38,10 @@ class WeeklyCompileWatcherTest {
         WeeklyPlanIO.write(plan, pendingPlan);
 
         Path registrar = tempDir.resolve(
-            "trading-strategies/src/main/java/com/martinfou/trading/strategies/llmweekly/LlmWeeklyStrategyCatalogRegistrar.java");
+            "trading-strategies/src/main/java/com/martinfou/trading/strategies/builtin/LlmWeeklyStrategyCatalogRegistrar.java");
         Files.createDirectories(registrar.getParent());
         Files.writeString(registrar, """
-            package com.martinfou.trading.strategies.llmweekly;
+            package com.martinfou.trading.strategies.builtin;
             public final class LlmWeeklyStrategyCatalogRegistrar {
                 public static void registerAll() {
             // CODEGEN-BEGIN
@@ -89,10 +89,10 @@ class WeeklyCompileWatcherTest {
         WeeklyPlanIO.write(plan, compilingPlan);
 
         Path registrar = tempDir.resolve(
-            "trading-strategies/src/main/java/com/martinfou/trading/strategies/llmweekly/LlmWeeklyStrategyCatalogRegistrar.java");
+            "trading-strategies/src/main/java/com/martinfou/trading/strategies/builtin/LlmWeeklyStrategyCatalogRegistrar.java");
         Files.createDirectories(registrar.getParent());
         Files.writeString(registrar, """
-            package com.martinfou.trading.strategies.llmweekly;
+            package com.martinfou.trading.strategies.builtin;
             public final class LlmWeeklyStrategyCatalogRegistrar {
                 public static void registerAll() {
             // CODEGEN-BEGIN

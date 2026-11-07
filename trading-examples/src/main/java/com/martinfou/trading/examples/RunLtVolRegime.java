@@ -9,7 +9,7 @@ import com.martinfou.trading.core.LotSizing;
 import com.martinfou.trading.data.HistoricalDataLoader;
 import com.martinfou.trading.strategies.StrategyCatalog;
 import com.martinfou.trading.strategies.StrategyCatalog.Family;
-import com.martinfou.trading.strategies.longterm.LtVolRegime;
+import com.martinfou.trading.strategies.builtin.LtVolRegime;
 
 import java.io.IOException;
 import java.util.List;

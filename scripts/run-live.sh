@@ -24,7 +24,7 @@ NC='\033[0m'
 # ────────────────────────────────────────────
 # Defaults
 # ────────────────────────────────────────────
-STRATEGY="${1:-2_31_177}"
+STRATEGY="${1:-vwpreversion}"
 GRANULARITY="${2:-H1}"
 INTERVAL_SEC="${3:-60}"
 
@@ -70,7 +70,7 @@ echo ""
 # ────────────────────────────────────────────
 # Validate strategy
 # ────────────────────────────────────────────
-VALID_STRATEGIES="2_14_147 2_15_195 2_31_175 2_31_177 2_32_120 2_36_190 2_38_112 all"
+VALID_STRATEGIES="vwpreversion consecbar ltrsi3 compmomentum monthweekphase nymid vwappremium nfpweek atrexpansion all"
 
 if [ "$STRATEGY" != "all" ]; then
     found=false
@@ -92,7 +92,7 @@ fi
 # ────────────────────────────────────────────
 echo -e "${YELLOW}[1/3] Compilation...${NC}"
 cd "$SCRIPT_DIR"
-mvn compile -q -pl trading-core,trading-data,trading-strategies -am 2>&1 | grep -v "^$" || true
+mvn compile -q -pl trading-core,trading-data,trading-broker,trading-strategies -am 2>&1 | grep -v "^$" || true
 if [ $? -ne 0 ] && [ $? -ne 130 ]; then
     echo -e "${RED}❌ Compilation failed${NC}"
     exit 1
@@ -112,7 +112,7 @@ if [ -z "$CP" ] || [ "$CP" = ":" ]; then
     echo -e "${YELLOW}Building classpath via Maven...${NC}"
     CP=$(mvn dependency:build-classpath -pl trading-strategies -q -DincludeScope=compile -Dmdep.outputFile=/dev/stdout 2>/dev/null || true)
     if [ -n "$CP" ]; then
-        CP="$SCRIPT_DIR/trading-core/target/classes:$SCRIPT_DIR/trading-data/target/classes:$SCRIPT_DIR/trading-strategies/target/classes:$CP"
+        CP="$SCRIPT_DIR/trading-core/target/classes:$SCRIPT_DIR/trading-data/target/classes:$SCRIPT_DIR/trading-broker/target/classes:$SCRIPT_DIR/trading-strategies/target/classes:$CP"
     fi
 fi
 
@@ -137,7 +137,7 @@ java -cp "$CP" \
     -Dorg.slf4j.simpleLogger.log.com.martinfou.trading=info \
     -Dorg.slf4j.simpleLogger.showDateTime=true \
     -Dorg.slf4j.simpleLogger.dateTimeFormat="yyyy-MM-dd HH:mm:ss" \
-    com.martinfou.trading.strategies.LiveStrategyRunner \
+    com.martinfou.trading.strategies.live.LiveStrategyRunner \
     "$OANDA_API_KEY" "$OANDA_ACCOUNT_ID" "$STRATEGY" "$GRANULARITY" "$INTERVAL_SEC" &
 
 PID=$!

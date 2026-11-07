@@ -1,12 +1,8 @@
 package com.martinfou.trading.strategies;
 
 import com.martinfou.trading.core.Strategy;
-import com.martinfou.trading.strategies.creative.CreativeStrategyCatalog;
+import com.martinfou.trading.strategies.builtin.*;
 import com.martinfou.trading.strategies.harness.HarnessStrategyCatalog;
-import com.martinfou.trading.strategies.llmweekly.LlmWeeklyStrategyCatalog;
-import com.martinfou.trading.strategies.longterm.LongTermStrategyCatalog;
-import com.martinfou.trading.strategies.newsweekly.NewsWeeklyStrategyCatalog;
-import com.martinfou.trading.strategies.prop.PropStrategyCatalog;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -94,7 +90,9 @@ public final class StrategyCatalog {
 
     private static String resolveTradingStyle(String id, Family family) {
         if (id == null) return "TREND_FOLLOWING";
-        if (id.startsWith("FuturesTurnOfMonth") || id.contains("TurnOfMonth") || id.equals("WeeklyOpenGapFade")) {
+        if (id.startsWith("FuturesTurnOfMonth") || id.contains("TurnOfMonth") || id.equals("WeeklyOpenGapFade")
+                || id.equals("UsdCadAutumnBullish") || id.equals("GbpUsdSpringBullish")
+                || id.contains("Seasonal") || id.contains("Month") || id.contains("Friday") || id.contains("Thursday") || id.contains("Weekday")) {
             return "SEASONALITY";
         }
         if (id.contains("Breakout") || id.contains("RangeBreakout") || id.equals("LondonOpenRangeBreakout") || id.equals("OverlapMomentumBurst") || id.equals("FuturesOpeningRangeBreakout")) {
@@ -269,21 +267,114 @@ public final class StrategyCatalog {
     }
 
     private static void bootstrapBuiltIn() {
-        PropStrategyCatalog.all().keySet().forEach(id ->
-            put(id, Family.PROP, PropStrategyCatalog.defaultSymbol(id),
-                sym -> PropStrategyCatalog.create(id, sym)));
+        // 1. Prop Mechanical Strategies
+        put("LondonOpenRangeBreakout", Family.PROP, "EUR_USD", LondonOpenRangeBreakoutStrategy::new);
+        put("AsianRangeMeanReversion", Family.PROP, "USD_JPY", AsianRangeMeanReversionStrategy::new);
+        put("SupplyDemandZone", Family.PROP, "EUR_USD", SupplyDemandZoneStrategy::new);
+        put("ConnorsRsi2", Family.PROP, "EUR_USD", ConnorsRsi2Strategy::new);
+        put("PdhlSweepReversal", Family.PROP, "EUR_USD", PdhlSweepReversalStrategy::new);
+        put("NyContinuation", Family.PROP, "GBP_USD", NyContinuationStrategy::new);
+        put("WeeklyOpenGapFade", Family.PROP, "USD_JPY", WeeklyOpenGapFadeStrategy::new);
+        put("InsideBarBreakout", Family.PROP, "EUR_USD", InsideBarBreakoutStrategy::new);
+        put("OverlapMomentumBurst", Family.PROP, "GBP_USD", OverlapMomentumBurstStrategy::new);
+        put("BollingerBreakoutMomentum", Family.PROP, "EUR_USD", sym -> new BollingerBreakoutMomentum("BollingerBreakoutMomentum_" + sym, sym));
+        put("EmaCloudTrendFilter", Family.PROP, "EUR_USD", sym -> new EmaCloudTrendFilter("EmaCloudTrendFilter_" + sym, sym));
+        put("RSIPulseMomentum", Family.PROP, "EUR_USD", sym -> new RSIPulseMomentumStrategy("RSIPulseMomentum_" + sym, sym));
+        put("RSI3MeanReversion", Family.PROP, "EUR_USD", sym -> new RSI3MeanReversion("RSI3MeanReversion_" + sym, sym));
+        put("DlrMeanReversion", Family.PROP, "EUR_USD", sym -> new DlrMeanReversion("DlrMeanReversion_" + sym, sym));
+        put("EngulfingReversal", Family.PROP, "EUR_USD", sym -> new EngulfingReversalStrategy("EngulfingReversal_" + sym, sym));
+
+        // 2. LLM Weekly Strategies
         LlmWeeklyStrategyCatalog.all().keySet().forEach(id ->
             put(id, Family.LLM_WEEKLY, LlmWeeklyStrategyCatalog.defaultSymbol(id),
                 sym -> LlmWeeklyStrategyCatalog.create(id, sym)));
-        NewsWeeklyStrategyCatalog.all().keySet().forEach(id ->
-            put(id, Family.NEWS_WEEKLY, NewsWeeklyStrategyCatalog.defaultSymbol(id),
-                sym -> NewsWeeklyStrategyCatalog.create(id, sym)));
-        CreativeStrategyCatalog.all().keySet().forEach(id ->
-            put(id, Family.CREATIVE, CreativeStrategyCatalog.defaultSymbol(id),
-                sym -> CreativeStrategyCatalog.create(id, sym)));
-        LongTermStrategyCatalog.all().keySet().forEach(id ->
-            put(id, Family.LONG_TERM, LongTermStrategyCatalog.defaultSymbol(id),
-                sym -> LongTermStrategyCatalog.create(id, sym)));
+
+        // 3. Built-in Research / Creative Strategies
+        put("ADXTrendFilter", Family.CREATIVE, "EUR_USD", sym -> new ADXTrendFilterStrategy("ADXTrendFilter", sym));
+        put("ATRChannelTrail", Family.CREATIVE, "EUR_USD", sym -> new ATRChannelTrailStrategy("ATRChannelTrail", sym));
+        put("ATRExpansionMomentum", Family.CREATIVE, "EUR_USD", sym -> new ATRExpansionMomentumStrategy("ATRExpansionMomentum", sym));
+        put("ChaikinMoneyFlow", Family.CREATIVE, "EUR_USD", sym -> new ChaikinMoneyFlowStrategy("ChaikinMoneyFlow", sym));
+        put("ChandelierExitTrend", Family.CREATIVE, "EUR_USD", sym -> new ChandelierExitTrendStrategy("ChandelierExitTrend", sym));
+        put("CompositeMomentumRanking", Family.CREATIVE, "EUR_USD", sym -> new CompositeMomentumRankingStrategy("CompositeMomentumRanking", sym));
+        put("DualEmaMomentum", Family.CREATIVE, "EUR_USD", sym -> new DualEmaMomentumStrategy("DualEmaMomentum", sym));
+        put("DualTimeframeConviction", Family.CREATIVE, "EUR_USD", sym -> new DualTimeframeConvictionStrategy("DualTimeframeConviction", sym));
+        put("EMAPullback", Family.CREATIVE, "EUR_USD", sym -> new EMAPullbackStrategy("EMAPullback", sym));
+        put("FisherTransformRSI", Family.CREATIVE, "EUR_USD", sym -> new FisherTransformRSIStrategy("FisherTransformRSI", sym));
+        put("HeikinAshiTrend", Family.CREATIVE, "EUR_USD", sym -> new HeikinAshiTrendStrategy("HeikinAshiTrend", sym));
+        put("IchimokuCloud", Family.CREATIVE, "EUR_USD", sym -> new IchimokuCloudStrategy("IchimokuCloud", sym));
+        put("MomentumAcceleration", Family.CREATIVE, "EUR_USD", sym -> new MomentumAccelerationStrategy("MomentumAcceleration", sym));
+        put("MomentumDivergence", Family.CREATIVE, "EUR_USD", sym -> new MomentumDivergenceStrategy("MomentumDivergence", sym));
+        put("ParabolicSAR", Family.CREATIVE, "EUR_USD", sym -> new ParabolicSARStrategy("ParabolicSAR", sym));
+        put("TripleEMACrossover", Family.CREATIVE, "EUR_USD", sym -> new TripleEMACrossoverStrategy("TripleEMACrossover", sym));
+        put("TrueRangeMomentum", Family.CREATIVE, "EUR_USD", sym -> new TrueRangeMomentumStrategy("TrueRangeMomentum", sym));
+        put("VWAPMomentum", Family.CREATIVE, "EUR_USD", sym -> new VWAPMomentumStrategy("VWAPMomentum", sym));
+        put("BollingerMeanReversion", Family.CREATIVE, "EUR_USD", sym -> new BollingerMeanReversion("BollingerMeanReversion", sym));
+        put("BollingerSqueezeBreakout", Family.CREATIVE, "EUR_USD", sym -> new BollingerSqueezeBreakoutStrategy("BollingerSqueezeBreakout", sym));
+        put("ConsecutiveBarExhaustion", Family.CREATIVE, "EUR_USD", sym -> new ConsecutiveBarExhaustionStrategy("ConsecutiveBarExhaustion", sym));
+        put("DonchianChannelBreakout", Family.CREATIVE, "EUR_USD", sym -> new DonchianChannelBreakoutStrategy("DonchianChannelBreakout", sym));
+        put("FalseBreakoutReversal", Family.CREATIVE, "EUR_USD", sym -> new FalseBreakoutReversalStrategy("FalseBreakoutReversal", sym));
+        put("FractalPattern", Family.CREATIVE, "EUR_USD", sym -> new FractalPatternStrategy("FractalPattern", sym));
+        put("IBSMeanReversion", Family.CREATIVE, "EUR_USD", sym -> new IBSMeanReversionStrategy("IBSMeanReversion", sym));
+        put("KeltnerChannelReversal", Family.CREATIVE, "EUR_USD", sym -> new KeltnerChannelReversalStrategy("KeltnerChannelReversal", sym));
+        put("PriceDeviationMeanReversion", Family.CREATIVE, "EUR_USD", sym -> new PriceDeviationMeanReversion("PriceDeviationMeanReversion", sym));
+        put("RenkoFilteredMomentum", Family.CREATIVE, "EUR_USD", sym -> new RenkoFilteredMomentumStrategy("RenkoFilteredMomentum", sym));
+        put("RSIDivergence", Family.CREATIVE, "EUR_USD", sym -> new RSIDivergenceStrategy("RSIDivergence", sym));
+        put("SeasonalMeanReversion", Family.CREATIVE, "EUR_USD", sym -> new SeasonalMeanReversion("SeasonalMeanReversion", sym));
+        put("SeasonalPullback", Family.CREATIVE, "EUR_USD", sym -> new SeasonalPullbackStrategy("SeasonalPullback", sym));
+        put("StochasticMeanReversion", Family.CREATIVE, "EUR_USD", sym -> new StochasticMeanReversion("StochasticMeanReversion", sym));
+        put("SwingLevelReversal", Family.CREATIVE, "EUR_USD", sym -> new SwingLevelReversalStrategy("SwingLevelReversal", sym));
+        put("VolatilitySpikeFade", Family.CREATIVE, "EUR_USD", sym -> new VolatilitySpikeFadeStrategy("VolatilitySpikeFade", sym));
+        put("VolumeProfileVA", Family.CREATIVE, "EUR_USD", sym -> new VolumeProfileVAStrategy("VolumeProfileVA", sym));
+        put("VwapPremiumReversion", Family.CREATIVE, "EUR_USD", sym -> new VwapPremiumReversionStrategy("VwapPremiumReversion", sym));
+        put("VWPReversion", Family.CREATIVE, "EUR_USD", sym -> new VWPReversionStrategy("VWPReversion", sym));
+        put("WickReversal", Family.CREATIVE, "EUR_USD", sym -> new WickReversalStrategy("WickReversal", sym));
+        put("ZScoreReversion", Family.CREATIVE, "EUR_USD", sym -> new ZScoreReversionStrategy("ZScoreReversion", sym));
+        put("CreativeInsideBarBreakout", Family.CREATIVE, "EUR_USD", sym -> new CreativeInsideBarBreakoutStrategy("CreativeInsideBarBreakout", sym));
+        put("LondonSessionEMAPullback", Family.CREATIVE, "EUR_USD", sym -> new LondonSessionEMAPullbackStrategy("LondonSessionEMAPullback", sym));
+        put("MidMonthExhaustion", Family.CREATIVE, "EUR_USD", sym -> new MidMonthExhaustionStrategy("MidMonthExhaustion", sym));
+        put("MonthPhaseMomentum", Family.CREATIVE, "EUR_USD", sym -> new MonthPhaseMomentumStrategy("MonthPhaseMomentum", sym));
+        put("MonthWeekPhase", Family.CREATIVE, "EUR_USD", sym -> new MonthWeekPhaseStrategy("MonthWeekPhase", sym));
+        put("OpeningRangeBreakout", Family.CREATIVE, "EUR_USD", sym -> new OpeningRangeBreakoutStrategy("OpeningRangeBreakout", sym));
+        put("OpeningRangeContinuation", Family.CREATIVE, "EUR_USD", sym -> new OpeningRangeContinuationStrategy("OpeningRangeContinuation", sym));
+        put("PivotPointReversal", Family.CREATIVE, "EUR_USD", sym -> new PivotPointReversalStrategy("PivotPointReversal", sym));
+        put("PostNewsAbsorption", Family.CREATIVE, "EUR_USD", sym -> new PostNewsAbsorptionStrategy("PostNewsAbsorption", sym));
+        put("PostNewsContinuation", Family.CREATIVE, "EUR_USD", sym -> new PostNewsContinuationStrategy("PostNewsContinuation", sym));
+        put("SessionBreakoutMomentum", Family.CREATIVE, "EUR_USD", sym -> new SessionBreakoutMomentumStrategy("SessionBreakoutMomentum", sym));
+        put("SessionMomentumFlow", Family.CREATIVE, "EUR_USD", sym -> new SessionMomentumFlowStrategy("SessionMomentumFlow", sym));
+        put("SessionOverlapBreakout", Family.CREATIVE, "EUR_USD", sym -> new SessionOverlapBreakoutStrategy("SessionOverlapBreakout", sym));
+        put("TrendRetestEntry", Family.CREATIVE, "EUR_USD", sym -> new TrendRetestEntryStrategy("TrendRetestEntry", sym));
+        put("WeekdaySession", Family.CREATIVE, "EUR_USD", sym -> new WeekdaySessionStrategy("WeekdaySession", sym));
+        put("WeekendContinuation", Family.CREATIVE, "EUR_USD", sym -> new WeekendContinuationStrategy("WeekendContinuation", sym));
+        put("COTSentimentContrarian", Family.CREATIVE, "EUR_USD", sym -> new COTSentimentContrarianStrategy("COTSentimentContrarian", sym));
+        put("JPYSpecMomentum", Family.CREATIVE, "EUR_USD", sym -> new JPYSpecMomentumStrategy("JPYSpecMomentum", sym));
+        put("MayExhaustionFade", Family.CREATIVE, "EUR_USD", sym -> new MayExhaustionFadeStrategy("MayExhaustionFade", sym));
+        put("MACDHistogramDivergence", Family.CREATIVE, "EUR_USD", sym -> new MACDHistogramDivergenceStrategy("MACDHistogramDivergence", sym));
+        put("FridayBear", Family.CREATIVE, "GBP_JPY", sym -> new FridayBearStrategy("FridayBear"));
+        put("GapFader", Family.CREATIVE, "GBP_JPY", sym -> new GapFaderStrategy());
+        put("LondonOpenVol", Family.CREATIVE, "GBP_JPY", sym -> new LondonOpenVolStrategy("LondonOpenVol"));
+        put("MonthlyRotation", Family.CREATIVE, "GBP_JPY", sym -> new MonthlyRotationStrategy("MonthlyRotation"));
+        put("NYMidSessionMomentum", Family.CREATIVE, "GBP_JPY", sym -> new NYMidSessionMomentumStrategy("NYMidSessionMomentum"));
+        put("SessionCloseReversal", Family.CREATIVE, "GBP_JPY", sym -> new SessionCloseReversalStrategy("SessionCloseReversal"));
+        put("SessionTransition", Family.CREATIVE, "GBP_JPY", sym -> new SessionTransitionStrategy("SessionTransition"));
+        put("ThursdayRangeExpansion", Family.CREATIVE, "GBP_JPY", sym -> new ThursdayRangeExpansionStrategy("ThursdayRangeExpansion"));
+        put("VolClusterMomentum", Family.CREATIVE, "GBP_JPY", sym -> new VolClusterMomentumStrategy("VolClusterMomentum"));
+        put("VolContractionBreakout", Family.CREATIVE, "GBP_JPY", sym -> new VolContractionBreakoutStrategy("VolContractionBreakout"));
+        put("UsdCadAutumnBullish", Family.CREATIVE, "USD_CAD", UsdCadAutumnBullish::new);
+        put("GbpUsdSpringBullish", Family.CREATIVE, "GBP_USD", GbpUsdSpringBullish::new);
+
+        // 4. Long-Term Systematic Strategies
+        put("LtCrossMomentum", Family.LONG_TERM, "EUR_USD", sym -> new LtCrossMomentum("LtCrossMomentum", sym));
+        put("LtRSIMeanRev", Family.LONG_TERM, "EUR_USD", sym -> new LtRSIMeanRev("LtRSIMeanRev", sym));
+        put("LtRSI3Momentum", Family.LONG_TERM, "EUR_USD", sym -> new LtRSI3Momentum("LtRSI3Momentum", sym));
+        put("LtRangeBreakout", Family.LONG_TERM, "EUR_USD", sym -> new LtRangeBreakout("LtRangeBreakout", sym));
+        put("LtVolRegime", Family.LONG_TERM, "EUR_USD", sym -> new LtVolRegime("LtVolRegime", sym));
+        put("LtBollingerSqueeze", Family.LONG_TERM, "EUR_USD", sym -> new LtBollingerSqueeze("LtBollingerSqueeze", sym));
+        put("LtSqueezeMomentum", Family.LONG_TERM, "EUR_USD", sym -> new LtSqueezeMomentum("LtSqueezeMomentum", sym));
+        put("LtPullbackEntry", Family.LONG_TERM, "EUR_USD", sym -> new LtPullbackEntry("LtPullbackEntry", sym));
+        put("LtDoubleMA", Family.LONG_TERM, "EUR_USD", sym -> new LtDoubleMA("LtDoubleMA", sym));
+        put("LtEfficiencyRatio", Family.LONG_TERM, "EUR_USD", sym -> new LtEfficiencyRatio("LtEfficiencyRatio", sym));
+
+        // 5. Harness Strategies
         HarnessStrategyCatalog.all().keySet().forEach(id ->
             put(id, Family.HARNESS, HarnessStrategyCatalog.defaultSymbol(id),
                 sym -> HarnessStrategyCatalog.create(id, sym)));
@@ -335,6 +426,15 @@ public final class StrategyCatalog {
 
     public static Strategy create(String id, String symbol) {
         return create(id, symbol, null);
+    }
+
+    /** Creates the strategy directly from its registered factory without wrapping in {@link FixedQuantityStrategy}. */
+    public static Strategy createRaw(String id, String symbol) {
+        Registration reg = ENTRIES.get(id);
+        if (reg == null) {
+            throw new IllegalArgumentException("Unknown strategy: " + id);
+        }
+        return reg.factory().apply(symbol);
     }
 
     public static Strategy create(String id, String symbol, Double quantityUnits) {

@@ -3,10 +3,10 @@ package com.martinfou.trading.examples;
 import com.martinfou.trading.backtest.*;
 import com.martinfou.trading.core.*;
 import com.martinfou.trading.data.HistoricalDataLoader;
-import com.martinfou.trading.strategies.creative.MesTurtleStrategy;
-import com.martinfou.trading.strategies.longterm.LtDoubleMA;
-import com.martinfou.trading.strategies.longterm.LtEfficiencyRatio;
-import com.martinfou.trading.strategies.longterm.LtRangeBreakout;
+import com.martinfou.trading.strategies.builtin.MesTurtleStrategy;
+import com.martinfou.trading.strategies.builtin.LtDoubleMA;
+import com.martinfou.trading.strategies.builtin.LtEfficiencyRatio;
+import com.martinfou.trading.strategies.builtin.LtRangeBreakout;
 
 import com.martinfou.trading.backtest.persistence.BacktestPersistenceService;
 import java.io.IOException;

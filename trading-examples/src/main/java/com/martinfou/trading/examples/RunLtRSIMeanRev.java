@@ -3,7 +3,7 @@ package com.martinfou.trading.examples;
 import com.martinfou.trading.backtest.*;
 import com.martinfou.trading.core.*;
 import com.martinfou.trading.data.HistoricalDataLoader;
-import com.martinfou.trading.strategies.longterm.LtRSIMeanRev;
+import com.martinfou.trading.strategies.builtin.LtRSIMeanRev;
 import java.util.List;
 
 /**

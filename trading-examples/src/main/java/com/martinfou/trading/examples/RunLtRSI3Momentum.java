@@ -9,7 +9,7 @@ import com.martinfou.trading.core.LotSizing;
 import com.martinfou.trading.data.HistoricalDataLoader;
 import com.martinfou.trading.strategies.StrategyCatalog;
 import com.martinfou.trading.strategies.StrategyCatalog.Family;
-import com.martinfou.trading.strategies.longterm.LtRSI3Momentum;
+import com.martinfou.trading.strategies.builtin.LtRSI3Momentum;
 
 import java.time.Instant;
 import java.time.ZoneId;

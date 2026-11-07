@@ -11,7 +11,7 @@ import java.util.Set;
  * from a {@link Chromosome} (the DNA of a strategy).
  *
  * <p>The generated class implements {@code com.martinfou.trading.core.Strategy}
- * and is placed in the package {@code com.martinfou.trading.strategies.generated}.
+ * and is placed in the package {@code com.martinfou.trading.strategies.builtin}.
  * It hardcodes all indicator periods, fields, entry/exit logic, and
  * risk-management parameters so that the result is a standalone,
  * self-contained trading strategy.</p>
@@ -32,7 +32,7 @@ import java.util.Set;
  */
 public final class StrategyCodeGen {
 
-    private static final String PACKAGE = "com.martinfou.trading.strategies.generated";
+    private static final String PACKAGE = "com.martinfou.trading.strategies.builtin";
     private static final String INDENT = "    ";
 
     /**

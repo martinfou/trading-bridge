@@ -8,8 +8,8 @@ import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Strategy;
 import com.martinfou.trading.data.HistoricalDataLoader;
-import com.martinfou.trading.strategies.creative.GoldTurtleDxyPyramidStrategy;
-import com.martinfou.trading.strategies.creative.GoldTurtleTrendStrategy;
+import com.martinfou.trading.strategies.builtin.GoldTurtleDxyPyramidStrategy;
+import com.martinfou.trading.strategies.builtin.GoldTurtleTrendStrategy;
 
 import java.util.*;
 

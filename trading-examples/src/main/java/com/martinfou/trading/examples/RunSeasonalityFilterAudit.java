@@ -11,7 +11,7 @@ import com.martinfou.trading.core.Order;
 import com.martinfou.trading.data.HistoricalDataLoader;
 import com.martinfou.trading.intelligence.research.SeasonalityFilter;
 import com.martinfou.trading.intelligence.research.SeasonalityFilter.SeasonalBias;
-import com.martinfou.trading.strategies.creative.DateWindowSeasonalStrategy;
+import com.martinfou.trading.strategies.builtin.DateWindowSeasonalStrategy;
 
 import java.time.*;
 import java.util.*;

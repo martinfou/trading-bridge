@@ -49,7 +49,7 @@ public class RunIBSOnly {
         Path reportDir = Path.of(System.getProperty("user.dir"), "creative-lab");
         if (!reportDir.toFile().exists()) reportDir = Path.of("/home/martinfou/projects/trading-bridge/creative-lab");
 
-        Strategy s = new com.martinfou.trading.strategies.creative.IBSMeanReversionStrategy();
+        Strategy s = new com.martinfou.trading.strategies.builtin.IBSMeanReversionStrategy();
 
         for (var entry : allBars.entrySet()) {
             String asset = entry.getKey();

@@ -161,7 +161,7 @@ class WeeklyStrategyCodeGeneratorTest {
     private static void writeRegistrarTemplate(Path registrar) throws Exception {
         Files.createDirectories(registrar.getParent());
         Files.writeString(registrar, """
-            package com.martinfou.trading.strategies.llmweekly;
+            package com.martinfou.trading.strategies.builtin;
 
             public final class LlmWeeklyStrategyCatalogRegistrar {
                 public static void registerAll() {

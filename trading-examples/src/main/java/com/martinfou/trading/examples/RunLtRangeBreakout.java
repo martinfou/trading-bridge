@@ -3,7 +3,7 @@ package com.martinfou.trading.examples;
 import com.martinfou.trading.backtest.*;
 import com.martinfou.trading.core.*;
 import com.martinfou.trading.data.HistoricalDataLoader;
-import com.martinfou.trading.strategies.longterm.LtRangeBreakout;
+import com.martinfou.trading.strategies.builtin.LtRangeBreakout;
 
 import java.io.IOException;
 import java.util.*;

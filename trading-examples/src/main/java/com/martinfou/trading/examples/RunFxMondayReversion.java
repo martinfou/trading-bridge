@@ -9,8 +9,8 @@ import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.core.Trade;
 import com.martinfou.trading.data.HistoricalDataLoader;
-import com.martinfou.trading.strategies.creative.MondayReversionStrategy;
-import com.martinfou.trading.strategies.creative.MondayReversionStrategy.Policy;
+import com.martinfou.trading.strategies.builtin.MondayReversionStrategy;
+import com.martinfou.trading.strategies.builtin.MondayReversionStrategy.Policy;
 
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;

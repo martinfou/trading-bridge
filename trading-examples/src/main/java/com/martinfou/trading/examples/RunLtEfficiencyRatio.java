@@ -3,7 +3,7 @@ package com.martinfou.trading.examples;
 import com.martinfou.trading.backtest.*;
 import com.martinfou.trading.core.*;
 import com.martinfou.trading.data.HistoricalDataLoader;
-import com.martinfou.trading.strategies.longterm.LtEfficiencyRatio;
+import com.martinfou.trading.strategies.builtin.LtEfficiencyRatio;
 import java.util.List;
 
 /**

@@ -8,7 +8,7 @@ import com.martinfou.trading.backtest.SwapCalculator;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.data.HistoricalDataLoader;
-import com.martinfou.trading.strategies.creative.GoldWeekdayEffectStrategy;
+import com.martinfou.trading.strategies.builtin.GoldWeekdayEffectStrategy;
 
 import java.util.*;
 

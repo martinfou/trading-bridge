@@ -3,11 +3,11 @@ package com.martinfou.trading.backtest;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.DataLoader;
 import com.martinfou.trading.core.Strategy;
-import com.martinfou.trading.strategies.creative.CompositeMomentumRankingStrategy;
-import com.martinfou.trading.strategies.creative.ConsecutiveBarExhaustionStrategy;
-import com.martinfou.trading.strategies.creative.MonthWeekPhaseStrategy;
-import com.martinfou.trading.strategies.creative.VWPReversionStrategy;
-import com.martinfou.trading.strategies.longterm.LtRSI3Momentum;
+import com.martinfou.trading.strategies.builtin.CompositeMomentumRankingStrategy;
+import com.martinfou.trading.strategies.builtin.ConsecutiveBarExhaustionStrategy;
+import com.martinfou.trading.strategies.builtin.MonthWeekPhaseStrategy;
+import com.martinfou.trading.strategies.builtin.VWPReversionStrategy;
+import com.martinfou.trading.strategies.builtin.LtRSI3Momentum;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;

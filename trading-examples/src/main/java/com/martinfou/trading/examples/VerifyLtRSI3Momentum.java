@@ -5,7 +5,7 @@ import com.martinfou.trading.backtest.BacktestResult;
 import com.martinfou.trading.backtest.RealCostModel;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Trade;
-import com.martinfou.trading.strategies.longterm.LtRSI3Momentum;
+import com.martinfou.trading.strategies.builtin.LtRSI3Momentum;
 import com.martinfou.trading.data.HistoricalDataLoader;
 
 import java.util.List;

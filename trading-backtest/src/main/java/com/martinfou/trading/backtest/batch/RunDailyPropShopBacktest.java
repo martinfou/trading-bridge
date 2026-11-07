@@ -96,16 +96,16 @@ public class RunDailyPropShopBacktest {
 
         // ── 2. Create 10 NEW prop-shop inspired strategies ──
         List<Strategy> strategies = new ArrayList<>();
-        strategies.add(new com.martinfou.trading.strategies.creative.SessionBreakoutMomentumStrategy());
-        strategies.add(new com.martinfou.trading.strategies.creative.ConsecutiveBarExhaustionStrategy());
-        strategies.add(new com.martinfou.trading.strategies.creative.VolatilitySpikeFadeStrategy());
-        strategies.add(new com.martinfou.trading.strategies.creative.TrendRetestEntryStrategy());
-        strategies.add(new com.martinfou.trading.strategies.creative.WickReversalStrategy());
-        strategies.add(new com.martinfou.trading.strategies.creative.InsideBarBreakoutStrategy());
-        strategies.add(new com.martinfou.trading.strategies.creative.SwingLevelReversalStrategy());
-        strategies.add(new com.martinfou.trading.strategies.creative.OpeningRangeContinuationStrategy());
-        strategies.add(new com.martinfou.trading.strategies.creative.EMAPullbackStrategy());
-        strategies.add(new com.martinfou.trading.strategies.creative.ChandelierExitTrendStrategy());
+        strategies.add(new com.martinfou.trading.strategies.builtin.SessionBreakoutMomentumStrategy());
+        strategies.add(new com.martinfou.trading.strategies.builtin.ConsecutiveBarExhaustionStrategy());
+        strategies.add(new com.martinfou.trading.strategies.builtin.VolatilitySpikeFadeStrategy());
+        strategies.add(new com.martinfou.trading.strategies.builtin.TrendRetestEntryStrategy());
+        strategies.add(new com.martinfou.trading.strategies.builtin.WickReversalStrategy());
+        strategies.add(new com.martinfou.trading.strategies.builtin.CreativeInsideBarBreakoutStrategy());
+        strategies.add(new com.martinfou.trading.strategies.builtin.SwingLevelReversalStrategy());
+        strategies.add(new com.martinfou.trading.strategies.builtin.OpeningRangeContinuationStrategy());
+        strategies.add(new com.martinfou.trading.strategies.builtin.EMAPullbackStrategy());
+        strategies.add(new com.martinfou.trading.strategies.builtin.ChandelierExitTrendStrategy());
 
         System.out.println("\n📋 10 strategies loaded for backtest\n");
 

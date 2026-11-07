@@ -38,6 +38,6 @@ echo "╚═══════════════════════�
 echo ""
 
 java -Xmx512m -cp "$CLASSPATH" \
-    com.martinfou.trading.strategies.LiveStrategyRunner \
+    com.martinfou.trading.strategies.live.LiveStrategyRunner \
     "$API_KEY" "$ACCOUNT_ID" "$STRATEGY" "$GRANULARITY" "$INTERVAL" \
     2>&1 | tee "$LOG_FILE"

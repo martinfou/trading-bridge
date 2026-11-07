@@ -9,8 +9,8 @@ import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.core.Trade;
 import com.martinfou.trading.data.HistoricalDataLoader;
-import com.martinfou.trading.strategies.creative.GoldTurtleTrendStrategy;
-import com.martinfou.trading.strategies.creative.TurtleCrossAssetStrategy;
+import com.martinfou.trading.strategies.builtin.GoldTurtleTrendStrategy;
+import com.martinfou.trading.strategies.builtin.TurtleCrossAssetStrategy;
 
 import java.nio.file.*;
 import java.time.*;

@@ -1,7 +1,7 @@
 package com.martinfou.trading.strategies.harness;
 
 import com.martinfou.trading.core.Bar;
-import com.martinfou.trading.strategies.prop.PropSessions;
+import com.martinfou.trading.strategies.builtin.PropSessions;
 
 /**
  * One long round-trip per ISO week: enter on first Monday bar, exit on Friday bar

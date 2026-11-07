@@ -3,7 +3,7 @@ package com.martinfou.trading.examples;
 import com.martinfou.trading.backtest.*;
 import com.martinfou.trading.core.*;
 import com.martinfou.trading.data.HistoricalDataLoader;
-import com.martinfou.trading.strategies.longterm.LtCrossMomentum;
+import com.martinfou.trading.strategies.builtin.LtCrossMomentum;
 import java.util.List;
 
 /**

@@ -79,10 +79,10 @@ public class RunPortfolioBacktest {
         // Define strategies to test together
         List<StrategyPrototype> strategyPrototypes = List.of(
             new StrategyPrototype(
-                "com.martinfou.trading.strategies.creative.MayExhaustionFadeStrategy",
+                "com.martinfou.trading.strategies.builtin.MayExhaustionFadeStrategy",
                 "MayExhaustionFade"),
             new StrategyPrototype(
-                "com.martinfou.trading.strategies.creative.JPYSpecMomentumStrategy",
+                "com.martinfou.trading.strategies.builtin.JPYSpecMomentumStrategy",
                 "⚡ JPY Spec Momentum")
         );
 

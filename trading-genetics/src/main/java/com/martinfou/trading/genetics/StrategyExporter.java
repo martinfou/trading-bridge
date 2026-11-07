@@ -27,7 +27,7 @@ import java.util.stream.Stream;
  *
  * <p>The generated source code is identical to what {@link StrategyCodeGen}
  * produces. The file is written into the {@code trading-strategies} module
- * under {@code com.martinfou.trading.strategies.generated}, so it becomes
+ * under {@code com.martinfou.trading.strategies.builtin}, so it becomes
  * part of the project and can be compiled with {@code mvn compile}.</p>
  *
  * <p>Two main workflows are supported:
@@ -51,7 +51,7 @@ import java.util.stream.Stream;
 public final class StrategyExporter {
 
     /** Target package for generated strategy classes. */
-    static final String GENERATED_PACKAGE = "com.martinfou.trading.strategies.generated";
+    static final String GENERATED_PACKAGE = "com.martinfou.trading.strategies.builtin";
 
     /** Relative path from the project root to the generated strategies directory. */
     private static final String GENERATED_DIR_RELATIVE =

@@ -63,7 +63,7 @@ public class RunJPYMomentumBacktest {
         }
 
         // Strategy instance
-        String stratClass = "com.martinfou.trading.strategies.creative.JPYSpecMomentumStrategy";
+        String stratClass = "com.martinfou.trading.strategies.builtin.JPYSpecMomentumStrategy";
         Class<?> clazz = Class.forName(stratClass);
 
         List<Result> results = new ArrayList<>();

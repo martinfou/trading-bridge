@@ -2,7 +2,7 @@ package com.martinfou.trading.examples;
 
 import com.martinfou.trading.core.*;
 import com.martinfou.trading.backtest.*;
-import com.martinfou.trading.strategies.creative.MesTurtleStrategy;
+import com.martinfou.trading.strategies.builtin.MesTurtleStrategy;
 
 import java.io.*;
 import java.nio.file.*;
