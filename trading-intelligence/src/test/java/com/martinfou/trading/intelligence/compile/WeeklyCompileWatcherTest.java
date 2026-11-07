@@ -69,7 +69,7 @@ class WeeklyCompileWatcherTest {
         Path compiledDir = WeeklyBuilderPaths.compiled(tempDir).resolve("2026-W24");
         assertTrue(Files.exists(compiledDir.resolve("manifest.json")));
         assertTrue(Files.exists(compiledDir.resolve(pendingPlan.getFileName())));
-        assertTrue(Files.exists(tempDir.resolve("deploy/weekly-plans/2026-06-06.md")));
+        assertTrue(Files.exists(tempDir.resolve("data/reports/weekly-plans/2026-06-06.md")));
         try (var compiling = Files.list(WeeklyBuilderPaths.compiling(tempDir))) {
             assertTrue(compiling.findAny().isEmpty());
         }

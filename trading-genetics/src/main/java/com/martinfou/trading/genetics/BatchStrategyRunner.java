@@ -40,7 +40,7 @@ import java.util.stream.Collectors;
  * <pre>{@code
  *   java -cp ... com.martinfou.trading.genetics.BatchStrategyRunner \
  *        --count 500 --types all --bars 250 --capital 100000 \
- *        --output ./batch-results/ --threads 8
+ *        --output data/reports/batch-results/ --threads 8
  * }</pre>
  */
 public final class BatchStrategyRunner {
@@ -1065,7 +1065,7 @@ new Chart(document.getElementById('c3'),{type:'scatter',data:{datasets:[{label:'
         String types = "all";
         int bars = 250;
         double capital = 100_000.0;
-        Path outputDir = Path.of("./batch-results/");
+        Path outputDir = Path.of("data/reports/batch-results");
         String dataPath = null;
         int threads = Runtime.getRuntime().availableProcessors();
 

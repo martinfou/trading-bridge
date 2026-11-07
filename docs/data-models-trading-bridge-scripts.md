@@ -1,7 +1,7 @@
 # Modèles de Données, Formats Binaires & Journaux d'État — Scripts & Opérations (`trading-bridge-scripts`)
 
-**Date de mise à jour :** 2026-11-05  
-**Emplacement :** `config/`, `data/`, `data-futures/`, `scripts/`
+**Date de mise à jour :** 2026-11-06  
+**Emplacement :** `config/`, `data/`, `scripts/`
 
 ---
 
@@ -31,7 +31,7 @@ Fichier maître de configuration du portefeuille Paper/Live/Dev lu par `LiveStra
 
 ## 3. Journaux d'État et de Réconciliation Courtiers
 
-### 3.1 Journal des Fills IBKR Futures (`data-futures/state/ibkr-fills-journal.json`)
+### 3.1 Journal des Fills IBKR Futures (`data/state/futures/ibkr-fills-journal.json`)
 Persisté et rechargé par `IbkrFuturesBroker` / `IbkrLiveRunner` pour garantir qu'aucune clôture de position (SL/TP/EOD) ni attribution de stratégie (`orderRef`) ne soit perdue lors d'un redémarrage du conteneur `trading-futures`.
 * Contient les exécutions d'ouverture et de fermeture avec `execId`, `orderRef` (nom de la stratégie sans suffixe `_MGC`), `symbol`, `side`, `qty`, `price`, `realizedPnl` et `timestampUtc`.
 

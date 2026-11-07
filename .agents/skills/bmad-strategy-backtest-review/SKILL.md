@@ -20,7 +20,7 @@ When this workflow completes, the agent will have produced:
 ## 2. Input Context & Prerequisites
 
 The workflow expects one or more of the following data sources:
-- **Backtest Result Files**: JSON, CSV, or Markdown outputs in `batch-results/`, `reports/`, or `data/`.
+- **Backtest Result Files**: JSON, CSV, or Markdown outputs in `data/reports/batch-results/`, `data/reports/`, or `data/`.
 - **Strategy Source Code**: Java/Python strategy files located in `trading-strategies/` or `trading-runtime/`.
 - **Configuration Files**: Strategy configuration JSON/YAML files (e.g. `wfa-config.json`).
 
@@ -28,7 +28,7 @@ The workflow expects one or more of the following data sources:
 
 ## 3. Data Sources & Path Resolution
 
-- **Strategy Inputs**: `{project-root}/trading-strategies/` or `{project-root}/batch-results/`
+- **Strategy Inputs**: `{project-root}/trading-strategies/` or `{project-root}/data/reports/batch-results/`
 - **WFA Configs**: `{project-root}/wfa-config.json`
 - **Output Artifact**: `{project-root}/_bmad-output/implementation-artifacts/strategy-review-<strategy-slug>.md`
 

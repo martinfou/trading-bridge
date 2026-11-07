@@ -11,7 +11,7 @@ Le dépôt **Trading Bridge** est organisé en **4 parties complémentaires** :
 1. **`trading-bridge-java`** (`/`) : Moteur central Java 21 / Maven 4 composé de **11 modules** (domaine, données, stratégies, backtest, courtiers OANDA/IBKR, parseur SQX, algorithmes génétiques, intelligence LLM, Control Plane HTTP/WS, exemples CLI et TUI JLine3).
 2. **`trading-bridge-desktop`** (`/desktop`) : Poste de travail natif Electron 33 + Vue 3.5 + TradingView Lightweight Charts 5.
 3. **`trading-bridge-dashboard`** (`/dashboard`) : Console Web SSR légère en PHP 8.3 / Laravel 13.8 pour le suivi rapide et le Kill Switch d'urgence.
-4. **`trading-bridge-scripts`** (`/scripts`, `/docker`, `/config`, `/deploy`, `run-*.sh`) : Écosystème d'automatisation StrategyQuant X (`sqcli`), démons de télémétrie IBKR/OANDA vers Hermes Web, sondes de recherche quantitative (série Simons 35e–65e) et infrastructure Docker multi-couloirs (`paper`, `dev`, `futures`).
+4. **`trading-bridge-scripts`** (`/scripts`, `/docker`, `/config`, `run-*.sh`) : Écosystème d'automatisation StrategyQuant X (`sqcli`), démons de télémétrie IBKR/OANDA vers Hermes Web, sondes de recherche quantitative (série Simons 35e–65e) et infrastructure Docker multi-couloirs (`paper`, `dev`, `futures`).
 
 ---
 

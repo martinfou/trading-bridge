@@ -170,9 +170,9 @@ public class RunAllBatchBacktests {
             }
             System.out.println("-".repeat(95));
             
-            // Also write output to a file in batch-results/profitable_report.txt
+            // Also write output to a file in data/reports/batch-results/profitable_report.txt
             try {
-                Path reportDir = Path.of("batch-results");
+                Path reportDir = Path.of("data/reports/batch-results");
                 if (!Files.exists(reportDir)) {
                     Files.createDirectories(reportDir);
                 }

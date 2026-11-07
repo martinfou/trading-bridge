@@ -160,7 +160,7 @@ public final class WeeklyCompileWatcher {
         mapper.writerWithDefaultPrettyPrinter()
             .writeValue(compiledDir.resolve("manifest.json").toFile(), manifest);
 
-        WeeklyPlanMarkdownWriter.write(repoRoot.resolve("deploy"), plan, manifest);
+        WeeklyPlanMarkdownWriter.write(repoRoot.resolve("data/reports"), plan, manifest);
 
         Path compiledPlan = compiledDir.resolve(compilingPlan.getFileName());
         Files.move(compilingPlan, compiledPlan, StandardCopyOption.REPLACE_EXISTING);

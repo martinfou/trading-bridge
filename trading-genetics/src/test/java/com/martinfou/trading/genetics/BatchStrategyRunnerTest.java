@@ -28,7 +28,7 @@ class BatchStrategyRunnerTest {
         assertEquals("all", config.types());
         assertEquals(250, config.bars());
         assertEquals(100_000.0, config.capital(), 0.001);
-        assertEquals("./batch-results", config.outputDir().toString().replace('\\', '/'));
+        assertEquals("data/reports/batch-results", config.outputDir().toString().replace('\\', '/'));
         assertTrue(config.threads() >= 1);
         assertFalse(config.selectionCriteria().isEnabled(), "Selection should be disabled by default");
     }

@@ -87,7 +87,7 @@ public final class LaneTelemetryCollector {
         if (envDir != null && !envDir.isBlank()) {
             dirs.add(Paths.get(envDir.trim()));
         }
-        dirs.add(Paths.get("data-futures", "fills"));
+        dirs.add(Paths.get("data", "fills"));
         return dirs;
     }
 
@@ -111,7 +111,7 @@ public final class LaneTelemetryCollector {
         if (envDir != null && !envDir.isBlank()) {
             dirs.add(Paths.get(envDir.trim()));
         }
-        dirs.add(Paths.get("data-futures", "state"));
+        dirs.add(Paths.get("data", "state", "futures"));
         return dirs;
     }
 
@@ -133,7 +133,7 @@ public final class LaneTelemetryCollector {
 
     /**
      * Collects and merges IBKR trades from live Gateway executions, persisted {@code pnl_state.json},
-     * and {@code data-futures/fills/*-paper.jsonl} round-trips, deduplicating twins within ±20s.
+     * and {@code data/fills/*-paper.jsonl} round-trips, deduplicating twins within ±20s.
      */
     public List<Map<String, Object>> collectIbkrTrades(
         String venueId,
@@ -368,7 +368,7 @@ public final class LaneTelemetryCollector {
     }
 
     /**
-     * Collects active strategy runs from local state files ({@code data-futures/state/*-cursor.json},
+     * Collects active strategy runs from local state files ({@code data/state/futures/*-cursor.json},
      * {@code data/state/live-strategy-state-*.json}, and {@code data/state/dev/live-strategy-state-*.json})
      * that are not already present in {@code existingStrategyIds}.
      */
@@ -395,7 +395,7 @@ public final class LaneTelemetryCollector {
             }
         }
 
-        // 1. IBKR Futures state cursors (data-futures/state/*-cursor.json)
+        // 1. IBKR Futures state cursors (data/state/futures/*-cursor.json)
         for (Path dir : futuresStateDirs) {
             if (dir == null || !Files.isDirectory(dir)) {
                 continue;

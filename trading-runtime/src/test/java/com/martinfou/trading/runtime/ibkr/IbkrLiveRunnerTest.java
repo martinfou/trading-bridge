@@ -246,6 +246,18 @@ class IbkrLiveRunnerTest {
         }
     }
 
+    @Test
+    @DisplayName("Default TB_STATE_DIR (/app/data/state/futures) resolves fills directory to /app/data/fills")
+    void runnerConfig_defaultStateDirResolvesUnifiedDataFills() {
+        IbkrLiveRunner.RunnerConfig cfg = IbkrLiveRunner.RunnerConfig.fromEnv(java.util.Map.of(
+            "IBKR_ACCOUNT_ID", "DU12345",
+            "STRATEGY", "sq-mgc-m30-breakout-0-24542",
+            "TB_ALLOW_ORDERS", "1"
+        ));
+        assertEquals(Path.of("/app/data/state/futures"), cfg.stateDir());
+        assertEquals(Path.of("/app/data/fills"), IbkrLiveRunner.resolveFillsDir(cfg.stateDir()));
+    }
+
     private static final class AlwaysSignalStrategy implements Strategy {
         private final List<Order> pending = new ArrayList<>();
         @Override public String name() { return "AlwaysSignal"; }

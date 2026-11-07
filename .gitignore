@@ -61,8 +61,7 @@ _bmad/**/*.bak
 *.log
 logs/
 
-# BMAD generated reports (batch-results etc. stay ignored; _bmad-output is tracked)
-batch-results/
+# BMAD generated reports (_bmad-output is tracked)
 backtest-*-report.md
 genetic-results/
 creative-lab/
@@ -126,12 +125,8 @@ data/weekly-builder/dlq/*
 data/weekly-builder/archive/*
 !data/weekly-builder/archive/.gitkeep
 
-deploy/active-strategy.txt
-deployments/deploy-log.json
-deployments/
-
-# Walk-Forward Analysis reports
-data/reports/wfa/
+# Walk-Forward Analysis, batch & backtest reports (root and submodule runs)
+**/data/reports/
 
 # Dev lane state (never the window's)
 data-dev/
@@ -140,18 +135,22 @@ logs-dev/
 # OANDA BA (bid+ask) raw data — regenerable via scripts/oanda-ba-fetch.py
 data/oanda-ba/
 
-# Runtime live strategy state (whole tree: dev/ subdir held untracked runner state)
-data/state/
+# Runtime live strategy state (OANDA paper, dev, and IBKR futures state)
+**/data/state/
 
-# IBKR futures lane persistent state & fill logs (Story 46.11 / F4)
+# Unified fill logs (.jsonl)
+**/data/fills/
+
+# Legacy directories (kept ignored if present on older local checkouts)
 data-futures/
+batch-results/
+deploy/*.env
 
 # Repo-local Maven repo for artifacts not on Maven Central (see third-party/README.md)
 !third-party/m2/**/*.jar
 
 # Local-only files (never commit: account statements, machine env)
 transactions_*.csv
-deploy/*.env
 
 # Runtime state (written by the running platform, never committed)
 data/runtime/generator/databank.json

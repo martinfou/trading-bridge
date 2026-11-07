@@ -80,4 +80,4 @@ flowchart TB
 Pour éviter toute contamination entre recherche, réhabilitation et trading Paper/Live :
 1. **Couloir OANDA Paper (`trading-live`, `TB_LANE=paper`)** : Utilise `.env.paper` (sous-compte OANDA `-004`), persiste dans `./data/state` et exécute les 4 stratégies `GBP_JPY` H1 ELITE.
 2. **Couloir OANDA Dev/Rehab (`trading-dev`, `TB_LANE=dev`)** : Utilise `.env.dev` (sous-compte distinct `-003`, vérifié par `scripts/dev-lane.sh`), persiste dans `./data/state/dev` (ou `./data-dev`) et isole les stratégies en observation.
-3. **Couloir IBKR CME Micro Futures (`trading-futures`)** : Utilise `docker/docker-compose.futures.yml`, se connecte à IB Gateway (`127.0.0.1:4002`, compte `DUR967322`), persiste ses journaux de fills dans `./data-futures/state/ibkr-fills-journal.json` et exécute les 3 stratégies `MGC` M30 ELITE.
+3. **Couloir IBKR CME Micro Futures (`trading-futures`)** : Utilise `docker/docker-compose.futures.yml`, se connecte à IB Gateway (`127.0.0.1:4002`, compte `DUR967322`), persiste ses journaux de fills dans `./data/state/futures/ibkr-fills-journal.json` et exécute les 3 stratégies `MGC` M30 ELITE.

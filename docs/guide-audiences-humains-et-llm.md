@@ -189,5 +189,5 @@ Lorsque vous générez, évaluez ou déboguez une stratégie de trading :
 4. **Traitement des Sentinelles IBKR (`Double.MAX_VALUE` / `1.7976931348623157e308`)** :
    * IBKR TWS émet `Double.MAX_VALUE` sur `CommissionReport.realizedPNL` lors des fills d'ouverture et sur certains tags `accountSummary` non initialisés. Tout script ou connecteur doit filtrer `abs(val) > 1e300` et ne **jamais** persister ni afficher `0.0` à la place d'une donnée absente.
 5. **Persistance des Journaux de Fills au Redémarrage** :
-   * Vérifiez que `data-futures/state/ibkr-fills-journal.json` (pour IBKR) et `data/state/live-strategy-state-*.json` (pour OANDA) sont montés en volume hôte et que chaque ordre IBKR porte l'identifiant de sa stratégie dans `Execution.orderRef`.
+   * Vérifiez que `data/state/futures/ibkr-fills-journal.json` (pour IBKR) et `data/state/live-strategy-state-*.json` (pour OANDA) sont montés en volume hôte et que chaque ordre IBKR porte l'identifiant de sa stratégie dans `Execution.orderRef`.
 

@@ -57,7 +57,7 @@ public final class FuturesTradingEngine {
 
     public static final Set<String> VALID_MODES = Set.of("backtest", "paper", "live");
     public static final Set<String> VALID_BROKERS = Set.of("ibkr", "oanda");
-    public static final Path DEFAULT_REPORTS_DIR = Paths.get("data-futures/reports");
+    public static final Path DEFAULT_REPORTS_DIR = Paths.get("data/reports");
 
     public record BacktestRunOutcome(
         EngineRunConfig config,

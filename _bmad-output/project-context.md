@@ -118,7 +118,7 @@ flowchart BT
   - `trading-futures` (`docker/docker-compose.futures.yml`, IBKR Paper `DUR967322` on `127.0.0.1:4002`): Runs the 3 `MGC` M30 ELITE SQX strategies (`IbkrLiveRunner`).
 - **IBKR ClientId & Sentinel Rules:**
   - Strict `clientId` separation on IB Gateway (`:4002`): `11` = `IbkrLiveRunner`, `90` = `ibkr_snapshot_push.py`, `98` = `ibkr_pnl_push.py`.
-  - Always stamp `Order.orderRef` with the strategy ID on both entry and exit orders; persist fills in `data-futures/state/ibkr-fills-journal.json`.
+  - Always stamp `Order.orderRef` with the strategy ID on both entry and exit orders; persist fills in `data/state/futures/ibkr-fills-journal.json`.
   - Filter out IBKR's `Double.MAX_VALUE` (`1.7976931348623157e308`, `abs(v) > 1e300`) sentinel on `CommissionReport.realizedPNL` (emitted on opening fills) and `accountSummary` tags; **never** substitute `0.0` for missing data.
 
 ### 3.4 Critical Don't-Miss Anti-Patterns

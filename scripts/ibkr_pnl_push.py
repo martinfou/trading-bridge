@@ -581,7 +581,7 @@ def backfill_since(state: dict, fallback_days: int = 7) -> datetime:
 
 def load_jsonl_closes(fills_dir: Path, existing_executions: dict[str, dict]
                       ) -> tuple[list[dict], list[tuple[str, str, str]]]:
-    """Reconstruit les round-trips fermés depuis data-futures/fills/*-paper.jsonl lorsque le Gateway
+    """Reconstruit les round-trips fermés depuis data/fills/*-paper.jsonl lorsque le Gateway
     a redémarré avant le passage du publisher P&L.
 
     Retourne (lignes synthétisées, jumeaux à retirer). Un round-trip du journal qui a une exécution
@@ -1023,10 +1023,12 @@ def main() -> int:
             continue
         state["executions"][execution["exec_id"]] = execution
 
-    fills_dir = Path(os.environ.get(
-        "TB_FUTURES_FILLS_DIR",
-        Path.home() / "projects/trading-bridge/data-futures/fills"
-    ))
+    env_fills = os.environ.get("TB_FUTURES_FILLS_DIR", "").strip()
+    if env_fills:
+        fills_dir = Path(env_fills)
+    else:
+        repo_fills = Path(__file__).resolve().parent.parent / "data" / "fills"
+        fills_dir = repo_fills if repo_fills.is_dir() else (Path.home() / "projects/trading-bridge/data/fills")
     synthesized, retire_candidates = load_jsonl_closes(fills_dir, state["executions"])
     for jsonl_exec in synthesized:
         state["executions"].setdefault(jsonl_exec["exec_id"], jsonl_exec)

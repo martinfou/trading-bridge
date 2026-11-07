@@ -16,7 +16,7 @@ La plateforme isole strictement ses environnements d'exécution en **3 couloirs 
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **1. OANDA Paper** | `docker-compose.yml` | `trading-live` (`TB_LANE=paper`) | `.env.paper` (Compte Practice `-004`) | `./data/state` & `./logs` | Exécution Paper officielle des **4 stratégies `GBP_JPY` H1 ELITE**. |
 | **2. OANDA Dev / Rehab** | `docker-compose.yml` ou `docker-compose.dev.yml` | `trading-dev` (`TB_LANE=dev`) | `.env.dev` (Compte Practice `-003`) | `./data/state/dev` ou `./data-dev` | Couloir de quarantaine/réhabilitation (5 stratégies manuelles). Piloté via `./scripts/dev-lane.sh`. |
-| **3. IBKR CME Futures Paper** | `docker/docker-compose.futures.yml` | `trading-futures` | Variables hôte (`IBKR_ACCOUNT_ID=DUR967322`, `:4002`) | `./data-futures/state` | Exécution Paper des **3 stratégies `MGC` (Micro Or) M30 ELITE** via `IbkrLiveRunner`. |
+| **3. IBKR CME Futures Paper** | `docker/docker-compose.futures.yml` | `trading-futures` | Variables hôte (`IBKR_ACCOUNT_ID=DUR967322`, `:4002`) | `./data/state/futures` | Exécution Paper des **3 stratégies `MGC` (Micro Or) M30 ELITE** via `IbkrLiveRunner`. |
 
 ---
 
@@ -67,7 +67,7 @@ docker compose -f docker/docker-compose.futures.yml up -d --build
 docker logs -f trading-futures
 ```
 * Le conteneur exécute `scripts/docker-entrypoint-ibkr.sh` qui supervise `com.martinfou.trading.runtime.ibkr.IbkrLiveRunner` avec reconnexion à backoff exponentiel (`10 s` $\rightarrow$ `3600 s`).
-* Les journaux de fills et d'attribution de stratégies (`orderRef`) sont persistés dans `data-futures/state/ibkr-fills-journal.json` afin de survivre à tout redémarrage de conteneur.
+* Les journaux de fills et d'attribution de stratégies (`orderRef`) sont persistés dans `data/state/futures/ibkr-fills-journal.json` afin de survivre à tout redémarrage de conteneur.
 
 ---
 

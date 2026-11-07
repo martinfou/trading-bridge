@@ -19,7 +19,10 @@ flowchart TB
     HIST --> DUK[dukascopy/ CSV raw]
     HIST --> BARS[bars/ .bars binary]
     DATA --> CI[ci/ committed mini-dataset]
-    DATA --> RUNTIME[runtime/ SQLite stores]
+    DATA --> RUNTIME[runtime/ SQLite stores & JSON configs]
+    DATA --> STATE[state/ OANDA paper, dev/ & futures/ cursors]
+    DATA --> FILLS[fills/ unified .jsonl fill logs]
+    DATA --> REPORTS[reports/ backtest, wfa/ & batch-results/]
     DATA --> SQINBOX[sq-inbox/ SQ XML hot folder]
 ```
 

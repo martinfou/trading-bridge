@@ -191,3 +191,12 @@ Items deferred during code reviews — not blocking current stories.
 - source_spec: `_bmad-output/implementation-artifacts/spec-strategy-generator-time-day-filters.md`
   summary: In `StrategyGenome.GenomeExecutableStrategy.effectiveRules`, when `r0UsesP2` is false and rule index `i == 1` is a dual-period block (`MA_CROSSOVER`, `ATR_EXPANSION`, `MACD_HISTOGRAM`), `this.period2` overrides `r.period1()` while leaving `r.period2()` unchanged.
   evidence: Pre-existing uncommitted WFA parameter-binding code at `StrategyGenome.java:1456` maps `period2` to the second rule's `period1` slot.
+
+
+## Deferred from: code review (2026-11-06)
+
+- [x] [Review][Defer] `LaneTelemetryCollector.defaultFuturesStateDirs` checks `TB_FUTURES_STATE_DIR` rather than `TB_STATE_DIR` [`trading-runtime/src/main/java/com/martinfou/trading/runtime/LaneTelemetryCollector.java:108`] — deferred, pre-existing (`TB_STATE_DIR` is used for OANDA state in host telemetry collection)
+- [x] [Review][Defer] `sq-mgc-m30-breakout-0-24542-MGC-paper.json` `validatedBy` points to a gitignored backtest report [`config/runs/sq-mgc-m30-breakout-0-24542-MGC-paper.json:19`] — deferred, pre-existing (`data-futures/` was also gitignored previously)
+- [x] [Review][Defer] `scripts/run-daily-genetics.sh` primary output still writes to `genetic-results/` and promotion folder is not watched [`scripts/run-daily-genetics.sh:26`] — deferred, pre-existing
+- [x] [Review][Defer] `WeeklyPlanMarkdownWriter` remains in `com.martinfou.trading.intelligence.deploy` package [`trading-intelligence/src/main/java/com/martinfou/trading/intelligence/deploy/WeeklyPlanMarkdownWriter.java:1`] — deferred, pre-existing package name
+- [x] [Review][Defer] Docs reference `ibkr-fills-journal.json` and `docker-compose.dev.yml` mounts `./data-dev` [`docs/deployment-guide.md:18,70`] — deferred, pre-existing

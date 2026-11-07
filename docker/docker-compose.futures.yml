@@ -2,7 +2,7 @@
 # Usage:
 #   docker compose -f docker/docker-compose.futures.yml --project-name tb-futures up -d
 #
-# Isolated from the main docker-compose.yml (OANDA lane) and its ./data directory.
+# Uses ./data/state/futures under the unified ./data directory.
 
 services:
   trading-futures:
@@ -23,12 +23,12 @@ services:
       - FUTURES_INTERVAL_MINUTES=${FUTURES_INTERVAL_MINUTES:-30}
       - STRATEGY=${STRATEGY:-sq-mgc-m30-breakout-0-24542,sq-mgc-m30-breakout-1-29-102,sq-mgc-m30-breakout-0-32921}
       - TB_ALLOW_ORDERS=${TB_ALLOW_ORDERS:-1}
-      - TB_STATE_DIR=/app/data-futures/state
+      - TB_STATE_DIR=/app/data/state/futures
       - DRY_RUN=${DRY_RUN:-false}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ../data-futures:/app/data-futures
+      - ../data:/app/data
       - ../scripts/docker-entrypoint-ibkr.sh:/app/entrypoint-ibkr.sh:ro
       - ../config/live-config.json:/app/config/live-config.json:ro
     healthcheck:

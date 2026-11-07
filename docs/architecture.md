@@ -95,7 +95,7 @@ flowchart BT
 | `trading-genetics`   | Genetic strategy search (batch, not runtime catalog)                                               |
 
 
-**Outside reactor:** `dashboard/` (Laravel control room), `batch-results/` (GA output, not compiled).
+**Outside reactor:** `dashboard/` (Laravel control room), `data/reports/batch-results/` (GA output, not compiled).
 
 ## StrategyQuant XML pipeline (Epic 2)
 

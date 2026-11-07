@@ -53,7 +53,7 @@ import java.util.function.Function;
  *   <li>{@code FUTURES_INTERVAL_MINUTES}: scheduler cadence in minutes (default {@code 30})</li>
  *   <li>{@code STRATEGY}: single strategy short name resolved via {@code LiveStrategyRunner.getStrategyMap()}</li>
  *   <li>{@code TB_ALLOW_ORDERS}: must be {@code 1} (or {@code true}) unless {@code DRY_RUN=true}</li>
- *   <li>{@code TB_STATE_DIR}: bar cursor persistence directory (default {@code /app/data-futures/state})</li>
+ *   <li>{@code TB_STATE_DIR}: bar cursor persistence directory (default {@code /app/data/state/futures})</li>
  *   <li>{@code DRY_RUN}: {@code true} to evaluate and log without dispatching orders (default {@code false})</li>
  * </ul>
  */
@@ -90,7 +90,7 @@ public final class IbkrLiveRunner implements AutoCloseable {
             int intervalMinutes = Integer.parseInt(getOrDefault(env, "FUTURES_INTERVAL_MINUTES", "30"));
             String strategyName = env.getOrDefault("STRATEGY", "").trim();
             String allowOrders = env.getOrDefault(OrderTripwire.ENV_ALLOW_ORDERS, "").trim();
-            Path stateDir = Paths.get(getOrDefault(env, "TB_STATE_DIR", "/app/data-futures/state"));
+            Path stateDir = Paths.get(getOrDefault(env, "TB_STATE_DIR", "/app/data/state/futures"));
             boolean dryRun = Boolean.parseBoolean(getOrDefault(env, "DRY_RUN", "false"));
             return new RunnerConfig(
                 host, port, accountId, clientId, symbol, timeframe,
@@ -171,20 +171,33 @@ public final class IbkrLiveRunner implements AutoCloseable {
         this.fillLogWriter = fillLogWriter;
         this.commissionPerContract = commissionPerContract;
         if (config.stateDir() != null) {
-            Path parent = config.stateDir().getParent();
-            Path fillsDir = parent != null ? parent.resolve("fills") : config.stateDir().resolve("fills");
+            Path fillsDir = resolveFillsDir(config.stateDir());
             for (String s : config.strategyNames()) {
                 fillLogWritersByStrategy.put(s, FillLogWriter.forRun(fillsDir, s, config.symbol(), "paper"));
             }
         }
     }
 
+    static Path resolveFillsDir(Path stateDir) {
+        String envFills = System.getenv("TB_FUTURES_FILLS_DIR");
+        if (envFills != null && !envFills.isBlank()) {
+            return Paths.get(envFills.trim());
+        }
+        if (stateDir == null) {
+            return FillLogWriter.DEFAULT_FILLS_DIR;
+        }
+        Path parent = stateDir.getParent();
+        if (parent != null && stateDir.endsWith(Paths.get("state", "futures")) && parent.getParent() != null) {
+            return parent.getParent().resolve("fills");
+        }
+        return parent != null ? parent.resolve("fills") : stateDir.resolve("fills");
+    }
+
     private static FillLogWriter resolveDefaultFillLogWriter(RunnerConfig config) {
         if (config == null || config.stateDir() == null) {
             return null;
         }
-        Path parent = config.stateDir().getParent();
-        Path fillsDir = parent != null ? parent.resolve("fills") : config.stateDir().resolve("fills");
+        Path fillsDir = resolveFillsDir(config.stateDir());
         String primaryStrategy = config.strategyNames().isEmpty() ? config.strategyName() : config.strategyNames().get(0);
         return FillLogWriter.forRun(fillsDir, primaryStrategy, config.symbol(), "paper");
     }

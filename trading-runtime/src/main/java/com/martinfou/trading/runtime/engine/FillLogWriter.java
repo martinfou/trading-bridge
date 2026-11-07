@@ -18,13 +18,13 @@ import java.util.Objects;
 /**
  * Append-only JSON Lines ({@code .jsonl}) writer and reader for unified fill logs (PRD §5 F4, Decision D10).
  *
- * <p>Default path: {@code data-futures/fills/<strategy>-<symbol>-<mode>.jsonl}.</p>
+ * <p>Default path: {@code data/fills/<strategy>-<symbol>-<mode>.jsonl}.</p>
  */
 public final class FillLogWriter {
 
     private static final Logger log = LoggerFactory.getLogger(FillLogWriter.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    public static final Path DEFAULT_FILLS_DIR = Paths.get("data-futures/fills");
+    public static final Path DEFAULT_FILLS_DIR = Paths.get("data/fills");
 
     private final Path filePath;
 

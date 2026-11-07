@@ -2,12 +2,15 @@
 # Run the ConnectorRunner demo inside a single Maven Docker container
 set -e
 
-cd /home/martinfou/projects/trading-bridge
+cd "$(dirname "$0")/.."
 
-OANDA_KEY="${1:-$(grep OANDA_API_KEY deploy/openclaw.env 2>/dev/null | cut -d= -f2)}"
-OANDA_ACCT="${2:-$(grep OANDA_ACCOUNT_ID deploy/openclaw.env 2>/dev/null | cut -d= -f2)}"
+OANDA_KEY="${1:-$(grep -E '^OANDA_API_KEY=' .env.paper 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '"\x27\r')}"
+OANDA_ACCT="${2:-$(grep -E '^OANDA_ACCOUNT_ID=' .env.paper 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '"\x27\r')}"
 
-docker run --rm -v "$(pwd):/app" -w /app --entrypoint bash maven:3-eclipse-temurin-21 << 'SCRIPT'
+docker run --rm -v "$(pwd):/app" -w /app \
+  -e OANDA_API_KEY="$OANDA_KEY" \
+  -e OANDA_ACCOUNT_ID="$OANDA_ACCT" \
+  --entrypoint bash maven:3-eclipse-temurin-21 << 'SCRIPT'
   set -e
   # Install required modules
   mvn install -DskipTests -q -pl trading-core,trading-data -am

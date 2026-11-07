@@ -139,7 +139,7 @@ class FuturesTradingEngineTest {
         // 6. Paper mode with validatedBy -> allowed
         EngineRunConfig paperValidated = new EngineRunConfig(
             "sq-mgc-m30-breakout-0-24542", "MGC", "M30", "paper", "ibkr",
-            null, null, 11270.0, costs, "data-futures/reports/sq-mgc-m30-breakout-0-24542-MGC-backtest-report.json", false, false
+            null, null, 11270.0, costs, "data/reports/sq-mgc-m30-breakout-0-24542-MGC-backtest-report.json", false, false
         );
         FuturesTradingEngine.validateConfig(paperValidated);
     }

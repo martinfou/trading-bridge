@@ -156,7 +156,7 @@ if [ -f "$OUTPUT_DIR/strategies/Top1_*.java" ] || [ "$PROMISING" -gt 0 ] 2>/dev/
     log "✅ Promotion-ready file written to: $RESULT_FILE"
 
     # Copy top strategies to a monitored folder
-    PROMO_DIR="${PROJECT_DIR}/deploy/weekly-plans/genetic-${DATE_STAMP}"
+    PROMO_DIR="${PROJECT_DIR}/data/reports/weekly-plans/genetic-${DATE_STAMP}"
     mkdir -p "$PROMO_DIR"
     if compgen -G "$OUTPUT_DIR/strategies/Top*.java" > /dev/null; then
         cp "$OUTPUT_DIR"/strategies/Top*.java "$PROMO_DIR/"

@@ -35,7 +35,7 @@ COUNT=500
 TYPES="all"
 BARS=250
 CAPITAL=100000
-OUTPUT="${PROJECT_DIR}/batch-results"
+OUTPUT="${PROJECT_DIR}/data/reports/batch-results"
 THREADS=""
 
 # Selection criteria mode (generate until criteria are met)
@@ -59,7 +59,7 @@ ${YELLOW}Options (Standard Mode):${NC}
   --types S       Strategy types: all|trend,meanrev,breakout,momentum (default: all)
   --bars N        Number of bars for backtest (default: 250)
   --capital N     Initial capital in USD (default: 100000)
-  --output DIR    Output directory (default: ./batch-results/)
+  --output DIR    Output directory (default: data/reports/batch-results/)
   --data PATH      Use real market data from CSV file (default: simulated)
   --threads N     Parallel threads (default: CPU count)
 

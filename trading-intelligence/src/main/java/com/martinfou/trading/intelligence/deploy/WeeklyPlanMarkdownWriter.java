@@ -12,14 +12,14 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.stream.Collectors;
 
-/** Writes human-readable weekly plan summaries to deploy/weekly-plans/ (Epic 22.4). */
+/** Writes human-readable weekly plan summaries to data/reports/weekly-plans/ (Epic 22.4). */
 public final class WeeklyPlanMarkdownWriter {
 
     private WeeklyPlanMarkdownWriter() {}
 
-    public static Path write(Path deployRoot, WeeklyPlan plan, CompileManifest manifest) throws IOException {
+    public static Path write(Path reportsRoot, WeeklyPlan plan, CompileManifest manifest) throws IOException {
         LocalDate date = manifest.compiledAt().atZone(ZoneOffset.UTC).toLocalDate();
-        Path dir = deployRoot.resolve("weekly-plans");
+        Path dir = reportsRoot.resolve("weekly-plans");
         Files.createDirectories(dir);
         Path target = dir.resolve(date.format(DateTimeFormatter.ISO_LOCAL_DATE) + ".md");
 
