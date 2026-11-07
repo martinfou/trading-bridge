@@ -37,7 +37,7 @@ public class DlrMeanReversion implements Strategy {
     private static final int MIN_HISTORY = Math.max(SMA_PERIOD, Math.max(EMA_PERIOD, ATR_PERIOD)) + 5;
 
     private final String name;
-    private final String symbol;
+    private String symbol;
     private final List<Bar> history = new ArrayList<>();
     private final List<Order> pending = new ArrayList<>();
 
@@ -59,6 +59,11 @@ public class DlrMeanReversion implements Strategy {
     }
 
     @Override public String name() { return name; }
+
+    @Override
+    public Optional<List<Bar>> getHistory() {
+        return Optional.of(Collections.unmodifiableList(history));
+    }
 
     @Override
     public void onBar(Bar bar) {

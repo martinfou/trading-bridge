@@ -18,6 +18,10 @@ public class LondonOpenRangeBreakoutStrategy extends AbstractPropStrategy {
     private int rangeDay = -1;
     private boolean rangeLocked;
 
+    public LondonOpenRangeBreakoutStrategy() {
+        this("EUR_USD");
+    }
+
     public LondonOpenRangeBreakoutStrategy(String symbol) {
         super("Prop_LORB", symbol);
     }

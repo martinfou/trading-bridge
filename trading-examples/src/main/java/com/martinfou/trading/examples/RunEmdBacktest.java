@@ -6,8 +6,6 @@ import com.martinfou.trading.core.*;
 import com.martinfou.trading.data.HistoricalDataLoader;
 import com.martinfou.trading.strategies.builtin.MesTurtleStrategy;
 import com.martinfou.trading.strategies.builtin.LtDoubleMA;
-import com.martinfou.trading.strategies.builtin.LtEfficiencyRatio;
-import com.martinfou.trading.strategies.builtin.LtRangeBreakout;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -76,19 +74,9 @@ public class RunEmdBacktest {
                 (name, sym) -> new MesTurtleStrategy(name, sym, 55, 20, 1, false, 0)
             ),
             new StrategySpec(
-                "LtRangeBreakout",
-                "Daily High/Low Range Breakout + ATR Stop",
-                (name, sym) -> new LtRangeBreakout(name, sym)
-            ),
-            new StrategySpec(
                 "LtDoubleMA",
-                "Double Moving Average Crossover (EMA 21 / SMA 55)",
+                "Double Moving Average Crossover (EMA 50 / SMA 200)",
                 (name, sym) -> new LtDoubleMA(name, sym)
-            ),
-            new StrategySpec(
-                "LtEfficiencyRatio",
-                "Kaufman ER(20) > 0.5 Trend Following + Trailing Stop",
-                (name, sym) -> new LtEfficiencyRatio(name, sym)
             )
         );
 

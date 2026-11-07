@@ -50,23 +50,23 @@ public class StrategyTaxonomyTest {
         assertTrue(cross.recommendedSymbols().contains("MES"));
         assertTrue(cross.recommendedSymbols().contains("MNQ"));
 
-        StrategyCatalog.Entry range = StrategyCatalog.entries().stream()
-            .filter(e -> e.id().equals("LtRangeBreakout"))
+        StrategyCatalog.Entry doubleMa = StrategyCatalog.entries().stream()
+            .filter(e -> e.id().equals("LtDoubleMA"))
             .findFirst()
             .orElseThrow();
-        assertTrue(range.assetClasses().contains("FUTURES"), "LtRangeBreakout must contain FUTURES");
-        assertEquals("BREAKOUT", range.tradingStyle());
+        assertTrue(doubleMa.assetClasses().contains("FUTURES"), "LtDoubleMA must contain FUTURES");
+        assertEquals("TREND_FOLLOWING", doubleMa.tradingStyle());
     }
 
     @Test
     @DisplayName("Multi-asset trend models support FUTURES, FOREX, and EQUITY")
     void multiAssetModelsSupportMultipleClasses() {
-        StrategyCatalog.Entry breakout = StrategyCatalog.entries().stream()
-            .filter(e -> e.id().equals("LtRangeBreakout"))
+        StrategyCatalog.Entry doubleMa = StrategyCatalog.entries().stream()
+            .filter(e -> e.id().equals("LtDoubleMA"))
             .findFirst()
             .orElseThrow();
-        assertTrue(breakout.assetClasses().contains("FUTURES"));
-        assertTrue(breakout.assetClasses().contains("FOREX"));
-        assertTrue(breakout.assetClasses().contains("EQUITY"));
+        assertTrue(doubleMa.assetClasses().contains("FUTURES"));
+        assertTrue(doubleMa.assetClasses().contains("FOREX"));
+        assertTrue(doubleMa.assetClasses().contains("EQUITY"));
     }
 }

@@ -111,6 +111,8 @@ public final class LaneTelemetryCollector {
         if (envDir != null && !envDir.isBlank()) {
             dirs.add(Paths.get(envDir.trim()));
         }
+        dirs.add(Paths.get("data", "state", "ibkr-paper"));
+        dirs.add(Paths.get("data", "state", "ibkr-live"));
         dirs.add(Paths.get("data", "state", "futures"));
         return dirs;
     }
@@ -121,6 +123,8 @@ public final class LaneTelemetryCollector {
         if (envDir != null && !envDir.isBlank()) {
             dirs.add(Paths.get(envDir.trim()));
         }
+        dirs.add(Paths.get("data", "state", "oanda-paper"));
+        dirs.add(Paths.get("data", "state", "oanda-live"));
         dirs.add(Paths.get("data", "state"));
         return dirs;
     }

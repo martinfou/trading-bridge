@@ -3,7 +3,6 @@ package com.martinfou.trading.strategies.live;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.core.Strategy;
-import com.martinfou.trading.strategies.builtin.VWPReversionStrategy;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -236,8 +235,55 @@ class ExternalCloseCooldownTest {
         return bar(t, prev, prev + 0.0002, 1.0900, 1.0905, 5000L);
     }
 
-    private static VWPReversionStrategy primed(Instant start) {
-        VWPReversionStrategy s = new VWPReversionStrategy("vwpreversion", SYMBOL);
+    /** Strategy with a 10-bar cooldown and a signal condition (low <= 1.0910 && volume >= 4000) to test AC1 & AC3. */
+    private static final class SignalCooldownStrategy implements Strategy {
+        private static final int COOLDOWN_BARS = 10;
+        private final String name;
+        private final String symbol;
+        private boolean inTrade = false;
+        private int cooldownBars = 0;
+        private final List<Order> pending = new ArrayList<>();
+
+        SignalCooldownStrategy(String name, String symbol) {
+            this.name = name;
+            this.symbol = symbol;
+        }
+
+        @Override public String name() { return name; }
+
+        @Override
+        public void onBar(Bar bar) {
+            if (!bar.symbol().equals(symbol)) return;
+            if (cooldownBars > 0) {
+                cooldownBars--;
+                return;
+            }
+            if (!inTrade && bar.low() <= 1.0910 && bar.volume() >= 4000L) {
+                pending.add(new Order(symbol, Order.Side.BUY, Order.Type.MARKET, 1000, bar.close())
+                    .withStopLoss(bar.close() - 0.0020));
+                inTrade = true;
+            }
+        }
+
+        @Override public void onTick(double bid, double ask, long volume) { }
+
+        @Override
+        public List<Order> getPendingOrders() {
+            List<Order> out = List.copyOf(pending);
+            pending.clear();
+            return out;
+        }
+
+        @Override
+        public void reset() {
+            inTrade = false;
+            cooldownBars = 0;
+            pending.clear();
+        }
+    }
+
+    private static SignalCooldownStrategy primed(Instant start) {
+        SignalCooldownStrategy s = new SignalCooldownStrategy("vwpreversion", SYMBOL);
         for (Bar b : quiet(30, start)) s.onBar(b);
         return s;
     }
@@ -246,7 +292,7 @@ class ExternalCloseCooldownTest {
     @DisplayName("after a broker stop-out, vwpreversion does not re-enter until its own 10-bar cooldown is spent")
     void vwpDoesNotReenterUntilCooldownIsSpent() {
         Instant start = Instant.parse("2026-09-01T00:00:00Z");
-        VWPReversionStrategy s = primed(start);
+        SignalCooldownStrategy s = primed(start);
 
         // Precondition, and the assertion that makes the refusals below non-vacuous: this bar shape IS
         // a valid buy signal, so every later refusal is the cooldown talking, not a dead signal.

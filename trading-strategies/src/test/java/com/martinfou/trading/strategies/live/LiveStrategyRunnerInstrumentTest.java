@@ -3,12 +3,12 @@ package com.martinfou.trading.strategies.live;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.martinfou.trading.core.Strategy;
-import com.martinfou.trading.strategies.builtin.CompositeMomentumRankingStrategy;
-import com.martinfou.trading.strategies.builtin.ConsecutiveBarExhaustionStrategy;
+import com.martinfou.trading.strategies.builtin.DlrMeanReversion;
+import com.martinfou.trading.strategies.builtin.LondonOpenRangeBreakoutStrategy;
+import com.martinfou.trading.strategies.builtin.LtCrossMomentum;
+import com.martinfou.trading.strategies.builtin.LtDoubleMA;
+import com.martinfou.trading.strategies.builtin.MondayReversionStrategy;
 import com.martinfou.trading.strategies.builtin.MonthWeekPhaseStrategy;
-import com.martinfou.trading.strategies.builtin.NfpWeekStrategy;
-import com.martinfou.trading.strategies.builtin.VWPReversionStrategy;
-import com.martinfou.trading.strategies.builtin.LtRSI3Momentum;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -55,28 +55,28 @@ class LiveStrategyRunnerInstrumentTest {
     // ========================================================================
 
     @Test
-    @DisplayName("vwpreversion resolves USD_CHF from config, not GBP_JPY from the name")
+    @DisplayName("londonorb resolves EUR_USD from config, not GBP_JPY from the name")
     void vwpreversionResolvesUsdChfFromConfig() {
-        JsonNode cfg = config("{\"strategies\":{\"vwpreversion\":{\"instrument\":\"USD_CHF\"}}}");
+        JsonNode cfg = config("{\"strategies\":{\"londonorb\":{\"instrument\":\"EUR_USD\"}}}");
 
         LiveStrategyRunner.InstrumentResolution r =
-            LiveStrategyRunner.resolveInstrument("vwpreversion", new VWPReversionStrategy(), cfg);
+            LiveStrategyRunner.resolveInstrument("londonorb", new LondonOpenRangeBreakoutStrategy(), cfg);
 
-        assertEquals("USD_CHF", r.instrument,
-            "vwpreversion must trade the pair its config declares, not the GBP_JPY name-table default");
-        assertEquals(LiveStrategyRunner.SOURCE_CONFIG + "vwpreversion.instrument", r.source);
+        assertEquals("EUR_USD", r.instrument,
+            "londonorb must trade the pair its config declares, not the GBP_JPY name-table default");
+        assertEquals(LiveStrategyRunner.SOURCE_CONFIG + "londonorb.instrument", r.source);
     }
 
     @Test
-    @DisplayName("consecbar stays on GBP_JPY — non-regression")
+    @DisplayName("monthweekphase stays on GBP_JPY — non-regression")
     void consecbarStaysOnGbpJpy() {
-        JsonNode cfg = config("{\"strategies\":{\"consecbar\":{\"instrument\":\"GBP_JPY\"}}}");
+        JsonNode cfg = config("{\"strategies\":{\"monthweekphase\":{\"instrument\":\"GBP_JPY\"}}}");
 
         LiveStrategyRunner.InstrumentResolution r =
-            LiveStrategyRunner.resolveInstrument("consecbar", new ConsecutiveBarExhaustionStrategy(), cfg);
+            LiveStrategyRunner.resolveInstrument("monthweekphase", new MonthWeekPhaseStrategy(), cfg);
 
         assertEquals("GBP_JPY", r.instrument);
-        assertEquals(LiveStrategyRunner.SOURCE_CONFIG + "consecbar.instrument", r.source);
+        assertEquals(LiveStrategyRunner.SOURCE_CONFIG + "monthweekphase.instrument", r.source);
     }
 
     @Test
@@ -84,22 +84,22 @@ class LiveStrategyRunnerInstrumentTest {
     void newlyConfiguredStrategiesResolveTheirPair() {
         JsonNode cfg = config("{"
             + "\"strategies\":{"
-            + "\"compmomentum\":{\"instrument\":\"USD_JPY\"},"
+            + "\"mondayrev\":{\"instrument\":\"EUR_USD\"},"
             + "\"monthweekphase\":{\"instrument\":\"USD_JPY\"},"
-            + "\"ltrsi3\":{\"instrument\":\"EUR_USD\"},"
-            + "\"nfpweek\":{\"instrument\":\"EUR_USD\"}"
+            + "\"ltdoublema\":{\"instrument\":\"EUR_USD\"},"
+            + "\"ltcrossmom\":{\"instrument\":\"EUR_USD\"}"
             + "}}");
 
         Map<String, Strategy> strategies = Map.of(
-            "compmomentum", new CompositeMomentumRankingStrategy(),
+            "mondayrev", new MondayReversionStrategy(),
             "monthweekphase", new MonthWeekPhaseStrategy(),
-            "ltrsi3", new LtRSI3Momentum(),
-            "nfpweek", new NfpWeekStrategy());
+            "ltdoublema", new LtDoubleMA(),
+            "ltcrossmom", new LtCrossMomentum());
         Map<String, String> expected = Map.of(
-            "compmomentum", "USD_JPY",
+            "mondayrev", "EUR_USD",
             "monthweekphase", "USD_JPY",
-            "ltrsi3", "EUR_USD",
-            "nfpweek", "EUR_USD");
+            "ltdoublema", "EUR_USD",
+            "ltcrossmom", "EUR_USD");
 
         for (Map.Entry<String, String> e : expected.entrySet()) {
             LiveStrategyRunner.InstrumentResolution r =
@@ -111,10 +111,11 @@ class LiveStrategyRunnerInstrumentTest {
     @Test
     @DisplayName("no config entry and no name match fails loudly — never a silent GBP_JPY")
     void vwpreversionWithoutConfigFailsLoudlyInsteadOfDefaulting() {
-        // "🔁 VWAP Reversion" does not contain "VWPREVERSION", so the name table cannot match it either:
+        // "🔁 VWAP Reversion" does not contain any pair token, so the name table cannot match it either:
         // the old code silently returned GBP_JPY here; the new code must throw.
         IllegalStateException ex = assertThrows(IllegalStateException.class, () ->
-            LiveStrategyRunner.resolveInstrument("vwpreversion", new VWPReversionStrategy(), emptyConfig()));
+            LiveStrategyRunner.resolveInstrument("vwpreversion",
+                new DlrMeanReversion("🔁 VWAP Reversion", "USD_CHF"), emptyConfig()));
 
         assertTrue(ex.getMessage().contains("vwpreversion"), "the refusal must name the strategy");
         assertTrue(ex.getMessage().contains("GBP_JPY") == false,
@@ -165,9 +166,9 @@ class LiveStrategyRunnerInstrumentTest {
     // Story 1.9 — the live config declares all deployed strategies, risk sum <= 3%
     // ========================================================================
 
-    /** The five strategies that actually run in containers (docker-compose.yml: paper -014 + dev -012). */
+    /** The five strategies that actually run in oanda-paper (docker-compose.yml). */
     static final List<String> DEPLOYED = List.of(
-        "vwpreversion", "consecbar", "ltrsi3", "compmomentum", "monthweekphase");
+        "londonorb", "mondayrev", "monthweekphase", "ltdoublema", "ltcrossmom");
 
     /**
      * The account ceiling is 3% of simultaneous NAV again: D24 raised to 4% by D42 for the week-of-12-
@@ -303,8 +304,8 @@ class LiveStrategyRunnerInstrumentTest {
     void circuitBreakerTripsOnConsecutiveLosses() throws IOException {
         Path tmpState = Files.createTempDirectory("cb-test");
         LiveStrategyRunner runner = new LiveStrategyRunner(
-            "dummy-key", "101-002-4729622-014", new ConsecutiveBarExhaustionStrategy(),
-            "consecbar", "H1", 60, tmpState);
+            "dummy-key", "101-002-4729622-014", new MonthWeekPhaseStrategy("MonthWeekPhase GBP_JPY", "GBP_JPY"),
+            "monthweekphase", "H1", 60, tmpState);
 
         assertFalse(runner.isKilled());
         for (int i = 1; i <= 4; i++) {

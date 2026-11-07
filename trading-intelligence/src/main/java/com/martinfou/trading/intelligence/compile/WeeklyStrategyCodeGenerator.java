@@ -117,12 +117,12 @@ public final class WeeklyStrategyCodeGenerator {
         return """
             package %s;
 
-            import com.martinfou.trading.strategies.builtin.WeeklyOpenGapFadeStrategy;
+            import com.martinfou.trading.strategies.builtin.MondayReversionStrategy;
 
             /** LLM weekly T5 delegate — sources: %s */
-            public final class %s extends WeeklyOpenGapFadeStrategy {
+            public final class %s extends MondayReversionStrategy {
                 public %s() {
-                    super("%s");
+                    super("%s", "%s");
                 }
 
                 @Override
@@ -135,6 +135,7 @@ public final class WeeklyStrategyCodeGenerator {
             joinSources(pick),
             className,
             className,
+            strategyId,
             pick.pair(),
             strategyId
         );

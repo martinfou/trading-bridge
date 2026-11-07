@@ -53,7 +53,7 @@ public class MondayReversionStrategy implements Strategy {
     private static final double DEFAULT_QTY = 10_000;   // unités FX
 
     private final String name;
-    private final String symbol;
+    private String symbol;
 
     private Policy policy = Policy.REVERSION;
     /** Masque jour-cible [0]=MON..[4]=FRI. Défaut : LUNDI seul. */

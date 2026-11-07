@@ -66,13 +66,49 @@ public final class SqStrategyEvaluator implements Function<List<Bar>, List<Order
     }
 
     private static final Map<String, String> LEGACY_ALIASES = Map.of(
-        "sq-gold-m30", "LtRangeBreakout",
-        "sq_gold_m30", "LtRangeBreakout",
-        "gold_breakout_m30", "LtRangeBreakout",
         "sq-mgc-m30-breakout-0-24542", "MgcM30Breakout49205",
         "sq-mgc-m30-breakout-1-29-102", "MgcM30Breakout89854",
         "sq-mgc-m30-breakout-0-32921", "MgcM30Breakout92728"
     );
+
+    /**
+     * Resolves the natural CME futures symbol ({@code MGC}, {@code MNQ}, {@code MES}, {@code EMD}, {@code M2K})
+     * for a strategy name when running a multi-symbol container, falling back to {@code defaultSymbol}.
+     */
+    public static String resolveSymbolForStrategy(String strategyName, String defaultSymbol) {
+        String fallback = (defaultSymbol != null && !defaultSymbol.isBlank())
+            ? defaultSymbol.trim().toUpperCase()
+            : "MGC";
+        if (strategyName == null || strategyName.isBlank()) {
+            return fallback;
+        }
+        String key = strategyName.trim();
+        String resolvedKey = LEGACY_ALIASES.getOrDefault(key, key);
+        String upper = resolvedKey.toUpperCase();
+        if (upper.startsWith("MGC") || upper.contains("-MGC-") || upper.contains("GOLD")) {
+            return "MGC";
+        }
+        if (upper.startsWith("MNQ") || upper.contains("-MNQ-")) {
+            return "MNQ";
+        }
+        if (upper.startsWith("MES") || upper.contains("-MES-")) {
+            return "MES";
+        }
+        if (upper.startsWith("EMD") || upper.contains("-EMD-")) {
+            return "EMD";
+        }
+        if (upper.startsWith("M2K") || upper.contains("-M2K-")) {
+            return "M2K";
+        }
+        StrategyGeneratorService.ensureCatalogLoaded();
+        if (StrategyCatalog.contains(resolvedKey)) {
+            String catSym = StrategyCatalog.defaultSymbol(resolvedKey);
+            if (catSym != null && !catSym.isBlank() && !catSym.contains("_")) {
+                return catSym.trim().toUpperCase();
+            }
+        }
+        return fallback;
+    }
 
     public static Set<String> validStrategyIds() {
         StrategyGeneratorService.ensureCatalogLoaded();

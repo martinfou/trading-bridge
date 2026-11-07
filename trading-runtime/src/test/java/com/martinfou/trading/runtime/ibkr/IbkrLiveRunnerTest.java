@@ -247,7 +247,7 @@ class IbkrLiveRunnerTest {
     }
 
     @Test
-    @DisplayName("Default TB_STATE_DIR (/app/data/state/futures) resolves fills directory to /app/data/fills")
+    @DisplayName("Default TB_STATE_DIR (/app/data/state/futures) and container state dirs resolve fills directory to /app/data/fills")
     void runnerConfig_defaultStateDirResolvesUnifiedDataFills() {
         IbkrLiveRunner.RunnerConfig cfg = IbkrLiveRunner.RunnerConfig.fromEnv(java.util.Map.of(
             "IBKR_ACCOUNT_ID", "DU12345",
@@ -256,6 +256,68 @@ class IbkrLiveRunnerTest {
         ));
         assertEquals(Path.of("/app/data/state/futures"), cfg.stateDir());
         assertEquals(Path.of("/app/data/fills"), IbkrLiveRunner.resolveFillsDir(cfg.stateDir()));
+        assertEquals(Path.of("/app/data/fills"), IbkrLiveRunner.resolveFillsDir(Path.of("/app/data/state/ibkr-paper")));
+        assertEquals(Path.of("/app/data/fills"), IbkrLiveRunner.resolveFillsDir(Path.of("/app/data/state/ibkr-live")));
+    }
+
+    @Test
+    @DisplayName("Multi-symbol FUTURES_SYMBOL=MGC,MNQ,MES routes each strategy to its matching futures contract in one container")
+    void runner_multiSymbolRoutesStrategiesToTheirMatchingContract(@TempDir Path tempDir) {
+        Instant now = Instant.parse("2026-08-19T14:00:05Z");
+        Clock fixedClock = Clock.fixed(now, ZoneOffset.UTC);
+
+        StubIbkrGatewayClient stubClient = new StubIbkrGatewayClient();
+        IbkrBroker broker = new IbkrBroker(stubClient);
+
+        IbkrLiveRunner.RunnerConfig cfg = new IbkrLiveRunner.RunnerConfig(
+            "127.0.0.1", 4002, "DU12345", 11, "MGC,MNQ,MES", "1 hour", 60,
+            "MgcH1Breakout38023,MnqH1Breakout31697,MesH1Breakout30808",
+            "0", tempDir, true, "paper"
+        );
+
+        try (IbkrLiveRunner runner = new IbkrLiveRunner(cfg, broker, sym -> {
+            List<Bar> bars = new ArrayList<>();
+            Instant start = now.minus(Duration.ofMinutes(60L * 65));
+            for (int i = 0; i < 65; i++) {
+                bars.add(new Bar(sym, start.plus(Duration.ofMinutes(60L * i)),
+                    2500.0 + i, 2505.0 + i, 2495.0 + i, 2502.0 + i, 100L));
+            }
+            return bars;
+        }, () -> {}, fixedClock)) {
+            runner.start();
+            assertEquals(3, runner.evaluators().size());
+            assertEquals("MGC", runner.evaluators().get(0).symbol());
+            assertEquals("MNQ", runner.evaluators().get(1).symbol());
+            assertEquals("MES", runner.evaluators().get(2).symbol());
+
+            runner.scheduler().runCycle();
+            for (SqStrategyEvaluator ev : runner.evaluators()) {
+                assertNotNull(ev.lastProcessedBarTimestamp(),
+                    "Evaluator for " + ev.strategyName() + " (" + ev.symbol() + ") must process its symbol's bars");
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("IBKR_ENV=live allows port 4001 with live account and refuses port 4002 or DU* paper accounts")
+    void validateConfig_ibkrLiveEnvRules(@TempDir Path tempDir) {
+        // Valid live config (port 4001 + U* live account)
+        assertDoesNotThrow(() -> IbkrLiveRunner.validateConfig(
+            new IbkrLiveRunner.RunnerConfig("127.0.0.1", 4001, "U1234567", 21, "MGC,MNQ,MES", "1 hour", 60,
+                "MgcH1Breakout38023,MnqH1Breakout31697,MesH1Breakout30808", "1", tempDir, false, "live")
+        ));
+
+        // Refuses paper port 4002 when IBKR_ENV=live
+        assertThrows(IllegalArgumentException.class, () -> IbkrLiveRunner.validateConfig(
+            new IbkrLiveRunner.RunnerConfig("127.0.0.1", 4002, "U1234567", 21, "MGC", "1 hour", 60,
+                "MgcH1Breakout38023", "1", tempDir, false, "live")
+        ));
+
+        // Refuses DU* paper account when IBKR_ENV=live
+        assertThrows(IllegalArgumentException.class, () -> IbkrLiveRunner.validateConfig(
+            new IbkrLiveRunner.RunnerConfig("127.0.0.1", 4001, "DUR967322", 21, "MGC", "1 hour", 60,
+                "MgcH1Breakout38023", "1", tempDir, false, "live")
+        ));
     }
 
     private static final class AlwaysSignalStrategy implements Strategy {

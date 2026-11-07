@@ -58,7 +58,7 @@ public class SeasonalCalendarStrategy implements Strategy {
             {Order.Side.BUY, Order.Side.SELL, Order.Side.SELL};
 
     private final String name;
-    private final String symbol;
+    private String symbol;
     private final int[] windowMonths;
     private final Order.Side[] directions;
     private final int entryDayOffset;   // décalage entrée (jours après le 1er)

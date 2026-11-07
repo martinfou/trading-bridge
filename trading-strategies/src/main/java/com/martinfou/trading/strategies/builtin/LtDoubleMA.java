@@ -29,7 +29,7 @@ public class LtDoubleMA implements Strategy {
     private static final java.time.ZoneId TZ = java.time.ZoneId.of("America/New_York");
 
     private final String name;
-    private final String symbol;
+    private String symbol;
     private final List<Order> pending = new ArrayList<>();
     private final List<Bar> history = new ArrayList<>();
 
@@ -52,6 +52,11 @@ public class LtDoubleMA implements Strategy {
     }
 
     @Override public String name() { return name; }
+
+    @Override
+    public Optional<List<Bar>> getHistory() {
+        return Optional.of(Collections.unmodifiableList(history));
+    }
 
     @Override
     public void onBar(Bar bar) {

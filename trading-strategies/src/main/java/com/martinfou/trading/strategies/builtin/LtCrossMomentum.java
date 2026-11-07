@@ -47,7 +47,7 @@ public class LtCrossMomentum implements Strategy {
     private static final ZoneId UTC = ZoneId.of("UTC");
 
     private final String name;
-    private final String symbol;
+    private String symbol;
     private final List<Order> pending = new ArrayList<>();
     private final List<Bar> history = new ArrayList<>();
 

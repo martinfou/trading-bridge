@@ -5,9 +5,14 @@
 
 set -o pipefail
 
+IBKR_ENV="${IBKR_ENV:-paper}"
 IBKR_ACCOUNT_ID="${IBKR_ACCOUNT_ID:-}"
-IBKR_PORT="${IBKR_PORT:-4002}"
-STRATEGY="${STRATEGY:-sq-mgc-m30-breakout-0-24542}"
+if [ "$IBKR_ENV" = "live" ] || [ "$IBKR_ENV" = "prod" ] || [ "$IBKR_ENV" = "production" ]; then
+    IBKR_PORT="${IBKR_PORT:-4001}"
+else
+    IBKR_PORT="${IBKR_PORT:-4002}"
+fi
+STRATEGY="${STRATEGY:-MgcH1Breakout38023,MgcH1Breakout51270,MnqH1Breakout31697,MnqH1Breakout69250,MesH1Breakout30808}"
 DRY_RUN="${DRY_RUN:-false}"
 TB_ALLOW_ORDERS="${TB_ALLOW_ORDERS:-}"
 
@@ -16,9 +21,22 @@ if [ -z "$IBKR_ACCOUNT_ID" ]; then
     exit 1
 fi
 
-if [ "$IBKR_PORT" = "4001" ] || [ "$IBKR_PORT" = "7496" ] || [ "$IBKR_PORT" = "7497" ]; then
-    echo "ERROR: Refusing forbidden IBKR_PORT=${IBKR_PORT}. Only paper gateway port (4002) is allowed."
-    exit 2
+if [ "$IBKR_ENV" = "live" ] || [ "$IBKR_ENV" = "prod" ] || [ "$IBKR_ENV" = "production" ]; then
+    if [ "$IBKR_PORT" = "4002" ] || [ "$IBKR_PORT" = "7496" ] || [ "$IBKR_PORT" = "7497" ]; then
+        echo "ERROR: Refusing forbidden IBKR_PORT=${IBKR_PORT} for IBKR_ENV=live. Only live gateway port (4001) is allowed."
+        exit 2
+    fi
+    case "$IBKR_ACCOUNT_ID" in
+        DU*|du*)
+            echo "ERROR: Refusing paper account ${IBKR_ACCOUNT_ID} when IBKR_ENV=live."
+            exit 2
+            ;;
+    esac
+else
+    if [ "$IBKR_PORT" = "4001" ] || [ "$IBKR_PORT" = "7496" ] || [ "$IBKR_PORT" = "7497" ]; then
+        echo "ERROR: Refusing forbidden IBKR_PORT=${IBKR_PORT}. Only paper gateway port (4002) is allowed."
+        exit 2
+    fi
 fi
 
 if [ "$DRY_RUN" != "true" ] && [ "$TB_ALLOW_ORDERS" != "1" ] && [ "$TB_ALLOW_ORDERS" != "true" ]; then

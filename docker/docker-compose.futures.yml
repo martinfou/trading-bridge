@@ -1,29 +1,75 @@
-# docker/docker-compose.futures.yml — IBKR Futures Paper Lane (Story 46.11)
+# docker/docker-compose.futures.yml — IBKR Multi-Futures Containers (ibkr-paper & ibkr-live)
 # Usage:
-#   docker compose -f docker/docker-compose.futures.yml --project-name tb-futures up -d
+#   Paper (default): docker compose -f docker/docker-compose.futures.yml --project-name tb-futures up -d ibkr-paper
+#   Live (profile):  docker compose -f docker/docker-compose.futures.yml --project-name tb-futures --profile live up -d ibkr-live
 #
-# Uses ./data/state/futures under the unified ./data directory.
+# Services:
+#   ibkr-paper — Multi-symbol CME Micro Futures (MGC,MNQ,MES) on IB Gateway Paper (:4002, clientId 11/12)
+#   ibkr-live  — Multi-symbol CME Micro Futures (MGC,MNQ,MES) on IB Gateway Live  (:4001, clientId 21/22)
 
 services:
-  trading-futures:
+  ibkr-paper:
     build:
       context: ..
       dockerfile: Dockerfile
-    container_name: trading-futures
+    container_name: ibkr-paper
     restart: unless-stopped
     network_mode: "${FUTURES_NETWORK_MODE:-host}"
     entrypoint: ["/app/entrypoint-ibkr.sh"]
     environment:
+      - IBKR_ENV=paper
       - IBKR_HOST=${IBKR_HOST:-127.0.0.1}
       - IBKR_PORT=${IBKR_PORT:-4002}
       - IBKR_ACCOUNT_ID=${IBKR_ACCOUNT_ID:-DUR967322}
       - IBKR_CLIENT_ID=${IBKR_CLIENT_ID:-11}
-      - FUTURES_SYMBOL=${FUTURES_SYMBOL:-MGC}
-      - FUTURES_TIMEFRAME=${FUTURES_TIMEFRAME:-30 mins}
-      - FUTURES_INTERVAL_MINUTES=${FUTURES_INTERVAL_MINUTES:-30}
-      - STRATEGY=${STRATEGY:-sq-mgc-m30-breakout-0-24542,sq-mgc-m30-breakout-1-29-102,sq-mgc-m30-breakout-0-32921}
+      - FUTURES_SYMBOL=${FUTURES_SYMBOL:-MGC,MNQ,MES}
+      - FUTURES_TIMEFRAME=${FUTURES_TIMEFRAME:-1 hour}
+      - FUTURES_INTERVAL_MINUTES=${FUTURES_INTERVAL_MINUTES:-60}
+      - STRATEGY=${STRATEGY:-MgcH1Breakout38023,MgcH1Breakout51270,MnqH1Breakout31697,MnqH1Breakout69250,MesH1Breakout30808}
       - TB_ALLOW_ORDERS=${TB_ALLOW_ORDERS:-1}
-      - TB_STATE_DIR=/app/data/state/futures
+      - TB_LANE=paper
+      - TB_STATE_DIR=/app/data/state/ibkr-paper
+      - DRY_RUN=${DRY_RUN:-false}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ../data:/app/data
+      - ../scripts/docker-entrypoint-ibkr.sh:/app/entrypoint-ibkr.sh:ro
+      - ../config/live-config.json:/app/config/live-config.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "n=\"IbkrLive\"; n=\"$${n}Runner\"; for p in /proc/[0-9]*; do tr '\\0' ' ' < \"$$p/cmdline\" 2>/dev/null | grep -q \"$$n\" && exit 0; done; exit 1"]
+      interval: 60s
+      timeout: 10s
+      start_period: 120s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  ibkr-live:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: ibkr-live
+    profiles: ["live"]
+    restart: unless-stopped
+    network_mode: "${FUTURES_NETWORK_MODE:-host}"
+    entrypoint: ["/app/entrypoint-ibkr.sh"]
+    environment:
+      - IBKR_ENV=live
+      - IBKR_HOST=${IBKR_HOST:-127.0.0.1}
+      - IBKR_PORT=${IBKR_LIVE_PORT:-4001}
+      - IBKR_ACCOUNT_ID=${IBKR_LIVE_ACCOUNT_ID:-}
+      - IBKR_CLIENT_ID=${IBKR_LIVE_CLIENT_ID:-21}
+      - FUTURES_SYMBOL=${FUTURES_SYMBOL:-MGC,MNQ,MES}
+      - FUTURES_TIMEFRAME=${FUTURES_TIMEFRAME:-1 hour}
+      - FUTURES_INTERVAL_MINUTES=${FUTURES_INTERVAL_MINUTES:-60}
+      - STRATEGY=${LIVE_STRATEGY:-MgcH1Breakout38023,MnqH1Breakout31697,MesH1Breakout30808}
+      - TB_ALLOW_ORDERS=${TB_ALLOW_ORDERS:-1}
+      - TB_LANE=prod
+      - TB_STATE_DIR=/app/data/state/ibkr-live
       - DRY_RUN=${DRY_RUN:-false}
     extra_hosts:
       - "host.docker.internal:host-gateway"

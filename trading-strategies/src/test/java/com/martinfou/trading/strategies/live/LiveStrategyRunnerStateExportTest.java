@@ -2,8 +2,9 @@ package com.martinfou.trading.strategies.live;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Order;
-import com.martinfou.trading.strategies.builtin.ConsecutiveBarExhaustionStrategy;
+import com.martinfou.trading.core.Strategy;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -36,6 +37,50 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class LiveStrategyRunnerStateExportTest {
 
+    /** Self-contained test strategy exposing the exact reflection hooks used by exportState/importState. */
+    static final class StatefulTestStrategy implements Strategy {
+        private final String name;
+        private int tradesToday;
+        private int lastTradeDay = -1;
+        private boolean inTrade;
+        private Order.Side tradeDirection;
+        private int cooldownBars;
+
+        StatefulTestStrategy() {
+            this("StatefulTest GBP_JPY");
+        }
+
+        StatefulTestStrategy(String name) {
+            this.name = name;
+        }
+
+        @Override public String name() { return name; }
+        @Override public void onBar(Bar bar) { }
+        @Override public void onTick(double bid, double ask, long volume) { }
+        @Override public List<Order> getPendingOrders() { return List.of(); }
+        @Override public void reset() {
+            tradesToday = 0;
+            lastTradeDay = -1;
+            inTrade = false;
+            tradeDirection = null;
+            cooldownBars = 0;
+        }
+
+        public void restoreState(int tradesToday, int lastTradeDay, boolean inTrade, Order.Side tradeDirection, int cooldownBars) {
+            this.tradesToday = tradesToday;
+            this.lastTradeDay = lastTradeDay;
+            this.inTrade = inTrade;
+            this.tradeDirection = tradeDirection;
+            this.cooldownBars = cooldownBars;
+        }
+
+        public int getTradesToday() { return tradesToday; }
+        public int getLastTradeDay() { return lastTradeDay; }
+        public boolean isInTrade() { return inTrade; }
+        public Order.Side getTradeDirection() { return tradeDirection; }
+        public int getCooldownBars() { return cooldownBars; }
+    }
+
     private static final String FLAT_STRAT = "StateExportFlat";
     private static final String OPEN_STRAT = "StateExportOpen";
     private static final String STALE_STRAT = "StateExportStale";
@@ -45,7 +90,7 @@ class LiveStrategyRunnerStateExportTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private LiveStrategyRunner runner(String shortName, ConsecutiveBarExhaustionStrategy strategy) {
+    private LiveStrategyRunner runner(String shortName, StatefulTestStrategy strategy) {
         return new LiveStrategyRunner("dummy-key", "dummy-acc", strategy, shortName, "H1", 60);
     }
 
@@ -66,7 +111,7 @@ class LiveStrategyRunnerStateExportTest {
     @Test
     void flatStrategyStateIsSavedWithExplicitNullSide() throws Exception {
         Files.deleteIfExists(statePath(FLAT_STRAT));
-        ConsecutiveBarExhaustionStrategy strategy = new ConsecutiveBarExhaustionStrategy();
+        StatefulTestStrategy strategy = new StatefulTestStrategy();
         // The shape the production export met: the strategy is flat and carries no side (a restored
         // flat state, and the way the deployed image reports a strategy that never entered). Reading
         // null here must not abort the save.
@@ -90,8 +135,8 @@ class LiveStrategyRunnerStateExportTest {
         Files.deleteIfExists(statePath(OPEN_STRAT));
         // The name carries a recognizable pair so the runner can resolve the instrument (and thus
         // match the book entry below) without live-config.json.
-        ConsecutiveBarExhaustionStrategy strategy =
-            new ConsecutiveBarExhaustionStrategy("ConsecBarExhaustion GBP_JPY");
+        StatefulTestStrategy strategy =
+            new StatefulTestStrategy("StatefulTest GBP_JPY");
         strategy.restoreState(2, 288, true, Order.Side.SELL, 3);
         LiveStrategyRunner r = runner(OPEN_STRAT, strategy);
         // A genuine open trade: the runner's own book must hold the position, or the restore would
@@ -104,7 +149,7 @@ class LiveStrategyRunnerStateExportTest {
         assertEquals("SELL", root.get("strat_tradeDirection").asText(),
             "the side of a live trade must reach the state file");
 
-        ConsecutiveBarExhaustionStrategy resumed = new ConsecutiveBarExhaustionStrategy();
+        StatefulTestStrategy resumed = new StatefulTestStrategy();
         runner(OPEN_STRAT, resumed).resumeState();
 
         assertTrue(resumed.isInTrade(), "an in-trade strategy must resume in trade");
@@ -139,7 +184,7 @@ class LiveStrategyRunnerStateExportTest {
             }
             """);
 
-        ConsecutiveBarExhaustionStrategy resumed = new ConsecutiveBarExhaustionStrategy();
+        StatefulTestStrategy resumed = new StatefulTestStrategy();
         runner(STALE_STRAT, resumed).resumeState();
 
         assertFalse(resumed.isInTrade(),
@@ -177,7 +222,7 @@ class LiveStrategyRunnerStateExportTest {
             }
             """);
 
-        ConsecutiveBarExhaustionStrategy resumed = new ConsecutiveBarExhaustionStrategy();
+        StatefulTestStrategy resumed = new StatefulTestStrategy();
         runner(LATCHED_EMPTY_STRAT, resumed).resumeState();
 
         assertFalse(resumed.isInTrade(),
@@ -223,7 +268,7 @@ class LiveStrategyRunnerStateExportTest {
             }
             """);
 
-        ConsecutiveBarExhaustionStrategy resumed = new ConsecutiveBarExhaustionStrategy();
+        StatefulTestStrategy resumed = new StatefulTestStrategy();
         runner(LATCHED_OPEN_STRAT, resumed).resumeState();
 
         assertTrue(resumed.isInTrade(),
@@ -257,7 +302,7 @@ class LiveStrategyRunnerStateExportTest {
             }
             """);
 
-        ConsecutiveBarExhaustionStrategy resumed = new ConsecutiveBarExhaustionStrategy();
+        StatefulTestStrategy resumed = new StatefulTestStrategy();
         runner(FLAT_RESUME_STRAT, resumed).resumeState();
 
         assertFalse(resumed.isInTrade(), "a flat state must stay flat");

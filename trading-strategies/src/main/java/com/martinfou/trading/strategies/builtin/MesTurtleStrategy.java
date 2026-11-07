@@ -20,7 +20,7 @@ import java.util.List;
 public class MesTurtleStrategy implements Strategy {
 
     private final String name;
-    private final String symbol;
+    private String symbol;
     private final int entryChannel;
     private final int exitChannel;
     private final int contracts;

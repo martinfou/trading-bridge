@@ -83,8 +83,12 @@ public final class IbkrOrderDispatcher implements Consumer<Order> {
             return;
         }
 
+        String targetSymbol = (rawOrder.symbol() != null && !rawOrder.symbol().isBlank())
+            ? rawOrder.symbol().trim().toUpperCase()
+            : this.symbol;
+
         String incomingTag = rawOrder.strategyId() != null ? rawOrder.strategyId().trim() : "";
-        String suffix = "_" + symbol;
+        String suffix = "_" + targetSymbol;
         String resolvedStrategyName;
         String canonicalStrategyId;
         if (!incomingTag.isEmpty()) {
@@ -105,7 +109,7 @@ public final class IbkrOrderDispatcher implements Consumer<Order> {
         if (!order.isCloseOnly() && !order.hasProtectiveStop()) {
             log.error("REFUSED STOPLESS ENTRY for {} [{}]: side={} qty={} price={} stopLoss={}. "
                 + "Every live futures entry requires a positive protective stop.",
-                symbol, canonicalStrategyId, order.side(), order.quantity(), order.price(), order.stopLoss());
+                targetSymbol, canonicalStrategyId, order.side(), order.quantity(), order.price(), order.stopLoss());
             return;
         }
 
@@ -114,9 +118,9 @@ public final class IbkrOrderDispatcher implements Consumer<Order> {
             List<Position> openPositions = broker.getPositions();
             if (openPositions != null) {
                 for (Position p : openPositions) {
-                    if (p != null && p.symbol() != null && p.symbol().equalsIgnoreCase(symbol) && Math.abs(p.quantity()) > 0.0) {
+                    if (p != null && p.symbol() != null && p.symbol().equalsIgnoreCase(targetSymbol) && Math.abs(p.quantity()) > 0.0) {
                         log.warn("Refusing new entry for {} [{}]: broker already holds an open position in {} (side={}, qty={})",
-                            symbol, canonicalStrategyId, p.symbol(), p.side(), p.quantity());
+                            targetSymbol, canonicalStrategyId, p.symbol(), p.side(), p.quantity());
                         return;
                     }
                 }
@@ -133,7 +137,7 @@ public final class IbkrOrderDispatcher implements Consumer<Order> {
 
         if (dryRun) {
             log.info("DRY_RUN=true: would dispatch strategy={} symbol={} side={} qty={} price={} stop={} tp={}",
-                canonicalStrategyId, symbol, order.side(), order.quantity(),
+                canonicalStrategyId, targetSymbol, order.side(), order.quantity(),
                 order.price(), order.stopLoss(), order.takeProfit());
             return;
         }

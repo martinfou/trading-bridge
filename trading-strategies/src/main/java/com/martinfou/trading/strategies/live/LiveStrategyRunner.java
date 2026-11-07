@@ -264,12 +264,24 @@ public class LiveStrategyRunner implements Runnable {
     // Constructor
     // ========================================================================
 
+    /**
+     * Resolves whether OANDA Practice ({@code api-fxpractice.oanda.com}) or OANDA Live
+     * ({@code api-fxtrade.oanda.com}) should be used based on {@code OANDA_ENV}.
+     * Defaults safely to {@code true} (Practice) unless {@code OANDA_ENV} is explicitly {@code live}.
+     */
+    static boolean isPracticeEnvironment(String oandaEnv) {
+        if (oandaEnv == null || oandaEnv.isBlank()) {
+            return true;
+        }
+        String normalized = oandaEnv.trim().toLowerCase(Locale.ROOT);
+        return !("live".equals(normalized) || "prod".equals(normalized)
+            || "production".equals(normalized) || "fxtrade".equals(normalized));
+    }
+
     public LiveStrategyRunner(String apiKey, String accountId, Strategy strategy,
                               String strategyShortName, String granularity, int intervalSec) {
         this(apiKey, accountId, strategy, strategyShortName, granularity, intervalSec,
-            DEFAULT_STATE_DIR,
-            new OandaExecutor(apiKey, accountId, true),
-            new OandaPriceClient(apiKey, accountId, true));
+            DEFAULT_STATE_DIR, isPracticeEnvironment(System.getenv("OANDA_ENV")));
     }
 
     /**
@@ -281,9 +293,16 @@ public class LiveStrategyRunner implements Runnable {
                        String strategyShortName, String granularity, int intervalSec,
                        Path stateDir) {
         this(apiKey, accountId, strategy, strategyShortName, granularity, intervalSec,
+            stateDir, isPracticeEnvironment(System.getenv("OANDA_ENV")));
+    }
+
+    LiveStrategyRunner(String apiKey, String accountId, Strategy strategy,
+                       String strategyShortName, String granularity, int intervalSec,
+                       Path stateDir, boolean practice) {
+        this(apiKey, accountId, strategy, strategyShortName, granularity, intervalSec,
             stateDir,
-            new OandaExecutor(apiKey, accountId, true),
-            new OandaPriceClient(apiKey, accountId, true));
+            new OandaExecutor(apiKey, accountId, practice),
+            new OandaPriceClient(apiKey, accountId, practice));
     }
 
     /**
@@ -462,11 +481,15 @@ public class LiveStrategyRunner implements Runnable {
             System.exit(1);
         }
 
+        boolean practice = isPracticeEnvironment(System.getenv("OANDA_ENV"));
+        String envLabel = practice ? "OANDA Practice" : "OANDA LIVE";
+        String apiHost = practice ? "api-fxpractice.oanda.com" : "api-fxtrade.oanda.com";
+
         log.info("╔════════════════════════════════════════════════════╗");
-        log.info("║     🚀 LiveStrategyRunner — OANDA Practice        ║");
+        log.info("║     🚀 LiveStrategyRunner — {}        ║", envLabel);
         log.info("╠════════════════════════════════════════════════════╣");
         log.info("║ Account: {}      ", accountId);
-        log.info("║ API:     api-fxpractice.oanda.com                  ");
+        log.info("║ API:     {}                  ", apiHost);
         log.info("║ Strategies: {} (concurrent)                  ", resolved.size());
         for (var entry : resolved) {
             log.info("║   - {} → {}", entry.getKey(), entry.getValue().name());
@@ -491,7 +514,7 @@ public class LiveStrategyRunner implements Runnable {
         List<Thread> threads = new ArrayList<>();
         for (var entry : resolved) {
             var runner = new LiveStrategyRunner(apiKey, accountId, entry.getValue(),
-                entry.getKey(), granularity, intervalSec, stateDir);
+                entry.getKey(), granularity, intervalSec, stateDir, practice);
             ACTIVE_RUNNERS.put(entry.getKey(), runner);
             Thread t = new Thread(runner, "strat-" + entry.getKey());
             t.setDaemon(false);
@@ -987,33 +1010,29 @@ public class LiveStrategyRunner implements Runnable {
     public static Map<String, Class<? extends Strategy>> getStrategyMap() {
         Map<String, Class<? extends Strategy>> map = new LinkedHashMap<>();
         try {
-            // Creative Lab strategies
-            map.put("nymid", Class.forName("com.martinfou.trading.strategies.builtin.NYMidSessionMomentumStrategy")
+            // Audited Core FX & Futures Keep Strategies (2026-11-07)
+            map.put("londonorb", Class.forName("com.martinfou.trading.strategies.builtin.LondonOpenRangeBreakoutStrategy")
                 .asSubclass(Strategy.class));
-            map.put("vwpreversion", Class.forName("com.martinfou.trading.strategies.builtin.VWPReversionStrategy")
-                .asSubclass(Strategy.class));
-            map.put("consecbar", Class.forName("com.martinfou.trading.strategies.builtin.ConsecutiveBarExhaustionStrategy")
-                .asSubclass(Strategy.class));
-            // Lab — new strategies (R&D pipeline)
-            // hmmregime REMOVED 2026-08-07 — rejected after deep dive with costs (see CreativeStrategyCatalogRegistrar)
-            map.put("vwappremium", Class.forName("com.martinfou.trading.strategies.builtin.VwapPremiumReversionStrategy")
-                .asSubclass(Strategy.class));
-            // NFP Week — Short EUR/USD macro play for NFP weeks
-            map.put("nfpweek", Class.forName("com.martinfou.trading.strategies.builtin.NfpWeekStrategy")
-                .asSubclass(Strategy.class));
-            // V2 — Backtest-qualified (June 2026)
-            map.put("compmomentum", Class.forName("com.martinfou.trading.strategies.builtin.CompositeMomentumRankingStrategy")
-                .asSubclass(Strategy.class));
-            map.put("atrexpansion", Class.forName("com.martinfou.trading.strategies.builtin.ATRExpansionMomentumStrategy")
+            map.put("mondayrev", Class.forName("com.martinfou.trading.strategies.builtin.MondayReversionStrategy")
                 .asSubclass(Strategy.class));
             map.put("monthweekphase", Class.forName("com.martinfou.trading.strategies.builtin.MonthWeekPhaseStrategy")
                 .asSubclass(Strategy.class));
-            // Long-term strategies
-            map.put("ltrsi3", Class.forName("com.martinfou.trading.strategies.builtin.LtRSI3Momentum")
+            map.put("ltdoublema", Class.forName("com.martinfou.trading.strategies.builtin.LtDoubleMA")
                 .asSubclass(Strategy.class));
-            // The week-of-12-October news entries were retired on 2026-10-21 (D67, executed as D68 in
-            // docs/paper-window-log.md): the classes stay in newsweekly/ as an archive, but nothing
-            // registers them any more, so no container can be started on an expired, hard-coded week.
+            map.put("ltcrossmom", Class.forName("com.martinfou.trading.strategies.builtin.LtCrossMomentum")
+                .asSubclass(Strategy.class));
+            map.put("ltrsimeanrev", Class.forName("com.martinfou.trading.strategies.builtin.LtRSIMeanRev")
+                .asSubclass(Strategy.class));
+            map.put("dlrmeanrev", Class.forName("com.martinfou.trading.strategies.builtin.DlrMeanReversion")
+                .asSubclass(Strategy.class));
+            map.put("mesturtle", Class.forName("com.martinfou.trading.strategies.builtin.MesTurtleStrategy")
+                .asSubclass(Strategy.class));
+            map.put("seasonalcalendar", Class.forName("com.martinfou.trading.strategies.builtin.SeasonalCalendarStrategy")
+                .asSubclass(Strategy.class));
+            map.put("gbpusdspring", Class.forName("com.martinfou.trading.strategies.builtin.GbpUsdSpringBullish")
+                .asSubclass(Strategy.class));
+            map.put("usdcadautumn", Class.forName("com.martinfou.trading.strategies.builtin.UsdCadAutumnBullish")
+                .asSubclass(Strategy.class));
         } catch (ClassNotFoundException e) {
             throw new RuntimeException("Strategy class not found", e);
         }

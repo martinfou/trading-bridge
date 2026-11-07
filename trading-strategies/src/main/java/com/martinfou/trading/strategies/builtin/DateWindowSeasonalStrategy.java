@@ -38,7 +38,7 @@ public class DateWindowSeasonalStrategy implements Strategy {
     private static final int MIN_HISTORY = 5;
 
     private final String name;
-    private final String symbol;
+    private String symbol;
     private final int startMonth, startDay, endMonth, endDay;
     private final Order.Side direction;
     private final double quantity;

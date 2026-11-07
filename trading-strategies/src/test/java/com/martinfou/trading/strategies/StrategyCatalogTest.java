@@ -38,7 +38,7 @@ class StrategyCatalogTest {
             "SQLite-backed generated futures strategy",
             "BREAKOUT",
             java.util.List.of("M30"),
-            sym -> StrategyCatalog.create("LtRangeBreakout", sym)
+            sym -> StrategyCatalog.create("LtDoubleMA", sym)
         );
         Strategy generated = StrategyCatalog.create("TestGeneratedBreakout99999", "MGC");
         assertNotNull(generated);

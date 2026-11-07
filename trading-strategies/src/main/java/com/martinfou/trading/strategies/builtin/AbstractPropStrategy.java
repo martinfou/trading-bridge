@@ -20,7 +20,7 @@ public abstract class AbstractPropStrategy implements Strategy {
     protected static final int MAX_CONSECUTIVE_LOSSES = 2;
 
     protected final String strategyName;
-    protected final String symbol;
+    protected String symbol;
 
     protected final List<Bar> history = new ArrayList<>();
     private final List<Order> pending = new ArrayList<>();
@@ -37,6 +37,13 @@ public abstract class AbstractPropStrategy implements Strategy {
     protected AbstractPropStrategy(String strategyName, String symbol) {
         this.strategyName = strategyName;
         this.symbol = symbol;
+    }
+
+    @Override
+    public void reconcileInstrument(String oandaSymbol) {
+        if (oandaSymbol != null && !oandaSymbol.isBlank()) {
+            this.symbol = oandaSymbol;
+        }
     }
 
     @Override

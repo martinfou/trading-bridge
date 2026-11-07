@@ -3,11 +3,11 @@ package com.martinfou.trading.backtest;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.DataLoader;
 import com.martinfou.trading.core.Strategy;
-import com.martinfou.trading.strategies.builtin.CompositeMomentumRankingStrategy;
-import com.martinfou.trading.strategies.builtin.ConsecutiveBarExhaustionStrategy;
+import com.martinfou.trading.strategies.builtin.LondonOpenRangeBreakoutStrategy;
+import com.martinfou.trading.strategies.builtin.LtCrossMomentum;
+import com.martinfou.trading.strategies.builtin.LtDoubleMA;
+import com.martinfou.trading.strategies.builtin.MondayReversionStrategy;
 import com.martinfou.trading.strategies.builtin.MonthWeekPhaseStrategy;
-import com.martinfou.trading.strategies.builtin.VWPReversionStrategy;
-import com.martinfou.trading.strategies.builtin.LtRSI3Momentum;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
@@ -38,11 +38,11 @@ class FiveStrategiesDailySharpeReplayTest {
     record Strat(String key, String symbol, BiFunction<String, String, Strategy> factory) {}
 
     static final List<Strat> STRATS = List.of(
-        new Strat("consecbar",      "GBP_JPY", ConsecutiveBarExhaustionStrategy::new),
-        new Strat("vwpreversion",   "USD_CHF", VWPReversionStrategy::new),
-        new Strat("monthweekphase", "USD_JPY", MonthWeekPhaseStrategy::new),
-        new Strat("compmomentum",   "USD_JPY", CompositeMomentumRankingStrategy::new),
-        new Strat("ltrsi3",         "EUR_USD", LtRSI3Momentum::new)
+        new Strat("londonorb",      "EUR_USD", (name, sym) -> new LondonOpenRangeBreakoutStrategy(sym)),
+        new Strat("mondayrev",      "GBP_USD", MondayReversionStrategy::new),
+        new Strat("monthweekphase", "GBP_USD", MonthWeekPhaseStrategy::new),
+        new Strat("ltdoublema",     "USD_CHF", LtDoubleMA::new),
+        new Strat("ltcrossmom",     "USD_CHF", LtCrossMomentum::new)
     );
 
     record Window(String name, int startYear, int endYear) {}

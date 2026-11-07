@@ -5,8 +5,6 @@ import com.martinfou.trading.core.*;
 import com.martinfou.trading.data.HistoricalDataLoader;
 import com.martinfou.trading.strategies.builtin.MesTurtleStrategy;
 import com.martinfou.trading.strategies.builtin.LtDoubleMA;
-import com.martinfou.trading.strategies.builtin.LtEfficiencyRatio;
-import com.martinfou.trading.strategies.builtin.LtRangeBreakout;
 
 import com.martinfou.trading.backtest.persistence.BacktestPersistenceService;
 import java.io.IOException;
@@ -82,23 +80,11 @@ public class RunCmeFuturesBacktest {
                 "Donchian 20/10 Faster Breakout (Long-Only)",
                 (name, sym) -> new MesTurtleStrategy(name, sym, 20, 10, 1, true, 0)
             ),
-            // 5. LtRangeBreakout with ATR Trailing Stop
-            new StrategySpec(
-                "LtRangeBreakout",
-                "Donchian 20 + ATR(14) 2x SL / 4x TP Trailing",
-                (name, sym) -> new LtRangeBreakout(name, sym)
-            ),
-            // 6. LtDoubleMA (EMA 50 / SMA 200 Golden Cross)
+            // 5. LtDoubleMA (EMA 50 / SMA 200 Golden Cross)
             new StrategySpec(
                 "LtDoubleMA",
                 "Golden/Death Cross EMA(50)/SMA(200) + ATR SL/TP",
                 (name, sym) -> new LtDoubleMA(name, sym)
-            ),
-            // 7. LtEfficiencyRatio (Kaufman ER Trend Following)
-            new StrategySpec(
-                "LtEfficiencyRatio",
-                "Kaufman ER(20) > 0.5 Trend Following + Trailing Stop",
-                (name, sym) -> new LtEfficiencyRatio(name, sym)
             )
         );
 

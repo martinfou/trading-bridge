@@ -40,7 +40,7 @@ public class LtRSIMeanRev implements Strategy {
     private static final double RISK_PCT = 0.01;
 
     private final String name;
-    private final String symbol;
+    private String symbol;
     private final List<Order> pending = new ArrayList<>();
     private final List<Bar> history = new ArrayList<>();
 

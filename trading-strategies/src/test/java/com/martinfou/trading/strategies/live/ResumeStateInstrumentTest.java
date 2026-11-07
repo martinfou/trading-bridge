@@ -1,6 +1,6 @@
 package com.martinfou.trading.strategies.live;
 
-import com.martinfou.trading.strategies.builtin.ConsecutiveBarExhaustionStrategy;
+import com.martinfou.trading.strategies.builtin.MonthWeekPhaseStrategy;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -47,7 +47,7 @@ class ResumeStateInstrumentTest {
     /** The runner resolves GBP_JPY from the strategy's name (no live-config in tests). */
     private LiveStrategyRunner runner(String shortName, Path stateDir) {
         return new LiveStrategyRunner("k", "acc",
-            new ConsecutiveBarExhaustionStrategy("ConsecBarExhaustion GBP_JPY"),
+            new MonthWeekPhaseStrategy("MonthWeekPhase GBP_JPY", "GBP_JPY"),
             shortName, "H1", 60, stateDir);
     }
 

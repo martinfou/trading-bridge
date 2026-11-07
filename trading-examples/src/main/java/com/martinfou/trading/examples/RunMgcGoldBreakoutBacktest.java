@@ -48,7 +48,7 @@ public class RunMgcGoldBreakoutBacktest {
             TimeConventions.toDisplayString(bars.get(0).timestamp()),
             TimeConventions.toDisplayString(bars.get(bars.size() - 1).timestamp()));
 
-        Strategy strategy = StrategyCatalog.create("LtRangeBreakout", "MGC", 1.0);
+        Strategy strategy = StrategyCatalog.create("MesTurtle", "MGC", 1.0);
 
         BacktestEngine engine = new BacktestEngine(strategy, bars, INITIAL_CAPITAL)
             .withCommissionFixed(COMMISSION_PER_CONTRACT)

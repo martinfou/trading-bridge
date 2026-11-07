@@ -3,9 +3,9 @@ package com.martinfou.trading.strategies;
 import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.core.Strategy;
-import com.martinfou.trading.strategies.builtin.CompositeMomentumRankingStrategy;
+import com.martinfou.trading.strategies.builtin.DlrMeanReversion;
 import com.martinfou.trading.strategies.builtin.MonthWeekPhaseStrategy;
-import com.martinfou.trading.strategies.builtin.LtRSI3Momentum;
+import com.martinfou.trading.strategies.builtin.LtDoubleMA;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -34,14 +34,14 @@ class StrategySymbolReconciliationTest {
     }
 
     @Test
-    @DisplayName("a stale class symbol no longer filters bars once reconciled (CompositeMomentumRanking)")
-    void compositeMomentumStopsFilteringAfterReconcile() {
-        CompositeMomentumRankingStrategy s = new CompositeMomentumRankingStrategy(); // default symbol EUR_USD
+    @DisplayName("a stale class symbol no longer filters bars once reconciled (DlrMeanReversion)")
+    void dlrMeanRevStopsFilteringAfterReconcile() {
+        DlrMeanReversion s = new DlrMeanReversion(); // default symbol GBP_USD
 
-        // Before reconciliation, a USD_JPY bar is dropped by the stale EUR_USD symbol.
+        // Before reconciliation, a USD_JPY bar is dropped by the stale GBP_USD symbol.
         s.onBar(bar("USD_JPY"));
         assertEquals(0, historySize(s),
-            "before reconcile, the stale EUR_USD symbol filters a USD_JPY bar");
+            "before reconcile, the stale GBP_USD symbol filters a USD_JPY bar");
 
         s.reconcileInstrument("USD_JPY");
         s.onBar(bar("USD_JPY"));
@@ -63,9 +63,9 @@ class StrategySymbolReconciliationTest {
     }
 
     @Test
-    @DisplayName("LtRSI3Momentum tracks the resolved instrument, so a future pair change cannot silence it")
-    void ltRsi3TracksResolvedInstrument() {
-        LtRSI3Momentum s = new LtRSI3Momentum(); // default symbol EUR_USD
+    @DisplayName("LtDoubleMA tracks the resolved instrument, so a future pair change cannot silence it")
+    void ltDoubleMaTracksResolvedInstrument() {
+        LtDoubleMA s = new LtDoubleMA(); // default symbol EUR_USD
 
         s.reconcileInstrument("USD_JPY");
         s.onBar(bar("USD_JPY"));
