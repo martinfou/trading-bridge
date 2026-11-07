@@ -50,6 +50,10 @@ services:
       - TB_ALLOW_ORDERS=${TB_ALLOW_ORDERS:-1}
       - TB_LANE=paper
       - TB_STATE_DIR=/app/data/state/ibkr-paper
+      # strategies.db vit dans data/runtime/generator ; sans cette variable, RuntimeDataPaths
+      # retombe sur ~/.trading-bridge dans l'image (pas de pom.xml) et le catalogue reste vide :
+      # « Unknown strategy 'MgcH1Breakout38023' ».
+      - TRADING_BRIDGE_DATA_DIR=/app/data/runtime
       - DRY_RUN=${DRY_RUN:-false}
     extra_hosts:
       - "host.docker.internal:host-gateway"
