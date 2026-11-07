@@ -236,5 +236,50 @@ class LaneTelemetryCollectorTest {
         assertEquals(174200.0, (Double) vwapRun.get("netQuantity"), 1e-2);
         assertEquals(1, vwapRun.get("openTrades"));
     }
+
+    @Test
+    void remoteCoreClientPersistsUrlAndApiKeyAndVerifiesAuthHeaders(@TempDir Path tempDir) throws Exception {
+        Path configFile = tempDir.resolve("remote-core.json");
+        RemoteCoreClient client = new RemoteCoreClient(configFile);
+
+        RemoteCoreClient.RemoteCoreSettings saved = client.saveSettings(
+            true,
+            "10.0.0.50:8080/",
+            "tb_secret_key_9876",
+            false,
+            "srv_inbound_key_1234",
+            false
+        );
+
+        assertEquals("http://10.0.0.50:8080", saved.url());
+        assertEquals("tb_secret_key_9876", saved.apiKey());
+        assertEquals("srv_inbound_key_1234", saved.serverApiKey());
+
+        Map<String, Object> masked = client.toMaskedStatusMap();
+        assertEquals(true, masked.get("enabled"));
+        assertEquals("http://10.0.0.50:8080", masked.get("url"));
+        assertEquals(true, masked.get("apiKeyConfigured"));
+        assertEquals("****9876", masked.get("apiKeyMasked"));
+        assertEquals("****1234", masked.get("serverApiKeyMasked"));
+
+        // Verify inbound API key validation
+        assertTrue(client.verifyIncomingRequestApiKey("Bearer srv_inbound_key_1234", null));
+        assertTrue(client.verifyIncomingRequestApiKey(null, "srv_inbound_key_1234"));
+        assertFalse(client.verifyIncomingRequestApiKey("Bearer wrong_key", null));
+        assertFalse(client.verifyIncomingRequestApiKey(null, null));
+
+        // Saving with masked placeholder preserves existing secret
+        RemoteCoreClient.RemoteCoreSettings preserved = client.saveSettings(
+            true,
+            "https://core.trading.local",
+            "****9876",
+            false,
+            "****1234",
+            false
+        );
+        assertEquals("https://core.trading.local", preserved.url());
+        assertEquals("tb_secret_key_9876", preserved.apiKey());
+        assertEquals("srv_inbound_key_1234", preserved.serverApiKey());
+    }
 }
 

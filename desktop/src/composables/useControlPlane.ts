@@ -1,5 +1,5 @@
 import { ref, reactive } from 'vue'
-import { useControlPlaneConfig } from './controlPlaneConfig'
+import { useControlPlaneConfig, getControlPlaneHeaders } from './controlPlaneConfig'
 import { useStatusBar } from './useStatusBar'
 import type { Strategy, RunConfig, RunResult, Trade, RunSummary, Bar, BrokerAccount, PromoteGateThresholds, WeeklyStat, ReconciliationAnomaly, InstrumentDefinition } from '@/types/control-plane'
 
@@ -17,7 +17,7 @@ interface ApiResponse<T> {
 async function apiGet<T>(path: string, baseUrl: string): Promise<T> {
   try {
     const resp = await fetch(`${baseUrl}${path}`, {
-      headers: { Accept: 'application/json' },
+      headers: getControlPlaneHeaders({ Accept: 'application/json' }),
     })
     if (!resp.ok) {
       const body = await resp.text().catch(() => '')
@@ -41,7 +41,7 @@ async function apiPost<T>(path: string, body: unknown, baseUrl: string): Promise
   try {
     const resp = await fetch(`${baseUrl}${path}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      headers: getControlPlaneHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }),
       body: JSON.stringify(body),
     })
     if (!resp.ok) {
@@ -62,11 +62,36 @@ async function apiPost<T>(path: string, body: unknown, baseUrl: string): Promise
   }
 }
 
+async function apiPut<T>(path: string, body: unknown, baseUrl: string): Promise<T> {
+  try {
+    const resp = await fetch(`${baseUrl}${path}`, {
+      method: 'PUT',
+      headers: getControlPlaneHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }),
+      body: JSON.stringify(body),
+    })
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '')
+      const errMsg = `PUT ${path} ${resp.status}: ${text.slice(0, 200)}`
+      useStatusBar().setStatus(errMsg, 'error')
+      throw new Error(errMsg)
+    }
+    return await resp.json()
+  } catch (err: any) {
+    if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+      const cleanMsg = `Connection to Control Plane at ${baseUrl} failed.`
+      useStatusBar().setStatus(cleanMsg, 'error')
+    } else {
+      useStatusBar().setStatus(err.message, 'error')
+    }
+    throw err
+  }
+}
+
 async function apiDelete<T>(path: string, baseUrl: string): Promise<T> {
   try {
     const resp = await fetch(`${baseUrl}${path}`, {
       method: 'DELETE',
-      headers: { Accept: 'application/json' },
+      headers: getControlPlaneHeaders({ Accept: 'application/json' }),
     })
     if (!resp.ok) {
       const text = await resp.text().catch(() => '')
@@ -232,7 +257,7 @@ export function useControlPlane() {
     try {
       const resp = await fetch(`${controlPlaneUrl.value}${path}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        headers: getControlPlaneHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }),
         body: JSON.stringify({ targetMode, runId, executionLabel, brokerAccountId }),
       })
       if (resp.status === 422 || resp.ok) {
@@ -244,6 +269,41 @@ export function useControlPlane() {
       useStatusBar().setStatus(e.message, 'error')
       throw e
     }
+  }
+
+  async function getRemoteCoreConfig(): Promise<{
+    enabled: boolean
+    url: string
+    apiKeyConfigured: boolean
+    apiKeyMasked: string
+    serverApiKeyConfigured: boolean
+    serverApiKeyMasked: string
+  }> {
+    return apiGet('/api/remote-core', controlPlaneUrl.value)
+  }
+
+  async function saveRemoteCoreConfig(payload: {
+    enabled?: boolean
+    url?: string
+    apiKey?: string
+    clearApiKey?: boolean
+    serverApiKey?: string
+    clearServerApiKey?: boolean
+  }): Promise<any> {
+    return apiPut('/api/remote-core', payload, controlPlaneUrl.value)
+  }
+
+  async function testRemoteCoreConnection(payload: {
+    url?: string
+    apiKey?: string
+  }): Promise<{
+    success: boolean
+    url?: string
+    ibkrTradesCount?: number
+    laneRunsCount?: number
+    message?: string
+  }> {
+    return apiPost('/api/remote-core/test', payload, controlPlaneUrl.value)
   }
 
   async function getPromoteGates(): Promise<PromoteGateThresholds> {
@@ -396,6 +456,9 @@ export function useControlPlane() {
     discoverOandaAccounts,
     saveBrokerAccounts,
     testBrokerAccount,
+    getRemoteCoreConfig,
+    saveRemoteCoreConfig,
+    testRemoteCoreConnection,
     getMonteCarlo,
     promoteStrategy,
     getPromoteGates,

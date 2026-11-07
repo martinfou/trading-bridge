@@ -337,10 +337,24 @@ public final class ControlPlaneServer implements AutoCloseable {
             .before(ctx -> {
                 ctx.header("Access-Control-Allow-Origin", "*");
                 ctx.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-                ctx.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+                ctx.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key");
 
                 String method = ctx.method().name();
                 String path = ctx.path();
+                if (!"OPTIONS".equalsIgnoreCase(method) && !"/api/health".equals(path)) {
+                    boolean isTest = com.martinfou.trading.core.guardrails.OrderTripwire.isTestRuntime(
+                        System.getenv(),
+                        com.martinfou.trading.core.guardrails.OrderTripwire.runtimeClassPath());
+                    if (!isTest) {
+                        boolean authorized = new RemoteCoreClient().verifyIncomingRequestApiKey(
+                            ctx.header("Authorization"),
+                            ctx.header("X-API-Key")
+                        );
+                        if (!authorized) {
+                            throw new io.javalin.http.UnauthorizedResponse("Invalid or missing API Key");
+                        }
+                    }
+                }
                 if (("POST".equalsIgnoreCase(method) || "PUT".equalsIgnoreCase(method) || "DELETE".equalsIgnoreCase(method))
                     && (path.startsWith("/api/runs") || path.startsWith("/api/strategies"))
                     && !runManager.isReconciliationComplete()) {
@@ -542,6 +556,46 @@ public final class ControlPlaneServer implements AutoCloseable {
             .post("/api/weekly-builder/deploy", ctx -> respondWeeklyTrigger(ctx, weeklyBuilderService.triggerDeployAsync()))
             .get("/control/summary", ctx -> ctx.json(buildEnrichedControlSummary(summaryService)))
             .get("/api/control/summary", ctx -> ctx.json(buildEnrichedControlSummary(summaryService)))
+            .get("/api/telemetry/lanes", ctx -> {
+                String venueId = ctx.queryParam("venueId");
+                String maskedAccountId = ctx.queryParam("maskedAccountId");
+                LaneTelemetryCollector collector = new LaneTelemetryCollector();
+                List<Map<String, Object>> ibkrTrades = collector.collectIbkrTrades(
+                    venueId != null && !venueId.isBlank() ? venueId : "ibkr-paper",
+                    maskedAccountId != null ? maskedAccountId : "",
+                    "USD",
+                    List.of()
+                );
+                List<Map<String, Object>> laneRuns = collector.collectLaneStrategyRuns(java.util.Set.of(), Instant.now());
+                ctx.json(Map.of(
+                    "ibkrTrades", ibkrTrades,
+                    "laneRuns", laneRuns,
+                    "serverTime", Instant.now().toString()
+                ));
+            })
+            .get("/api/remote-core", ctx -> ctx.json(new RemoteCoreClient().toMaskedStatusMap()))
+            .put("/api/remote-core", ctx -> {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> body = ctx.bodyAsClass(Map.class);
+                Boolean enabled = body.get("enabled") instanceof Boolean b ? b : null;
+                String url = body.get("url") != null ? body.get("url").toString() : null;
+                String apiKey = body.get("apiKey") != null ? body.get("apiKey").toString() : null;
+                boolean clearApiKey = Boolean.TRUE.equals(body.get("clearApiKey"));
+                String serverApiKey = body.get("serverApiKey") != null ? body.get("serverApiKey").toString() : null;
+                boolean clearServerApiKey = Boolean.TRUE.equals(body.get("clearServerApiKey"));
+                new RemoteCoreClient().saveSettings(enabled, url, apiKey, clearApiKey, serverApiKey, clearServerApiKey);
+                invalidateBrokerBalanceCache();
+                ctx.json(new RemoteCoreClient().toMaskedStatusMap());
+            })
+            .post("/api/remote-core/test", ctx -> {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> body = ctx.body() != null && !ctx.body().isBlank()
+                    ? ctx.bodyAsClass(Map.class)
+                    : Map.of();
+                String url = body.get("url") != null ? body.get("url").toString() : null;
+                String apiKey = body.get("apiKey") != null ? body.get("apiKey").toString() : null;
+                ctx.json(new RemoteCoreClient().testConnection(url, apiKey));
+            })
             .get("/api/broker/health", ctx -> {
                 java.util.List<Map<String, Object>> list = new java.util.ArrayList<>();
                 for (var entry : runManager.getActiveExecutors().entrySet()) {
@@ -2137,8 +2191,22 @@ public final class ControlPlaneServer implements AutoCloseable {
                     }
                 }
             }
-            List<Map<String, Object>> laneRuns = new LaneTelemetryCollector()
-                .collectLaneStrategyRuns(seenStrategies, Instant.now());
+            List<Map<String, Object>> laneRuns = new ArrayList<>(new LaneTelemetryCollector()
+                .collectLaneStrategyRuns(seenStrategies, Instant.now()));
+            for (Map<String, Object> lr : laneRuns) {
+                Object sid = lr.get("strategyId");
+                if (sid != null) {
+                    seenStrategies.add(sid.toString());
+                }
+            }
+            RemoteCoreClient.RemoteTelemetrySnapshot remote = new RemoteCoreClient()
+                .fetchRemoteTelemetry("ibkr-paper", "", false);
+            for (Map<String, Object> rr : remote.laneRuns()) {
+                Object sid = rr.get("strategyId");
+                if (sid != null && !sid.toString().isBlank() && seenStrategies.add(sid.toString())) {
+                    laneRuns.add(rr);
+                }
+            }
             if (!laneRuns.isEmpty()) {
                 combinedRuns.addAll(laneRuns);
                 base.put("runs", List.copyOf(combinedRuns));
@@ -2167,6 +2235,43 @@ public final class ControlPlaneServer implements AutoCloseable {
             cachedBrokerBalancesAtMs = 0L;
             cachedBrokerBalances = List.of();
         }
+        RemoteCoreClient.invalidateCache();
+    }
+
+    private static List<Map<String, Object>> mergeIbkrTradesWithRemote(
+        String venueId,
+        String maskedAccountId,
+        List<com.martinfou.trading.data.ibkr.IbkrTradeSnapshot> liveSnapshots,
+        boolean forceRefresh
+    ) {
+        Map<String, Map<String, Object>> byId = new LinkedHashMap<>();
+        List<Map<String, Object>> localTrades = new LaneTelemetryCollector().collectIbkrTrades(
+            venueId,
+            maskedAccountId,
+            "USD",
+            liveSnapshots
+        );
+        for (Map<String, Object> t : localTrades) {
+            String id = t.get("id") != null ? t.get("id").toString() : "";
+            if (!id.isBlank()) {
+                byId.put(id, t);
+            }
+        }
+        RemoteCoreClient.RemoteTelemetrySnapshot remote = new RemoteCoreClient()
+            .fetchRemoteTelemetry(venueId, maskedAccountId, forceRefresh);
+        for (Map<String, Object> rt : remote.ibkrTrades()) {
+            String id = rt.get("id") != null ? rt.get("id").toString() : "";
+            if (!id.isBlank() && !byId.containsKey(id)) {
+                byId.put(id, rt);
+            }
+        }
+        List<Map<String, Object>> merged = new ArrayList<>(byId.values());
+        merged.sort((a, b) -> {
+            String ta = String.valueOf(a.getOrDefault("closeTime", a.getOrDefault("openTime", "")));
+            String tb = String.valueOf(b.getOrDefault("closeTime", b.getOrDefault("openTime", "")));
+            return tb.compareTo(ta);
+        });
+        return merged;
     }
 
     private static List<Map<String, Object>> collectBrokerBalances(RunManager runManager, boolean forceRefresh) {
@@ -2259,11 +2364,11 @@ public final class ControlPlaneServer implements AutoCloseable {
                         try {
                             if (entry.isIbkr() && broker instanceof com.martinfou.trading.broker.IbkrBroker ibkrBroker) {
                                 List<com.martinfou.trading.data.ibkr.IbkrTradeSnapshot> liveSnapshots = ibkrBroker.getRecentTrades();
-                                tradeItems.addAll(new LaneTelemetryCollector().collectIbkrTrades(
+                                tradeItems.addAll(mergeIbkrTradesWithRemote(
                                     entry.id(),
                                     maskedAccountId,
-                                    "USD",
-                                    liveSnapshots
+                                    liveSnapshots,
+                                    forceRefresh
                                 ));
                             } else if (!entry.isIbkr()) {
                                 tradeItems.addAll(fetchOandaRecentTrades(entry.id(), registry, maskedAccountId, venueCurrency, 30));
@@ -2337,11 +2442,11 @@ public final class ControlPlaneServer implements AutoCloseable {
                     List<Map<String, Object>> fallbackTrades = List.of();
                     if (entry.isIbkr()) {
                         try {
-                            fallbackTrades = new LaneTelemetryCollector().collectIbkrTrades(
+                            fallbackTrades = mergeIbkrTradesWithRemote(
                                 entry.id(),
                                 maskedAccountId,
-                                "USD",
-                                List.of()
+                                List.of(),
+                                forceRefresh
                             );
                         } catch (Exception ignored) {
                             // ignore fallback trade error

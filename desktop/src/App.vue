@@ -22,18 +22,28 @@ const router = useRouter()
 const route = useRoute()
 
 const { message, type, clearStatus } = useStatusBar()
-const { controlPlaneUrl, setControlPlaneUrl, resetControlPlaneUrl } = useControlPlaneConfig()
+const {
+  controlPlaneUrl,
+  controlPlaneApiKey,
+  setControlPlaneUrl,
+  setControlPlaneApiKey,
+  getControlPlaneHeaders,
+  resetControlPlaneUrl
+} = useControlPlaneConfig()
 
 const editingServerUrl = ref(false)
 const draftServerUrl = ref(controlPlaneUrl.value)
+const draftServerApiKey = ref(controlPlaneApiKey.value)
 
 function openServerUrlEditor() {
   draftServerUrl.value = controlPlaneUrl.value
+  draftServerApiKey.value = controlPlaneApiKey.value
   editingServerUrl.value = true
 }
 
 function saveServerUrl() {
   setControlPlaneUrl(draftServerUrl.value)
+  setControlPlaneApiKey(draftServerApiKey.value)
   editingServerUrl.value = false
   checkConnection()
 }
@@ -41,6 +51,7 @@ function saveServerUrl() {
 function handleResetServerUrl() {
   resetControlPlaneUrl()
   draftServerUrl.value = controlPlaneUrl.value
+  draftServerApiKey.value = controlPlaneApiKey.value
   editingServerUrl.value = false
   checkConnection()
 }
@@ -64,7 +75,9 @@ let connectionInterval: any = null
 
 async function checkConnection() {
   try {
-    const res = await fetch(`${controlPlaneUrl.value}/api/control/summary`)
+    const res = await fetch(`${controlPlaneUrl.value}/api/control/summary`, {
+      headers: getControlPlaneHeaders({ Accept: 'application/json' })
+    })
     isConnected.value = res.ok
   } catch (err) {
     isConnected.value = false
@@ -163,7 +176,15 @@ function quitApp() {
             v-model="draftServerUrl"
             type="text"
             placeholder="http://localhost:8080"
-            style="background: #141414; border: 1px solid var(--accent); color: var(--text-primary); border-radius: 4px; padding: 0.1rem 0.4rem; font-size: 0.7rem; font-family: 'JetBrains Mono', monospace; width: 175px; outline: none;"
+            style="background: #141414; border: 1px solid var(--accent); color: var(--text-primary); border-radius: 4px; padding: 0.1rem 0.4rem; font-size: 0.7rem; font-family: 'JetBrains Mono', monospace; width: 165px; outline: none;"
+            @keyup.enter="saveServerUrl"
+            @keyup.esc="editingServerUrl = false"
+          />
+          <input
+            v-model="draftServerApiKey"
+            type="password"
+            placeholder="API Key (optional)"
+            style="background: #141414; border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px; padding: 0.1rem 0.4rem; font-size: 0.7rem; font-family: 'JetBrains Mono', monospace; width: 120px; outline: none;"
             @keyup.enter="saveServerUrl"
             @keyup.esc="editingServerUrl = false"
           />
@@ -174,12 +195,12 @@ function quitApp() {
         <span
           v-else
           class="status-url"
-          title="Click to configure Control Plane Server URL (Client-Server mode)"
+          title="Click to configure Control Plane Server URL & API Key (Client-Server mode)"
           style="cursor: pointer;"
           @click="openServerUrlEditor"
         >
           <Radio class="status-icon" />
-          {{ controlPlaneUrl }}
+          {{ controlPlaneUrl }}<span v-if="controlPlaneApiKey" style="margin-left: 0.25rem; color: #10b981;">🔑</span>
         </span>
         <span class="status-divider">|</span>
         <span class="status-clock">

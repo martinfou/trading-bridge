@@ -92,7 +92,21 @@ function formatInstrumentPrice(price: number | string | null | undefined, symbol
   return num.toFixed(5)
 }
 
-const { getControlSummary, killStrategy, getBars, getTrades, getEquityCurve, getBrokerAccounts, getBrokerBalances, discoverOandaAccounts, saveBrokerAccounts, testBrokerAccount } = useControlPlane()
+const {
+  getControlSummary,
+  killStrategy,
+  getBars,
+  getTrades,
+  getEquityCurve,
+  getBrokerAccounts,
+  getBrokerBalances,
+  discoverOandaAccounts,
+  saveBrokerAccounts,
+  testBrokerAccount,
+  getRemoteCoreConfig,
+  saveRemoteCoreConfig,
+  testRemoteCoreConnection
+} = useControlPlane()
 const route = useRoute()
 const router = useRouter()
 
@@ -553,10 +567,101 @@ async function fetchSummary(forceBalances = false) {
   }
 }
 
+const remoteCoreForm = ref<{
+  enabled: boolean
+  url: string
+  apiKey: string
+  apiKeyConfigured: boolean
+  apiKeyMasked: string
+}>({
+  enabled: true,
+  url: '',
+  apiKey: '',
+  apiKeyConfigured: false,
+  apiKeyMasked: ''
+})
+const testingRemoteCore = ref(false)
+const savingRemoteCore = ref(false)
+const remoteCoreTestResult = ref<{
+  success: boolean
+  ibkrTradesCount?: number
+  laneRunsCount?: number
+  message?: string
+} | null>(null)
+
+async function fetchRemoteCore() {
+  try {
+    const cfg = await getRemoteCoreConfig()
+    remoteCoreForm.value = {
+      enabled: cfg.enabled ?? true,
+      url: cfg.url || '',
+      apiKey: cfg.apiKeyConfigured ? '********' : '',
+      apiKeyConfigured: !!cfg.apiKeyConfigured,
+      apiKeyMasked: cfg.apiKeyMasked || ''
+    }
+  } catch {
+    // ignore if remote-core endpoint not yet available
+  }
+}
+
+async function handleTestRemoteCore() {
+  testingRemoteCore.value = true
+  remoteCoreTestResult.value = null
+  try {
+    const keyToSend = remoteCoreForm.value.apiKey && !remoteCoreForm.value.apiKey.startsWith('****')
+      ? remoteCoreForm.value.apiKey.trim()
+      : undefined
+    const res = await testRemoteCoreConnection({
+      url: remoteCoreForm.value.url.trim(),
+      apiKey: keyToSend
+    })
+    remoteCoreTestResult.value = res
+  } catch (err: any) {
+    remoteCoreTestResult.value = {
+      success: false,
+      message: err.message
+    }
+  } finally {
+    testingRemoteCore.value = false
+  }
+}
+
+async function handleSaveRemoteCore() {
+  savingRemoteCore.value = true
+  accountsError.value = null
+  accountsSuccess.value = null
+  try {
+    const rawKey = remoteCoreForm.value.apiKey.trim()
+    const isMasked = rawKey.startsWith('****')
+    const updated = await saveRemoteCoreConfig({
+      enabled: remoteCoreForm.value.enabled && !!remoteCoreForm.value.url.trim(),
+      url: remoteCoreForm.value.url.trim(),
+      apiKey: !isMasked && rawKey ? rawKey : undefined,
+      clearApiKey: !rawKey && remoteCoreForm.value.apiKeyConfigured
+    })
+    remoteCoreForm.value = {
+      enabled: updated.enabled ?? true,
+      url: updated.url || '',
+      apiKey: updated.apiKeyConfigured ? '********' : '',
+      apiKeyConfigured: !!updated.apiKeyConfigured,
+      apiKeyMasked: updated.apiKeyMasked || ''
+    }
+    accountsSuccess.value = updated.url
+      ? `Remote Trading Bridge Core saved (${updated.url}). Refreshing telemetry...`
+      : 'Remote Trading Bridge Core disabled.'
+    await fetchSummary(true)
+  } catch (err: any) {
+    accountsError.value = 'Failed to save Remote Core config: ' + err.message
+  } finally {
+    savingRemoteCore.value = false
+  }
+}
+
 async function fetchAccounts() {
   loadingAccounts.value = true
   try {
     accounts.value = await getBrokerAccounts()
+    await fetchRemoteCore()
   } catch (err: any) {
     accountsError.value = err.message
   } finally {
@@ -571,6 +676,7 @@ function toggleAccountsConfig() {
     editingAccount.value = null
     accountsError.value = null
     accountsSuccess.value = null
+    remoteCoreTestResult.value = null
   }
 }
 
@@ -1064,15 +1170,84 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Broker Accounts panel -->
+    <!-- Broker Accounts & Remote Core panel -->
     <div v-if="showAccountsConfig" class="accounts-panel mb-6">
       <div class="panel-header">
-        <h3>Broker Accounts & Credentials Manager</h3>
+        <h3>Broker Accounts & Remote Core Manager</h3>
         <button class="btn btn-accent btn-sm" @click="startEditAccount()">+ Add Account</button>
       </div>
 
       <div v-if="accountsError" class="banner error mb-4">{{ accountsError }}</div>
       <div v-if="accountsSuccess" class="banner success mb-4">{{ accountsSuccess }}</div>
+
+      <!-- Remote Trading Bridge Core (API + API Key) card -->
+      <div style="background: rgba(59, 130, 246, 0.06); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.25rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.65rem; flex-wrap: wrap; gap: 0.5rem;">
+          <div>
+            <h4 style="margin: 0; font-size: 0.92rem; font-weight: 700; color: var(--text-primary);">
+              🌐 Remote Trading Bridge Core (API + API Key)
+            </h4>
+            <p style="margin: 0.2rem 0 0; font-size: 0.74rem; color: var(--text-secondary);">
+              Sync persisted IBKR trades, strategy tags, and active lane runs from a remote Trading Bridge Core server over HTTP/HTTPS.
+            </p>
+          </div>
+          <span :class="['status-badge', remoteCoreForm.url ? 'configured' : 'missing']">
+            {{ remoteCoreForm.url ? 'Remote Core Configured' : 'Local Only' }}
+          </span>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1.4fr 1fr auto; gap: 0.75rem; align-items: end;">
+          <div class="field" style="margin: 0;">
+            <label style="font-size: 0.72rem;">Remote Core API URL</label>
+            <input
+              v-model="remoteCoreForm.url"
+              type="text"
+              placeholder="e.g. http://localhost:18080 or https://core.example.com:8080"
+              class="font-mono"
+            />
+          </div>
+          <div class="field" style="margin: 0;">
+            <label style="font-size: 0.72rem;">
+              API Key / Bearer Token
+              <span v-if="remoteCoreForm.apiKeyMasked" style="color: var(--text-secondary); font-weight: 400;">
+                ({{ remoteCoreForm.apiKeyMasked }})
+              </span>
+            </label>
+            <input
+              v-model="remoteCoreForm.apiKey"
+              type="password"
+              placeholder="Leave blank if none or **** to keep existing"
+              class="font-mono"
+            />
+          </div>
+          <div style="display: flex; gap: 0.45rem;">
+            <button
+              type="button"
+              class="btn btn-secondary btn-sm"
+              :disabled="testingRemoteCore"
+              @click="handleTestRemoteCore"
+            >
+              {{ testingRemoteCore ? 'Testing…' : '⚡ Test Core API' }}
+            </button>
+            <button
+              type="button"
+              class="btn btn-accent btn-sm"
+              :disabled="savingRemoteCore"
+              @click="handleSaveRemoteCore"
+            >
+              {{ savingRemoteCore ? 'Saving…' : 'Save & Sync' }}
+            </button>
+          </div>
+        </div>
+
+        <div
+          v-if="remoteCoreTestResult"
+          :class="['banner', remoteCoreTestResult.success ? 'success' : 'error']"
+          style="margin-top: 0.75rem; padding: 0.5rem 0.75rem;"
+        >
+          {{ remoteCoreTestResult.success ? '✓ ' : '✗ ' }}{{ remoteCoreTestResult.message }}
+        </div>
+      </div>
 
       <div v-if="loadingAccounts" class="loading-state py-4">
         <div class="spinner-small"></div>

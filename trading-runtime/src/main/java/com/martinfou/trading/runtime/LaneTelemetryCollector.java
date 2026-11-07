@@ -750,10 +750,6 @@ public final class LaneTelemetryCollector {
 
         JsonNode report = node.get("report");
         Double realizedPnL = extractNonSentinelDouble(report, "realized_pnl");
-        // In pnl_state.json, opening fills without entry_price/opened_at_utc may record realized_pnl: 0.0
-        if (realizedPnL != null && Math.abs(realizedPnL) <= 1e-9 && entryPrice == null && openTime == null) {
-            realizedPnL = null;
-        }
         Double commission = extractNonSentinelDouble(report, "commission");
         if (currency.isBlank() && report != null) {
             currency = textOrDefault(report, "currency", "USD");
