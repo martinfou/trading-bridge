@@ -1,0 +1,76 @@
+# docker/docker-compose.oanda.yml — OANDA Multi-Pair FX Containers (oanda-paper & oanda-live)
+# Usage:
+#   Paper (default): docker compose -f docker/docker-compose.oanda.yml --project-name tb-oanda up -d oanda-paper
+#   Live (profile):  docker compose -f docker/docker-compose.oanda.yml --project-name tb-oanda --profile live up -d oanda-live
+#
+# Services:
+#   oanda-paper — LiveStrategyRunner (Java 21, OANDA Practice, api-fxpractice.oanda.com)
+#   oanda-live  — LiveStrategyRunner (Java 21, OANDA Live, api-fxtrade.oanda.com, profile: live)
+
+services:
+  oanda-paper:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: oanda-paper
+    restart: unless-stopped
+    env_file:
+      - ../.env.paper
+    environment:
+      - OANDA_ENV=practice
+      - LOG_LEVEL=INFO
+      - TB_ALLOW_ORDERS=1
+      - TB_LANE=paper
+      # Persistent per-strategy state directory (story 50.1): survives container recreation.
+      - TB_STATE_DIR=/app/data/state/oanda-paper
+      # Audited KEEP FX strategies (each resolves its pinned pair from config/live-config.json):
+      #   londonorb (EUR_USD), mondayrev (GBP_USD), monthweekphase (GBP_USD), ltdoublema (USD_CHF), ltcrossmom (USD_CHF)
+      - STRATEGY=${STRATEGY:-londonorb mondayrev monthweekphase ltdoublema ltcrossmom}
+      - STRATEGY_PAIR=${STRATEGY_PAIR:-EUR_USD}
+      - GRANULARITY=${GRANULARITY:-H1}
+      - INTERVAL_SEC=${INTERVAL_SEC:-60}
+      # Operations snapshot push to the web hub (absent = push disabled).
+      - HERMES_WEB_URL=${HERMES_WEB_URL:-}
+      - HERMES_WEB_TOKEN=${HERMES_WEB_TOKEN:-}
+    command: ["$${OANDA_API_KEY}", "$${OANDA_ACCOUNT_ID}", "$${STRATEGY}", "$${GRANULARITY}", "$${INTERVAL_SEC}"]
+    volumes:
+      - ../data:/app/data
+      - ../logs:/app/logs
+      - ../config/live-config.json:/app/config/live-config.json:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+
+  oanda-live:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: oanda-live
+    profiles: ["live"]
+    restart: unless-stopped
+    env_file:
+      - ../.env.live
+    environment:
+      - OANDA_ENV=live
+      - LOG_LEVEL=INFO
+      - TB_ALLOW_ORDERS=1
+      - TB_LANE=prod
+      - TB_STATE_DIR=/app/data/state/oanda-live
+      - STRATEGY=${LIVE_STRATEGY:-londonorb mondayrev monthweekphase ltdoublema ltcrossmom}
+      - STRATEGY_PAIR=${LIVE_PAIR:-EUR_USD}
+      - GRANULARITY=${LIVE_GRANULARITY:-H1}
+      - INTERVAL_SEC=${LIVE_INTERVAL:-60}
+      - HERMES_WEB_URL=${HERMES_WEB_URL:-}
+      - HERMES_WEB_TOKEN=${HERMES_WEB_TOKEN:-}
+    command: ["$${OANDA_API_KEY}", "$${OANDA_ACCOUNT_ID}", "$${STRATEGY}", "$${GRANULARITY}", "$${INTERVAL_SEC}"]
+    volumes:
+      - ../data:/app/data
+      - ../logs:/app/logs
+      - ../config/live-config.json:/app/config/live-config.json:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
