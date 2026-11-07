@@ -99,7 +99,11 @@ async function apiDelete<T>(path: string, baseUrl: string): Promise<T> {
       useStatusBar().setStatus(errMsg, 'error')
       throw new Error(errMsg)
     }
-    return await resp.json()
+    if (resp.status === 204) {
+      return undefined as T
+    }
+    const text = await resp.text()
+    return (text ? JSON.parse(text) : undefined) as T
   } catch (err: any) {
     if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
       const cleanMsg = `Connection to Control Plane at ${baseUrl} failed.`
@@ -181,6 +185,20 @@ export function useControlPlane() {
   async function getStrategies(): Promise<Strategy[]> {
     const data = await apiGet<{ strategies: Strategy[] }>('/api/strategies', controlPlaneUrl.value)
     return data.strategies
+  }
+
+  async function getGeneratorDatabank(): Promise<any[]> {
+    try {
+      const data = await apiGet<{ candidates: any[] }>('/api/generator/databank', controlPlaneUrl.value)
+      return data.candidates || []
+    } catch {
+      return []
+    }
+  }
+
+  async function deleteStrategy(strategyId: string): Promise<void> {
+    const encoded = encodeURIComponent(strategyId)
+    await apiDelete<void>(`/api/generator/databank/${encoded}`, controlPlaneUrl.value)
   }
 
   async function getTrades(runId: string): Promise<Trade[]> {
@@ -445,6 +463,8 @@ export function useControlPlane() {
     getWeeklyStats,
     getAlignment,
     getStrategies,
+    getGeneratorDatabank,
+    deleteStrategy,
     getTrades,
     getEquityCurve,
     getBars,

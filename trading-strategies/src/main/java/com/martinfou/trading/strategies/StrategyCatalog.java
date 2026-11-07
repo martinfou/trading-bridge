@@ -152,14 +152,22 @@ public final class StrategyCatalog {
     }
 
     private static String resolveType(String id, Family family) {
+        if (id == null) return "Trend Following";
         if (family == Family.PROP) {
             return switch (id) {
                 case "LondonOpenRangeBreakout", "OverlapMomentumBurst" -> "Session Breakout";
-                case "AsianRangeMeanReversion", "ConnorsRsi2", "WeeklyOpenGapFade" -> "Mean Reversion";
+                case "MondayReversion", "DlrMeanReversion", "AsianRangeMeanReversion", "ConnorsRsi2", "WeeklyOpenGapFade" -> "Mean Reversion";
                 case "SupplyDemandZone", "PdhlSweepReversal" -> "Price Action";
                 case "EmaPullbackContinuation", "NyContinuation" -> "Trend Following";
                 case "InsideBarBreakout" -> "Momentum";
                 default -> "Trend Following";
+            };
+        }
+        if (family == Family.CREATIVE) {
+            return switch (id) {
+                case "MonthWeekPhase" -> "Calendar Flow";
+                case "DateWindowSeasonal", "SeasonalCalendar", "UsdCadAutumnBullish", "GbpUsdSpringBullish" -> "Seasonality Overlay";
+                default -> "Seasonality / Anomaly";
             };
         }
         if (family == Family.GENERATED) {
@@ -167,6 +175,7 @@ public final class StrategyCatalog {
         }
         if (family == Family.LONG_TERM) {
             return switch (id) {
+                case "MesTurtle" -> "Donchian Breakout";
                 case "FuturesOpeningRangeBreakout" -> "Session Breakout";
                 case "FuturesTurnOfMonth" -> "Seasonality / Anomaly";
                 case "LtCrossMomentum", "LtDoubleMA", "LtPullbackEntry", "LtEfficiencyRatio" -> "Trend Following";
@@ -178,6 +187,9 @@ public final class StrategyCatalog {
                 default -> "Trend Following";
             };
         }
+        if (family == Family.HARNESS) {
+            return "Validation Harness";
+        }
         if (id.equals("SmaCrossover")) {
             return "Trend Following";
         }
@@ -185,9 +197,12 @@ public final class StrategyCatalog {
     }
 
     private static List<String> resolveIndicators(String id, Family family) {
+        if (id == null) return List.of();
         if (family == Family.PROP) {
             return switch (id) {
-                case "LondonOpenRangeBreakout" -> List.of("EMA", "ATR");
+                case "LondonOpenRangeBreakout" -> List.of("EMA", "ATR", "Session Range");
+                case "MondayReversion" -> List.of("Friday Range", "ATR", "Monday Session");
+                case "DlrMeanReversion" -> List.of("Z-Score", "SMA", "ATR");
                 case "AsianRangeMeanReversion" -> List.of("RSI", "ATR");
                 case "SupplyDemandZone", "PdhlSweepReversal", "WeeklyOpenGapFade" -> List.of("ATR");
                 case "EmaPullbackContinuation" -> List.of("EMA", "RSI", "ATR");
@@ -198,11 +213,19 @@ public final class StrategyCatalog {
                 default -> List.of();
             };
         }
+        if (family == Family.CREATIVE) {
+            return switch (id) {
+                case "MonthWeekPhase" -> List.of("Month-Week Phase", "SMA", "ATR");
+                case "DateWindowSeasonal", "SeasonalCalendar", "UsdCadAutumnBullish", "GbpUsdSpringBullish" -> List.of("Seasonal Window", "EMA(200)", "ATR");
+                default -> List.of("Calendar Window", "ATR");
+            };
+        }
         if (family == Family.GENERATED) {
             return List.of("EMA", "RSI", "Bollinger Bands");
         }
         if (family == Family.LONG_TERM) {
             return switch (id) {
+                case "MesTurtle" -> List.of("Donchian(55/20)", "ATR");
                 case "FuturesOpeningRangeBreakout" -> List.of("ATR", "EMA");
                 case "FuturesTurnOfMonth" -> List.of("EMA", "ATR", "Calendar Window");
                 case "LtCrossMomentum" -> List.of("SMA", "ATR");
@@ -225,9 +248,12 @@ public final class StrategyCatalog {
     }
 
     private static String resolveDescription(String id, Family family) {
+        if (id == null) return "Custom or weekly compiled strategy.";
         if (family == Family.PROP) {
             return switch (id) {
                 case "LondonOpenRangeBreakout" -> "Enters on breakout of the 7:00–8:00 AM London range, filtered by H1 trend.";
+                case "MondayReversion" -> "Fades overextended Monday opening extensions relative to Friday's range with ATR stops.";
+                case "DlrMeanReversion" -> "Short-horizon dynamic linear regression / Z-score mean reversion on FX majors.";
                 case "AsianRangeMeanReversion" -> "Fades Asian session highs/lows at London Open using candlestick reversals.";
                 case "SupplyDemandZone" -> "Enters on price rejection of the base zone from the last impulsive H4-equivalent leg.";
                 case "EmaPullbackContinuation" -> "Enters on pullbacks to the 20-EMA within a strong daily trend.";
@@ -240,11 +266,22 @@ public final class StrategyCatalog {
                 default -> "Built-in prop mechanical strategy.";
             };
         }
+        if (family == Family.CREATIVE) {
+            return switch (id) {
+                case "MonthWeekPhase" -> "Captures institutional month-turn and week-of-month rebalancing flows on GBP/USD.";
+                case "DateWindowSeasonal" -> "High-conviction annual calendar window overlay on GBP/JPY with trend filter.";
+                case "SeasonalCalendar" -> "Multi-window institutional FX seasonality overlay with ATR risk bounds.";
+                case "UsdCadAutumnBullish" -> "Autumn macro seasonality window on USD/CAD (Sep–Nov) filtered by trend structure.";
+                case "GbpUsdSpringBullish" -> "Spring UK fiscal/dividend repatriation seasonality window on GBP/USD (Apr–May).";
+                default -> "Calendar & institutional flow anomaly strategy.";
+            };
+        }
         if (family == Family.GENERATED) {
             return "Evolutionary strategy discovered by the Native Strategy Generator.";
         }
         if (family == Family.LONG_TERM) {
             return switch (id) {
+                case "MesTurtle" -> "55/20 Donchian Channel System-2 Turtle breakout for CME Micro Futures (MGC, MNQ, MES).";
                 case "FuturesOpeningRangeBreakout" -> "Toby Crabel Opening Range Breakout (ORB) for electronic index futures with ATR risk management.";
                 case "FuturesTurnOfMonth" -> "Turn-of-the-Month (TOTM) calendar anomaly capturing passive pension/401(k) monthly inflows on US futures.";
                 case "LtCrossMomentum" -> "Golden cross / death cross on SMA(20)/SMA(100) with ATR risk management.";
@@ -259,6 +296,9 @@ public final class StrategyCatalog {
                 case "LtEfficiencyRatio" -> "Kaufman Efficiency Ratio trend filter with EMA(50) direction.";
                 default -> "Long-term systematic strategy (H1, 15+ year horizon).";
             };
+        }
+        if (family == Family.HARNESS) {
+            return "Deterministic execution & plumbing test harness strategy.";
         }
         if (id.equals("SmaCrossover")) {
             return "Simple SMA crossover strategy (20/50 fast/slow SMA crossover).";

@@ -1,9 +1,22 @@
 export interface Strategy {
   id: string
+  displayName?: string
+  shortHash?: string
   family: string
   defaultSymbol: string
+  primaryTimeframe?: string
   deployedMode?: string
   executionLabel?: string
+  executionLabelMeta?: {
+    id: string
+    displayName: string
+    category: string
+    badgeBackgroundColor: string
+    badgeTextColor: string
+    brokerBacked: boolean
+    countsTowardPaperPeriod: boolean
+    stubWarning?: boolean
+  }
   brokerAccountId?: string
   type?: string
   indicators?: string[]
@@ -13,6 +26,44 @@ export interface Strategy {
   timeframeSuitability?: string[]
   recommendedSymbols?: string[]
   complexity?: string
+  // Quantitative scorecard & generator databank enrichment
+  tier?: string
+  compositeScore?: number
+  promoted?: boolean
+  timeframe?: string
+  yearSpec?: string
+  direction?: string
+  entryOrderType?: string
+  totalTrades?: number
+  isTrades?: number
+  oosTrades?: number
+  netProfit?: number
+  isNetProfit?: number
+  oosNetProfit?: number
+  totalReturnPct?: number
+  profitFactor?: number
+  isProfitFactor?: number
+  oosProfitFactor?: number
+  sharpeRatio?: number
+  isSharpeRatio?: number
+  oosSharpeRatio?: number
+  winRatePct?: number
+  maxDrawdownPct?: number
+  retDdRatio?: number
+  rSquared?: number
+  mcVar95?: number
+  mcLossProbPct?: number
+  wfePct?: number
+  longSignalSummary?: string
+  shortSignalSummary?: string
+  entrySummary?: string
+  exitSummary?: string
+  sessionSummary?: string
+  equityCurve?: number[]
+  oosStartIndex?: number
+  javaSourceCode?: string
+  auditVerdict?: string
+  auditNote?: string
 }
 
 export type AssetClass = 'ALL' | 'FUTURES' | 'FOREX' | 'EQUITY' | 'COMMODITIES'

@@ -103,7 +103,7 @@
             </div>
             <div v-else class="strategy-groups">
               <div
-                v-for="(strats, groupName) in groupedStrategies"
+                v-for="(strats, groupName) in selectorGroupedStrategies"
                 :key="groupName"
                 class="strategy-group-section"
               >
@@ -125,15 +125,19 @@
                   >
                     <div class="card-top">
                       <div class="card-title-group">
-                        <span class="strat-name">{{ item.id }}</span>
+                        <span class="strat-name">{{ item.displayName || item.id }}</span>
+                        <code v-if="item.displayName && item.displayName !== item.id" style="font-size: 0.68rem; color: #64748b;">{{ item.id }}</code>
                         <span class="badge" :class="getAssetClassBadgeClass(item)">
                           {{ getAssetClassEmoji(item) }} {{ getPrimaryAssetClass(item) }}
                         </span>
                         <span v-if="item.tradingStyle" class="badge badge-style">
                           {{ formatStyle(item.tradingStyle) }}
                         </span>
-                        <span v-if="item.complexity" class="badge badge-complexity" :class="'complexity-' + item.complexity.toLowerCase()">
-                          {{ item.complexity }}
+                        <span v-if="item.tier" class="badge badge-style" style="color: #fbbf24; border-color: rgba(245, 158, 11, 0.35);">
+                          {{ item.tier }}<template v-if="item.compositeScore"> · {{ item.compositeScore.toFixed(1) }}</template>
+                        </span>
+                        <span v-if="item.profitFactor" class="badge badge-style" style="color: #4ade80; border-color: rgba(34, 197, 94, 0.35);">
+                          PF {{ item.profitFactor.toFixed(2) }}
                         </span>
                       </div>
                       <div class="card-symbols">
@@ -238,7 +242,28 @@ const selectedStrategy = computed(() => {
 })
 
 const flattenedFilteredList = computed(() => {
-  return filteredStrategies.value
+  if (!props.allowedAssetClasses || props.allowedAssetClasses.length === 0) {
+    return filteredStrategies.value
+  }
+  return filteredStrategies.value.filter((s) =>
+    s.assetClasses?.some((ac) => props.allowedAssetClasses!.includes(ac as AssetClass))
+  )
+})
+
+const selectorGroupedStrategies = computed(() => {
+  if (!props.allowedAssetClasses || props.allowedAssetClasses.length === 0) {
+    return groupedStrategies.value
+  }
+  const out: Record<string, Strategy[]> = {}
+  for (const [groupName, list] of Object.entries(groupedStrategies.value)) {
+    const matching = list.filter((s) =>
+      s.assetClasses?.some((ac) => props.allowedAssetClasses!.includes(ac as AssetClass))
+    )
+    if (matching.length > 0) {
+      out[groupName] = matching
+    }
+  }
+  return out
 })
 
 const highlightedStrategyId = computed(() => {
@@ -380,6 +405,7 @@ const scrollToHighlighted = () => {
 
 // Global Cmd+K / Ctrl+K listener
 const handleGlobalKeydown = (e: KeyboardEvent) => {
+  if (props.disabled) return
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault()
     if (isOpen.value) {

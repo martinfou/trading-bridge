@@ -1,454 +1,702 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed } from 'vue'
 import type { Strategy } from '@/types/control-plane'
-import { useRouter } from 'vue-router'
-import PromoteModal from './PromoteModal.vue'
 
 const props = defineProps<{
   strategy: Strategy
-  expanded?: boolean
+  selected?: boolean
+  confirmingDelete?: boolean
 }>()
 
 const emit = defineEmits<{
-  toggleExpand: [id: string]
+  inspect: [strategy: Strategy]
+  backtest: [strategy: Strategy]
+  wfa: [strategy: Strategy]
+  promote: [strategy: Strategy]
+  delete: [strategy: Strategy]
 }>()
 
-const router = useRouter()
-const showPromoteModal = ref(false)
+const formattedSymbol = computed(() => {
+  return (props.strategy.defaultSymbol || 'EUR_USD').replace('_', '/')
+})
 
-const familyColors: Record<string, string> = {
-  PROP: '#6366f1',
-  SQ_IMPORTED: '#f59e0b',
-  GENERATED: '#22c55e',
-  LONG_TERM: '#f97316',
-  EXAMPLE: '#a855f7',
+const symbolTheme = computed(() => {
+  const sym = (props.strategy.defaultSymbol || '').toUpperCase()
+  if (sym.startsWith('MGC') || sym.includes('XAU')) return 'sym-gold'
+  if (sym.startsWith('MNQ') || sym.startsWith('NQ')) return 'sym-cyan'
+  if (sym.startsWith('MES') || sym.startsWith('ES')) return 'sym-purple'
+  if (sym.startsWith('EMD') || sym.startsWith('M2K')) return 'sym-emerald'
+  return 'sym-fx'
+})
+
+const tierTheme = computed(() => {
+  const t = (props.strategy.tier || '').toUpperCase()
+  if (t === 'ELITE') return 'tier-elite'
+  if (t === 'INSTITUTIONAL') return 'tier-inst'
+  if (t === 'CORE') return 'tier-core'
+  if (t === 'OVERLAY') return 'tier-overlay'
+  if (t === 'SYSTEM') return 'tier-system'
+  return 'tier-qualified'
+})
+
+const cleanArchetype = computed(() => {
+  const raw = props.strategy.tradingStyle || props.strategy.type || 'TREND'
+  return raw.replace(/_/g, ' ')
+})
+
+const sparklineData = computed(() => {
+  const rawCurve = props.strategy.equityCurve
+  if (!rawCurve || rawCurve.length < 2) return null
+  const curve = rawCurve.filter((v) => typeof v === 'number' && Number.isFinite(v))
+  if (curve.length < 2) return null
+  const w = 112
+  const h = 34
+  const pad = 3
+  let min = curve[0]
+  let max = curve[0]
+  for (let i = 1; i < curve.length; i++) {
+    if (curve[i] < min) min = curve[i]
+    if (curve[i] > max) max = curve[i]
+  }
+  const range = max - min || 1
+  const pts = curve.map((v, idx) => {
+    const x = pad + (idx / (curve.length - 1)) * (w - pad * 2)
+    const y = h - pad - ((v - min) / range) * (h - pad * 2)
+    return `${x.toFixed(1)},${y.toFixed(1)}`
+  })
+  const firstX = pad
+  const lastX = w - pad
+  const area = `M ${firstX},${h} L ${pts.join(' L ')} L ${lastX},${h} Z`
+  const oosIdx = props.strategy.oosStartIndex
+  const oosX =
+    oosIdx != null && oosIdx > 0 && oosIdx < curve.length
+      ? pad + (oosIdx / (curve.length - 1)) * (w - pad * 2)
+      : null
+  const isPositive = curve[curve.length - 1] >= curve[0]
+  return {
+    points: pts.join(' '),
+    area,
+    oosX,
+    isPositive
+  }
+})
+
+function formatPf(val?: number): string {
+  if (val == null || Number.isNaN(val)) return '—'
+  return val.toFixed(2)
 }
 
-function familyColor(family: string): string {
-  return familyColors[family] || '#888'
+function formatMoney(val?: number): string {
+  if (val == null || Number.isNaN(val)) return '—'
+  const sign = val >= 0 ? '+' : '-'
+  const abs = Math.abs(val)
+  if (abs >= 1000) {
+    return `${sign}$${abs.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+  }
+  return `${sign}$${abs.toFixed(0)}`
 }
 
-function runBacktest() {
-  const symbol = props.strategy.defaultSymbol?.replace(/_/g, '/') || 'EUR/USD'
-  router.push(`/dashboard?strategyId=${props.strategy.id}&symbol=${symbol}`)
+function pfClass(val?: number): string {
+  if (val == null) return ''
+  if (val >= 2.0) return 'val-elite'
+  if (val >= 1.4) return 'val-good'
+  if (val >= 1.1) return 'val-ok'
+  return 'val-warn'
 }
 
-function runWfa() {
-  const symbol = props.strategy.defaultSymbol || 'MES'
-  router.push(`/wfa?strategyId=${props.strategy.id}&symbol=${symbol}`)
-}
-
-function onPromoted() {
-  // Stay on the current page instead of routing to the trading desk
+function ddClass(val?: number): string {
+  if (val == null) return ''
+  if (val <= 10.0) return 'val-elite'
+  if (val <= 15.0) return 'val-good'
+  if (val <= 25.0) return 'val-ok'
+  return 'val-warn'
 }
 </script>
 
 <template>
   <div
-    :class="['strategy-card', { expanded }]"
-    :style="{ borderLeftColor: familyColor(strategy.family) }"
+    :class="['strategy-card', tierTheme, { 'is-selected': selected }]"
+    @click="emit('inspect', strategy)"
   >
-    <div class="card-header" @click="emit('toggleExpand', strategy.id)">
-      <div class="card-info">
-        <div class="card-title-row">
-          <span class="family-badge" :style="{ background: familyColor(strategy.family) }">
-            {{ strategy.family }}
-          </span>
-          <span class="strategy-name">{{ strategy.id }}</span>
-        </div>
-        <div class="card-meta">
-          <span class="meta-item">📊 {{ strategy.defaultSymbol || '—' }}</span>
-          <span v-if="strategy.assetClasses && strategy.assetClasses.length" class="meta-item asset-badge">
-            {{ strategy.assetClasses[0] === 'FUTURES' ? '⚡' : (strategy.assetClasses[0] === 'EQUITY' ? '📈' : '💱') }} {{ strategy.assetClasses.join(', ') }}
-          </span>
-          <span v-if="strategy.tradingStyle" class="meta-item style-badge">
-            🎯 {{ strategy.tradingStyle.replace('_', ' ') }}
-          </span>
-          <span v-if="strategy.complexity" class="meta-item complexity-badge" :class="'complexity-' + strategy.complexity.toLowerCase()">
-            {{ strategy.complexity }}
-          </span>
-          <span v-if="strategy.type" class="meta-item type-badge">🏷️ {{ strategy.type }}</span>
-          <span v-if="strategy.deployedMode" class="meta-item deploy-badge">
-            🟢 {{ strategy.deployedMode }}
-          </span>
-          <span v-if="(strategy as any).calibrationFreshness" :class="['meta-item', 'cal-badge', (strategy as any).calibrationFreshness.status.toLowerCase()]">
-            🎯 Cal: {{ (strategy as any).calibrationFreshness.status }}
-          </span>
-        </div>
+    <!-- Top Identity & Status Bar -->
+    <div class="card-top-bar">
+      <div class="instrument-cluster">
+        <span :class="['inst-pill', symbolTheme]">{{ formattedSymbol }}</span>
+        <span class="tf-pill">{{ strategy.primaryTimeframe || strategy.timeframe || 'H1' }}</span>
+        <span class="arch-pill">{{ cleanArchetype }}</span>
       </div>
-      <span class="expand-icon">{{ expanded ? '▾' : '▸' }}</span>
+
+      <div class="status-cluster">
+        <span v-if="strategy.deployedMode" class="status-pill status-live">
+          <span class="pulse-dot"></span>
+          {{ strategy.deployedMode }}
+        </span>
+        <span v-else-if="strategy.promoted" class="status-pill status-promoted">
+          PROMOTED
+        </span>
+        <span v-if="strategy.tier" :class="['tier-pill', tierTheme]">
+          {{ strategy.tier }}
+          <strong v-if="strategy.compositeScore != null">{{ strategy.compositeScore.toFixed(1) }}</strong>
+        </span>
+      </div>
     </div>
 
-    <div v-if="expanded" class="card-detail">
-      <!-- Strategy Description -->
-      <div v-if="strategy.description" class="description-block">
-        <p class="description-text">{{ strategy.description }}</p>
+    <!-- Title + Equity Sparkline Row -->
+    <div class="card-hero-row">
+      <div class="title-block">
+        <div class="strategy-title">
+          {{ strategy.displayName || strategy.id }}
+        </div>
+        <div class="strategy-code-row">
+          <code class="strategy-id-code">{{ strategy.id }}</code>
+        </div>
       </div>
 
-      <!-- Recommended Instruments & Timeframes -->
-      <div v-if="strategy.recommendedSymbols && strategy.recommendedSymbols.length" class="rec-symbols-block">
-        <span class="detail-label">Recommended Instruments</span>
-        <div class="symbol-chips">
-          <span v-for="sym in strategy.recommendedSymbols" :key="sym" class="symbol-chip">
-            {{ sym }}
+      <div v-if="sparklineData" class="sparkline-box" title="Equity Curve (Vertical dashed line = OOS split)">
+        <svg viewBox="0 0 112 34" class="sparkline-svg" preserveAspectRatio="none">
+          <path
+            :d="sparklineData.area"
+            :fill="sparklineData.isPositive ? 'rgba(34, 197, 94, 0.12)' : 'rgba(239, 68, 68, 0.12)'"
+          />
+          <line
+            v-if="sparklineData.oosX"
+            :x1="sparklineData.oosX"
+            y1="2"
+            :x2="sparklineData.oosX"
+            y2="32"
+            stroke="rgba(251, 191, 36, 0.45)"
+            stroke-width="1"
+            stroke-dasharray="2,2"
+          />
+          <polyline
+            fill="none"
+            :stroke="sparklineData.isPositive ? '#22c55e' : '#ef4444'"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            :points="sparklineData.points"
+          />
+        </svg>
+      </div>
+    </div>
+
+    <!-- 4-Cell Quantitative Metrics Strip -->
+    <div class="quant-strip">
+      <div class="quant-cell">
+        <span class="quant-label">PROFIT FACTOR</span>
+        <div class="quant-val-row">
+          <span :class="['quant-val', pfClass(strategy.profitFactor)]">
+            {{ formatPf(strategy.profitFactor) }}
           </span>
-          <span v-if="strategy.timeframeSuitability && strategy.timeframeSuitability.length" class="tf-chip">
-            ⏱️ {{ strategy.timeframeSuitability.join(', ') }}
+          <span v-if="strategy.oosProfitFactor != null" class="quant-sub">
+            OOS {{ formatPf(strategy.oosProfitFactor) }}
           </span>
         </div>
       </div>
 
-      <!-- Indicators Used -->
-      <div v-if="strategy.indicators && strategy.indicators.length" class="indicators-block">
-        <span class="detail-label">Indicators Used</span>
-        <div class="indicator-chips">
-          <span v-for="ind in strategy.indicators" :key="ind" class="indicator-chip">
-            {{ ind }}
+      <div class="quant-cell">
+        <span class="quant-label">SHARPE</span>
+        <div class="quant-val-row">
+          <span :class="['quant-val', (strategy.sharpeRatio ?? 0) >= 1.2 ? 'val-elite' : 'val-ok']">
+            {{ strategy.sharpeRatio != null ? strategy.sharpeRatio.toFixed(2) : '—' }}
+          </span>
+          <span v-if="strategy.rSquared != null" class="quant-sub">
+            R² {{ strategy.rSquared.toFixed(2) }}
           </span>
         </div>
       </div>
 
-      <div class="detail-grid">
-        <div class="detail-item">
-          <span class="detail-label">Strategy ID</span>
-          <code class="detail-value">{{ strategy.id }}</code>
-        </div>
-        <div class="detail-item">
-          <span class="detail-label">Family</span>
-          <span class="detail-value">{{ strategy.family }}</span>
-        </div>
-        <div class="detail-item">
-          <span class="detail-label">Default Symbol</span>
-          <span class="detail-value">{{ strategy.defaultSymbol || '—' }}</span>
-        </div>
-        <div class="detail-item">
-          <span class="detail-label">Execution Label</span>
-          <span class="detail-value">{{ strategy.executionLabel || '—' }}</span>
+      <div class="quant-cell">
+        <span class="quant-label">MAX DD</span>
+        <div class="quant-val-row">
+          <span :class="['quant-val', ddClass(strategy.maxDrawdownPct)]">
+            {{ strategy.maxDrawdownPct != null ? `${strategy.maxDrawdownPct.toFixed(1)}%` : '—' }}
+          </span>
+          <span v-if="strategy.winRatePct != null" class="quant-sub">
+            WR {{ strategy.winRatePct.toFixed(0) }}%
+          </span>
         </div>
       </div>
 
-      <div v-if="strategy.deployedMode" class="deploy-info">
-        <h4>Deployment</h4>
-        <div class="detail-grid">
-          <div class="detail-item">
-            <span class="detail-label">Mode</span>
-            <span class="detail-value">{{ strategy.deployedMode }}</span>
-          </div>
-          <div v-if="strategy.brokerAccountId" class="detail-item">
-            <span class="detail-label">Broker Account</span>
-            <span class="detail-value">{{ strategy.brokerAccountId }}</span>
-          </div>
+      <div class="quant-cell">
+        <span class="quant-label">NET PNL</span>
+        <div class="quant-val-row">
+          <span :class="['quant-val', (strategy.netProfit ?? 0) >= 0 ? 'val-good' : 'val-warn']">
+            {{ formatMoney(strategy.netProfit) }}
+          </span>
+          <span v-if="strategy.totalTrades != null" class="quant-sub">
+            {{ strategy.totalTrades }} trd
+          </span>
         </div>
       </div>
+    </div>
 
-      <div class="actions-row">
-        <button class="run-btn" @click="runBacktest">
-          ▶ Run Backtest
-        </button>
-        <button class="wfa-btn" @click="runWfa">
-          📈 Run WFA
-        </button>
-        <button class="promote-btn" @click="showPromoteModal = true">
-          🚀 Promote Strategy
-        </button>
+    <!-- Signal Summary & Indicators -->
+    <div class="rule-preview">
+      <div v-if="strategy.longSignalSummary" class="signal-line" :title="strategy.longSignalSummary">
+        <span class="sig-tag">RULE</span>
+        <span class="sig-text">{{ strategy.longSignalSummary }}</span>
+      </div>
+      <div v-else-if="strategy.description" class="signal-line" :title="strategy.description">
+        <span class="sig-text">{{ strategy.description }}</span>
       </div>
 
-      <PromoteModal
-        :strategyId="strategy.id"
-        :show="showPromoteModal"
-        @close="showPromoteModal = false"
-        @promoted="onPromoted"
-      />
+      <div v-if="strategy.indicators && strategy.indicators.length" class="indicator-row">
+        <span
+          v-for="ind in strategy.indicators.slice(0, 4)"
+          :key="ind"
+          class="ind-chip"
+        >
+          {{ ind }}
+        </span>
+      </div>
+    </div>
+
+    <!-- 1-Click Quick Action Footer -->
+    <div class="card-footer" @click.stop>
+      <button class="act-btn act-inspect" title="Open Full Strategy Inspector" @click="emit('inspect', strategy)">
+        🔍 Inspect
+      </button>
+      <button class="act-btn act-run" title="Run Backtest in Dashboard" @click="emit('backtest', strategy)">
+        ▶ Backtest
+      </button>
+      <button class="act-btn act-wfa" title="Run Walk-Forward Analysis" @click="emit('wfa', strategy)">
+        📈 WFA
+      </button>
+      <button class="act-btn act-promote" title="Promote to Paper / Live Desk" @click="emit('promote', strategy)">
+        🚀 Promote
+      </button>
+      <button
+        :class="['act-btn', 'act-delete', { confirming: confirmingDelete }]"
+        :title="confirmingDelete ? 'Click again to confirm delete' : 'Delete / Prune Strategy'"
+        @click="emit('delete', strategy)"
+      >
+        {{ confirmingDelete ? '✓?' : '🗑️' }}
+      </button>
     </div>
   </div>
 </template>
 
 <style scoped>
 .strategy-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-left: 3px solid #888;
-  border-radius: 8px;
-  overflow: hidden;
-  transition: all 0.15s;
+  background: linear-gradient(180deg, rgba(24, 26, 32, 0.96) 0%, rgba(17, 19, 24, 0.98) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 2px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  padding: 0.85rem 0.95rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  cursor: pointer;
+  transition: transform 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
+  position: relative;
 }
 
 .strategy-card:hover {
-  border-color: #444;
+  border-color: rgba(245, 158, 11, 0.45);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  transform: translateY(-1px);
 }
 
-.strategy-card.expanded {
-  border-left-width: 3px;
+.strategy-card.is-selected {
+  border-color: var(--accent, #f59e0b);
+  box-shadow: 0 0 0 1px var(--accent, #f59e0b), 0 8px 24px rgba(245, 158, 11, 0.15);
 }
 
-.card-header {
+.strategy-card.tier-elite {
+  border-top-color: #f59e0b;
+}
+.strategy-card.tier-inst {
+  border-top-color: #38bdf8;
+}
+.strategy-card.tier-core {
+  border-top-color: #22c55e;
+}
+.strategy-card.tier-overlay {
+  border-top-color: #a855f7;
+}
+.strategy-card.tier-qualified {
+  border-top-color: #64748b;
+}
+
+.card-top-bar {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  padding: 0.85rem 1rem;
-  cursor: pointer;
+  align-items: center;
+  gap: 0.4rem;
 }
 
-.card-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.card-title-row {
+.instrument-cluster,
+.status-cluster {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.4rem;
+  gap: 0.35rem;
+  flex-wrap: nowrap;
 }
 
-.family-badge {
-  display: inline-block;
-  padding: 0.15rem 0.45rem;
-  border-radius: 4px;
-  font-size: 0.65rem;
+.inst-pill {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.72rem;
   font-weight: 700;
-  color: #fff;
+  padding: 0.15rem 0.48rem;
+  border-radius: 4px;
   letter-spacing: 0.03em;
   white-space: nowrap;
 }
 
-.strategy-name {
-  font-size: 0.95rem;
+.sym-gold {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.38);
+}
+
+.sym-cyan {
+  background: rgba(6, 182, 212, 0.16);
+  color: #22d3ee;
+  border: 1px solid rgba(6, 182, 212, 0.38);
+}
+
+.sym-purple {
+  background: rgba(168, 85, 247, 0.16);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.38);
+}
+
+.sym-emerald {
+  background: rgba(16, 185, 129, 0.16);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.38);
+}
+
+.sym-fx {
+  background: rgba(59, 130, 246, 0.16);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.38);
+}
+
+.tf-pill {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.68rem;
   font-weight: 600;
-  color: var(--text-primary);
-  word-break: break-all;
+  color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0.12rem 0.4rem;
+  border-radius: 4px;
+  white-space: nowrap;
 }
 
-.card-meta {
-  display: flex;
-  gap: 0.75rem;
-  font-size: 0.75rem;
-  color: var(--text-secondary);
+.arch-pill {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 
-.meta-item {
+.status-pill {
   display: inline-flex;
   align-items: center;
-  gap: 0.2rem;
-}
-
-.deploy-badge {
-  color: var(--success);
-  font-weight: 600;
-}
-
-.type-badge {
-  color: var(--accent);
-  font-weight: 500;
-}
-
-.description-block {
-  background: rgba(255, 255, 255, 0.02);
-  border-left: 2px solid var(--border);
-  padding: 0.5rem 0.75rem;
-  margin-bottom: 0.85rem;
-  border-radius: 0 4px 4px 0;
-}
-
-.description-text {
-  font-size: 0.825rem;
-  line-height: 1.4;
-  color: var(--text-secondary);
-  margin: 0;
-}
-
-.indicators-block {
-  margin-bottom: 0.85rem;
-}
-
-.indicator-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  margin-top: 0.3rem;
-}
-
-.indicator-chip {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--border);
+  gap: 0.28rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 0.12rem 0.42rem;
   border-radius: 4px;
-  padding: 0.15rem 0.45rem;
-  font-size: 0.725rem;
-  color: var(--text-primary);
-  font-weight: 500;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 
-.expand-icon {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-  margin-top: 0.25rem;
+.status-live {
+  background: rgba(34, 197, 94, 0.16);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.35);
+}
+
+.status-promoted {
+  background: rgba(56, 189, 248, 0.14);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 6px #22c55e;
+}
+
+.tier-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 0.12rem 0.45rem;
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.tier-pill.tier-elite {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.tier-pill.tier-inst {
+  background: rgba(56, 189, 248, 0.14);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.32);
+}
+
+.tier-pill.tier-core {
+  background: rgba(34, 197, 94, 0.14);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.32);
+}
+
+.tier-pill.tier-overlay {
+  background: rgba(168, 85, 247, 0.14);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.32);
+}
+
+.tier-pill.tier-qualified,
+.tier-pill.tier-system {
+  background: rgba(148, 163, 184, 0.12);
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.card-hero-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.title-block {
+  min-width: 0;
+  flex: 1;
+}
+
+.strategy-title {
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: #f8fafc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.25;
+}
+
+.strategy-code-row {
+  margin-top: 0.12rem;
+}
+
+.strategy-id-code {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.7rem;
+  color: #64748b;
+}
+
+.sparkline-box {
+  width: 112px;
+  height: 34px;
+  flex-shrink: 0;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.sparkline-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.quant-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.35rem;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 7px;
+  padding: 0.45rem 0.55rem;
+}
+
+.quant-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.quant-label {
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: #64748b;
+  letter-spacing: 0.05em;
+}
+
+.quant-val-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.28rem;
+  flex-wrap: wrap;
+}
+
+.quant-val {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.quant-sub {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.62rem;
+  color: #94a3b8;
+}
+
+.val-elite {
+  color: #4ade80;
+}
+
+.val-good {
+  color: #38bdf8;
+}
+
+.val-ok {
+  color: #e2e8f0;
+}
+
+.val-warn {
+  color: #fbbf24;
+}
+
+.rule-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.signal-line {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sig-tag {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+  padding: 0.08rem 0.3rem;
+  border-radius: 3px;
   flex-shrink: 0;
 }
 
-.card-detail {
-  padding: 0 1rem 1rem;
-  border-top: 1px solid var(--border);
-  padding-top: 0.75rem;
+.sig-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.detail-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.6rem;
-  margin-bottom: 0.75rem;
-}
-
-.detail-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-}
-
-.detail-label {
-  font-size: 0.65rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.detail-value {
-  font-size: 0.85rem;
-  color: var(--text-primary);
-}
-
-code.detail-value {
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  font-size: 0.8rem;
-  background: var(--bg-primary);
-  padding: 0.15rem 0.4rem;
-  border-radius: 3px;
-  word-break: break-all;
-}
-
-.deploy-info {
-  margin-bottom: 0.75rem;
-}
-
-.deploy-info h4 {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--success);
-  margin-bottom: 0.4rem;
-}
-
-.run-btn {
-  background: var(--accent);
-  color: #000;
-  border: none;
-  border-radius: 6px;
-  padding: 0.5rem 1.25rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.run-btn:hover {
-  background: var(--accent-hover);
-}
-
-.actions-row {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.promote-btn {
-  background: transparent;
-  border: 1px solid var(--accent);
-  color: var(--accent);
-  border-radius: 6px;
-  padding: 0.5rem 1.25rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.promote-btn:hover {
-  background: rgba(217, 119, 6, 0.08);
-}
-
-.wfa-btn {
-  background: var(--asset-futures-bg);
-  border: 1px solid var(--asset-futures-border);
-  color: #d8b4fe;
-  border-radius: 6px;
-  padding: 0.5rem 1.25rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.wfa-btn:hover {
-  background: rgba(168, 85, 247, 0.25);
-  border-color: var(--asset-futures);
-}
-
-.asset-badge {
-  background: rgba(41, 98, 255, 0.15);
-  color: #2962ff;
-  border: 1px solid rgba(41, 98, 255, 0.3);
-}
-
-.style-badge {
-  background: rgba(255, 255, 255, 0.08);
-  color: #d1d4dc;
-}
-
-.complexity-badge {
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  padding: 0.1rem 0.35rem;
-  border-radius: 3px;
-}
-
-.complexity-beginner {
-  background: rgba(34, 197, 94, 0.15);
-  color: #22c55e;
-}
-
-.complexity-intermediate {
-  background: rgba(245, 158, 11, 0.15);
-  color: #f59e0b;
-}
-
-.complexity-advanced {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
-}
-
-.rec-symbols-block {
-  margin-bottom: 0.75rem;
-}
-
-.symbol-chips {
+.indicator-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
-  margin-top: 0.25rem;
+  gap: 0.28rem;
 }
 
-.symbol-chip {
-  font-size: 0.75rem;
-  font-weight: 600;
-  background: rgba(41, 98, 255, 0.15);
-  color: #60a5fa;
-  padding: 0.15rem 0.45rem;
+.ind-chip {
+  font-size: 0.64rem;
+  font-weight: 500;
+  color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.08rem 0.38rem;
   border-radius: 4px;
-  border: 1px solid rgba(41, 98, 255, 0.3);
 }
 
-.tf-chip {
-  font-size: 0.75rem;
+.card-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  margin-top: auto;
+}
+
+.act-btn {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #cbd5e1;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.3rem 0.55rem;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.14s ease;
+  white-space: nowrap;
+}
+
+.act-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.act-run {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.38);
   color: #fbbf24;
-  padding: 0.15rem 0.45rem;
+}
+
+.act-run:hover {
+  background: #f59e0b;
+  color: #000;
+}
+
+.act-wfa {
+  background: rgba(168, 85, 247, 0.12);
+  border-color: rgba(168, 85, 247, 0.32);
+  color: #c084fc;
+}
+
+.act-wfa:hover {
+  background: rgba(168, 85, 247, 0.28);
+  color: #fff;
+}
+
+.act-promote {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.32);
+  color: #4ade80;
+}
+
+.act-promote:hover {
+  background: rgba(34, 197, 94, 0.28);
+  color: #fff;
+}
+
+.act-delete {
+  margin-left: auto;
+  padding: 0.3rem 0.45rem;
+  color: #94a3b8;
+}
+
+.act-delete:hover,
+.act-delete.confirming {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #fca5a5;
 }
 </style>

@@ -966,6 +966,15 @@ public final class ControlPlaneServer implements AutoCloseable {
             .get("/api/strategies", ctx -> {
                 try {
                     String assetClassFilter = ctx.queryParam("assetClass");
+                    Map<String, com.martinfou.trading.runtime.generator.StrategyGeneratorService.DatabankCandidate> candidateMap =
+                        new LinkedHashMap<>();
+                    if (strategyGeneratorService != null) {
+                        for (var c : strategyGeneratorService.listDatabank()) {
+                            if (c != null && c.id() != null) {
+                                candidateMap.put(c.id(), c);
+                            }
+                        }
+                    }
                     List<Map<String, Object>> items = StrategyCatalog.entries().stream()
                         .filter(e -> {
                             if (assetClassFilter == null || assetClassFilter.isBlank() || "ALL".equalsIgnoreCase(assetClassFilter)) {
@@ -986,6 +995,44 @@ public final class ControlPlaneServer implements AutoCloseable {
                             item.put("timeframeSuitability", e.timeframeSuitability() != null ? e.timeframeSuitability() : List.of("H1"));
                             item.put("recommendedSymbols", e.recommendedSymbols() != null ? e.recommendedSymbols() : List.of("EUR_USD"));
                             item.put("complexity", e.complexity() != null ? e.complexity() : "INTERMEDIATE");
+                            var c = candidateMap.get(e.id());
+                            if (c != null) {
+                                item.put("tier", c.tier());
+                                item.put("compositeScore", Double.isFinite(c.compositeScore()) ? c.compositeScore() : null);
+                                item.put("timeframe", c.timeframe());
+                                item.put("yearSpec", c.yearSpec());
+                                item.put("direction", c.direction());
+                                item.put("entryOrderType", c.entryOrderType());
+                                item.put("promoted", c.promoted());
+                                item.put("totalTrades", c.totalTrades());
+                                item.put("isTrades", c.isTrades());
+                                item.put("oosTrades", c.oosTrades());
+                                item.put("netProfit", Double.isFinite(c.netProfit()) ? c.netProfit() : null);
+                                item.put("isNetProfit", Double.isFinite(c.isNetProfit()) ? c.isNetProfit() : null);
+                                item.put("oosNetProfit", Double.isFinite(c.oosNetProfit()) ? c.oosNetProfit() : null);
+                                item.put("totalReturnPct", Double.isFinite(c.totalReturnPct()) ? c.totalReturnPct() : null);
+                                item.put("profitFactor", Double.isFinite(c.profitFactor()) ? c.profitFactor() : null);
+                                item.put("isProfitFactor", Double.isFinite(c.isProfitFactor()) ? c.isProfitFactor() : null);
+                                item.put("oosProfitFactor", Double.isFinite(c.oosProfitFactor()) ? c.oosProfitFactor() : null);
+                                item.put("sharpeRatio", Double.isFinite(c.sharpeRatio()) ? c.sharpeRatio() : null);
+                                item.put("isSharpeRatio", Double.isFinite(c.isSharpeRatio()) ? c.isSharpeRatio() : null);
+                                item.put("oosSharpeRatio", Double.isFinite(c.oosSharpeRatio()) ? c.oosSharpeRatio() : null);
+                                item.put("winRatePct", Double.isFinite(c.winRatePct()) ? c.winRatePct() : null);
+                                item.put("maxDrawdownPct", Double.isFinite(c.maxDrawdownPct()) ? c.maxDrawdownPct() : null);
+                                item.put("retDdRatio", Double.isFinite(c.retDdRatio()) ? c.retDdRatio() : null);
+                                item.put("rSquared", Double.isFinite(c.rSquared()) ? c.rSquared() : null);
+                                item.put("mcVar95", Double.isFinite(c.mcVar95()) ? c.mcVar95() : null);
+                                item.put("mcLossProbPct", Double.isFinite(c.mcLossProbPct()) ? c.mcLossProbPct() : null);
+                                item.put("wfePct", c.wfePct() != null && Double.isFinite(c.wfePct()) ? c.wfePct() : null);
+                                item.put("longSignalSummary", c.longSignalSummary());
+                                item.put("shortSignalSummary", c.shortSignalSummary());
+                                item.put("entrySummary", c.entrySummary());
+                                item.put("exitSummary", c.exitSummary());
+                                item.put("sessionSummary", c.resolvedSessionSummary());
+                                item.put("equityCurve", c.equityCurve());
+                                item.put("oosStartIndex", c.oosStartIndex());
+                                item.put("javaSourceCode", c.javaSourceCode());
+                            }
                             if (promoteService != null && promoteService.deploymentStore() != null) {
                                 promoteService.deploymentStore().get(e.id())
                                     .ifPresent(d -> {
@@ -1005,6 +1052,21 @@ public final class ControlPlaneServer implements AutoCloseable {
                     ex.printStackTrace();
                     throw ex;
                 }
+            })
+            .delete("/api/strategies/{id}", ctx -> {
+                String strategyId = ctx.pathParam("id");
+                if (strategyGeneratorService != null && strategyGeneratorService.getCandidate(strategyId).isPresent()) {
+                    strategyGeneratorService.deleteCandidate(strategyId);
+                } else if (StrategyCatalog.contains(strategyId)) {
+                    StrategyCatalog.Family fam = StrategyCatalog.family(strategyId);
+                    if (fam == StrategyCatalog.Family.GENERATED || fam == StrategyCatalog.Family.EXAMPLE) {
+                        StrategyCatalog.unregister(strategyId);
+                    }
+                }
+                if (promoteService != null && promoteService.deploymentStore() != null) {
+                    promoteService.deploymentStore().delete(strategyId);
+                }
+                ctx.status(HttpStatus.NO_CONTENT);
             })
             .get("/api/strategies/{id}/parameters", ctx -> {
                 String strategyId = ctx.pathParam("id");
