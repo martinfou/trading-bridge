@@ -77,7 +77,7 @@ public class BarStore {
                 buffer.putDouble(bar.high());
                 buffer.putDouble(bar.low());
                 buffer.putDouble(bar.close());
-                buffer.putInt((int) bar.volume());
+                buffer.putInt((int) Math.clamp(bar.volume(), 0L, (long) Integer.MAX_VALUE));
             }
             this.barCount = bars.size();
             channel.close();

@@ -24,6 +24,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -43,6 +44,7 @@ public final class IbkrBarSource implements AutoCloseable {
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(15);
     private static final DateTimeFormatter IBKR_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd HH:mm:ss");
     private static final DateTimeFormatter IBKR_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd");
+    private static final AtomicInteger HISTORICAL_CLIENT_OFFSET = new AtomicInteger(0);
 
     /** Seam for unit-testing bar filtering and timestamp conversion without a live socket. */
     @FunctionalInterface
@@ -133,6 +135,137 @@ public final class IbkrBarSource implements AutoCloseable {
             return List.copyOf(closedBars.subList(closedBars.size() - count, closedBars.size()));
         }
         return List.copyOf(closedBars);
+    }
+
+    /**
+     * Probes whether a local IB Gateway / TWS socket is reachable (ports 4002, 7497, 4001, 7496, or configured port)
+     * and, if reachable, fetches up to 1 year of closed bars for {@code symbol}, {@code year}, and {@code timeframe}.
+     * Returns an empty list immediately if no IB Gateway / TWS socket is listening.
+     */
+    public static List<Bar> tryFetchYearBars(String symbol, int year, String timeframe) {
+        Optional<IbkrConnectionConfig> reachable = probeReachableConfig();
+        if (reachable.isEmpty()) {
+            return List.of();
+        }
+        try (IbkrBarSource source = new IbkrBarSource(reachable.get())) {
+            return source.fetchYearBars(symbol, year, timeframe);
+        } catch (Exception e) {
+            log.warn("IBKR year bar fetch failed for {} {} ({}): {}", symbol, year, timeframe, e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * Fetches closed bars for {@code symbol} within {@code year} at {@code timeframe} from IBKR.
+     */
+    public List<Bar> fetchYearBars(String symbol, int year, String timeframe) {
+        Objects.requireNonNull(symbol, "symbol is required");
+        Objects.requireNonNull(timeframe, "timeframe is required");
+
+        LocalDate today = LocalDate.now(clock);
+        if (year > today.getYear()) {
+            return List.of();
+        }
+        Duration barDuration = parseTimeframeDuration(timeframe);
+        String ibkrBarSize = toIbkrBarSize(timeframe);
+        // IBKR single-request duration limits: <= 1 min allows up to "30 D", 5m/15m up to "60 D", >= 30m up to "1 Y".
+        String durationStr;
+        if (barDuration.toMinutes() <= 1) {
+            if (LocalDate.of(year, 12, 31).isBefore(today.minusDays(30))) {
+                return List.of();
+            }
+            durationStr = "30 D";
+        } else if (barDuration.toMinutes() < 30) {
+            if (LocalDate.of(year, 12, 31).isBefore(today.minusDays(60))) {
+                return List.of();
+            }
+            durationStr = "60 D";
+        } else {
+            if (year < today.getYear() - 1) {
+                return List.of();
+            }
+            durationStr = "1 Y";
+        }
+
+        List<RawIbkrBar> rawBars = rawBarFetcher.fetch(symbol, ibkrBarSize, durationStr);
+        if (rawBars == null || rawBars.isEmpty()) {
+            return List.of();
+        }
+
+        Instant now = clock.instant();
+        Instant yearStart = LocalDate.of(year, 1, 1).atStartOfDay(java.time.ZoneOffset.UTC).toInstant();
+        Instant yearEnd = LocalDate.of(year, 12, 31).atTime(23, 59, 59).toInstant(java.time.ZoneOffset.UTC);
+        String normalizedSymbol = symbol.trim().toUpperCase(Locale.ROOT);
+        List<Bar> closedBars = new ArrayList<>(rawBars.size());
+
+        for (RawIbkrBar raw : rawBars) {
+            Instant barStart = parseIbkrTimestamp(raw.time());
+            if (barStart == null) {
+                continue;
+            }
+            if (barStart.plus(barDuration).isAfter(now)) {
+                continue;
+            }
+            if (barStart.isBefore(yearStart) || barStart.isAfter(yearEnd)) {
+                continue;
+            }
+            closedBars.add(new Bar(
+                normalizedSymbol,
+                barStart,
+                raw.open(),
+                raw.high(),
+                raw.low(),
+                raw.close(),
+                raw.volume()
+            ));
+        }
+
+        closedBars.sort(Comparator.comparing(Bar::timestamp));
+        return List.copyOf(closedBars);
+    }
+
+    /**
+     * Fast 250ms TCP socket probe for local IB Gateway (4002/4001) or TWS (7497/7496) so callers never block
+     * when IBKR is not running.
+     */
+    public static Optional<IbkrConnectionConfig> probeReachableConfig() {
+        var props = IbkrConfigurationTool.loadConfig();
+        String host = System.getenv(IbkrConnectionConfig.ENV_HOST);
+        if (host == null || host.isBlank()) {
+            host = props.getProperty("host", "127.0.0.1");
+        }
+        String portEnv = System.getenv(IbkrConnectionConfig.ENV_PORT);
+        int configuredPort = 4002;
+        try {
+            if (portEnv != null && !portEnv.isBlank()) {
+                configuredPort = Integer.parseInt(portEnv.trim());
+            } else if (props.getProperty("port") != null) {
+                configuredPort = Integer.parseInt(props.getProperty("port").trim());
+            }
+        } catch (NumberFormatException ignored) {}
+
+        int baseClientId = 95;
+        try {
+            if (props.getProperty("clientId") != null) {
+                baseClientId = Integer.parseInt(props.getProperty("clientId").trim()) + 20;
+            }
+        } catch (NumberFormatException ignored) {}
+
+        int[] candidatePorts = {configuredPort, 4002, 7497, 4001, 7496};
+        java.util.Set<Integer> tried = new java.util.HashSet<>();
+        for (int port : candidatePorts) {
+            if (port <= 0 || port > 65535 || !tried.add(port)) {
+                continue;
+            }
+            try (java.net.Socket socket = new java.net.Socket()) {
+                socket.connect(new java.net.InetSocketAddress(host, port), 250);
+                int clientId = Math.max(1, baseClientId + (HISTORICAL_CLIENT_OFFSET.incrementAndGet() % 50));
+                return Optional.of(new IbkrConnectionConfig(host, port, clientId, "HISTORICAL"));
+            } catch (IOException ignored) {
+                // port not listening
+            }
+        }
+        return Optional.empty();
     }
 
     private synchronized List<RawIbkrBar> fetchFromSocket(String symbol, String ibkrBarSize, String durationStr) {

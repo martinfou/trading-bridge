@@ -68,6 +68,31 @@ class IbkrBarSourceTest {
     }
 
     @Test
+    @DisplayName("fetchYearBars requests 1 Y duration for M30 and filters to target year")
+    void fetchYearBars_filtersToRequestedYear() {
+        Instant nowUtc = Instant.parse("2026-08-19T15:00:05Z");
+        Clock fixedClock = Clock.fixed(nowUtc, ZoneOffset.UTC);
+
+        List<IbkrBarSource.RawIbkrBar> fakeRaw = List.of(
+            new IbkrBarSource.RawIbkrBar("20251231 15:00:00 US/Eastern", 2400.0, 2405.0, 2398.0, 2402.0, 80L),
+            new IbkrBarSource.RawIbkrBar("20260819 09:30:00 US/Eastern", 2500.0, 2505.0, 2498.0, 2502.0, 120L),
+            new IbkrBarSource.RawIbkrBar("20260819 10:00:00 US/Eastern", 2502.0, 2510.0, 2501.0, 2508.0, 180L)
+        );
+
+        IbkrConnectionConfig cfg = new IbkrConnectionConfig("127.0.0.1", 4002, 22, "DU12345");
+        try (IbkrBarSource source = new IbkrBarSource(cfg, fixedClock, (sym, tf, dur) -> {
+            assertEquals("30 mins", tf);
+            assertEquals("1 Y", dur);
+            return fakeRaw;
+        })) {
+            List<Bar> bars2026 = source.fetchYearBars("MGC", 2026, "M30");
+            assertEquals(2, bars2026.size(), "Must only retain 2026 closed bars");
+            assertEquals(Instant.parse("2026-08-19T13:30:00Z"), bars2026.get(0).timestamp());
+            assertEquals(Instant.parse("2026-08-19T14:00:00Z"), bars2026.get(1).timestamp());
+        }
+    }
+
+    @Test
     @DisplayName("Integration test: fetches >= 10 closed MGC M30 bars from live gateway when reachable")
     void latestBars_liveGatewayIntegration() {
         String host = System.getenv().getOrDefault("IBKR_HOST", "127.0.0.1");

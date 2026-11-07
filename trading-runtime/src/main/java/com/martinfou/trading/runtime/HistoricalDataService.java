@@ -19,6 +19,9 @@ import com.martinfou.trading.core.Bar;
 import com.martinfou.trading.core.InstrumentDefinition;
 import com.martinfou.trading.data.BarStore;
 import com.martinfou.trading.data.DukascopyDownloader;
+import com.martinfou.trading.data.HistoricalDataLoader;
+import com.martinfou.trading.data.YahooFinanceDataLoader;
+import com.martinfou.trading.data.ibkr.IbkrBarSource;
 import com.martinfou.trading.data.persistence.SqliteUniverseStore;
 
 public final class HistoricalDataService implements AutoCloseable {
@@ -410,8 +413,8 @@ public final class HistoricalDataService implements AutoCloseable {
         try {
             activeTasks.put(key, new DownloadTaskStatus(
                 key,
-                Math.clamp(basePct + Math.max(1, downloadRange / 2), 1, 99),
-                "Generating " + symbol + " " + year + " (" + tfLabel + ") candle series...",
+                Math.clamp(basePct + Math.max(1, downloadRange / 4), 1, 99),
+                "Fetching " + symbol + " " + year + " (" + tfLabel + ") market bars...",
                 symbol,
                 tfLabel,
                 year,
@@ -421,7 +424,23 @@ public final class HistoricalDataService implements AutoCloseable {
                 totalSteps,
                 "RUNNING"
             ));
-            List<Bar> bars = generateMultiAssetBars(symbol, year, tf);
+            List<Bar> bars = fetchOrGenerateMultiAssetBars(symbol, year, tfLabel, dukascopyDir, (completed, total) -> {
+                int subPct = (completed * downloadRange) / Math.max(1, total);
+                int pct = Math.clamp(basePct + subPct, 1, 99);
+                activeTasks.put(key, new DownloadTaskStatus(
+                    key,
+                    pct,
+                    "Downloading " + symbol + " " + year + " (" + completed + "/" + total + " days)...",
+                    symbol,
+                    tfLabel,
+                    year,
+                    startYearVal,
+                    endYearVal,
+                    stepIndex,
+                    totalSteps,
+                    "RUNNING"
+                ));
+            });
             activeTasks.put(key, new DownloadTaskStatus(
                 key,
                 Math.clamp(convertBase, 1, 99),
@@ -438,13 +457,188 @@ public final class HistoricalDataService implements AutoCloseable {
             var storeYear = new BarStore(symbol, tfLabel + "_" + year, barsDir);
             storeYear.write(bars);
 
-            // Also maintain continuous master bar file
-            var storeMaster = new BarStore(symbol, tfLabel, barsDir);
-            storeMaster.write(bars);
-            log.info("Successfully generated and saved {} {} {} bars (count: {})", symbol, tf, year, bars.size());
+            // Maintain continuous master bar file across all available annual datasets
+            rebuildMasterBarStore(symbol, tfLabel);
+            log.info("Successfully fetched and saved {} {} {} bars (count: {})", symbol, tf, year, bars.size());
         } catch (Exception e) {
-            log.error("Failed to generate bars for " + symbol + " " + year, e);
+            log.error("Failed to fetch/save bars for " + symbol + " " + year, e);
         }
+    }
+
+    private void rebuildMasterBarStore(String symbol, String tfLabel) {
+        try {
+            List<Bar> allBars = HistoricalDataLoader.loadAllAvailable(symbol, tfLabel, barsDir, dukascopyDir).bars();
+            if (!allBars.isEmpty()) {
+                var storeMaster = new BarStore(symbol, tfLabel, barsDir);
+                storeMaster.write(allBars);
+            }
+        } catch (Exception e) {
+            log.debug("Could not rebuild master .bars store for {} {}: {}", symbol, tfLabel, e.getMessage());
+        }
+    }
+
+    /**
+     * Fetches real market bars for Futures / Commodities / Equities using a three-tier real-data cascade:
+     * <ol>
+     *   <li><b>Recent history via IBKR TWS / Gateway ({@link IbkrBarSource#tryFetchYearBars}):</b> Primary authoritative
+     *       source when IB Gateway / TWS is running locally (ports 4002/7497) and the requested year is within IBKR's
+     *       1-year contract lookback.</li>
+     *   <li><b>Recent history via Yahoo Finance v8 Chart API ({@link YahooFinanceDataLoader#fetchYearBars}):</b> Used
+     *       when IBKR is offline or for recent intraday windows (30d M1, 60d M30, 729d H1, full D1/W1).</li>
+     *   <li><b>Deep historical intraday not available in IBKR ({@link DukascopyDownloader}):</b> Dukascopy CFD/Spot proxy
+     *       for supported futures/metals ({@code MGC-&gt;XAUUSD}, {@code MES-&gt;USA500IDXUSD}, {@code MNQ-&gt;USATECHIDXUSD},
+     *       {@code M2K-&gt;USA2000IDXUSD}) covering historical years or earlier months of the year prior to the IBKR/Yahoo tail.</li>
+     *   <li><b>Offline fallback:</b> Deterministic {@link #generateMultiAssetBars} if running in unit-test mode
+     *       ({@code -Dtrading.bridge.test=true}) or if all remote feeds are unreachable.</li>
+     * </ol>
+     */
+    public static List<Bar> fetchOrGenerateMultiAssetBars(
+        String symbol,
+        int year,
+        String tf,
+        Path dukascopyOutputDir,
+        DukascopyDownloader.ProgressListener progressListener
+    ) {
+        String tfLabel = (tf == null || tf.isBlank()) ? "H1" : tf.trim().toUpperCase(Locale.ROOT);
+        if (Boolean.getBoolean("trading.bridge.test")) {
+            return generateMultiAssetBars(symbol, year, tfLabel);
+        }
+
+        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+        List<Bar> recentBars = List.of();
+
+        // 1. Primary recent history from IBKR TWS / Gateway (when Gateway socket is reachable)
+        if (year >= today.getYear() - 1) {
+            recentBars = IbkrBarSource.tryFetchYearBars(symbol, year, tfLabel);
+            if (!recentBars.isEmpty()) {
+                log.info("Fetched {} recent {} bars from IBKR Gateway for {} ({})", recentBars.size(), tfLabel, symbol, year);
+            }
+        }
+
+        // 2. Secondary recent history from Yahoo Finance (when IBKR is offline or returned empty)
+        if (recentBars.isEmpty() && YahooFinanceDataLoader.canServeYear(tfLabel, year, today)) {
+            try {
+                recentBars = YahooFinanceDataLoader.fetchYearBars(symbol, year, tfLabel);
+                log.info("Fetched {} recent {} bars from Yahoo Finance for {} ({})", recentBars.size(), tfLabel, symbol, year);
+            } catch (Exception e) {
+                log.warn("Yahoo Finance fetch for {} {} ({}) failed: {}", symbol, year, tfLabel, e.getMessage());
+            }
+        }
+
+        // Check if recentBars already covers from the start of the requested year (within first 5 calendar days)
+        LocalDate yearStart = LocalDate.of(year, 1, 1);
+        if (!recentBars.isEmpty()) {
+            LocalDate firstRecentDate = recentBars.getFirst().timestamp().atZone(ZoneOffset.UTC).toLocalDate();
+            if (!firstRecentDate.isAfter(yearStart.plusDays(5))) {
+                return recentBars;
+            }
+        }
+
+        // 3. History not available in IBKR / Yahoo (older years or earlier months of current year) via Dukascopy proxy
+        if (DukascopyDownloader.supportsSymbol(symbol)) {
+            try {
+                DukascopyDownloader downloader = new DukascopyDownloader();
+                LocalDate yearEnd = LocalDate.of(year, 12, 31);
+                if (yearEnd.isAfter(today)) {
+                    yearEnd = today;
+                }
+                if (!recentBars.isEmpty()) {
+                    LocalDate firstRecentDate = recentBars.getFirst().timestamp().atZone(ZoneOffset.UTC).toLocalDate();
+                    if (!firstRecentDate.isBefore(yearStart)) {
+                        // Include firstRecentDate so we have an overlapping bar timestamp to measure futures-vs-spot basis
+                        yearEnd = firstRecentDate;
+                    }
+                }
+                Path outDir = dukascopyOutputDir != null ? dukascopyOutputDir : RuntimeDataPaths.defaultDukascopyDirectory();
+                List<Bar> dukascopyBars = List.of();
+                if (!yearStart.isAfter(yearEnd)) {
+                    Path csvPath = downloader.downloadRange(symbol, yearStart, yearEnd, tfLabel, outDir, progressListener);
+                    dukascopyBars = HistoricalDataLoader.loadPath(csvPath, symbol);
+                    if (!recentBars.isEmpty()) {
+                        // Delete partial-year Dukascopy CSV so HistoricalDataLoader.loadYear does not prefer
+                        // the un-stitched partial CSV over the stitched <SYMBOL>_<TF>_<YEAR>.bars file.
+                        Files.deleteIfExists(csvPath);
+                    }
+                    log.info("Fetched {} historical {} bars from Dukascopy proxy ({}) for {} ({}..{})",
+                        dukascopyBars.size(), tfLabel, DukascopyDownloader.toDukascopyInstrument(symbol), symbol, yearStart, yearEnd);
+                }
+                if (!dukascopyBars.isEmpty() || !recentBars.isEmpty()) {
+                    return stitchDukascopyAndRecentBars(dukascopyBars, recentBars, symbol);
+                }
+            } catch (Exception e) {
+                log.warn("Dukascopy proxy download for {} {} ({}) failed: {}", symbol, year, tfLabel, e.getMessage());
+            }
+        }
+
+        if (!recentBars.isEmpty()) {
+            return recentBars;
+        }
+
+        log.warn("Falling back to synthetic multi-asset bars for {} {} ({})", symbol, year, tfLabel);
+        return generateMultiAssetBars(symbol, year, tfLabel);
+    }
+
+    /**
+     * Stitches historical Dukascopy proxy bars with recent IBKR/Yahoo futures bars.
+     * When both lists are non-empty, measures the futures-vs-spot basis at the first overlapping timestamp
+     * (or boundary bar) and shifts the historical Dukascopy segment by that quantized basis so there is no
+     * artificial carry gap at the stitch boundary. Recent IBKR/Yahoo bars take precedence from their start timestamp.
+     */
+    static List<Bar> stitchDukascopyAndRecentBars(List<Bar> dukascopyBars, List<Bar> recentBars, String symbol) {
+        if (recentBars == null || recentBars.isEmpty()) {
+            return BarStore.sanitizeChronological(dukascopyBars);
+        }
+        if (dukascopyBars == null || dukascopyBars.isEmpty()) {
+            return BarStore.sanitizeChronological(recentBars);
+        }
+
+        Bar firstRecent = recentBars.getFirst();
+        Instant cutoff = firstRecent.timestamp();
+
+        // Find matching timestamp in dukascopyBars (or last bar before cutoff) to compute futures basis delta
+        Bar anchorDuk = null;
+        for (Bar b : dukascopyBars) {
+            if (!b.timestamp().isAfter(cutoff)) {
+                anchorDuk = b;
+            } else {
+                break;
+            }
+        }
+
+        double basisDelta = 0.0;
+        var contractOpt = com.martinfou.trading.core.FuturesRegistry.find(symbol);
+        if (anchorDuk != null) {
+            double anchorPrice = anchorDuk.timestamp().equals(cutoff) ? anchorDuk.open() : anchorDuk.close();
+            double rawDelta = firstRecent.open() - anchorPrice;
+            basisDelta = contractOpt.map(c -> c.quantizePrice(rawDelta)).orElse(rawDelta);
+        }
+
+        List<Bar> combined = new ArrayList<>(dukascopyBars.size() + recentBars.size());
+        for (Bar b : dukascopyBars) {
+            if (b.timestamp().isBefore(cutoff)) {
+                if (basisDelta != 0.0) {
+                    double o = Math.max(1e-6, b.open() + basisDelta);
+                    double cl = Math.max(1e-6, b.close() + basisDelta);
+                    double h = Math.max(1e-6, b.high() + basisDelta);
+                    double l = Math.max(1e-6, b.low() + basisDelta);
+                    if (contractOpt.isPresent()) {
+                        var c = contractOpt.get();
+                        o = c.quantizePrice(o);
+                        cl = c.quantizePrice(cl);
+                        h = Math.max(c.quantizePrice(h), Math.max(o, cl));
+                        l = Math.min(c.quantizePrice(l), Math.min(o, cl));
+                    } else {
+                        h = Math.max(h, Math.max(o, cl));
+                        l = Math.min(l, Math.min(o, cl));
+                    }
+                    combined.add(new Bar(b.symbol(), b.timestamp(), o, h, l, cl, b.volume()));
+                } else {
+                    combined.add(b);
+                }
+            }
+        }
+        combined.addAll(recentBars);
+        return BarStore.sanitizeChronological(combined);
     }
 
     public static List<Bar> generateMultiAssetBars(String symbol, int year, String tf) {

@@ -1300,12 +1300,36 @@ public final class StrategyGeneratorService implements AutoCloseable {
             // Fall through to auto-generate if missing
         }
         int currentYear = java.time.LocalDate.now().getYear();
-        List<Bar> generated = HistoricalDataService.generateMultiAssetBars(symbol, currentYear, timeframe);
-        com.martinfou.trading.data.BarStore store = new com.martinfou.trading.data.BarStore(
-            symbol, timeframe + "_" + currentYear, RuntimeDataPaths.defaultBarsDirectory()
-        );
-        store.write(generated);
-        return generated;
+        int startYear = currentYear;
+        int endYear = currentYear;
+        if (yearSpec != null && !yearSpec.isBlank() && !"all".equalsIgnoreCase(yearSpec.trim())) {
+            String spec = yearSpec.trim();
+            if (spec.matches("\\d{4}-\\d{4}")) {
+                String[] parts = spec.split("-");
+                startYear = Integer.parseInt(parts[0]);
+                endYear = Integer.parseInt(parts[1]);
+                if (startYear > endYear) {
+                    int tmp = startYear;
+                    startYear = endYear;
+                    endYear = tmp;
+                }
+            } else if (spec.matches("\\d{4}")) {
+                startYear = Integer.parseInt(spec);
+                endYear = startYear;
+            }
+        }
+        List<Bar> allGenerated = new ArrayList<>();
+        for (int y = startYear; y <= endYear; y++) {
+            List<Bar> yearBars = HistoricalDataService.fetchOrGenerateMultiAssetBars(
+                symbol, y, timeframe, RuntimeDataPaths.defaultDukascopyDirectory(), null
+            );
+            com.martinfou.trading.data.BarStore store = new com.martinfou.trading.data.BarStore(
+                symbol, timeframe + "_" + y, RuntimeDataPaths.defaultBarsDirectory()
+            );
+            store.write(yearBars);
+            allGenerated.addAll(yearBars);
+        }
+        return com.martinfou.trading.data.BarStore.sanitizeChronological(allGenerated);
     }
 
     private List<BlockType> parseAllowedBlocks(List<String> names) {

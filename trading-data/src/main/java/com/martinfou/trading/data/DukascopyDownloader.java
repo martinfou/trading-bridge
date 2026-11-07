@@ -1,5 +1,10 @@
 package com.martinfou.trading.data;
 
+import com.martinfou.trading.core.Bar;
+import com.martinfou.trading.core.BarAggregator;
+import com.martinfou.trading.core.CmeGlobexMarketCalendar;
+import com.martinfou.trading.core.FuturesContract;
+import com.martinfou.trading.core.FuturesRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.tukaani.xz.LZMAInputStream;
@@ -12,14 +17,18 @@ import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.DayOfWeek;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
@@ -38,7 +47,11 @@ public class DukascopyDownloader {
                 .build();
     }
 
-    public record Candle(long timestampMs, double open, double high, double low, double close) {}
+    public record Candle(long timestampMs, double open, double high, double low, double close, long volume) {
+        public Candle(long timestampMs, double open, double high, double low, double close) {
+            this(timestampMs, open, high, low, close, 0L);
+        }
+    }
 
     @FunctionalInterface
     public interface ProgressListener {
@@ -70,14 +83,19 @@ public class DukascopyDownloader {
     }
 
     public Path downloadRange(String pair, LocalDate start, LocalDate end, String timeframe, Path outputDir, ProgressListener listener) throws IOException {
-        String symbol = pair.toUpperCase().replace("_", "").replace("/", "");
-        String tfLower = timeframe.toLowerCase();
+        if (pair == null || pair.isBlank() || timeframe == null || timeframe.isBlank()) {
+            throw new IllegalArgumentException("pair and timeframe are required");
+        }
+        String symbol = toDukascopyInstrument(pair);
+        String filePrefix = pair.toLowerCase(java.util.Locale.ROOT).replace("_", "").replace("/", "");
+        String tfLower = timeframe.toLowerCase(java.util.Locale.ROOT);
 
         long days = java.time.temporal.ChronoUnit.DAYS.between(start, end) + 1;
         int totalTasks = (int) days;
         java.util.concurrent.atomic.AtomicInteger completedCount = new java.util.concurrent.atomic.AtomicInteger(0);
 
-        log.info("Downloading Dukascopy data for {} ({}) from {} to {} in parallel ({} days)", symbol, timeframe, start, end, totalTasks);
+        log.info("Downloading Dukascopy data for {} (feed={}) ({}) from {} to {} in parallel ({} days)",
+            pair, symbol, timeframe, start, end, totalTasks);
 
         List<LocalDate> targetDates = new ArrayList<>();
         LocalDate current = start;
@@ -156,29 +174,235 @@ public class DukascopyDownloader {
         // Sort candles chronologically to be robust
         allCandles.sort(java.util.Comparator.comparingLong(Candle::timestampMs));
 
-        // If timeframe is H1, aggregate the 1-minute candles to 1-hour candles
-        if (tfLower.equals("h1")) {
-            allCandles = aggregateToHourly(allCandles);
+        Optional<FuturesContract> futuresContract = FuturesRegistry.find(pair);
+        if (futuresContract.isPresent()) {
+            allCandles = filterGlobexTradingMinutes(allCandles, futuresContract.get());
+        }
+
+        // Aggregate 1-minute candles into requested timeframe if coarser than M1
+        long bucketMs = timeframeBucketMs(tfLower);
+        if (bucketMs >= 4 * 3_600_000L) {
+            allCandles = aggregateViaBarAggregator(allCandles, pair, tfLower.toUpperCase(java.util.Locale.ROOT));
+        } else if (bucketMs > 60_000L) {
+            allCandles = aggregateToBucket(allCandles, bucketMs);
+        }
+
+        if (futuresContract.isPresent()) {
+            allCandles = quantizeFuturesCandles(allCandles, futuresContract.get());
         }
 
         // Save as CSV
         String filename = String.format("%s-%s-bid-%s-%s.csv",
-                pair.toLowerCase(), tfLower,
+                filePrefix, tfLower,
                 DateTimeFormatter.ofPattern("yyyy-MM-dd").format(start),
                 DateTimeFormatter.ofPattern("yyyy-MM-dd").format(end));
         Path csvPath = outputDir.resolve(filename);
         Files.createDirectories(outputDir);
 
         try (BufferedWriter writer = Files.newBufferedWriter(csvPath)) {
-            writer.write("timestamp,open,high,low,close\n");
+            writer.write("timestamp,open,high,low,close,volume\n");
             for (Candle c : allCandles) {
-                writer.write(String.format("%d,%.5f,%.5f,%.5f,%.5f\n",
-                        c.timestampMs(), c.open(), c.high(), c.low(), c.close()));
+                writer.write(String.format(java.util.Locale.ROOT, "%d,%.5f,%.5f,%.5f,%.5f,%d\n",
+                        c.timestampMs(), c.open(), c.high(), c.low(), c.close(), c.volume()));
             }
         }
 
         log.info("Saved raw CSV to: {}", csvPath);
         return csvPath;
+    }
+
+    /**
+     * Filters 1-minute Dukascopy proxy candles so their session schedule matches IBKR CME/COMEX Globex futures:
+     * <ul>
+     *   <li>Timezone: {@code America/New_York} (automatically adjusts for US DST transitions)</li>
+     *   <li>Sunday: Opens at 18:00 ET</li>
+     *   <li>Monday–Thursday: Daily maintenance halt 17:00–18:00 ET (plus 16:15–16:30 ET pause on CME equity index futures)</li>
+     *   <li>Friday: Closes at 17:00 ET</li>
+     *   <li>Saturday: Closed all day</li>
+     *   <li>Also drops zero-volume flat maintenance-padding bars when positive-volume bars exist</li>
+     * </ul>
+     */
+    static List<Candle> filterGlobexTradingMinutes(List<Candle> candles, FuturesContract contract) {
+        if (candles.isEmpty()) {
+            return candles;
+        }
+        boolean isCmeEquityIndex = "CME".equalsIgnoreCase(contract.exchange());
+        boolean hasPositiveVolume = false;
+        for (Candle c : candles) {
+            if (c.volume() > 0L) {
+                hasPositiveVolume = true;
+                break;
+            }
+        }
+        List<Candle> filtered = new ArrayList<>(candles.size());
+        for (Candle c : candles) {
+            if (hasPositiveVolume
+                && c.volume() <= 0L
+                && Double.compare(c.open(), c.high()) == 0
+                && Double.compare(c.high(), c.low()) == 0
+                && Double.compare(c.low(), c.close()) == 0) {
+                continue;
+            }
+            if (isGlobexSessionOpen(Instant.ofEpochMilli(c.timestampMs()), isCmeEquityIndex)) {
+                filtered.add(c);
+            }
+        }
+        return filtered;
+    }
+
+    /**
+     * Checks whether CME/COMEX Globex is open at {@code instant} in {@code America/New_York}.
+     * COMEX/NYMEX/CBOT contracts (e.g. MGC, GC, MCL, MYM) trade continuously 18:00–17:00 ET without the
+     * 16:15–16:30 ET equity-index settlement pause, whereas CME equity index futures pause 16:15–16:30 ET.
+     */
+    public static boolean isGlobexSessionOpen(Instant instant, boolean includeCmeEquityPause) {
+        if (includeCmeEquityPause) {
+            return CmeGlobexMarketCalendar.isTradingTime(instant);
+        }
+        if (instant == null) {
+            return false;
+        }
+        ZonedDateTime et = instant.atZone(CmeGlobexMarketCalendar.EASTERN_ZONE);
+        DayOfWeek dow = et.getDayOfWeek();
+        int timeInMinutes = et.getHour() * 60 + et.getMinute();
+        if (dow == DayOfWeek.SATURDAY) {
+            return false;
+        }
+        if (dow == DayOfWeek.SUNDAY) {
+            return timeInMinutes >= 18 * 60;
+        }
+        if (dow == DayOfWeek.FRIDAY) {
+            return timeInMinutes < 17 * 60;
+        }
+        // Monday–Thursday: closed only during 17:00–18:00 ET maintenance halt
+        return !(timeInMinutes >= 17 * 60 && timeInMinutes < 18 * 60);
+    }
+
+    /**
+     * Quantizes OHLC prices of each candle to the futures contract's exact exchange {@code minTick}
+     * (e.g. 0.10 for MGC/M2K, 0.25 for MES/MNQ, 1.00 for MYM) while preserving OHLC ordering invariants.
+     */
+    static List<Candle> quantizeFuturesCandles(List<Candle> candles, FuturesContract contract) {
+        if (candles.isEmpty() || contract == null) {
+            return candles;
+        }
+        List<Candle> quantized = new ArrayList<>(candles.size());
+        for (Candle c : candles) {
+            double o = contract.quantizePrice(c.open());
+            double cl = contract.quantizePrice(c.close());
+            double h = Math.max(contract.quantizePrice(c.high()), Math.max(o, cl));
+            double l = Math.min(contract.quantizePrice(c.low()), Math.min(o, cl));
+            quantized.add(new Candle(c.timestampMs(), o, h, l, cl, c.volume()));
+        }
+        return quantized;
+    }
+
+    /**
+     * Maps a trading-bridge symbol or pair (Forex, Metals, or US Index Future) to its Dukascopy instrument code.
+     */
+    public static String toDukascopyInstrument(String symbolOrPair) {
+        if (symbolOrPair == null || symbolOrPair.isBlank()) {
+            return "EURUSD";
+        }
+        String norm = symbolOrPair.trim().toUpperCase(java.util.Locale.ROOT).replace("_", "").replace("/", "");
+        return switch (norm) {
+            case "MGC", "GC", "XAUUSD" -> "XAUUSD";
+            case "SI", "SIL", "XAGUSD" -> "XAGUSD";
+            case "MES", "ES", "USA500IDXUSD" -> "USA500IDXUSD";
+            case "MNQ", "NQ", "USATECHIDXUSD" -> "USATECHIDXUSD";
+            case "M2K", "RTY", "USA2000IDXUSD" -> "USA2000IDXUSD";
+            case "MYM", "YM", "US30IDXUSD" -> "US30IDXUSD";
+            default -> norm;
+        };
+    }
+
+    /**
+     * True if Dukascopy provides historical M1/intraday BI5 feeds for the given symbol
+     * (standard FX pairs, spot metals, and major US equity index futures proxies).
+     */
+    public static boolean supportsSymbol(String symbolOrPair) {
+        if (symbolOrPair == null || symbolOrPair.isBlank()) {
+            return false;
+        }
+        String clean = symbolOrPair.trim().toUpperCase(java.util.Locale.ROOT).replace("_", "").replace("/", "");
+        if (clean.matches("(EUR|USD|GBP|JPY|AUD|NZD|CAD|CHF){2}")
+            && !clean.substring(0, 3).equals(clean.substring(3, 6))) {
+            return true;
+        }
+        return switch (clean) {
+            case "MGC", "GC", "XAUUSD",
+                 "SI", "SIL", "XAGUSD",
+                 "MES", "ES", "USA500IDXUSD",
+                 "MNQ", "NQ", "USATECHIDXUSD",
+                 "M2K", "RTY", "USA2000IDXUSD",
+                 "MYM", "YM", "US30IDXUSD" -> true;
+            default -> false;
+        };
+    }
+
+    /**
+     * Returns the integer price divisor used by Dukascopy BI5 files for the given Dukascopy instrument.
+     * JPY pairs, precious metals (XAUUSD/XAGUSD), and equity indices (*IDX*) use 1,000 (10^3);
+     * standard 5-decimal FX pairs use 100,000 (10^5).
+     */
+    public static double priceScaleForSymbol(String dukascopySymbol) {
+        if (dukascopySymbol == null) {
+            return 100_000.0;
+        }
+        String upper = dukascopySymbol.trim().toUpperCase(java.util.Locale.ROOT);
+        if (upper.endsWith("JPY")
+            || upper.startsWith("XAU")
+            || upper.startsWith("XAG")
+            || upper.contains("IDX")) {
+            return 1_000.0;
+        }
+        return 100_000.0;
+    }
+
+    static long timeframeBucketMs(String tfLower) {
+        if (tfLower == null || tfLower.isBlank()) {
+            throw new IllegalArgumentException("Blank timeframe");
+        }
+        return switch (tfLower.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "m1", "1m" -> 60_000L;
+            case "m5", "5m" -> 5 * 60_000L;
+            case "m15", "15m" -> 15 * 60_000L;
+            case "m30", "30m" -> 30 * 60_000L;
+            case "h1", "1h", "60m" -> 3_600_000L;
+            case "h4", "4h" -> 4 * 3_600_000L;
+            case "d1", "1d" -> 24 * 3_600_000L;
+            case "w1", "1w" -> 7 * 24 * 3_600_000L;
+            default -> throw new IllegalArgumentException("Unsupported timeframe: " + tfLower);
+        };
+    }
+
+    private static List<Candle> aggregateViaBarAggregator(List<Candle> candles, String symbol, String targetTf) {
+        if (candles.isEmpty()) {
+            return Collections.emptyList();
+        }
+        String stdTf = switch (targetTf) {
+            case "4H" -> "H4";
+            case "1D" -> "D1";
+            case "1W" -> "W1";
+            default -> targetTf;
+        };
+        BarAggregator agg = new BarAggregator(symbol, stdTf);
+        List<Candle> result = new ArrayList<>();
+        for (Candle c : candles) {
+            Bar b = new Bar(symbol, Instant.ofEpochMilli(c.timestampMs()), c.open(), c.high(), c.low(), c.close(), c.volume());
+            boolean newPeriod = agg.isNewPeriod(b);
+            agg.add(b);
+            if (newPeriod) {
+                agg.getLastCompletedBar().ifPresent(done ->
+                    result.add(new Candle(done.timestamp().toEpochMilli(), done.open(), done.high(), done.low(), done.close(), done.volume()))
+                );
+            }
+        }
+        agg.completePeriod();
+        agg.getLastCompletedBar().ifPresent(done ->
+            result.add(new Candle(done.timestamp().toEpochMilli(), done.open(), done.high(), done.low(), done.close(), done.volume()))
+        );
+        return result;
     }
 
     private List<Candle> downloadAndParseDay(String symbol, LocalDate date) throws IOException, InterruptedException {
@@ -192,14 +416,15 @@ public class DukascopyDownloader {
         }
 
         long baseDayStartMs = date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli();
+        double scale = priceScaleForSymbol(symbol);
 
         try (LZMAInputStream lzma = new LZMAInputStream(new ByteArrayInputStream(data))) {
             byte[] decompressed = lzma.readAllBytes();
-            return parseCandles(decompressed, baseDayStartMs);
+            return parseCandles(decompressed, baseDayStartMs, scale);
         }
     }
 
-    private List<Candle> parseCandles(byte[] decompressed, long baseDayStartMs) {
+    private List<Candle> parseCandles(byte[] decompressed, long baseDayStartMs, double scale) {
         List<Candle> dayCandles = new ArrayList<>();
         ByteBuffer wrap = ByteBuffer.wrap(decompressed);
 
@@ -212,50 +437,55 @@ public class DukascopyDownloader {
             float vol = wrap.getFloat();
 
             long barTimeMs = baseDayStartMs + (timeOffsetSec * 1000L);
-            double open = openInt / 100000.0;
-            double close = closeInt / 100000.0;
-            double low = lowInt / 100000.0;
-            double high = highInt / 100000.0;
+            double open = openInt / scale;
+            double close = closeInt / scale;
+            double low = lowInt / scale;
+            double high = highInt / scale;
+            long volume = Float.isFinite(vol) && vol > 0f ? Math.max(1L, Math.round(vol * 1000.0)) : 0L;
 
-            dayCandles.add(new Candle(barTimeMs, open, high, low, close));
+            dayCandles.add(new Candle(barTimeMs, open, high, low, close, volume));
         }
         return dayCandles;
     }
 
-    private List<Candle> aggregateToHourly(List<Candle> minCandles) {
+    private List<Candle> aggregateToBucket(List<Candle> minCandles, long bucketMs) {
         if (minCandles.isEmpty()) {
             return Collections.emptyList();
         }
 
-        List<Candle> hourlyCandles = new ArrayList<>();
-        long currentHourStartMs = -1;
+        List<Candle> bucketed = new ArrayList<>();
+        long currentBucketStartMs = -1;
         double open = 0, high = 0, low = 0, close = 0;
+        long volumeSum = 0L;
 
         for (Candle c : minCandles) {
-            long hourStartMs = (c.timestampMs() / 3600000L) * 3600000L;
-            if (currentHourStartMs == -1) {
-                currentHourStartMs = hourStartMs;
+            long bucketStartMs = (c.timestampMs() / bucketMs) * bucketMs;
+            if (currentBucketStartMs == -1) {
+                currentBucketStartMs = bucketStartMs;
                 open = c.open();
                 high = c.high();
                 low = c.low();
                 close = c.close();
-            } else if (hourStartMs == currentHourStartMs) {
+                volumeSum = c.volume();
+            } else if (bucketStartMs == currentBucketStartMs) {
                 high = Math.max(high, c.high());
                 low = Math.min(low, c.low());
                 close = c.close();
+                volumeSum += c.volume();
             } else {
-                hourlyCandles.add(new Candle(currentHourStartMs, open, high, low, close));
-                currentHourStartMs = hourStartMs;
+                bucketed.add(new Candle(currentBucketStartMs, open, high, low, close, volumeSum));
+                currentBucketStartMs = bucketStartMs;
                 open = c.open();
                 high = c.high();
                 low = c.low();
                 close = c.close();
+                volumeSum = c.volume();
             }
         }
-        if (currentHourStartMs != -1) {
-            hourlyCandles.add(new Candle(currentHourStartMs, open, high, low, close));
+        if (currentBucketStartMs != -1) {
+            bucketed.add(new Candle(currentBucketStartMs, open, high, low, close, volumeSum));
         }
-        return hourlyCandles;
+        return bucketed;
     }
 
     byte[] downloadFile(String url) throws IOException, InterruptedException {

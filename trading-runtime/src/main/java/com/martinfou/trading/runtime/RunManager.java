@@ -1338,19 +1338,33 @@ public class RunManager implements RunLifecycle, AutoCloseable {
                 store.writeFromCSV(downloadedCsv);
                 log.info("Successfully completed Java-native download and conversion for {} year {}", symbol, year);
             } else {
-                log.info("Generating multi-asset bars for non-Forex symbol {} year {} tf {}", symbol, year, tfUpper);
+                log.info("Fetching multi-asset bars for non-Forex symbol {} year {} tf {}", symbol, year, tfUpper);
                 HistoricalDataService.reportExternalTaskProgress(
-                    taskKey, 45, "Generating " + symbol + " " + year + " (" + tfUpper + ") candle series...",
+                    taskKey, 25, "Fetching " + symbol + " " + year + " (" + tfUpper + ") market bars...",
                     symbol, tfUpper, year, year, year, 0, 1
                 );
-                List<Bar> generated = HistoricalDataService.generateMultiAssetBars(symbol, year, tfUpper);
+                List<Bar> generated = HistoricalDataService.fetchOrGenerateMultiAssetBars(
+                    symbol,
+                    year,
+                    tfUpper,
+                    csvDir,
+                    (completed, total) -> {
+                        int pct = Math.clamp(25 + (completed * 60) / Math.max(1, total), 25, 88);
+                        HistoricalDataService.reportExternalTaskProgress(
+                            taskKey,
+                            pct,
+                            "Downloading " + symbol + " " + year + " (" + completed + "/" + total + " days)...",
+                            symbol, tfUpper, year, year, year, 0, 1
+                        );
+                    }
+                );
                 HistoricalDataService.reportExternalTaskProgress(
                     taskKey, 90, "Writing " + generated.size() + " bars for " + symbol + " " + year + " (" + tfUpper + ")...",
                     symbol, tfUpper, year, year, year, 0, 1
                 );
                 BarStore storeYear = new BarStore(symbol, tfUpper + "_" + year, barsDir);
                 storeYear.write(generated);
-                log.info("Successfully generated and saved {} {} {} bars (count: {})", symbol, tfUpper, year, generated.size());
+                log.info("Successfully fetched and saved {} {} {} bars (count: {})", symbol, tfUpper, year, generated.size());
             }
         } catch (IOException | RuntimeException e) {
             errorMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
