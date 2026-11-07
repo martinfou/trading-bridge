@@ -12,7 +12,7 @@ if [ "$IBKR_ENV" = "live" ] || [ "$IBKR_ENV" = "prod" ] || [ "$IBKR_ENV" = "prod
 else
     IBKR_PORT="${IBKR_PORT:-4002}"
 fi
-STRATEGY="${STRATEGY:-MgcM30Breakout49205,MgcH1Breakout38023,MgcH1Breakout51270,MnqH1Breakout31697,MnqH1Breakout69250,MesH1Breakout30808}"
+STRATEGY="${STRATEGY:-MgcM30Breakout49205,SqMgcM30Breakout032921,MgcM30Breakout89854,MgcH1Breakout38023,MgcH1Breakout51270,MnqH1Breakout31697,MnqH1Breakout69250,MesH1Breakout30808}"
 DRY_RUN="${DRY_RUN:-false}"
 TB_ALLOW_ORDERS="${TB_ALLOW_ORDERS:-}"
 

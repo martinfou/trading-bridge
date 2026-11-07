@@ -53,7 +53,7 @@ public final class LaneTelemetryCollector {
     private static final Map<String, String> LEGACY_STRATEGY_ALIASES = Map.of(
         "sq-mgc-m30-breakout-0-24542", "MgcM30Breakout49205",
         "sq-mgc-m30-breakout-1-29-102", "MgcM30Breakout89854",
-        "sq-mgc-m30-breakout-0-32921", "MgcM30Breakout92728"
+        "sq-mgc-m30-breakout-0-32921", "SqMgcM30Breakout032921"
     );
 
     private final List<Path> fillsDirs;

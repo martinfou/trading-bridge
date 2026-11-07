@@ -109,13 +109,13 @@ public final class SqStrategyEvaluator implements Function<List<Bar>, List<Order
     private static final Map<String, String> LEGACY_ALIASES = Map.of(
         "sq-mgc-m30-breakout-0-24542", "MgcM30Breakout49205",
         "sq-mgc-m30-breakout-1-29-102", "MgcM30Breakout89854",
-        "sq-mgc-m30-breakout-0-32921", "MgcM30Breakout92728"
+        "sq-mgc-m30-breakout-0-32921", "SqMgcM30Breakout032921"
     );
 
     private static final Map<String, String> REVERSE_LEGACY_ALIASES = Map.of(
         "MgcM30Breakout49205", "sq-mgc-m30-breakout-0-24542",
         "MgcM30Breakout89854", "sq-mgc-m30-breakout-1-29-102",
-        "MgcM30Breakout92728", "sq-mgc-m30-breakout-0-32921"
+        "SqMgcM30Breakout032921", "sq-mgc-m30-breakout-0-32921"
     );
 
     /**

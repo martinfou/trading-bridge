@@ -176,6 +176,7 @@ public final class StrategyCatalog {
         if (family == Family.LONG_TERM) {
             return switch (id) {
                 case "MesTurtle" -> "Donchian Breakout";
+                case "SqMgcM30Breakout032921" -> "SuperTrend Donchian Breakout";
                 case "FuturesOpeningRangeBreakout" -> "Session Breakout";
                 case "FuturesTurnOfMonth" -> "Seasonality / Anomaly";
                 case "LtCrossMomentum", "LtDoubleMA", "LtPullbackEntry", "LtEfficiencyRatio" -> "Trend Following";
@@ -226,6 +227,7 @@ public final class StrategyCatalog {
         if (family == Family.LONG_TERM) {
             return switch (id) {
                 case "MesTurtle" -> List.of("Donchian(55/20)", "ATR");
+                case "SqMgcM30Breakout032921" -> List.of("SuperTrend(12)", "Donchian(20)", "ROC(50)", "ATR(20)");
                 case "FuturesOpeningRangeBreakout" -> List.of("ATR", "EMA");
                 case "FuturesTurnOfMonth" -> List.of("EMA", "ATR", "Calendar Window");
                 case "LtCrossMomentum" -> List.of("SMA", "ATR");
@@ -282,6 +284,7 @@ public final class StrategyCatalog {
         if (family == Family.LONG_TERM) {
             return switch (id) {
                 case "MesTurtle" -> "55/20 Donchian Channel System-2 Turtle breakout for CME Micro Futures (MGC, MNQ, MES).";
+                case "SqMgcM30Breakout032921" -> "Micro Gold (MGC) M30 SuperTrend(12) + Donchian(20) / ROC(50) Breakout (ELITE 92.6, OOS PF 1.88, MaxDD 3.9%).";
                 case "FuturesOpeningRangeBreakout" -> "Toby Crabel Opening Range Breakout (ORB) for electronic index futures with ATR risk management.";
                 case "FuturesTurnOfMonth" -> "Turn-of-the-Month (TOTM) calendar anomaly capturing passive pension/401(k) monthly inflows on US futures.";
                 case "LtCrossMomentum" -> "Golden cross / death cross on SMA(20)/SMA(100) with ATR risk management.";
@@ -326,6 +329,7 @@ public final class StrategyCatalog {
 
         // 4. Long-Term Systematic Strategies (Audited KEEP)
         put("MesTurtle", Family.LONG_TERM, "MGC", sym -> new MesTurtleStrategy("MesTurtle", sym, 55, 20, 1, true));
+        put("SqMgcM30Breakout032921", Family.LONG_TERM, "MGC", SqMgcM30Breakout032921::new);
         put("LtCrossMomentum", Family.LONG_TERM, "EUR_USD", sym -> new LtCrossMomentum("LtCrossMomentum", sym));
         put("LtRSIMeanRev", Family.LONG_TERM, "EUR_USD", sym -> new LtRSIMeanRev("LtRSIMeanRev", sym));
         put("LtDoubleMA", Family.LONG_TERM, "EUR_USD", sym -> new LtDoubleMA("LtDoubleMA", sym));

@@ -1027,6 +1027,10 @@ public class LiveStrategyRunner implements Runnable {
                 .asSubclass(Strategy.class));
             map.put("mesturtle", Class.forName("com.martinfou.trading.strategies.builtin.MesTurtleStrategy")
                 .asSubclass(Strategy.class));
+            map.put("SqMgcM30Breakout032921", Class.forName("com.martinfou.trading.strategies.builtin.SqMgcM30Breakout032921")
+                .asSubclass(Strategy.class));
+            map.put("sq-mgc-m30-breakout-0-32921", Class.forName("com.martinfou.trading.strategies.builtin.SqMgcM30Breakout032921")
+                .asSubclass(Strategy.class));
             map.put("seasonalcalendar", Class.forName("com.martinfou.trading.strategies.builtin.SeasonalCalendarStrategy")
                 .asSubclass(Strategy.class));
             map.put("gbpusdspring", Class.forName("com.martinfou.trading.strategies.builtin.GbpUsdSpringBullish")

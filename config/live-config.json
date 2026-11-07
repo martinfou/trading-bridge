@@ -141,6 +141,42 @@
       },
       "computedRiskPct": 0.5
     },
+    "SqMgcM30Breakout032921": {
+      "instrument": "MGC",
+      "granularity": "M30",
+      "lane": "paper",
+      "maxDrawdownDollar": 391.0,
+      "maxConsecutiveLosses": 5,
+      "positionSizeUnits": 1,
+      "backtestMetrics": {
+        "sharpe": 0.93,
+        "maxDrawdown": 3.91,
+        "winRate": 46.0,
+        "avgWinLoss": 1.88,
+        "totalReturn": 100.78,
+        "trades": 561,
+        "source": "M30 Gold SuperTrend+Donchian/ROC Breakout (ELITE 92.6, OOS PF 1.88, MaxDD 3.9%)"
+      },
+      "computedRiskPct": 0.5
+    },
+    "MgcM30Breakout89854": {
+      "instrument": "MGC",
+      "granularity": "M30",
+      "lane": "paper",
+      "maxDrawdownDollar": 1286.0,
+      "maxConsecutiveLosses": 5,
+      "positionSizeUnits": 1,
+      "backtestMetrics": {
+        "sharpe": 1.34,
+        "maxDrawdown": 12.86,
+        "winRate": 48.69,
+        "avgWinLoss": 1.9,
+        "totalReturn": 112.23,
+        "trades": 191,
+        "source": "SQLite Promoted MGC M30 Trailing-Stop Breakout (ELITE 87.9, PF 2.10, OOS PF 1.90)"
+      },
+      "computedRiskPct": 0.5
+    },
     "MgcH1Breakout38023": {
       "instrument": "MGC",
       "granularity": "H1",
