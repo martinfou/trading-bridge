@@ -49,10 +49,10 @@ import java.util.function.Function;
  *   <li>{@code IBKR_PORT}: gateway port (default {@code 4002}; refuses {@code 4001}, {@code 7496}, {@code 7497})</li>
  *   <li>{@code IBKR_ACCOUNT_ID}: required paper account id</li>
  *   <li>{@code IBKR_CLIENT_ID}: runner client id (default {@code 11}; {@link IbkrBarSource} uses {@code clientId + 1})</li>
- *   <li>{@code FUTURES_SYMBOL}: single futures root symbol (default {@code MGC}; refuses comma-separated lists)</li>
- *   <li>{@code FUTURES_TIMEFRAME}: IBKR bar size (default {@code 30 mins}; must pair with {@code FUTURES_INTERVAL_MINUTES})</li>
- *   <li>{@code FUTURES_INTERVAL_MINUTES}: scheduler cadence in minutes (default {@code 30})</li>
- *   <li>{@code STRATEGY}: single strategy short name resolved via {@code LiveStrategyRunner.getStrategyMap()}</li>
+ *   <li>{@code FUTURES_SYMBOL}: single or comma-separated futures root symbols (e.g. {@code MGC,MNQ,MES})</li>
+ *   <li>{@code FUTURES_TIMEFRAME}: default IBKR bar size (default {@code 30 mins}; must pair with {@code FUTURES_INTERVAL_MINUTES})</li>
+ *   <li>{@code FUTURES_INTERVAL_MINUTES}: default scheduler cadence in minutes (default {@code 30})</li>
+ *   <li>{@code STRATEGY}: single or comma-separated strategy IDs (each resolves its natural symbol and timeframe)</li>
  *   <li>{@code TB_ALLOW_ORDERS}: must be {@code 1} (or {@code true}) unless {@code DRY_RUN=true}</li>
  *   <li>{@code TB_STATE_DIR}: bar cursor persistence directory (default {@code /app/data/state/futures})</li>
  *   <li>{@code DRY_RUN}: {@code true} to evaluate and log without dispatching orders (default {@code false})</li>
@@ -256,11 +256,15 @@ public final class IbkrLiveRunner implements AutoCloseable {
         if (config.stateDir() != null) {
             Path fillsDir = resolveFillsDir(config.stateDir());
             String laneLabel = config.isLiveEnv() ? "live" : "paper";
-            String defaultSym = config.symbols().isEmpty() ? config.symbol() : config.symbols().get(0);
+            List<String> targetSyms = config.symbols();
+            String defaultSym = targetSyms.isEmpty() ? config.symbol() : targetSyms.get(0);
             for (String s : config.strategyNames()) {
-                String stratSym = config.symbols().size() <= 1
+                String stratSym = targetSyms.size() <= 1
                     ? defaultSym
                     : SqStrategyEvaluator.resolveSymbolForStrategy(s, defaultSym);
+                if (!targetSyms.isEmpty() && !targetSyms.contains(stratSym)) {
+                    stratSym = defaultSym;
+                }
                 fillLogWritersByStrategy.put(s, FillLogWriter.forRun(fillsDir, s, stratSym, laneLabel));
             }
         }
@@ -365,7 +369,6 @@ public final class IbkrLiveRunner implements AutoCloseable {
         String defaultSym = targetSymbols.get(0);
         record SymbolTfKey(String symbol, String timeframe, int intervalMinutes) {}
         Map<SymbolTfKey, List<SqStrategyEvaluator>> evaluatorsBySlice = new java.util.LinkedHashMap<>();
-        boolean singleStrategy = config.strategyNames().size() == 1;
         for (String stratName : config.strategyNames()) {
             String stratSym = targetSymbols.size() == 1
                 ? defaultSym
@@ -373,9 +376,7 @@ public final class IbkrLiveRunner implements AutoCloseable {
             if (!targetSymbols.contains(stratSym)) {
                 stratSym = defaultSym;
             }
-            String stratTf = singleStrategy
-                ? config.timeframe()
-                : SqStrategyEvaluator.resolveTimeframeForStrategy(stratName, config.timeframe());
+            String stratTf = SqStrategyEvaluator.resolveTimeframeForStrategy(stratName, config.timeframe());
             int stratIntervalMin = (int) IbkrBarSource.parseTimeframeDuration(stratTf).toMinutes();
             Strategy strategy = SqStrategyEvaluator.instantiateStrategy(stratName, stratSym);
             log.info("[5/7] Instantiated strategy: key='{}' class={} displayName='{}' symbol={} timeframe='{}' ({}m)",

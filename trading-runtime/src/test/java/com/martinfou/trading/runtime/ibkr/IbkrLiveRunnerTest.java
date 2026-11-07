@@ -322,11 +322,14 @@ class IbkrLiveRunnerTest {
         );
 
         List<String> requestedSlices = new ArrayList<>();
+        java.util.concurrent.atomic.AtomicReference<Instant> latestM30BarOpen =
+            new java.util.concurrent.atomic.AtomicReference<>(Instant.parse("2026-08-19T14:00:00Z"));
         try (IbkrLiveRunner runner = new IbkrLiveRunner(cfg, broker, (sym, tf) -> {
             requestedSlices.add(sym + ":" + tf);
             int stepMin = "30 mins".equals(tf) ? 30 : 60;
             List<Bar> bars = new ArrayList<>();
-            Instant base = Instant.parse("2026-08-19T14:00:00Z").minus(Duration.ofMinutes(stepMin * 64L));
+            Instant endBar = "30 mins".equals(tf) ? latestM30BarOpen.get() : Instant.parse("2026-08-19T14:00:00Z");
+            Instant base = endBar.minus(Duration.ofMinutes(stepMin * 64L));
             for (int i = 0; i < 65; i++) {
                 bars.add(new Bar(sym, base.plus(Duration.ofMinutes((long) stepMin * i)),
                     2500.0 + i, 2505.0 + i, 2495.0 + i, 2502.0 + i, 100L));
@@ -350,7 +353,8 @@ class IbkrLiveRunnerTest {
             assertEquals(Instant.parse("2026-08-19T14:00:00Z"), runner.evaluators().get(0).lastProcessedBarTimestamp());
             assertNull(runner.evaluators().get(1).lastProcessedBarTimestamp(), "H1 evaluator must not run at :30:05");
 
-            // 2. Trigger at 15:00:05Z (top of hour): BOTH M30 and H1 slices must be fetched & evaluated
+            // 2. Trigger at 15:00:05Z (top of hour): BOTH M30 (with new 14:30 bar) and H1 slices must be fetched & evaluated
+            latestM30BarOpen.set(Instant.parse("2026-08-19T14:30:00Z"));
             requestedSlices.clear();
             runner.scheduler().runCycle(Instant.parse("2026-08-19T15:00:05Z"), 15_000.0, List.of());
             assertEquals(
@@ -358,8 +362,24 @@ class IbkrLiveRunnerTest {
                 requestedSlices,
                 "At :00:05 both M30 and H1 slices must be fetched sequentially"
             );
-            assertNotNull(runner.evaluators().get(1).lastProcessedBarTimestamp(), "H1 evaluator must run at :00:05");
+            assertEquals(Instant.parse("2026-08-19T14:30:00Z"), runner.evaluators().get(0).lastProcessedBarTimestamp(),
+                "M30 evaluator must advance its cursor to 14:30:00Z at :00:05 trigger");
+            assertEquals(Instant.parse("2026-08-19T14:00:00Z"), runner.evaluators().get(1).lastProcessedBarTimestamp(),
+                "H1 evaluator must run at :00:05");
         }
+    }
+
+    @Test
+    @DisplayName("resolveTimeframeForStrategy uses token boundaries and does not misclassify M10/EM1/EMD1 substrings")
+    void resolveTimeframeForStrategy_respectsTokenBoundaries() {
+        assertEquals("30 mins", SqStrategyEvaluator.resolveTimeframeForStrategy("MgcM30Breakout49205", "1 hour"));
+        assertEquals("30 mins", SqStrategyEvaluator.resolveTimeframeForStrategy("sq-mgc-m30-breakout-0-24542", "1 hour"));
+        assertEquals("15 mins", SqStrategyEvaluator.resolveTimeframeForStrategy("MnqM15MeanRev81824", "1 hour"));
+        assertEquals("1 hour", SqStrategyEvaluator.resolveTimeframeForStrategy("EmdH1Pullback25691", "30 mins"));
+        assertEquals("1 hour", SqStrategyEvaluator.resolveTimeframeForStrategy("MgcBreakoutM100", "1 hour"),
+            "M100 must not be misclassified as M1");
+        assertEquals("1 hour", SqStrategyEvaluator.resolveTimeframeForStrategy("Emd1Breakout", "1 hour"),
+            "Emd1 must not be misclassified as D1");
     }
 
     @Test

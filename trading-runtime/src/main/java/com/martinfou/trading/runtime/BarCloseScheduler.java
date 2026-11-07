@@ -52,12 +52,39 @@ public final class BarCloseScheduler implements AutoCloseable {
     ) {
         public SliceSpec {
             symbol = Objects.requireNonNull(symbol, "symbol is required").trim().toUpperCase();
+            if (symbol.isEmpty()) {
+                throw new IllegalArgumentException("symbol must not be blank");
+            }
             timeframe = (timeframe != null && !timeframe.isBlank()) ? timeframe.trim() : "1 hour";
             if (intervalMinutes <= 0) {
                 throw new IllegalArgumentException("intervalMinutes must be > 0, got: " + intervalMinutes);
             }
             evaluator = Objects.requireNonNull(evaluator, "evaluator is required");
         }
+    }
+
+    private static int gcd(int a, int b) {
+        a = Math.abs(a);
+        b = Math.abs(b);
+        while (b != 0) {
+            int t = b;
+            b = a % b;
+            a = t;
+        }
+        return Math.max(1, a);
+    }
+
+    private static String defaultTimeframeForInterval(int intervalMinutes) {
+        return switch (intervalMinutes) {
+            case 1 -> "1 min";
+            case 5 -> "5 mins";
+            case 15 -> "15 mins";
+            case 30 -> "30 mins";
+            case 60 -> "1 hour";
+            case 240 -> "4 hours";
+            case 1440 -> "1 day";
+            default -> intervalMinutes + " mins";
+        };
     }
 
     private final ScheduledExecutorService scheduler;
@@ -163,12 +190,17 @@ public final class BarCloseScheduler implements AutoCloseable {
         List<String> syms = (symbols != null && !symbols.isEmpty())
             ? List.copyOf(symbols)
             : List.of("MES", "MNQ", "M2K", "MGC");
-        String defaultTf = intervalMinutes == 30 ? "30 mins" : (intervalMinutes == 15 ? "15 mins" : "1 hour");
+        String defaultTf = defaultTimeframeForInterval(intervalMinutes);
         java.util.ArrayList<SliceSpec> builtSlices = new java.util.ArrayList<>(syms.size());
         for (String sym : syms) {
             Function<List<Bar>, List<Order>> ev = strategyEvaluators.get(sym);
             if (ev != null) {
                 builtSlices.add(new SliceSpec(sym, defaultTf, intervalMinutes, ev));
+            } else {
+                builtSlices.add(new SliceSpec(sym, defaultTf, intervalMinutes, bars -> {
+                    log.warn("No strategy evaluator registered for symbol {} ({})", sym, defaultTf);
+                    return List.of();
+                }));
             }
         }
         this.symbols = syms;
@@ -220,7 +252,10 @@ public final class BarCloseScheduler implements AutoCloseable {
         }
         this.slices = List.copyOf(slices);
         this.symbols = slices.stream().map(SliceSpec::symbol).distinct().toList();
-        this.intervalMinutes = slices.stream().mapToInt(SliceSpec::intervalMinutes).min().orElse(DEFAULT_INTERVAL_MINUTES);
+        this.intervalMinutes = slices.stream()
+            .mapToInt(SliceSpec::intervalMinutes)
+            .reduce(BarCloseScheduler::gcd)
+            .orElse(DEFAULT_INTERVAL_MINUTES);
         this.clock = Objects.requireNonNull(clock, "clock is required");
         this.multiTfBarSupplier = Objects.requireNonNull(multiTfBarSupplier, "multiTfBarSupplier is required");
         this.equitySupplier = Objects.requireNonNull(equitySupplier, "equitySupplier is required");
@@ -342,8 +377,9 @@ public final class BarCloseScheduler implements AutoCloseable {
         }
         long boundarySec = Math.max(0L, triggerTime.getEpochSecond() - TRIGGER_OFFSET_SECONDS);
         long intervalSec = sliceIntervalMinutes * 60L;
+        long tol = Math.min(30L, Math.max(5L, intervalSec / 10L));
         long rem = boundarySec % intervalSec;
-        return rem < 60L || (intervalSec - rem) < 60L;
+        return rem < tol || (intervalSec - rem) < tol;
     }
 
     public int runCycle(Instant triggerTime, double accountEquity, List<Position> openPositions) {
@@ -356,7 +392,9 @@ public final class BarCloseScheduler implements AutoCloseable {
 
         log.info("Executing Bar-Close Evaluation Cycle at {}...", triggerTime);
         int totalDispatched = 0;
-        List<Position> currentPositions = openPositions != null ? openPositions : List.of();
+        java.util.ArrayList<Position> currentPositions = new java.util.ArrayList<>(
+            openPositions != null ? openPositions : List.of()
+        );
         boolean multiTimeframe = slices.stream().mapToInt(SliceSpec::intervalMinutes).distinct().count() > 1;
 
         for (SliceSpec slice : slices) {
@@ -369,10 +407,6 @@ public final class BarCloseScheduler implements AutoCloseable {
             Duration maxBarAge = Duration.ofMinutes(sliceInterval).plus(STALE_BAR_TOLERANCE);
             try {
                 Function<List<Bar>, List<Order>> evaluator = slice.evaluator();
-                if (evaluator == null) {
-                    log.warn("No strategy evaluator registered for symbol {} ({})", sym, tf);
-                    continue;
-                }
 
                 List<Bar> bars = multiTfBarSupplier.apply(sym, tf);
                 if (bars == null || bars.isEmpty()) {
@@ -404,6 +438,12 @@ public final class BarCloseScheduler implements AutoCloseable {
                         Order approved = o.rescaleQuantity(val.approvedQuantity());
                         orderDispatcher.accept(approved);
                         totalDispatched++;
+                        currentPositions.add(new Position(
+                            approved.symbol(),
+                            approved.side(),
+                            approved.quantity(),
+                            approved.price()
+                        ));
                         log.info("Dispatched approved order for {} ({}): {} {} @ {}",
                             sym, tf, approved.side(), approved.quantity(), approved.price());
                     } else {

@@ -105,26 +105,25 @@ public final class SqStrategyEvaluator implements Function<List<Bar>, List<Order
         }
         String key = strategyName.trim();
         String resolvedKey = LEGACY_ALIASES.getOrDefault(key, key);
-        String upper = resolvedKey.toUpperCase();
-        if (upper.contains("M15") || upper.contains("-M15-")) {
+        if (resolvedKey.matches("(?i).*?(?:^|[-_]|[a-z0-9])M15(?:[-_]|$|[A-Z]).*")) {
             return "15 mins";
         }
-        if (upper.contains("M30") || upper.contains("-M30-")) {
+        if (resolvedKey.matches("(?i).*?(?:^|[-_]|[a-z0-9])M30(?:[-_]|$|[A-Z]).*")) {
             return "30 mins";
         }
-        if (upper.contains("H1") || upper.contains("-H1-")) {
+        if (resolvedKey.matches("(?i).*?(?:^|[-_]|[a-z0-9])H1(?:[-_]|$|[A-Z]).*")) {
             return "1 hour";
         }
-        if (upper.contains("H4") || upper.contains("-H4-")) {
+        if (resolvedKey.matches("(?i).*?(?:^|[-_]|[a-z0-9])H4(?:[-_]|$|[A-Z]).*")) {
             return "4 hours";
         }
-        if (upper.contains("D1") || upper.contains("-D1-")) {
+        if (resolvedKey.matches(".*?(?:^|[-_]|[a-z])D1(?:[-_]|$|[A-Z]).*")) {
             return "1 day";
         }
-        if (upper.contains("M5") || upper.contains("-M5-")) {
+        if (resolvedKey.matches("(?i).*?(?:^|[-_]|[a-z0-9])M5(?:[-_]|$|[A-Z]).*")) {
             return "5 mins";
         }
-        if (upper.contains("M1") || upper.contains("-M1-")) {
+        if (resolvedKey.matches("(?i).*?(?:^|[-_]|[a-z0-9])M1(?:[-_]|$|[A-Z]).*")) {
             return "1 min";
         }
         StrategyGeneratorService.ensureCatalogLoaded();
