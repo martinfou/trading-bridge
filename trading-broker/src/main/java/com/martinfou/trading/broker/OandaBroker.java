@@ -420,7 +420,18 @@ public final class OandaBroker implements Broker {
         OandaAccountSnapshot account = client.fetchAccountSummary();
         long duration = System.currentTimeMillis() - startTime;
         log.debug("OANDA getAccountState completed in {}ms (API call)", duration);
-        AccountState result = new AccountState(account.balance(), account.nav(), account.currency());
+        AccountState result = new AccountState(
+            account.balance(),
+            account.nav(),
+            account.currency(),
+            account.unrealizedPl(),
+            account.marginUsed(),
+            account.marginUsed(),
+            account.marginAvailable(),
+            account.marginAvailable(),
+            -1,
+            false
+        );
         synchronized (cacheLock) {
             cachedAccountState = result;
             cachedAccountStateTimeMs = System.currentTimeMillis();

@@ -45,10 +45,30 @@ public final class IbkrAccountCache {
 
     private final String accountId;
     private final Map<String, Double> values = new ConcurrentHashMap<>();
+    private volatile String currency = "USD";
     private volatile Instant lastUpdatedAt = Instant.EPOCH;
 
     public IbkrAccountCache(String accountId) {
         this.accountId = accountId != null ? accountId : "DU12345";
+    }
+
+    public void updateCurrency(String currencyCode) {
+        if (currencyCode != null && !currencyCode.isBlank() && !"BASE".equalsIgnoreCase(currencyCode)) {
+            this.currency = currencyCode.trim().toUpperCase();
+        }
+    }
+
+    public String currency() {
+        return currency;
+    }
+
+    public double unrealizedPnL() {
+        if (values.containsKey("UnrealizedPnL")) {
+            return values.get("UnrealizedPnL");
+        }
+        double netLiq = values.getOrDefault("NetLiquidation", 0.0);
+        double cash = values.getOrDefault("TotalCashBalance", netLiq);
+        return netLiq - cash;
     }
 
     public void updateValue(String key, double value) {
@@ -82,9 +102,19 @@ public final class IbkrAccountCache {
         double available = values.getOrDefault("AvailableFunds", 0.0);
         double buyingPower = values.getOrDefault("BuyingPower", 0.0);
         double grossPos = values.getOrDefault("GrossPositionValue", 0.0);
-        int dayTrades = values.getOrDefault("DayTradesRemaining", 0.0).intValue();
-
-        boolean pdtRestricted = (netLiq < 25_000.0 && dayTrades <= 0);
+        boolean hasNetLiq = values.containsKey("NetLiquidation");
+        int dayTrades;
+        boolean pdtRestricted;
+        if (!hasNetLiq) {
+            dayTrades = values.getOrDefault("DayTradesRemaining", 0.0).intValue();
+            pdtRestricted = (netLiq < 25_000.0 && dayTrades <= 0);
+        } else if (values.containsKey("DayTradesRemaining")) {
+            dayTrades = values.get("DayTradesRemaining").intValue();
+            pdtRestricted = (netLiq < 25_000.0 && dayTrades == 0);
+        } else {
+            dayTrades = -1;
+            pdtRestricted = false;
+        }
         double utilization = netLiq > 0 ? (maintMargin / netLiq) * 100.0 : 0.0;
 
         return new AccountSummary(

@@ -54,6 +54,9 @@ export interface RunSummary {
   startedAt?: string
   completedAt?: string
   mode?: string
+  lane?: string
+  inTrade?: boolean
+  tradesCount?: number
   executionLabel?: string
   executionLabelMeta?: {
     id: string
@@ -131,6 +134,71 @@ export interface BrokerAccount {
   provider: string
   maskedAccountId: string
   configured: boolean
+  host?: string
+  port?: number
+  defaultRestUrl?: string
+}
+
+export interface BrokerVenuePosition {
+  symbol: string
+  side: string
+  quantity: number
+  entryPrice: number
+  stopLoss?: number
+  takeProfit?: number
+  entryTime?: string
+}
+
+export interface BrokerVenueTrade {
+  id: string
+  orderId?: string
+  venueId: string
+  provider: 'OANDA' | 'IBKR' | string
+  maskedAccountId?: string
+  currency?: string
+  symbol: string
+  state: 'OPEN' | 'CLOSED' | 'FILLED' | string
+  side: 'BUY' | 'SELL' | string
+  quantity: number
+  entryPrice: number
+  exitPrice?: number | null
+  stopLoss?: number
+  takeProfit?: number
+  realizedPnL?: number
+  unrealizedPnL?: number
+  financing?: number
+  openTime?: string
+  closeTime?: string
+  strategyTag?: string
+}
+
+export interface BrokerBalanceSnapshot {
+  id: string
+  provider: 'OANDA' | 'IBKR' | string
+  maskedAccountId?: string
+  configured?: boolean
+  connected?: boolean
+  environment?: 'PAPER' | 'LIVE' | string
+  endpoint?: string
+  host?: string
+  port?: number
+  balance: number
+  equity: number
+  currency: string
+  unrealizedPnL?: number
+  initialMargin?: number
+  maintenanceMargin?: number
+  availableFunds?: number
+  buyingPower?: number
+  marginUtilizationPct?: number
+  dayTradesRemaining?: number
+  pdtRestricted?: boolean
+  positionsCount?: number
+  positions?: BrokerVenuePosition[]
+  tradesCount?: number
+  trades?: BrokerVenueTrade[]
+  error?: string
+  updatedAt?: string
 }
 
 export interface PromoteGateThresholds {

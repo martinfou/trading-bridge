@@ -2,13 +2,14 @@
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useControlPlane } from '../composables/useControlPlane'
+import { useControlPlaneConfig } from '../composables/controlPlaneConfig'
 import { useRunWebSocket } from '../composables/useRunWebSocket'
 import TradeChart from '../components/TradeChart.vue'
 import TradeTable from '../components/TradeTable.vue'
 import KpiStrip from '../components/KpiStrip.vue'
 import EquityChart from '../components/EquityChart.vue'
 import OrderBook from '../components/OrderBook.vue'
-import type { Bar, Trade } from '@/types/control-plane'
+import type { Bar, Trade, BrokerBalanceSnapshot, BrokerVenueTrade } from '@/types/control-plane'
 
 const selectedCurrency = ref<string>(localStorage.getItem('trading_display_currency') || 'USD')
 watch(selectedCurrency, (val) => {
@@ -40,37 +41,58 @@ async function fetchExchangeRates() {
   }
 }
 
+function convertCurrencyAmount(value: number | null | undefined, fromCurrency: string = 'USD', toCurrency: string = selectedCurrency.value): number {
+  if (value === null || value === undefined || !Number.isFinite(value)) return 0
+  const fromCurr = (fromCurrency || 'USD').toUpperCase()
+  const toCurr = (toCurrency || 'USD').toUpperCase()
+  if (fromCurr === toCurr) return value
+  const fromRate = currencyFactors.value[fromCurr]?.rate || 1.0
+  const toRate = currencyFactors.value[toCurr]?.rate || 1.0
+  return (value / fromRate) * toRate
+}
+
+function formatNativeCurrency(value: number | null | undefined, currency: string = 'USD'): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—'
+  const curr = (currency || 'USD').toUpperCase()
+  const symbol = currencyFactors.value[curr]?.symbol || (curr + ' ')
+  return `${symbol}${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
 function formatCurrencyVal(value: number | null | undefined, fromCurrency: string = 'USD'): string {
   if (value === null || value === undefined) return '—'
   const toCurr = selectedCurrency.value
-  if (fromCurrency === toCurr) {
-    const symbol = currencyFactors.value[toCurr]?.symbol || '$'
-    return `${symbol}${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-  }
-  const fromRate = currencyFactors.value[fromCurrency]?.rate || 1.0
-  const usdValue = value / fromRate
-  const toRate = currencyFactors.value[toCurr]?.rate || 1.0
   const symbol = currencyFactors.value[toCurr]?.symbol || '$'
-  const converted = usdValue * toRate
+  const converted = convertCurrencyAmount(value, fromCurrency, toCurr)
   return `${symbol}${converted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 function formatCurrencyValNoDecimals(value: number | null | undefined, fromCurrency: string = 'USD'): string {
   if (value === null || value === undefined) return '—'
   const toCurr = selectedCurrency.value
-  if (fromCurrency === toCurr) {
-    const symbol = currencyFactors.value[toCurr]?.symbol || '$'
-    return `${symbol}${Math.round(value).toLocaleString()}`
-  }
-  const fromRate = currencyFactors.value[fromCurrency]?.rate || 1.0
-  const usdValue = value / fromRate
-  const toRate = currencyFactors.value[toCurr]?.rate || 1.0
   const symbol = currencyFactors.value[toCurr]?.symbol || '$'
-  const converted = usdValue * toRate
+  const converted = convertCurrencyAmount(value, fromCurrency, toCurr)
   return `${symbol}${Math.round(converted).toLocaleString()}`
 }
 
-const { getControlSummary, killStrategy, getBars, getTrades, getEquityCurve, getBrokerAccounts, getBrokerBalances, saveBrokerAccounts, testBrokerAccount } = useControlPlane()
+function formatInstrumentPrice(price: number | string | null | undefined, symbol?: string): string {
+  if (price === null || price === undefined || price === '') return '—'
+  const num = typeof price === 'number' ? price : Number(price)
+  if (!Number.isFinite(num) || num <= 0) return '—'
+  const sym = (symbol || '').toUpperCase()
+  if (sym.includes('JPY')) {
+    return num.toFixed(3)
+  }
+  const twoDecTokens = ['XAU', 'XAG', 'MES', 'MNQ', 'ES', 'NQ', 'YM', 'RTY', 'GC', 'SI', 'CL', 'NG', 'ZB', 'ZN', 'US30', 'SPX', 'NAS', 'WTI', 'BRENT']
+  if (twoDecTokens.some(tok => sym === tok || sym.startsWith(tok + '_') || sym.startsWith(tok + '/') || sym.endsWith('_' + tok))) {
+    return num.toFixed(2)
+  }
+  if (num >= 100) {
+    return num.toFixed(2)
+  }
+  return num.toFixed(5)
+}
+
+const { getControlSummary, killStrategy, getBars, getTrades, getEquityCurve, getBrokerAccounts, getBrokerBalances, discoverOandaAccounts, saveBrokerAccounts, testBrokerAccount } = useControlPlane()
 const route = useRoute()
 const router = useRouter()
 
@@ -82,18 +104,274 @@ const activeTab = ref<'overview' | 'chart' | 'trades' | 'positions' | 'sentiment
 const tradeChartRef = ref<any>(null)
 const currentBid = ref<number | null>(null)
 const currentAsk = ref<number | null>(null)
+const expandedVenueId = ref<string | null>(null)
+
+// Broker balances state
+const brokerBalances = ref<BrokerBalanceSnapshot[]>([])
+
+const connectedVenues = computed(() => {
+  return (brokerBalances.value || []).filter(b => b.connected !== false)
+})
+
+const showDeskTrades = ref(true)
+const selectedTradeVenueFilter = ref<string>('ALL')
+const selectedTradeStateFilter = ref<'ALL' | 'OPEN' | 'CLOSED'>('ALL')
+const selectedTradeStrategyFilter = ref<string>('ALL')
+
+function cleanStrategyTag(raw?: string | null): string {
+  if (!raw) return ''
+  return raw.trim().replace(/_(MGC|MNQ|MES|M2K|MCL|GC|NQ|ES|GBPJPY|GBP_JPY|USDCHF|USD_CHF|USDJPY|USD_JPY|EURUSD|EUR_USD)[A-Z0-9]*$/i, '')
+}
+
+const allBrokerTrades = computed<BrokerVenueTrade[]>(() => {
+  const out: BrokerVenueTrade[] = []
+  for (const venue of brokerBalances.value || []) {
+    if (venue.trades && venue.trades.length > 0) {
+      for (const t of venue.trades) {
+        out.push({
+          ...t,
+          venueId: t.venueId || venue.id,
+          provider: t.provider || venue.provider,
+          maskedAccountId: t.maskedAccountId || venue.maskedAccountId || '',
+          currency: t.currency || venue.currency || 'USD'
+        })
+      }
+    }
+  }
+  return out.sort((a, b) => {
+    const ta = a.closeTime || a.openTime || ''
+    const tb = b.closeTime || b.openTime || ''
+    return tb.localeCompare(ta)
+  })
+})
+
+function isTradeClosedState(state?: string): boolean {
+  const s = (state || '').toUpperCase()
+  return s === 'CLOSED' || s === 'FILLED'
+}
+
+const filteredBrokerTrades = computed<BrokerVenueTrade[]>(() => {
+  return allBrokerTrades.value.filter(t => {
+    if (selectedTradeVenueFilter.value !== 'ALL' && t.venueId !== selectedTradeVenueFilter.value) {
+      return false
+    }
+    if (selectedTradeStateFilter.value === 'OPEN' && (t.state || '').toUpperCase() !== 'OPEN') {
+      return false
+    }
+    if (selectedTradeStateFilter.value === 'CLOSED' && !isTradeClosedState(t.state)) {
+      return false
+    }
+    if (selectedTradeStrategyFilter.value !== 'ALL' && cleanStrategyTag(t.strategyTag) !== selectedTradeStrategyFilter.value) {
+      return false
+    }
+    return true
+  })
+})
+
+function filterTradesByVenue(venueId: string) {
+  showDeskTrades.value = true
+  selectedTradeVenueFilter.value = venueId
+  selectedTradeStrategyFilter.value = 'ALL'
+}
+
+function filterTradesByStrategy(strategyId: string) {
+  showDeskTrades.value = true
+  const cleaned = cleanStrategyTag(strategyId)
+  selectedTradeStrategyFilter.value = selectedTradeStrategyFilter.value === cleaned ? 'ALL' : cleaned
+}
+
+const totalOpenPositionsCount = computed(() => {
+  return connectedVenues.value.reduce(
+    (sum, b) => sum + (b.positionsCount ?? (b.positions ? b.positions.length : 0)),
+    0
+  )
+})
+
+const openBrokerTradesCount = computed(() => {
+  return allBrokerTrades.value.filter(t => (t.state || '').toUpperCase() === 'OPEN').length
+})
+
+const closedBrokerTradesCount = computed(() => {
+  return allBrokerTrades.value.filter(t => isTradeClosedState(t.state)).length
+})
+
+const totalTrackedRealizedPnL = computed(() => {
+  return allBrokerTrades.value
+    .filter(t => isTradeClosedState(t.state))
+    .reduce((sum, t) => sum + convertCurrencyAmount(t.realizedPnL || 0, t.currency || 'USD', selectedCurrency.value), 0)
+})
+
+const trackedWinRatePct = computed(() => {
+  const closed = allBrokerTrades.value.filter(t => isTradeClosedState(t.state))
+  if (!closed.length) return 0
+  const wins = closed.filter(t => (t.realizedPnL || 0) > 0).length
+  return (wins / closed.length) * 100.0
+})
+
+interface BrokerStrategySummary {
+  strategyId: string
+  symbol: string
+  provider: string
+  venueId: string
+  maskedAccountId: string
+  currency: string
+  tradesCount: number
+  openTradesCount: number
+  winsCount: number
+  realizedPnLNative: number
+  realizedPnLDisplay: number
+  unrealizedPnLNative: number
+  lastTradeAt: string
+}
+
+const brokerStrategySummaries = computed<BrokerStrategySummary[]>(() => {
+  const map = new Map<string, BrokerStrategySummary>()
+  for (const t of allBrokerTrades.value) {
+    const strat = cleanStrategyTag(t.strategyTag)
+    if (!strat) continue
+    const key = `${t.venueId}::${strat}`
+    let entry = map.get(key)
+    if (!entry) {
+      entry = {
+        strategyId: strat,
+        symbol: t.symbol,
+        provider: t.provider || 'OANDA',
+        venueId: t.venueId,
+        maskedAccountId: t.maskedAccountId || '',
+        currency: t.currency || 'USD',
+        tradesCount: 0,
+        openTradesCount: 0,
+        winsCount: 0,
+        realizedPnLNative: 0,
+        realizedPnLDisplay: 0,
+        unrealizedPnLNative: 0,
+        lastTradeAt: t.closeTime || t.openTime || ''
+      }
+      map.set(key, entry)
+    }
+    const isOpen = (t.state || '').toUpperCase() === 'OPEN'
+    if (isOpen) {
+      entry.openTradesCount++
+      entry.unrealizedPnLNative += t.unrealizedPnL || 0
+    } else if (isTradeClosedState(t.state)) {
+      entry.tradesCount++
+      if ((t.realizedPnL || 0) > 0) entry.winsCount++
+      entry.realizedPnLNative += t.realizedPnL || 0
+      entry.realizedPnLDisplay += convertCurrencyAmount(t.realizedPnL || 0, t.currency || 'USD', selectedCurrency.value)
+    }
+    const ts = t.closeTime || t.openTime || ''
+    if (ts > entry.lastTradeAt) {
+      entry.lastTradeAt = ts
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => {
+    if (a.provider !== b.provider) return a.provider.localeCompare(b.provider)
+    return b.realizedPnLDisplay - a.realizedPnLDisplay
+  })
+})
+
+const unifiedStrategyProviders = computed(() => {
+  const map = new Map<string, 'IBKR' | 'OANDA'>()
+  for (const r of liveRuns.value) {
+    if (r.strategyId) {
+      map.set(cleanStrategyTag(r.strategyId), resolveRunProvider(r) === 'IBKR' ? 'IBKR' : 'OANDA')
+    }
+  }
+  for (const s of brokerStrategySummaries.value) {
+    if (s.strategyId && !map.has(s.strategyId)) {
+      map.set(s.strategyId, s.provider.toUpperCase() === 'IBKR' ? 'IBKR' : 'OANDA')
+    }
+  }
+  return map
+})
+
+const activeStrategiesCount = computed(() => unifiedStrategyProviders.value.size)
+
+const activeStrategiesBreakdown = computed(() => {
+  const entries = Array.from(unifiedStrategyProviders.value.values())
+  if (entries.length === 0) return '0 Running'
+  const ibkrCount = entries.filter(p => p === 'IBKR').length
+  const oandaCount = entries.length - ibkrCount
+  return `${ibkrCount} IBKR • ${oandaCount} OANDA`
+})
+
+const totalBrokerBalance = computed(() => {
+  if (!connectedVenues.value.length) return 0
+  return connectedVenues.value.reduce(
+    (sum, b) => sum + convertCurrencyAmount(b.balance || 0, b.currency || 'USD', selectedCurrency.value),
+    0
+  )
+})
+
+const totalBrokerEquity = computed(() => {
+  if (!connectedVenues.value.length) return 0
+  return connectedVenues.value.reduce(
+    (sum, b) => sum + convertCurrencyAmount(b.equity ?? b.balance ?? 0, b.currency || 'USD', selectedCurrency.value),
+    0
+  )
+})
+
+const totalUnrealizedPnL = computed(() => {
+  if (!connectedVenues.value.length) return 0
+  return connectedVenues.value.reduce(
+    (sum, b) => sum + convertCurrencyAmount(b.unrealizedPnL || 0, b.currency || 'USD', selectedCurrency.value),
+    0
+  )
+})
 
 const maintMarginTotal = computed(() => {
-  return totalBrokerBalance.value > 0 ? totalBrokerBalance.value * 0.124 : 0.0
+  if (!connectedVenues.value.length) return 0.0
+  return connectedVenues.value.reduce(
+    (sum, b) => sum + convertCurrencyAmount(b.maintenanceMargin || 0, b.currency || 'USD', selectedCurrency.value),
+    0
+  )
 })
+
 const initMarginTotal = computed(() => {
-  return totalBrokerBalance.value > 0 ? totalBrokerBalance.value * 0.15 : 0.0
+  if (!connectedVenues.value.length) return 0.0
+  return connectedVenues.value.reduce(
+    (sum, b) => sum + convertCurrencyAmount(b.initialMargin || 0, b.currency || 'USD', selectedCurrency.value),
+    0
+  )
 })
+
 const availableFundsTotal = computed(() => {
-  return Math.max(0, totalBrokerBalance.value - initMarginTotal.value)
+  if (!connectedVenues.value.length) return 0.0
+  return connectedVenues.value.reduce((sum, b) => {
+    const avail = (b.availableFunds !== undefined && b.availableFunds !== null && b.availableFunds >= 0)
+      ? b.availableFunds
+      : Math.max(0, (b.equity ?? b.balance ?? 0) - (b.initialMargin || 0))
+    return sum + convertCurrencyAmount(avail, b.currency || 'USD', selectedCurrency.value)
+  }, 0)
 })
+
 const marginUtilizationPct = computed(() => {
-  return totalBrokerBalance.value > 0 ? (maintMarginTotal.value / totalBrokerBalance.value) * 100.0 : 0.0
+  const eq = totalBrokerEquity.value
+  return eq > 0 ? (maintMarginTotal.value / eq) * 100.0 : 0.0
+})
+
+const pdtStatus = computed(() => {
+  const ibkrVenues = connectedVenues.value.filter(b => (b.provider || '').toUpperCase() === 'IBKR')
+  if (!ibkrVenues.length) {
+    return { label: connectedVenues.value.length ? 'Unlimited (FX)' : '—', tone: 'text-info', restricted: false }
+  }
+  const restricted = ibkrVenues.some(b => b.pdtRestricted)
+  if (restricted) {
+    return { label: 'PDT Restricted', tone: 'text-danger', restricted: true }
+  }
+  const minDayTrades = ibkrVenues
+    .map(b => b.dayTradesRemaining ?? -1)
+    .filter(d => d >= 0)
+  const allAbove25k = ibkrVenues.every(b => convertCurrencyAmount(b.equity || 0, b.currency || 'USD', 'USD') >= 25000)
+  if (allAbove25k || !minDayTrades.length) {
+    return { label: 'Unlimited', tone: 'text-success', restricted: false }
+  }
+  const rem = Math.min(...minDayTrades)
+  return {
+    label: `${rem} Left`,
+    tone: rem <= 1 ? 'text-warning' : 'text-success',
+    restricted: false
+  }
 })
 
 const { connect, disconnect, lastEvent } = useRunWebSocket()
@@ -140,36 +418,51 @@ const savingAccounts = ref(false)
 const accountsError = ref<string | null>(null)
 const accountsSuccess = ref<string | null>(null)
 const editingAccount = ref<any | null>(null)
+const discoveringOanda = ref(false)
+const discoveredOandaAccounts = ref<{ id: string; tags?: string[] }[]>([])
 
-// Broker balances state
-const brokerBalances = ref<any[]>([])
-
-const totalBrokerBalance = computed(() => {
-  if (!brokerBalances.value || brokerBalances.value.length === 0) {
-    return 0
-  }
-  return brokerBalances.value.reduce((sum, b) => sum + (b.balance || 0), 0)
-})
-
-const brokerCurrency = computed(() => {
-  if (!brokerBalances.value || brokerBalances.value.length === 0) {
-    return ''
-  }
-  const activeBalance = brokerBalances.value.find(b => b.currency)
-  return activeBalance ? activeBalance.currency : ''
-})
-
-async function fetchBalances() {
+async function fetchBalances(force = false) {
   try {
-    brokerBalances.value = await getBrokerBalances()
+    brokerBalances.value = await getBrokerBalances(force)
   } catch (err) {
     console.error('Failed to fetch broker balances:', err)
   }
 }
 
+function toggleVenuePositions(venueId: string) {
+  expandedVenueId.value = expandedVenueId.value === venueId ? null : venueId
+}
+
+async function openVenueConfig(venue: BrokerBalanceSnapshot) {
+  showAccountsConfig.value = true
+  await fetchAccounts()
+  const match = accounts.value.find((a: any) => a.id === venue.id)
+  if (match) {
+    startEditAccount(match)
+  } else {
+    startEditAccount({
+      id: venue.id,
+      provider: venue.provider,
+      configured: venue.configured ?? true,
+      maskedAccountId: venue.maskedAccountId || '',
+      host: venue.host || '127.0.0.1',
+      port: venue.port || 4002
+    })
+  }
+}
+
 // Connection testing state
 const testingConnection = ref(false)
-const testResult = ref<{ success: boolean; balance?: number; currency?: string; message?: string } | null>(null)
+const testResult = ref<{
+  success: boolean
+  balance?: number
+  equity?: number
+  availableFunds?: number
+  positionsCount?: number
+  dayTradesRemaining?: number
+  currency?: string
+  message?: string
+} | null>(null)
 
 async function testAccountConnection() {
   if (!editingAccount.value) return
@@ -181,19 +474,26 @@ async function testAccountConnection() {
     const payload = {
       id: editingAccount.value.id,
       provider: editingAccount.value.provider,
-      token: editingAccount.value.token.trim() || null,
-      accountId: editingAccount.value.accountId.trim() || null,
+      token: editingAccount.value.token ? editingAccount.value.token.trim() || null : null,
+      accountId: editingAccount.value.accountId ? editingAccount.value.accountId.trim() || null : null,
       host: editingAccount.value.host,
       port: editingAccount.value.port,
-      defaultRestUrl: editingAccount.value.provider === 'OANDA' ? 'https://api-fxpractice.oanda.com' : null
+      defaultRestUrl: editingAccount.value.provider === 'OANDA'
+        ? (editingAccount.value.defaultRestUrl || 'https://api-fxpractice.oanda.com')
+        : null
     }
     const res = await testBrokerAccount(payload)
     if (res && res.success) {
       testResult.value = {
         success: true,
         balance: res.balance,
+        equity: res.equity,
+        availableFunds: res.availableFunds,
+        positionsCount: res.positionsCount,
+        dayTradesRemaining: res.dayTradesRemaining,
         currency: res.currency
       }
+      await fetchBalances(true)
     } else {
       testResult.value = {
         success: false,
@@ -210,8 +510,29 @@ async function testAccountConnection() {
   }
 }
 
+async function handleDiscoverOandaAccounts() {
+  if (!editingAccount.value) return
+  discoveringOanda.value = true
+  accountsError.value = null
+  try {
+    const list = await discoverOandaAccounts({
+      id: editingAccount.value.id || undefined,
+      token: editingAccount.value.token?.trim() || undefined,
+      restUrl: editingAccount.value.defaultRestUrl || 'https://api-fxpractice.oanda.com'
+    })
+    const sorted = [...list].sort((a, b) => (b.id || '').localeCompare(a.id || ''))
+    discoveredOandaAccounts.value = sorted
+    if (sorted.length > 0 && (!editingAccount.value.accountId || editingAccount.value.accountId.startsWith('*'))) {
+      editingAccount.value.accountId = sorted[0].id
+    }
+  } catch (err: any) {
+    accountsError.value = 'Failed to discover OANDA accounts: ' + err.message
+  } finally {
+    discoveringOanda.value = false
+  }
+}
 
-async function fetchSummary() {
+async function fetchSummary(forceBalances = false) {
   try {
     const data = await getControlSummary()
     summary.value = data
@@ -224,7 +545,7 @@ async function fetchSummary() {
         await updateInspectTelemetry(true, true)
       }
     }
-    await fetchBalances()
+    await fetchBalances(forceBalances)
   } catch (e: any) {
     error.value = e.message
   } finally {
@@ -255,24 +576,28 @@ function toggleAccountsConfig() {
 
 function startEditAccount(acc?: any) {
   testResult.value = null
+  discoveredOandaAccounts.value = []
   if (acc) {
+    const cleanRestUrl = (acc.defaultRestUrl || 'https://api-fxpractice.oanda.com').replace(/\/v3\/?$/, '')
     editingAccount.value = {
       id: acc.id,
       provider: acc.provider,
       token: acc.configured ? '********' : '',
-      accountId: acc.maskedAccountId || '',
+      accountId: acc.maskedAccountId && acc.maskedAccountId !== '****' ? acc.maskedAccountId : '',
       host: acc.host || '127.0.0.1',
-      port: acc.port || 7497,
+      port: acc.port || (acc.provider === 'IBKR' ? 4002 : 7497),
+      defaultRestUrl: cleanRestUrl,
       isNew: false
     }
   } else {
     editingAccount.value = {
       id: '',
-      provider: 'OANDA',
+      provider: 'IBKR',
       token: '',
       accountId: '',
       host: '127.0.0.1',
-      port: 7497,
+      port: 4002,
+      defaultRestUrl: 'https://api-fxpractice.oanda.com',
       isNew: true
     }
   }
@@ -300,10 +625,11 @@ async function saveAccountChanges() {
         accountsPayload.push({
           id: editingAccount.value.id,
           provider: editingAccount.value.provider,
-          token: editingAccount.value.token.trim() || null,
-          accountId: editingAccount.value.accountId.trim() || null,
+          token: editingAccount.value.token?.trim() || null,
+          accountId: editingAccount.value.accountId?.trim() || null,
           host: editingAccount.value.host,
-          port: editingAccount.value.port
+          port: editingAccount.value.port,
+          defaultRestUrl: editingAccount.value.provider === 'OANDA' ? editingAccount.value.defaultRestUrl : null
         })
       } else {
         accountsPayload.push({
@@ -312,7 +638,8 @@ async function saveAccountChanges() {
           token: null,
           accountId: null,
           host: null,
-          port: null
+          port: null,
+          defaultRestUrl: null
         })
       }
     })
@@ -321,17 +648,18 @@ async function saveAccountChanges() {
       accountsPayload.push({
         id: editingAccount.value.id,
         provider: editingAccount.value.provider,
-        token: editingAccount.value.token.trim() || null,
-        accountId: editingAccount.value.accountId.trim() || null,
+        token: editingAccount.value.token?.trim() || null,
+        accountId: editingAccount.value.accountId?.trim() || null,
         host: editingAccount.value.host,
-        port: editingAccount.value.port
+        port: editingAccount.value.port,
+        defaultRestUrl: editingAccount.value.provider === 'OANDA' ? editingAccount.value.defaultRestUrl : null
       })
     }
 
     await saveBrokerAccounts(accountsPayload)
     accountsSuccess.value = 'Broker configuration updated successfully!'
     editingAccount.value = null
-    await fetchAccounts()
+    await Promise.all([fetchAccounts(), fetchBalances(true)])
   } catch (err: any) {
     accountsError.value = err.message
   } finally {
@@ -451,10 +779,20 @@ async function handleLoadMoreBars(oldestTimestamp: string) {
   }
 }
 
+const { controlPlaneUrl } = useControlPlaneConfig()
+
+function isSyntheticLaneRun(runId: string | null | undefined): boolean {
+  return typeof runId === 'string' && runId.startsWith('lane-')
+}
+
 async function selectRun(runId: string) {
   selectedRunId.value = runId
   disconnect()
-  connect(runId)
+  if (!isSyntheticLaneRun(runId)) {
+    connect(runId)
+  } else if (selectedRun.value?.strategyId) {
+    filterTradesByStrategy(selectedRun.value.strategyId)
+  }
   currentBid.value = null
   currentAsk.value = null
   
@@ -481,6 +819,29 @@ function deselectRun() {
 async function updateInspectTelemetry(background = false, skipBars = false) {
   if (!selectedRunId.value) return
   const runId = selectedRunId.value
+
+  if (isSyntheticLaneRun(runId)) {
+    const stratId = cleanStrategyTag(selectedRun.value?.strategyId)
+    const matched = allBrokerTrades.value
+      .filter(t => cleanStrategyTag(t.strategyTag) === stratId)
+      .map(t => ({
+        symbol: t.symbol,
+        side: t.side === 'BUY' ? 'LONG' : 'SHORT',
+        entryTime: t.openTime,
+        exitTime: t.closeTime || t.openTime,
+        entryPrice: t.entryPrice,
+        exitPrice: t.exitPrice ?? t.entryPrice,
+        quantity: t.quantity,
+        pnl: t.realizedPnL,
+        exitReason: t.state
+      })) as unknown as Trade[]
+    inspectBars.value = []
+    inspectTrades.value = matched
+    inspectEquity.value = []
+    loadingInspect.value = false
+    inspectError.value = null
+    return
+  }
 
   if (!background) {
     loadingInspect.value = true
@@ -576,6 +937,66 @@ function formatTime(timeStr?: string): string {
   }
 }
 
+function resolveRunProvider(run: any): 'IBKR' | 'OANDA' | 'SIM' {
+  if (!run) return 'OANDA'
+  const label = (run.executionLabel || run.configSnapshot?.resolvedExecutionLabel || '').toUpperCase()
+  if (label.includes('IBKR')) return 'IBKR'
+  if (label.includes('OANDA')) return 'OANDA'
+  const acctId = (run.configSnapshot?.brokerAccountId || '').toLowerCase()
+  if (acctId.includes('ibkr')) return 'IBKR'
+  const matchedAcc = accounts.value.find((a: any) => a.id === run.configSnapshot?.brokerAccountId)
+  if (matchedAcc && matchedAcc.provider) {
+    return matchedAcc.provider.toUpperCase() === 'IBKR' ? 'IBKR' : 'OANDA'
+  }
+  const matchedBal = brokerBalances.value.find((b: any) => b.id === run.configSnapshot?.brokerAccountId)
+  if (matchedBal && matchedBal.provider) {
+    return matchedBal.provider.toUpperCase() === 'IBKR' ? 'IBKR' : 'OANDA'
+  }
+  if (label.includes('STUB') || label.includes('BACKTEST')) return 'SIM'
+  return 'OANDA'
+}
+
+function resolveRunCurrency(run: any): string {
+  if (!run) return 'USD'
+  if (resolveRunProvider(run) === 'IBKR') return 'USD'
+  const acctId = run.configSnapshot?.brokerAccountId
+  if (acctId) {
+    const bal = brokerBalances.value.find(b => b.id === acctId)
+    if (bal?.currency) return bal.currency
+  }
+  return 'USD'
+}
+
+function resolveRunAccountBadge(run: any): string {
+  if (!run) return ''
+  if (run.maskedAccountId && run.maskedAccountId !== '****') {
+    return run.maskedAccountId
+  }
+  const acctId = run.configSnapshot?.brokerAccountId
+  if (acctId) {
+    const bal = brokerBalances.value.find(b => b.id === acctId)
+    if (bal?.maskedAccountId && bal.maskedAccountId !== '****') {
+      return `${acctId} (${bal.maskedAccountId})`
+    }
+    return acctId
+  }
+  return ''
+}
+
+function selectIbkrPortPreset(port: number) {
+  if (!editingAccount.value) return
+  editingAccount.value.port = port
+}
+
+watch(controlPlaneUrl, () => {
+  fetchSummary()
+  fetchBalances(true)
+  if (selectedRunId.value && !isSyntheticLaneRun(selectedRunId.value)) {
+    disconnect()
+    connect(selectedRunId.value)
+  }
+})
+
 
 onMounted(async () => {
   await fetchExchangeRates()
@@ -637,7 +1058,7 @@ onUnmounted(() => {
         <button class="btn btn-secondary" @click="toggleAccountsConfig">
           🔑 {{ showAccountsConfig ? 'Close Keys Panel' : 'Broker Accounts' }}
         </button>
-        <button class="btn btn-secondary" @click="fetchSummary" :disabled="loading">
+        <button class="btn btn-secondary" @click="fetchSummary(true)" :disabled="loading">
           Refresh Telemetry
         </button>
       </div>
@@ -664,7 +1085,8 @@ onUnmounted(() => {
             <tr>
               <th>ID</th>
               <th>Provider</th>
-              <th>Account Details</th>
+              <th>Account ID</th>
+              <th>Endpoint / Port</th>
               <th>Status</th>
               <th>Actions</th>
             </tr>
@@ -672,8 +1094,18 @@ onUnmounted(() => {
           <tbody>
             <tr v-for="acc in accounts" :key="acc.id">
               <td><strong>{{ acc.id }}</strong></td>
-              <td><span class="provider-badge">{{ acc.provider }}</span></td>
-              <td>{{ acc.maskedAccountId }}</td>
+              <td>
+                <span :class="['provider-badge', acc.provider?.toLowerCase()]">{{ acc.provider }}</span>
+              </td>
+              <td class="font-mono">{{ acc.maskedAccountId }}</td>
+              <td class="font-mono text-xs" style="color: var(--text-secondary);">
+                <template v-if="acc.provider === 'IBKR'">
+                  {{ acc.host || '127.0.0.1' }}:{{ acc.port || 4002 }}
+                </template>
+                <template v-else>
+                  {{ acc.defaultRestUrl?.includes('fxtrade') ? 'Live (fxtrade)' : 'Practice (fxpractice)' }}
+                </template>
+              </td>
               <td>
                 <span :class="['status-badge', acc.configured ? 'configured' : 'missing']">
                   {{ acc.configured ? 'Active Credentials' : 'Credentials Missing' }}
@@ -681,7 +1113,7 @@ onUnmounted(() => {
               </td>
               <td>
                 <div style="display: flex; gap: 0.5rem;">
-                  <button class="btn btn-secondary btn-sm" @click="startEditAccount(acc)">Edit</button>
+                  <button class="btn btn-secondary btn-sm" @click="startEditAccount(acc)">Edit / Test</button>
                   <button v-if="acc.id !== 'default'" class="btn btn-danger btn-sm" @click="deleteAccount(acc.id)">Delete</button>
                 </div>
               </td>
@@ -699,40 +1131,89 @@ onUnmounted(() => {
           </div>
           <div class="editing-form py-4">
             <div class="field mb-3">
-              <label>Account name/ID</label>
-              <input v-model="editingAccount.id" type="text" :disabled="!editingAccount.isNew" placeholder="e.g. oanda_practice" />
+              <label>Account Profile ID</label>
+              <input v-model="editingAccount.id" type="text" :disabled="!editingAccount.isNew" placeholder="e.g. ibkr-paper or oanda-live" />
             </div>
             <div class="field mb-3">
-              <label>Provider</label>
+              <label>Broker Venue Provider</label>
               <select v-model="editingAccount.provider" :disabled="!editingAccount.isNew">
-                <option value="OANDA">OANDA</option>
-                <option value="IBKR">IBKR</option>
+                <option value="IBKR">Interactive Brokers (TWS / IB Gateway)</option>
+                <option value="OANDA">OANDA (v20 REST & Streaming)</option>
               </select>
             </div>
             
             <!-- OANDA specific -->
             <div v-if="editingAccount.provider === 'OANDA'">
               <div class="field mb-3">
+                <label>OANDA Environment</label>
+                <select v-model="editingAccount.defaultRestUrl">
+                  <option value="https://api-fxpractice.oanda.com">Practice / Paper (api-fxpractice.oanda.com)</option>
+                  <option value="https://api-fxtrade.oanda.com">Live Trading (api-fxtrade.oanda.com)</option>
+                </select>
+              </div>
+              <div class="field mb-3">
                 <label>API Key / Token</label>
                 <input v-model="editingAccount.token" type="password" placeholder="•••••••••••••••• (Leave blank to keep existing)" />
               </div>
               <div class="field mb-3">
-                <label>OANDA Account ID</label>
-                <input v-model="editingAccount.accountId" type="text" placeholder="e.g. 101-002-1234567-001" />
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                  <label style="margin-bottom: 0;">OANDA Account ID</label>
+                  <button
+                    type="button"
+                    class="btn-link-xs"
+                    :disabled="discoveringOanda"
+                    @click="handleDiscoverOandaAccounts"
+                  >
+                    {{ discoveringOanda ? 'Discovering…' : '🔍 Discover Accounts from Token' }}
+                  </button>
+                </div>
+                <input v-model="editingAccount.accountId" type="text" placeholder="e.g. 101-002-4729622-012 (Leave **** to keep existing)" />
+                <div v-if="discoveredOandaAccounts.length > 0" class="preset-pills mt-2">
+                  <button
+                    v-for="oa in discoveredOandaAccounts"
+                    :key="oa.id"
+                    type="button"
+                    :class="['preset-pill', { active: editingAccount.accountId === oa.id }]"
+                    @click="editingAccount.accountId = oa.id"
+                  >
+                    {{ oa.id }}
+                  </button>
+                </div>
               </div>
             </div>
 
             <!-- IBKR specific -->
             <div v-if="editingAccount.provider === 'IBKR'">
               <div class="field mb-3">
-                <label>TWS / Gateway Host</label>
+                <label>IBKR Account ID</label>
+                <input v-model="editingAccount.accountId" type="text" placeholder="e.g. DUR967322 (Paper) or U1234567 (Live)" />
+                <div class="field-hint">
+                  Required for multi-account / FA profiles and position reconciliation. Leave as <code>****</code> to keep existing.
+                </div>
+              </div>
+              <div class="field mb-3">
+                <label>TWS / IB Gateway Host</label>
                 <input v-model="editingAccount.host" type="text" placeholder="127.0.0.1" />
               </div>
               <div class="field mb-3">
-                <label>TWS / Gateway Port</label>
-                <input v-model.number="editingAccount.port" type="number" placeholder="7497" />
-                <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem;">
-                  Defaults: TWS Live (7496), TWS Paper (7497) | Gateway Live (4001), Gateway Paper (4002)
+                <label>TWS / IB Gateway Socket Port</label>
+                <input v-model.number="editingAccount.port" type="number" placeholder="4002" />
+                <div class="preset-pills mt-2">
+                  <button type="button" :class="['preset-pill', { active: editingAccount.port === 4002 }]" @click="selectIbkrPortPreset(4002)">
+                    4002 • Gateway Paper
+                  </button>
+                  <button type="button" :class="['preset-pill', { active: editingAccount.port === 4001 }]" @click="selectIbkrPortPreset(4001)">
+                    4001 • Gateway Live
+                  </button>
+                  <button type="button" :class="['preset-pill', { active: editingAccount.port === 7497 }]" @click="selectIbkrPortPreset(7497)">
+                    7497 • TWS Paper
+                  </button>
+                  <button type="button" :class="['preset-pill', { active: editingAccount.port === 7496 }]" @click="selectIbkrPortPreset(7496)">
+                    7496 • TWS Live
+                  </button>
+                </div>
+                <div class="field-hint">
+                  Remote IB Gateway over SSH: <code>ssh -f -N -L {{ editingAccount.port || 4002 }}:127.0.0.1:{{ editingAccount.port || 4002 }} srv108</code>
                 </div>
               </div>
             </div>
@@ -740,8 +1221,13 @@ onUnmounted(() => {
             <!-- Connection test feedback card -->
             <div v-if="testResult" :class="['banner my-3', testResult.success ? 'success' : 'error']">
               <div v-if="testResult.success">
-                <strong>Connection Successful!</strong><br />
-                Account balance: {{ testResult.balance }} {{ testResult.currency }}
+                <strong>✓ Connection Verified!</strong>
+                <div class="test-metrics-grid mt-2">
+                  <span>Net Liq / NAV: <strong>{{ formatNativeCurrency(testResult.equity ?? testResult.balance, testResult.currency) }}</strong></span>
+                  <span>Cash Balance: <strong>{{ formatNativeCurrency(testResult.balance, testResult.currency) }}</strong></span>
+                  <span v-if="testResult.availableFunds !== undefined">Free Margin: <strong>{{ formatNativeCurrency(testResult.availableFunds, testResult.currency) }}</strong></span>
+                  <span v-if="testResult.positionsCount !== undefined">Open Positions: <strong>{{ testResult.positionsCount }}</strong></span>
+                </div>
               </div>
               <div v-else>
                 <strong>Connection Failed:</strong> {{ testResult.message }}
@@ -770,43 +1256,181 @@ onUnmounted(() => {
 
     <div v-if="error" class="banner error mb-4">{{ error }}</div>
 
-    <!-- Active operational summary statistics -->
+    <!-- Executive Operational & Portfolio Telemetry Ribbon (6 Cards, Non-Clipping) -->
     <div class="stats-strip mb-6">
       <div class="stat-card">
-        <span class="stat-label">Live Running</span>
-        <span class="stat-value text-success">{{ stats.activeLive }}</span>
-      </div>
-      <div class="stat-card">
-        <span class="stat-label">Paper Running</span>
-        <span class="stat-value text-info">{{ stats.activePaper }}</span>
-      </div>
-      <div class="stat-card">
-        <span class="stat-label" title="The total amount of capital allocated across all active strategies. This is an internal configuration value, independent of your actual broker balance.">Allocated Capital ℹ️</span>
-        <span class="stat-value">{{ formatCurrencyValNoDecimals(stats.totalAllocated) }}</span>
-      </div>
-      <div class="stat-card">
-        <span class="stat-label">Broker Balance</span>
+        <span class="stat-label" title="Combined Net Liquidation / NAV across all connected OANDA & IBKR accounts, converted to display currency.">Portfolio Net Liq</span>
         <span class="stat-value text-accent">
-          {{ totalBrokerBalance > 0 ? formatCurrencyVal(totalBrokerBalance, brokerCurrency) : '—' }}
+          {{ totalBrokerEquity > 0 ? formatCurrencyVal(totalBrokerEquity, selectedCurrency) : '—' }}
+        </span>
+        <span class="stat-sub">
+          Cash: {{ totalBrokerBalance > 0 ? formatCurrencyVal(totalBrokerBalance, selectedCurrency) : '—' }}
         </span>
       </div>
       <div class="stat-card">
-        <span class="stat-label">Margin Util</span>
-        <span class="stat-value text-info">
-          {{ totalBrokerBalance > 0 ? '12.4%' : '—' }}
+        <span class="stat-label" title="Real-time unrealized P&L and open positions across connected venues.">Floating P&L</span>
+        <span :class="['stat-value', totalUnrealizedPnL > 0 ? 'text-success' : totalUnrealizedPnL < 0 ? 'text-danger' : '']">
+          {{ connectedVenues.length > 0 ? ((totalUnrealizedPnL > 0 ? '+' : '') + formatCurrencyVal(totalUnrealizedPnL, selectedCurrency)) : '—' }}
+        </span>
+        <span class="stat-sub">
+          {{ totalOpenPositionsCount }} Open Pos • {{ openBrokerTradesCount }} Active Legs
         </span>
       </div>
       <div class="stat-card">
-        <span class="stat-label">PDT Trades</span>
-        <span class="stat-value text-success">3 / 3</span>
+        <span class="stat-label" title="Cumulative realized P&L across tracked broker trades & executions.">Realized P&L (Trades)</span>
+        <span :class="['stat-value', totalTrackedRealizedPnL > 0 ? 'text-success' : totalTrackedRealizedPnL < 0 ? 'text-danger' : '']">
+          {{ closedBrokerTradesCount > 0 ? ((totalTrackedRealizedPnL > 0 ? '+' : '') + formatCurrencyVal(totalTrackedRealizedPnL, selectedCurrency)) : '—' }}
+        </span>
+        <span class="stat-sub">
+          {{ closedBrokerTradesCount }} Closed • {{ trackedWinRatePct.toFixed(0) }}% Win Rate
+        </span>
       </div>
       <div class="stat-card">
-        <span class="stat-label">Stale Heartbeats</span>
-        <span :class="['stat-value', stats.staleCount > 0 ? 'text-danger' : '']">{{ stats.staleCount }}</span>
+        <span class="stat-label" title="Real-time maintenance margin divided by net liquidation across connected brokers.">Margin Util & Buffer</span>
+        <span :class="['stat-value', marginUtilizationPct > 80 ? 'text-danger' : marginUtilizationPct > 60 ? 'text-warning' : 'text-info']">
+          {{ connectedVenues.length > 0 ? marginUtilizationPct.toFixed(1) + '%' : '—' }}
+        </span>
+        <span class="stat-sub">
+          Free: {{ availableFundsTotal > 0 ? formatCurrencyValNoDecimals(availableFundsTotal, selectedCurrency) : '—' }}
+        </span>
       </div>
       <div class="stat-card">
-        <span class="stat-label">Drawdown Paused</span>
-        <span :class="['stat-value', stats.breachCount > 0 ? 'text-danger' : '']">{{ stats.breachCount }}</span>
+        <span class="stat-label" title="Active strategies detected across running lanes and broker execution tags.">Active Strategies</span>
+        <span class="stat-value text-success">{{ activeStrategiesCount }}</span>
+        <span class="stat-sub">{{ activeStrategiesBreakdown }}</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label" title="Desk heartbeat health, drawdown circuit breakers, and FINRA Pattern Day Trader status.">Desk Health & PDT</span>
+        <span :class="['stat-value', stats.staleCount > 0 || stats.breachCount > 0 ? 'text-danger' : 'text-success']">
+          {{ stats.staleCount === 0 && stats.breachCount === 0 ? 'Healthy' : `${stats.staleCount} Stale / ${stats.breachCount} DD` }}
+        </span>
+        <span class="stat-sub">
+          PDT: <strong :class="pdtStatus.tone">{{ pdtStatus.label }}</strong> • {{ connectedVenues.length }}/{{ brokerBalances.length }} Venues
+        </span>
+      </div>
+    </div>
+
+    <!-- Connected Broker Venues Strip (IBKR & OANDA) -->
+    <div v-if="brokerBalances.length > 0" class="venues-section mb-6">
+      <div class="venues-section-header">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <h4>Connected Broker Venues</h4>
+          <span class="venue-count-pill">{{ connectedVenues.length }} / {{ brokerBalances.length }} Online</span>
+        </div>
+        <span class="venues-hint">Live account telemetry across Interactive Brokers & OANDA</span>
+      </div>
+      <div class="venues-grid">
+        <div
+          v-for="venue in brokerBalances"
+          :key="venue.id"
+          :class="['venue-card', (venue.provider || '').toLowerCase(), { offline: venue.connected === false }]"
+        >
+          <div class="venue-card-top">
+            <div class="venue-identity">
+              <span :class="['provider-badge', (venue.provider || '').toLowerCase()]">{{ venue.provider }}</span>
+              <strong class="venue-id">{{ venue.id }}</strong>
+              <span v-if="venue.maskedAccountId" class="venue-acct-mask">{{ venue.maskedAccountId }}</span>
+              <span v-if="venue.environment" :class="['env-pill', venue.environment.toLowerCase()]">{{ venue.environment }}</span>
+            </div>
+            <div class="venue-status">
+              <span :class="['conn-pill', venue.connected === false ? 'offline' : 'online']">
+                <span class="conn-dot"></span>
+                {{ venue.connected === false ? 'OFFLINE' : 'ONLINE' }}
+              </span>
+            </div>
+          </div>
+
+          <div class="venue-endpoint-bar">
+            <span class="font-mono">{{ venue.endpoint || (venue.provider === 'IBKR' ? '127.0.0.1:4002' : 'OANDA v20') }}</span>
+            <span class="venue-curr-tag">{{ venue.currency || 'USD' }}</span>
+          </div>
+
+          <div v-if="venue.connected === false" class="venue-offline-box">
+            <p class="venue-err-msg">{{ venue.error || 'Unable to reach broker gateway.' }}</p>
+            <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+              <button class="btn btn-secondary btn-sm" @click="openVenueConfig(venue)">Configure / Test</button>
+              <button class="btn btn-secondary btn-sm" @click="fetchBalances(true)">Retry</button>
+            </div>
+          </div>
+
+          <div v-else class="venue-metrics-grid">
+            <div class="venue-metric">
+              <span class="vm-label">Net Liquidation / NAV</span>
+              <span class="vm-val text-accent">{{ formatNativeCurrency(venue.equity ?? venue.balance, venue.currency) }}</span>
+              <span v-if="venue.currency && venue.currency !== selectedCurrency" class="vm-sub">
+                ≈ {{ formatCurrencyVal(venue.equity ?? venue.balance, venue.currency) }} {{ selectedCurrency }}
+              </span>
+            </div>
+            <div class="venue-metric">
+              <span class="vm-label">Cash Balance</span>
+              <span class="vm-val">{{ formatNativeCurrency(venue.balance, venue.currency) }}</span>
+            </div>
+            <div class="venue-metric">
+              <span class="vm-label">Unrealized P&L</span>
+              <span :class="['vm-val', (venue.unrealizedPnL || 0) > 0 ? 'text-success' : (venue.unrealizedPnL || 0) < 0 ? 'text-danger' : '']">
+                {{ (venue.unrealizedPnL || 0) > 0 ? '+' : '' }}{{ formatNativeCurrency(venue.unrealizedPnL || 0, venue.currency) }}
+              </span>
+            </div>
+            <div class="venue-metric">
+              <span class="vm-label">Free Margin / Avail</span>
+              <span class="vm-val text-success">{{ formatNativeCurrency(venue.availableFunds ?? venue.equity, venue.currency) }}</span>
+            </div>
+            <div class="venue-metric">
+              <span class="vm-label">Margin Used (Init / Maint)</span>
+              <span class="vm-val">
+                {{ formatNativeCurrency(venue.initialMargin || 0, venue.currency) }}
+                <span class="vm-sub-inline">({{ (venue.marginUtilizationPct || 0).toFixed(1) }}%)</span>
+              </span>
+            </div>
+            <div class="venue-metric">
+              <span class="vm-label">Positions & Trades</span>
+              <div style="display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap;">
+                <span class="vm-val">{{ venue.positionsCount ?? (venue.positions ? venue.positions.length : 0) }} open</span>
+                <button
+                  v-if="venue.positions && venue.positions.length > 0"
+                  type="button"
+                  class="btn-link-xs"
+                  @click="toggleVenuePositions(venue.id)"
+                >
+                  {{ expandedVenueId === venue.id ? 'Hide Pos' : 'View Pos' }}
+                </button>
+                <span class="vm-sub-inline">• {{ venue.tradesCount ?? (venue.trades ? venue.trades.length : 0) }} trades</span>
+                <button
+                  v-if="venue.trades && venue.trades.length > 0"
+                  type="button"
+                  class="btn-link-xs"
+                  @click="filterTradesByVenue(venue.id)"
+                >
+                  Filter Trades
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Expandable Direct Broker Positions Drawer -->
+          <div v-if="expandedVenueId === venue.id && venue.positions && venue.positions.length > 0" class="venue-positions-drawer">
+            <table class="venue-pos-table">
+              <thead>
+                <tr>
+                  <th>Symbol</th>
+                  <th>Side</th>
+                  <th class="num">Qty</th>
+                  <th class="num">Avg Entry</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(vp, vpi) in venue.positions" :key="vpi">
+                  <td class="font-mono font-bold">{{ vp.symbol }}</td>
+                  <td>
+                    <span :class="['side-badge', (vp.side || '').toLowerCase()]">{{ vp.side }}</span>
+                  </td>
+                  <td class="num font-mono">{{ vp.quantity?.toLocaleString() }}</td>
+                  <td class="num font-mono">{{ formatInstrumentPrice(vp.entryPrice, vp.symbol) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -815,21 +1439,168 @@ onUnmounted(() => {
       <div class="meter-header">
         <div class="meter-title">
           <span class="meter-dot" :class="marginUtilizationPct > 80 ? 'danger' : marginUtilizationPct > 60 ? 'warning' : 'healthy'"></span>
-          <h4>Portfolio Margin Utilization & Risk Buffer</h4>
+          <h4>Portfolio Margin Utilization & Risk Buffer ({{ selectedCurrency }})</h4>
         </div>
         <div class="meter-stats">
-          <span>Maintenance: <strong>{{ formatCurrencyVal(maintMarginTotal) }}</strong></span>
-          <span>Initial: <strong>{{ formatCurrencyVal(initMarginTotal) }}</strong></span>
-          <span>Available Free: <strong class="text-success">{{ formatCurrencyVal(availableFundsTotal) }}</strong></span>
+          <span>Maintenance: <strong>{{ formatCurrencyVal(maintMarginTotal, selectedCurrency) }}</strong></span>
+          <span>Initial: <strong>{{ formatCurrencyVal(initMarginTotal, selectedCurrency) }}</strong></span>
+          <span>Available Free: <strong class="text-success">{{ formatCurrencyVal(availableFundsTotal, selectedCurrency) }}</strong></span>
+          <span>Floating P&L: <strong :class="totalUnrealizedPnL > 0 ? 'text-success' : totalUnrealizedPnL < 0 ? 'text-danger' : ''">{{ formatCurrencyVal(totalUnrealizedPnL, selectedCurrency) }}</strong></span>
           <span>Utilization: <strong :class="marginUtilizationPct > 80 ? 'text-danger' : marginUtilizationPct > 60 ? 'text-warning' : 'text-success'">{{ marginUtilizationPct.toFixed(1) }}%</strong></span>
         </div>
       </div>
       <div class="meter-bar-track">
         <div 
           class="meter-bar-fill"
-          :style="{ width: Math.min(100, Math.max(2, marginUtilizationPct)) + '%' }"
+          :style="{ width: Math.min(100, Math.max(connectedVenues.length ? 2 : 0, marginUtilizationPct)) + '%' }"
           :class="marginUtilizationPct > 80 ? 'danger' : marginUtilizationPct > 60 ? 'warning' : 'healthy'"
         ></div>
+      </div>
+    </div>
+
+    <!-- Broker Trades & Executions (IBKR & OANDA) -->
+    <div v-if="brokerBalances.length > 0" class="desk-trades-section mb-6">
+      <div class="desk-trades-header">
+        <div style="display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;">
+          <h4>Broker Trades & Executions</h4>
+          <span class="venue-count-pill">{{ filteredBrokerTrades.length }} / {{ allBrokerTrades.length }} Trades</span>
+          <div class="preset-pills">
+            <button
+              type="button"
+              :class="['preset-pill', { active: selectedTradeVenueFilter === 'ALL' }]"
+              @click="selectedTradeVenueFilter = 'ALL'"
+            >
+              All Venues ({{ allBrokerTrades.length }})
+            </button>
+            <button
+              v-for="v in brokerBalances"
+              :key="'tf-' + v.id"
+              type="button"
+              :class="['preset-pill', { active: selectedTradeVenueFilter === v.id }]"
+              @click="selectedTradeVenueFilter = v.id"
+            >
+              {{ v.id }} {{ v.maskedAccountId || '' }} ({{ v.trades ? v.trades.length : 0 }})
+            </button>
+            <button
+              v-if="selectedTradeStrategyFilter !== 'ALL'"
+              type="button"
+              class="preset-pill active"
+              title="Click to clear strategy filter"
+              @click="selectedTradeStrategyFilter = 'ALL'"
+            >
+              Strategy: {{ selectedTradeStrategyFilter }} ×
+            </button>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <div class="preset-pills">
+            <button
+              type="button"
+              :class="['preset-pill', { active: selectedTradeStateFilter === 'ALL' }]"
+              @click="selectedTradeStateFilter = 'ALL'"
+            >
+              All States
+            </button>
+            <button
+              type="button"
+              :class="['preset-pill', { active: selectedTradeStateFilter === 'OPEN' }]"
+              @click="selectedTradeStateFilter = 'OPEN'"
+            >
+              Open
+            </button>
+            <button
+              type="button"
+              :class="['preset-pill', { active: selectedTradeStateFilter === 'CLOSED' }]"
+              @click="selectedTradeStateFilter = 'CLOSED'"
+            >
+              Closed / Filled
+            </button>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" @click="showDeskTrades = !showDeskTrades">
+            {{ showDeskTrades ? 'Collapse' : 'Expand' }}
+          </button>
+        </div>
+      </div>
+
+      <div v-if="showDeskTrades" class="desk-trades-body">
+        <div v-if="filteredBrokerTrades.length === 0" class="empty-trades-note">
+          No broker trades match the selected filter.
+        </div>
+        <div v-else class="desk-trades-table-wrap">
+          <table class="venue-pos-table desk-trades-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Venue</th>
+                <th>State</th>
+                <th>Instrument</th>
+                <th>Side</th>
+                <th class="num">Units / Qty</th>
+                <th class="num">Entry Price</th>
+                <th class="num">Close Price</th>
+                <th class="num">SL / TP</th>
+                <th class="num">P&L (Native)</th>
+                <th>Strategy / Tag</th>
+                <th>Opened / Closed</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(tr, tri) in filteredBrokerTrades" :key="tr.venueId + '-' + tr.id + '-' + tri">
+                <td class="font-mono text-xs" style="color: var(--text-secondary);">#{{ tr.id }}</td>
+                <td>
+                  <div style="display: flex; align-items: center; gap: 0.35rem;">
+                    <span :class="['provider-badge', (tr.provider || '').toLowerCase()]">{{ tr.provider }}</span>
+                    <span class="font-mono text-xs">{{ tr.maskedAccountId || tr.venueId }}</span>
+                  </div>
+                </td>
+                <td>
+                  <span :class="['trade-state-pill', (tr.state || '').toLowerCase()]">{{ tr.state }}</span>
+                </td>
+                <td class="font-mono font-bold">{{ tr.symbol }}</td>
+                <td>
+                  <span :class="['side-badge', (tr.side || '').toLowerCase()]">{{ tr.side }}</span>
+                </td>
+                <td class="num font-mono">{{ tr.quantity?.toLocaleString() }}</td>
+                <td class="num font-mono">{{ formatInstrumentPrice(tr.entryPrice, tr.symbol) }}</td>
+                <td class="num font-mono">
+                  {{ tr.exitPrice ? formatInstrumentPrice(tr.exitPrice, tr.symbol) : '—' }}
+                </td>
+                <td class="num font-mono text-xs" style="color: var(--text-secondary);">
+                  <span v-if="tr.stopLoss && tr.stopLoss > 0" class="text-danger">SL {{ formatInstrumentPrice(tr.stopLoss, tr.symbol) }}</span>
+                  <span v-if="tr.stopLoss && tr.stopLoss > 0 && tr.takeProfit && tr.takeProfit > 0"> / </span>
+                  <span v-if="tr.takeProfit && tr.takeProfit > 0" class="text-success">TP {{ formatInstrumentPrice(tr.takeProfit, tr.symbol) }}</span>
+                  <span v-if="(!tr.stopLoss || tr.stopLoss <= 0) && (!tr.takeProfit || tr.takeProfit <= 0)">—</span>
+                </td>
+                <td class="num font-mono">
+                  <template v-if="(tr.state || '').toUpperCase() === 'OPEN'">
+                    <span :class="(tr.unrealizedPnL || 0) > 0 ? 'text-success' : (tr.unrealizedPnL || 0) < 0 ? 'text-danger' : ''">
+                      {{ (tr.unrealizedPnL || 0) > 0 ? '+' : '' }}{{ formatNativeCurrency(tr.unrealizedPnL || 0, tr.currency) }}
+                    </span>
+                  </template>
+                  <template v-else>
+                    <span :class="(tr.realizedPnL || 0) > 0 ? 'text-success' : (tr.realizedPnL || 0) < 0 ? 'text-danger' : ''">
+                      {{ (tr.realizedPnL || 0) > 0 ? '+' : '' }}{{ formatNativeCurrency(tr.realizedPnL || 0, tr.currency) }}
+                    </span>
+                  </template>
+                </td>
+                <td class="font-mono text-xs" style="max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" :title="tr.strategyTag || ''">
+                  <button
+                    v-if="tr.strategyTag"
+                    type="button"
+                    class="strat-tag-pill"
+                    @click="filterTradesByStrategy(tr.strategyTag)"
+                  >
+                    {{ cleanStrategyTag(tr.strategyTag) }}
+                  </button>
+                  <span v-else>—</span>
+                </td>
+                <td class="font-mono text-xs" style="color: var(--text-secondary);">
+                  {{ formatTime(tr.closeTime || tr.openTime) }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -845,10 +1616,76 @@ onUnmounted(() => {
       <p>Loading real-time operational telemetry…</p>
     </div>
 
-    <div v-else-if="liveRuns.length === 0" class="empty-state">
+    <div v-else-if="liveRuns.length === 0 && brokerStrategySummaries.length === 0" class="empty-state">
       <div class="empty-icon">📡</div>
-      <h3>No Live or Paper Strategies Running</h3>
-      <p>Deploy a strategy to Live/Paper mode from the Strategies catalog or control plane to begin real-time operations monitoring.</p>
+      <h3>No Live or Paper Strategies Detected</h3>
+      <p>Deploy a strategy to IBKR or OANDA Live/Paper mode from the Strategies catalog or connect your Control Plane Server URL in the bottom-right status bar.</p>
+    </div>
+
+    <div v-else-if="liveRuns.length === 0 && brokerStrategySummaries.length > 0" class="venues-section mb-6">
+      <div class="venues-section-header">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <h4>Strategy Attribution Across Connected Venues</h4>
+          <span class="venue-count-pill">{{ brokerStrategySummaries.length }} Active Strategies</span>
+        </div>
+        <span class="venues-hint">Aggregated performance by strategy tag across IBKR & OANDA executions</span>
+      </div>
+      <div class="live-grid">
+        <div
+          v-for="bs in brokerStrategySummaries"
+          :key="bs.venueId + '-' + bs.strategyId"
+          :class="['strategy-card', { active: selectedTradeStrategyFilter === bs.strategyId }]"
+        >
+          <div class="card-header">
+            <div>
+              <h4 class="strat-title">{{ bs.strategyId }}</h4>
+              <div style="display: flex; gap: 0.35rem; align-items: center; margin-top: 0.3rem; flex-wrap: wrap;">
+                <span class="symbol-badge">{{ bs.symbol }}</span>
+                <span :class="['provider-badge', bs.provider.toLowerCase()]">{{ bs.provider }}</span>
+                <span class="acct-mini-badge font-mono">{{ bs.maskedAccountId || bs.venueId }}</span>
+              </div>
+            </div>
+            <span class="mode-badge paper">PAPER</span>
+          </div>
+
+          <div class="card-body">
+            <div class="metric-row">
+              <span>Position State</span>
+              <span :class="['status-val', bs.openTradesCount > 0 ? 'running' : 'flat']">
+                {{ bs.openTradesCount > 0 ? `${bs.openTradesCount} OPEN` : 'FLAT' }}
+              </span>
+            </div>
+            <div class="metric-row">
+              <span>Closed Trades</span>
+              <span class="metric-val font-mono">
+                {{ bs.tradesCount }} ({{ bs.tradesCount > 0 ? Math.round((bs.winsCount / bs.tradesCount) * 100) : 0 }}% Win)
+              </span>
+            </div>
+            <div class="metric-row">
+              <span>Realized P&L (Native)</span>
+              <span :class="['metric-val font-mono', bs.realizedPnLNative > 0 ? 'text-success' : bs.realizedPnLNative < 0 ? 'text-danger' : '']">
+                {{ bs.realizedPnLNative > 0 ? '+' : '' }}{{ formatNativeCurrency(bs.realizedPnLNative, bs.currency) }}
+              </span>
+            </div>
+            <div class="metric-row">
+              <span>Realized P&L ({{ selectedCurrency }})</span>
+              <span :class="['metric-val font-mono', bs.realizedPnLDisplay > 0 ? 'text-success' : bs.realizedPnLDisplay < 0 ? 'text-danger' : '']">
+                {{ bs.realizedPnLDisplay > 0 ? '+' : '' }}{{ formatCurrencyVal(bs.realizedPnLDisplay, selectedCurrency) }}
+              </span>
+            </div>
+            <div class="metric-row">
+              <span>Last Execution</span>
+              <span class="metric-val font-mono">{{ formatTime(bs.lastTradeAt) }}</span>
+            </div>
+          </div>
+
+          <div class="card-footer">
+            <button class="btn btn-secondary btn-sm flex-grow" @click="filterTradesByStrategy(bs.strategyId)">
+              {{ selectedTradeStrategyFilter === bs.strategyId ? 'Clear Trade Filter' : 'Filter Strategy Trades' }}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div v-else class="live-grid mb-6">
@@ -860,7 +1697,15 @@ onUnmounted(() => {
         <div class="card-header">
           <div>
             <h4 class="strat-title">{{ run.strategyId }}</h4>
-            <span class="symbol-badge">{{ run.symbol }}</span>
+            <div style="display: flex; gap: 0.35rem; align-items: center; margin-top: 0.3rem; flex-wrap: wrap;">
+              <span class="symbol-badge">{{ run.symbol }}</span>
+              <span :class="['provider-badge', resolveRunProvider(run).toLowerCase()]">
+                {{ resolveRunProvider(run) }}
+              </span>
+              <span v-if="resolveRunAccountBadge(run)" class="acct-mini-badge font-mono">
+                {{ resolveRunAccountBadge(run) }}
+              </span>
+            </div>
           </div>
           <span :class="['mode-badge', run.mode.toLowerCase()]">{{ run.mode }}</span>
         </div>
@@ -876,6 +1721,12 @@ onUnmounted(() => {
             <span>Cooldown Timer</span>
             <span class="status-val cooldown">{{ formatSeconds(run.cooldownSecondsRemaining) }}</span>
           </div>
+          <div v-if="run.lastBid || run.lastAsk" class="metric-row">
+            <span>Live Quote</span>
+            <span class="metric-val font-mono">
+              {{ formatInstrumentPrice(run.lastBid, run.symbol) }} / {{ formatInstrumentPrice(run.lastAsk, run.symbol) }}
+            </span>
+          </div>
           <div class="metric-row">
             <span>Position</span>
             <span :class="['status-val', run.netSide ? run.netSide.toLowerCase() : 'flat']">
@@ -885,19 +1736,19 @@ onUnmounted(() => {
           <div class="metric-row">
             <span>Realized P&L</span>
             <span :class="['metric-val', (run.realizedPnL ?? 0) > 0 ? 'text-success' : (run.realizedPnL ?? 0) < 0 ? 'text-danger' : '']">
-              {{ formatCurrencyVal(run.realizedPnL ?? 0) }}
+              {{ formatCurrencyVal(run.realizedPnL ?? 0, resolveRunCurrency(run)) }}
             </span>
           </div>
           <div class="metric-row">
             <span>Floating P&L</span>
             <span :class="['metric-val', (run.openPnL ?? 0) > 0 ? 'text-success' : (run.openPnL ?? 0) < 0 ? 'text-danger' : '']">
-              {{ formatCurrencyVal(run.openPnL ?? 0) }}
+              {{ formatCurrencyVal(run.openPnL ?? 0, resolveRunCurrency(run)) }}
             </span>
           </div>
           <div class="metric-row">
             <span>Total P&L</span>
             <span :class="['metric-val', (run.totalPnL ?? 0) > 0 ? 'text-success' : (run.totalPnL ?? 0) < 0 ? 'text-danger' : '']">
-              {{ formatCurrencyVal(run.totalPnL ?? 0) }}
+              {{ formatCurrencyVal(run.totalPnL ?? 0, resolveRunCurrency(run)) }}
             </span>
           </div>
         </div>
@@ -917,7 +1768,15 @@ onUnmounted(() => {
     <div v-if="selectedRun" class="inspect-workspace section">
       <div class="workspace-header">
         <div>
-          <h3>Monitoring: {{ selectedRun.strategyId }}</h3>
+          <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+            <h3>Monitoring: {{ selectedRun.strategyId }}</h3>
+            <span :class="['provider-badge', resolveRunProvider(selectedRun).toLowerCase()]">
+              {{ resolveRunProvider(selectedRun) }}
+            </span>
+            <span v-if="resolveRunAccountBadge(selectedRun)" class="acct-mini-badge font-mono">
+              {{ resolveRunAccountBadge(selectedRun) }}
+            </span>
+          </div>
           <p class="run-meta">
             ID: {{ selectedRun.runId }} | Symbol: {{ selectedRun.symbol }} | Mode: {{ selectedRun.mode }}
             <template v-if="selectedRun.configSnapshot?.strategyTimeframe">
@@ -1028,9 +1887,9 @@ onUnmounted(() => {
                     </span>
                   </td>
                   <td class="num font-mono text-gray-200">{{ p.quantity?.toLocaleString() }}</td>
-                  <td class="num font-mono text-yellow-400 font-medium">{{ p.entryPrice ? p.entryPrice.toFixed(5) : '—' }}</td>
-                  <td class="num font-mono text-red-400">{{ p.stopLoss ? p.stopLoss.toFixed(5) : '—' }}</td>
-                  <td class="num font-mono text-green-400">{{ p.takeProfit ? p.takeProfit.toFixed(5) : '—' }}</td>
+                  <td class="num font-mono text-yellow-400 font-medium">{{ formatInstrumentPrice(p.entryPrice, p.symbol || selectedRun.symbol) }}</td>
+                  <td class="num font-mono text-red-400">{{ formatInstrumentPrice(p.stopLoss, p.symbol || selectedRun.symbol) }}</td>
+                  <td class="num font-mono text-green-400">{{ formatInstrumentPrice(p.takeProfit, p.symbol || selectedRun.symbol) }}</td>
                   <td class="text-right pr-6 text-gray-400 font-mono text-sm">{{ formatPositionAge(p.entryTime) }}</td>
                 </tr>
               </tbody>
@@ -1092,9 +1951,9 @@ onUnmounted(() => {
                     </span>
                   </td>
                   <td class="num font-mono text-gray-200">{{ o.quantity?.toLocaleString() || o.units?.toLocaleString() }}</td>
-                  <td class="num font-mono text-yellow-400 font-medium">{{ o.price ? Number(o.price).toFixed(5) : (o.limitPrice ? Number(o.limitPrice).toFixed(5) : '—') }}</td>
-                  <td class="num font-mono text-red-400">{{ o.stopLoss ? Number(o.stopLoss).toFixed(5) : '—' }}</td>
-                  <td class="num font-mono text-green-400">{{ o.takeProfit ? Number(o.takeProfit).toFixed(5) : '—' }}</td>
+                  <td class="num font-mono text-yellow-400 font-medium">{{ formatInstrumentPrice(o.price ?? o.limitPrice, selectedRun.symbol) }}</td>
+                  <td class="num font-mono text-red-400">{{ formatInstrumentPrice(o.stopLoss, selectedRun.symbol) }}</td>
+                  <td class="num font-mono text-green-400">{{ formatInstrumentPrice(o.takeProfit, selectedRun.symbol) }}</td>
                   <td class="text-right pr-6 text-gray-400 font-mono text-sm">{{ formatTime(o.timestamp) }}</td>
                 </tr>
               </tbody>
@@ -1109,6 +1968,9 @@ onUnmounted(() => {
 
         <!-- Sentiment / Order Book tab -->
         <div v-if="activeTab === 'sentiment'" class="tab-panel">
+          <div v-if="resolveRunProvider(selectedRun) === 'IBKR'" class="banner mb-4" style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.25); color: #93c5fd;">
+            <strong>IBKR Venue Note:</strong> Retail positioning order book data is sourced from OANDA FX sentiment when available for <code>{{ selectedRun.symbol }}</code>.
+          </div>
           <OrderBook :instrument="selectedRun.symbol" />
         </div>
       </div>
@@ -1142,29 +2004,63 @@ onUnmounted(() => {
 
 .stats-strip {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+  gap: 0.75rem;
 }
 
 .stat-card {
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 1rem;
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .stat-label {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
   color: var(--text-secondary);
   text-transform: uppercase;
-  margin-bottom: 0.35rem;
+  margin-bottom: 0.3rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .stat-value {
-  font-size: 1.5rem;
+  font-size: clamp(1.1rem, 1.35vw, 1.4rem);
   font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.stat-sub {
+  margin-top: 0.3rem;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.strat-tag-pill {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #fbbf24;
+  border-radius: 4px;
+  padding: 0.12rem 0.45rem;
+  font-family: monospace;
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.strat-tag-pill:hover {
+  background: rgba(245, 158, 11, 0.25);
+  border-color: var(--accent);
 }
 
 .live-grid {
@@ -1553,8 +2449,334 @@ onUnmounted(() => {
   color: #818cf8;
   padding: 0.15rem 0.45rem;
   border-radius: 4px;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 700;
+  letter-spacing: 0.03em;
+  border: 1px solid rgba(99, 102, 241, 0.25);
+}
+
+.provider-badge.ibkr {
+  background: rgba(14, 165, 233, 0.15);
+  color: #38bdf8;
+  border-color: rgba(14, 165, 233, 0.3);
+}
+
+.provider-badge.oanda {
+  background: rgba(16, 185, 129, 0.14);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.28);
+}
+
+.acct-mini-badge {
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  padding: 0.12rem 0.4rem;
+  border-radius: 4px;
+}
+
+.field-hint {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  margin-top: 0.35rem;
+  line-height: 1.35;
+}
+
+.field-hint code {
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+  font-size: 0.68rem;
+}
+
+.preset-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.preset-pill {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.25rem 0.55rem;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.preset-pill:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.preset-pill.active {
+  background: rgba(59, 130, 246, 0.18);
+  border-color: #3b82f6;
+  color: #60a5fa;
+}
+
+.btn-link-xs {
+  background: none;
+  border: none;
+  color: #60a5fa;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+.btn-link-xs:hover {
+  text-decoration: underline;
+}
+
+.test-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.35rem 0.75rem;
+  font-size: 0.75rem;
+}
+
+.mt-2 { margin-top: 0.5rem; }
+
+/* Connected Broker Venues Strip */
+.venues-section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+}
+
+.venues-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.9rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.venues-section-header h4 {
+  font-size: 0.92rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.venue-count-pill {
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: rgba(16, 185, 129, 0.12);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  padding: 0.1rem 0.45rem;
+  border-radius: 12px;
+}
+
+.venues-hint {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.venues-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 1rem;
+}
+
+.venue-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 0.95rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.venue-card.ibkr {
+  border-left: 3px solid #38bdf8;
+}
+
+.venue-card.oanda {
+  border-left: 3px solid #34d399;
+}
+
+.venue-card.offline {
+  border-left-color: var(--danger);
+  opacity: 0.92;
+}
+
+.venue-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.venue-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.venue-id {
+  font-size: 0.88rem;
+  color: var(--text-primary);
+}
+
+.venue-acct-mask {
+  font-family: monospace;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.env-pill {
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 0.1rem 0.38rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.env-pill.paper {
+  background: rgba(59, 130, 246, 0.12);
+  color: #60a5fa;
+}
+
+.env-pill.live {
+  background: rgba(34, 197, 94, 0.12);
+  color: #4ade80;
+}
+
+.conn-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 12px;
+}
+
+.conn-pill.online {
+  background: rgba(16, 185, 129, 0.12);
+  color: #34d399;
+}
+
+.conn-pill.offline {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+.conn-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.venue-endpoint-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.venue-curr-tag {
+  font-weight: 700;
+  font-size: 0.68rem;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.08rem 0.35rem;
+  border-radius: 3px;
+}
+
+.venue-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.65rem 0.75rem;
+}
+
+.venue-metric {
+  display: flex;
+  flex-direction: column;
+}
+
+.vm-label {
+  font-size: 0.66rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  margin-bottom: 0.15rem;
+}
+
+.vm-val {
+  font-size: 0.88rem;
+  font-weight: 700;
+  font-family: monospace;
+  color: var(--text-primary);
+}
+
+.vm-sub {
+  font-size: 0.66rem;
+  color: var(--text-secondary);
+  font-family: monospace;
+}
+
+.vm-sub-inline {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.venue-offline-box {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 6px;
+  padding: 0.65rem 0.8rem;
+}
+
+.venue-err-msg {
+  font-size: 0.75rem;
+  color: #fca5a5;
+  margin: 0;
+}
+
+.venue-positions-drawer {
+  border-top: 1px solid var(--border);
+  padding-top: 0.6rem;
+  margin-top: 0.2rem;
+}
+
+.venue-pos-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+}
+
+.venue-pos-table th {
+  text-align: left;
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  padding: 0.25rem 0.4rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.venue-pos-table td {
+  padding: 0.35rem 0.4rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.venue-pos-table th.num,
+.venue-pos-table td.num {
+  text-align: right;
 }
 
 .status-badge {
@@ -1800,4 +3022,81 @@ onUnmounted(() => {
 .meter-bar-fill.healthy { background: linear-gradient(90deg, #10b981, #34d399); }
 .meter-bar-fill.warning { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
 .meter-bar-fill.danger { background: linear-gradient(90deg, #ef4444, #f87171); }
+
+/* Desk Trades & Executions Panel */
+.desk-trades-section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+}
+
+.desk-trades-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.85rem;
+}
+
+.desk-trades-header h4 {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.desk-trades-table-wrap {
+  max-height: 360px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.desk-trades-table th {
+  position: sticky;
+  top: 0;
+  background: #141821;
+  z-index: 2;
+  padding: 0.55rem 0.7rem;
+}
+
+.desk-trades-table td {
+  padding: 0.5rem 0.7rem;
+}
+
+.empty-trades-note {
+  padding: 1.25rem;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.trade-state-pill {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.12rem 0.45rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.trade-state-pill.open {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.trade-state-pill.closed {
+  background: rgba(148, 163, 184, 0.12);
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.trade-state-pill.filled {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+}
 </style>

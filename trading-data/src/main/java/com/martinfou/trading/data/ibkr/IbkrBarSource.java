@@ -192,7 +192,22 @@ public final class IbkrBarSource implements AutoCloseable {
 
         EJavaSignal sig = new EJavaSignal();
         this.signal = sig;
+        CountDownLatch readyLatch = new CountDownLatch(1);
         DefaultEWrapper wrapper = new DefaultEWrapper() {
+            @Override
+            public void nextValidId(int orderId) {
+                readyLatch.countDown();
+            }
+
+            @Override
+            public void connectionClosed() {
+                readyLatch.countDown();
+                CountDownLatch latch = activeLatch;
+                if (latch != null) {
+                    latch.countDown();
+                }
+            }
+
             @Override
             public void historicalData(int reqId, com.ib.client.Bar bar) {
                 long vol = bar.volume() != null && bar.volume().isValid() ? bar.volume().longValue() : 0L;
@@ -216,6 +231,15 @@ public final class IbkrBarSource implements AutoCloseable {
 
             @Override
             public void error(int id, long errorTime, int errorCode, String errorMsg, String advancedOrderRejectJson) {
+                if (errorCode == 502 || errorCode == 503 || errorCode == 504 || errorCode == 326) {
+                    log.warn("IbkrBarSource connection error code={}: {}", errorCode, errorMsg);
+                    readyLatch.countDown();
+                    CountDownLatch latch = activeLatch;
+                    if (latch != null) {
+                        latch.countDown();
+                    }
+                    return;
+                }
                 if (id != -1) {
                     log.warn("IbkrBarSource error id={} code={}: {}", id, errorCode, errorMsg);
                     if (errorCode >= 162 && errorCode <= 165 || errorCode == 200 || errorCode == 321) {
@@ -252,6 +276,20 @@ public final class IbkrBarSource implements AutoCloseable {
         }, "ibkr-barsource-reader");
         processor.setDaemon(true);
         processor.start();
+
+        try {
+            boolean ready = readyLatch.await(5, TimeUnit.SECONDS);
+            if (!ready || !newClient.isConnected()) {
+                close();
+                throw new IllegalStateException(
+                    "IbkrBarSource failed handshake (nextValidId) with " + config.host() + ":" + config.port()
+                    + " (clientId=" + config.clientId() + ")");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            close();
+            throw new IllegalStateException("Interrupted waiting for IB Gateway nextValidId", e);
+        }
     }
 
     /**

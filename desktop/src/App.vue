@@ -22,7 +22,28 @@ const router = useRouter()
 const route = useRoute()
 
 const { message, type, clearStatus } = useStatusBar()
-const { controlPlaneUrl } = useControlPlaneConfig()
+const { controlPlaneUrl, setControlPlaneUrl, resetControlPlaneUrl } = useControlPlaneConfig()
+
+const editingServerUrl = ref(false)
+const draftServerUrl = ref(controlPlaneUrl.value)
+
+function openServerUrlEditor() {
+  draftServerUrl.value = controlPlaneUrl.value
+  editingServerUrl.value = true
+}
+
+function saveServerUrl() {
+  setControlPlaneUrl(draftServerUrl.value)
+  editingServerUrl.value = false
+  checkConnection()
+}
+
+function handleResetServerUrl() {
+  resetControlPlaneUrl()
+  draftServerUrl.value = controlPlaneUrl.value
+  editingServerUrl.value = false
+  checkConnection()
+}
 
 const utcTime = ref('')
 let clockInterval: any = null
@@ -137,7 +158,26 @@ function quitApp() {
       </div>
 
       <div class="status-right">
-        <span class="status-url" title="Control Plane Server URL">
+        <div v-if="editingServerUrl" class="status-url-editor" style="display: inline-flex; align-items: center; gap: 0.3rem;">
+          <input
+            v-model="draftServerUrl"
+            type="text"
+            placeholder="http://localhost:8080"
+            style="background: #141414; border: 1px solid var(--accent); color: var(--text-primary); border-radius: 4px; padding: 0.1rem 0.4rem; font-size: 0.7rem; font-family: 'JetBrains Mono', monospace; width: 175px; outline: none;"
+            @keyup.enter="saveServerUrl"
+            @keyup.esc="editingServerUrl = false"
+          />
+          <button type="button" @click="saveServerUrl" style="background: var(--accent); color: #fff; border: none; border-radius: 3px; padding: 0.1rem 0.35rem; font-size: 0.65rem; cursor: pointer;">Save</button>
+          <button type="button" @click="handleResetServerUrl" style="background: #262626; color: var(--text-secondary); border: none; border-radius: 3px; padding: 0.1rem 0.35rem; font-size: 0.65rem; cursor: pointer;" title="Reset to default localhost:8080">Local</button>
+          <button type="button" @click="editingServerUrl = false" style="background: transparent; color: var(--text-secondary); border: none; padding: 0 0.2rem; font-size: 0.75rem; cursor: pointer;">×</button>
+        </div>
+        <span
+          v-else
+          class="status-url"
+          title="Click to configure Control Plane Server URL (Client-Server mode)"
+          style="cursor: pointer;"
+          @click="openServerUrlEditor"
+        >
           <Radio class="status-icon" />
           {{ controlPlaneUrl }}
         </span>

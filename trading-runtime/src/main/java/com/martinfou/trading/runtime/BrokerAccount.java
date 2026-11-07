@@ -9,5 +9,17 @@ public record BrokerAccount(
     @JsonProperty("maskedAccountId") String accountIdMasked,
     @JsonProperty("configured") boolean credentialsConfigured,
     @JsonProperty("host") String host,
-    @JsonProperty("port") Integer port
-) {}
+    @JsonProperty("port") Integer port,
+    @JsonProperty("defaultRestUrl") String defaultRestUrl
+) {
+    public BrokerAccount(
+        String id,
+        String provider,
+        String accountIdMasked,
+        boolean credentialsConfigured,
+        String host,
+        Integer port
+    ) {
+        this(id, provider, accountIdMasked, credentialsConfigured, host, port, null);
+    }
+}

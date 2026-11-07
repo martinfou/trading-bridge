@@ -314,6 +314,13 @@ public final class IbkrBroker implements Broker {
         return connected && client.lastPositionQueryConfirmed();
     }
 
+    public List<com.martinfou.trading.data.ibkr.IbkrTradeSnapshot> getRecentTrades() {
+        if (!connected) {
+            return List.of();
+        }
+        return client.fetchRecentTrades();
+    }
+
     @Override
     public List<Position> getPositions() {
         List<Position> out = new ArrayList<>();
@@ -326,7 +333,18 @@ public final class IbkrBroker implements Broker {
     @Override
     public AccountState getAccountState() {
         IbkrAccountSnapshot account = client.fetchAccountSummary();
-        return new AccountState(account.balance(), account.equity(), account.currency());
+        return new AccountState(
+            account.balance(),
+            account.equity(),
+            account.currency(),
+            account.unrealizedPnL(),
+            account.initialMargin(),
+            account.maintenanceMargin(),
+            account.availableFunds(),
+            account.buyingPower(),
+            account.dayTradesRemaining(),
+            account.pdtRestricted()
+        );
     }
 
     @Override

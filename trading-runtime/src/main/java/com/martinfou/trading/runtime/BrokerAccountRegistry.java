@@ -65,8 +65,11 @@ public final class BrokerAccountRegistry {
             if (tokenEnv == null || tokenEnv.isBlank()) {
                 tokenEnv = BrokerCredentials.ENV_OANDA_TOKEN;
             }
-            if (accountIdEnv == null || accountIdEnv.isBlank()) {
-                accountIdEnv = BrokerCredentials.ENV_OANDA_ACCOUNT;
+            if (accountIdEnv == null || accountIdEnv.isBlank()
+                || ("IBKR".equalsIgnoreCase(provider) && BrokerCredentials.ENV_OANDA_ACCOUNT.equals(accountIdEnv))) {
+                accountIdEnv = "IBKR".equalsIgnoreCase(provider)
+                    ? IbkrConnectionConfig.ENV_ACCOUNT
+                    : BrokerCredentials.ENV_OANDA_ACCOUNT;
             }
             if (restUrlEnv == null || restUrlEnv.isBlank()) {
                 restUrlEnv = BrokerCredentials.ENV_OANDA_REST_URL;
@@ -390,11 +393,12 @@ public final class BrokerAccountRegistry {
             String masked = cfg.map(c -> maskAccountId(c.accountId())).orElse("****");
             String host = entry.host() != null && !entry.host().isBlank() ? entry.host() : "127.0.0.1";
             Integer port = entry.port() != null ? entry.port() : entry.defaultPortPaper();
-            return new BrokerAccount(entry.id(), entry.provider(), masked, cfg.isPresent(), host, port);
+            return new BrokerAccount(entry.id(), entry.provider(), masked, cfg.isPresent(), host, port, null);
         }
         Optional<BrokerCredentials> creds = credentials(entry.id());
         String masked = creds.map(c -> maskAccountId(c.accountId())).orElse("****");
-        return new BrokerAccount(entry.id(), entry.provider(), masked, creds.isPresent(), null, null);
+        String restUrl = creds.map(BrokerCredentials::restUrl).orElse(entry.defaultRestUrl());
+        return new BrokerAccount(entry.id(), entry.provider(), masked, creds.isPresent(), null, null, restUrl);
     }
 
     private static int parsePort(String value, int defaultPort) {
@@ -408,14 +412,17 @@ public final class BrokerAccountRegistry {
         }
     }
 
+    private static final java.util.concurrent.atomic.AtomicInteger EPHEMERAL_CLIENT_ID =
+        new java.util.concurrent.atomic.AtomicInteger(800);
+
     private static int parseClientId(String value) {
         if (value == null || value.isBlank()) {
-            return 1;
+            return 800 + Math.floorMod(EPHEMERAL_CLIENT_ID.getAndIncrement(), 89);
         }
         try {
             return Integer.parseInt(value.trim());
         } catch (NumberFormatException e) {
-            return 1;
+            return 800 + Math.floorMod(EPHEMERAL_CLIENT_ID.getAndIncrement(), 89);
         }
     }
 

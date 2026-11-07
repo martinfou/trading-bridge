@@ -206,9 +206,19 @@ export function useControlPlane() {
     return data.accounts
   }
 
-  async function getBrokerBalances(): Promise<any[]> {
-    const data = await apiGet<{ balances: any[] }>('/api/broker-accounts/balances', controlPlaneUrl.value)
+  async function getBrokerBalances(refresh = false): Promise<any[]> {
+    const query = refresh ? '?refresh=true' : ''
+    const data = await apiGet<{ balances: any[] }>(`/api/broker-accounts/balances${query}`, controlPlaneUrl.value)
     return data.balances
+  }
+
+  async function discoverOandaAccounts(params: { id?: string; token?: string; restUrl?: string }): Promise<{ id: string; tags?: string[] }[]> {
+    const data = await apiPost<{ accounts: { id: string; tags?: string[] }[] }>(
+      '/api/broker-accounts/oanda-accounts',
+      params,
+      controlPlaneUrl.value
+    )
+    return data.accounts || []
   }
 
   async function promoteStrategy(
@@ -383,6 +393,7 @@ export function useControlPlane() {
     killStrategy,
     getBrokerAccounts,
     getBrokerBalances,
+    discoverOandaAccounts,
     saveBrokerAccounts,
     testBrokerAccount,
     getMonteCarlo,

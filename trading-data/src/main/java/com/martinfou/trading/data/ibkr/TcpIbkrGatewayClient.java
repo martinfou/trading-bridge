@@ -52,8 +52,12 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
 
     private static final Logger log = LoggerFactory.getLogger(TcpIbkrGatewayClient.class);
 
+    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
     private static final Duration ACCOUNT_TIMEOUT = Duration.ofSeconds(3);
     private static final Duration POSITIONS_TIMEOUT = Duration.ofSeconds(3);
+    private static final Duration EXECUTIONS_TIMEOUT = Duration.ofMillis(1800);
+    private static final Duration SUMMARY_FRESHNESS = Duration.ofSeconds(2);
+    private static final int EXEC_QUERY_REQ_ID = 9001;
 
     private final IbkrConnectionConfig config;
     private final GatewayWrapper wrapper;
@@ -65,9 +69,12 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
     private volatile boolean connected;
     private volatile String lastError;
 
-    // Account / position capture state (reset per request).
+    // Handshake / account / position capture state (reset per request).
+    private volatile CountDownLatch nextValidIdLatch;
     private volatile CountDownLatch accountDownloadLatch;
     private volatile CountDownLatch positionsLatch;
+    private volatile CountDownLatch executionsLatch;
+    private final Map<String, IbkrTradeSnapshot> recentTradesByExecId = new ConcurrentHashMap<>();
     /**
      * Open positions keyed by contract, so a repeated callback for the same contract REPLACES its row
      * instead of adding a second one. A duplicate row would make the kill switch submit two closing
@@ -107,6 +114,8 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
         this.signal = signal;
         this.connected = false;
         this.lastError = null;
+        CountDownLatch readyLatch = new CountDownLatch(1);
+        this.nextValidIdLatch = readyLatch;
 
         // Synchronous handshake: eConnect blocks until the Gateway replies with the server
         // version (fires connectAck) or the socket connect fails (fires error + connectionClosed).
@@ -121,6 +130,12 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
         }
         this.connected = true;
         startReaderThread(newClient, signal);
+        if (!await(readyLatch, CONNECT_TIMEOUT) || !isConnected()) {
+            String reason = lastError != null ? lastError : "timed out waiting for nextValidId";
+            disconnect();
+            throw new IllegalStateException(
+                "Failed to connect to IB Gateway at " + config.host() + ":" + config.port() + " — " + reason);
+        }
         log.info("IB Gateway connected at {}:{} (clientId={}, account={})",
             config.host(), config.port(), config.clientId(), maskAccount(config.accountId()));
     }
@@ -321,6 +336,9 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
         if (!isConnected() || socket == null) {
             return failClosedAccount();
         }
+        if (cache.hasValue("NetLiquidation") && cache.isFresh(SUMMARY_FRESHNESS)) {
+            return toAccountSnapshot(cache.snapshot());
+        }
         this.accountDownloadLatch = new CountDownLatch(1);
         socket.reqAccountUpdates(true, accountCode());
         try {
@@ -334,8 +352,26 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
                 // Ignore unsubscribe error if socket closed mid-request.
             }
         }
-        IbkrAccountCache.AccountSummary summary = cache.snapshot();
-        return new IbkrAccountSnapshot(summary.totalCashBalance(), summary.netLiquidation(), "USD");
+        return toAccountSnapshot(cache.snapshot());
+    }
+
+    private IbkrAccountSnapshot toAccountSnapshot(IbkrAccountCache.AccountSummary summary) {
+        double avail = summary.availableFunds() > 0.0
+            ? summary.availableFunds()
+            : Math.max(0.0, summary.netLiquidation() - summary.initialMargin());
+        double bp = summary.buyingPower() > 0.0 ? summary.buyingPower() : avail;
+        return new IbkrAccountSnapshot(
+            summary.totalCashBalance(),
+            summary.netLiquidation(),
+            cache.currency(),
+            cache.unrealizedPnL(),
+            summary.initialMargin(),
+            summary.maintenanceMargin(),
+            avail,
+            bp,
+            summary.dayTradesRemaining(),
+            summary.pdtRestricted()
+        );
     }
 
     @Override
@@ -371,6 +407,32 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
     @Override
     public boolean lastPositionQueryConfirmed() {
         return lastPositionQueryConfirmed;
+    }
+
+    @Override
+    public List<IbkrTradeSnapshot> fetchRecentTrades() {
+        EClientSocket socket = this.client;
+        if (!isConnected() || socket == null) {
+            return List.of();
+        }
+        this.executionsLatch = new CountDownLatch(1);
+        com.ib.client.ExecutionFilter filter = new com.ib.client.ExecutionFilter();
+        if (config.accountId() != null && !config.accountId().isBlank()) {
+            filter.acctCode(config.accountId());
+        }
+        try {
+            socket.reqExecutions(EXEC_QUERY_REQ_ID, filter);
+            await(executionsLatch, EXECUTIONS_TIMEOUT);
+        } catch (RuntimeException e) {
+            log.debug("reqExecutions failed: {}", e.toString());
+        }
+        List<IbkrTradeSnapshot> list = new java.util.ArrayList<>(recentTradesByExecId.values());
+        list.sort((a, b) -> {
+            String ta = a.time() != null ? a.time() : "";
+            String tb = b.time() != null ? b.time() : "";
+            return tb.compareTo(ta);
+        });
+        return list;
     }
 
     private IbkrAccountSnapshot failClosedAccount() {
@@ -611,6 +673,7 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
         @Override
         public void connectionClosed() {
             connected = false;
+            releasePendingLatches();
             log.warn("IB Gateway connection closed");
         }
 
@@ -618,8 +681,9 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
         public void error(int id, long errorTime, int errorCode, String errorMsg, String advancedOrderRejectJson) {
             lastError = errorCode + ": " + errorMsg;
             log.warn("IB Gateway error id={} code={}: {}", id, errorCode, errorMsg);
-            if (errorCode == 502 || errorCode == 503 || errorCode == 504) {
-                connected = false; // CONNECT_FAIL / UPDATE_TWS / ALREADY_CONNECTED
+            if (errorCode == 502 || errorCode == 503 || errorCode == 504 || errorCode == 326) {
+                connected = false; // CONNECT_FAIL / UPDATE_TWS / ALREADY_CONNECTED / CLIENT_ID_IN_USE
+                releasePendingLatches();
             }
         }
 
@@ -637,6 +701,10 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
 
         @Override
         public void updateAccountValue(String key, String value, String currency, String accountName) {
+            if (("NetLiquidation".equals(key) || "TotalCashBalance".equals(key))
+                && currency != null && !currency.isBlank() && !"BASE".equalsIgnoreCase(currency)) {
+                cache.updateCurrency(currency);
+            }
             if (currency == null || currency.isBlank() || "BASE".equalsIgnoreCase(currency) || !cache.hasValue(key)) {
                 cache.updateFromString(key, value);
             }
@@ -713,6 +781,35 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
         public void execDetails(int reqId, Contract contract, Execution execution) {
             String clientTag = orderIdToClientTag.get(execution.orderId());
             String symbol = contract != null ? contract.symbol() : null;
+            if ((symbol == null || symbol.isBlank()) && contract != null) {
+                symbol = contract.localSymbol();
+            }
+            if (execution != null && execution.execId() != null) {
+                Order.Side mappedSide = mapSide(execution.side());
+                String sideStr = mappedSide != null ? mappedSide.name() : execution.side();
+                String tag = execution.orderRef() != null && !execution.orderRef().isBlank()
+                    ? execution.orderRef()
+                    : (clientTag != null ? clientTag : "");
+                IbkrTradeSnapshot existing = recentTradesByExecId.get(execution.execId());
+                recentTradesByExecId.put(
+                    execution.execId(),
+                    new IbkrTradeSnapshot(
+                        execution.execId(),
+                        execution.orderId() != 0 ? Integer.toString(execution.orderId()) : "",
+                        symbol != null ? symbol : "",
+                        sideStr != null ? sideStr : "BUY",
+                        toDouble(execution.shares()),
+                        execution.price(),
+                        execution.time() != null ? execution.time() : "",
+                        tag,
+                        existing != null ? existing.realizedPnL() : 0.0,
+                        existing != null ? existing.commission() : 0.0
+                    )
+                );
+            }
+            if (reqId == EXEC_QUERY_REQ_ID) {
+                return;
+            }
             IbkrExecution mapped = mapExecution(execution, symbol, clientTag);
             if (mapped.execId() != null && !notifiedExecIds.add(mapped.execId())) {
                 log.debug("Ignoring duplicate execDetails for execId={}", mapped.execId());
@@ -722,6 +819,41 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
                 filledOrderIds.add(execution.orderId());
             }
             notifyExecution(mapped);
+        }
+
+        @Override
+        public void execDetailsEnd(int reqId) {
+            CountDownLatch latch = executionsLatch;
+            if (latch != null) {
+                latch.countDown();
+            }
+        }
+
+        @Override
+        public void commissionAndFeesReport(com.ib.client.CommissionAndFeesReport report) {
+            if (report == null || report.execId() == null) {
+                return;
+            }
+            recentTradesByExecId.computeIfPresent(report.execId(), (id, prev) -> {
+                double pnl = report.realizedPNL() != Double.MAX_VALUE && Double.isFinite(report.realizedPNL())
+                    ? report.realizedPNL()
+                    : prev.realizedPnL();
+                double comm = report.commissionAndFees() != Double.MAX_VALUE && Double.isFinite(report.commissionAndFees())
+                    ? report.commissionAndFees()
+                    : prev.commission();
+                return new IbkrTradeSnapshot(
+                    prev.execId(),
+                    prev.orderId(),
+                    prev.symbol(),
+                    prev.side(),
+                    prev.quantity(),
+                    prev.price(),
+                    prev.time(),
+                    prev.strategyTag(),
+                    pnl,
+                    comm
+                );
+            });
         }
 
         @Override
@@ -751,6 +883,29 @@ public final class TcpIbkrGatewayClient implements IbkrGatewayClient {
         public void nextValidId(int orderId) {
             if (orderId > 0) {
                 orderIdCounter.accumulateAndGet(orderId, Math::max);
+            }
+            CountDownLatch latch = nextValidIdLatch;
+            if (latch != null) {
+                latch.countDown();
+            }
+        }
+
+        private void releasePendingLatches() {
+            CountDownLatch ready = nextValidIdLatch;
+            if (ready != null) {
+                ready.countDown();
+            }
+            CountDownLatch acct = accountDownloadLatch;
+            if (acct != null) {
+                acct.countDown();
+            }
+            CountDownLatch pos = positionsLatch;
+            if (pos != null) {
+                pos.countDown();
+            }
+            CountDownLatch exec = executionsLatch;
+            if (exec != null) {
+                exec.countDown();
             }
         }
     }

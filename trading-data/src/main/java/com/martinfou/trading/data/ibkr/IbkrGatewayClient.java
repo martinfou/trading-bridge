@@ -78,6 +78,10 @@ public interface IbkrGatewayClient {
 
     List<IbkrPositionSnapshot> fetchOpenPositions();
 
+    default List<IbkrTradeSnapshot> fetchRecentTrades() {
+        return List.of();
+    }
+
     /**
      * Cancels a working order by its broker order ID.
      *

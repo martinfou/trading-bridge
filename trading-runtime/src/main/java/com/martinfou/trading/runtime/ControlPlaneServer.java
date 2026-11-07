@@ -540,8 +540,8 @@ public final class ControlPlaneServer implements AutoCloseable {
             .post("/api/weekly-builder/plan", ctx -> respondWeeklyTrigger(ctx, weeklyBuilderService.triggerPlanAsync()))
             .post("/api/weekly-builder/compile", ctx -> respondWeeklyTrigger(ctx, weeklyBuilderService.triggerCompileAsync()))
             .post("/api/weekly-builder/deploy", ctx -> respondWeeklyTrigger(ctx, weeklyBuilderService.triggerDeployAsync()))
-            .get("/control/summary", ctx -> ctx.json(summaryService.buildSummary()))
-            .get("/api/control/summary", ctx -> ctx.json(summaryService.buildSummary()))
+            .get("/control/summary", ctx -> ctx.json(buildEnrichedControlSummary(summaryService)))
+            .get("/api/control/summary", ctx -> ctx.json(buildEnrichedControlSummary(summaryService)))
             .get("/api/broker/health", ctx -> {
                 java.util.List<Map<String, Object>> list = new java.util.ArrayList<>();
                 for (var entry : runManager.getActiveExecutors().entrySet()) {
@@ -573,26 +573,8 @@ public final class ControlPlaneServer implements AutoCloseable {
             .get("/api/broker-accounts", ctx -> ctx.json(Map.of(
                 "accounts", runManager.brokerAccountRegistry().listMasked())))
             .get("/api/broker-accounts/balances", ctx -> {
-                java.util.List<Map<String, Object>> balances = new java.util.ArrayList<>();
-                for (BrokerAccountRegistry.AccountEntry entry : runManager.brokerAccountRegistry().getRawAccounts()) {
-                    if (runManager.brokerAccountRegistry().credentialsConfigured(entry.id())) {
-                        try (com.martinfou.trading.broker.Broker broker = runManager.brokerAccountRegistry().broker(entry.id()).orElse(null)) {
-                            if (broker != null) {
-                                broker.connect();
-                                com.martinfou.trading.broker.AccountState state = broker.getAccountState();
-                                balances.add(Map.of(
-                                    "id", entry.id(),
-                                    "provider", entry.provider(),
-                                    "balance", state.balance(),
-                                    "currency", state.currency(),
-                                    "equity", state.equity()
-                                ));
-                            }
-                        } catch (Exception e) {
-                            // ignore and skip
-                        }
-                    }
-                }
+                boolean force = "true".equalsIgnoreCase(ctx.queryParam("refresh"));
+                java.util.List<Map<String, Object>> balances = collectBrokerBalances(runManager, force);
                 ctx.json(Map.of("balances", balances));
             })
             .get("/api/brokers/{brokerId}/account-summary", ctx -> {
@@ -619,6 +601,13 @@ public final class ControlPlaneServer implements AutoCloseable {
                             com.martinfou.trading.broker.AccountState st = broker.getAccountState();
                             cache.updateValue("NetLiquidation", st.equity());
                             cache.updateValue("TotalCashBalance", st.balance());
+                            cache.updateValue("InitMarginReq", st.initialMargin());
+                            cache.updateValue("MaintMarginReq", st.maintenanceMargin());
+                            cache.updateValue("AvailableFunds", st.availableFunds());
+                            cache.updateValue("BuyingPower", st.buyingPower());
+                            if (st.dayTradesRemaining() >= 0) {
+                                cache.updateValue("DayTradesRemaining", st.dayTradesRemaining());
+                            }
                         }
                     } catch (Exception ignored) {}
                     ctx.json(cache.snapshot().toMap());
@@ -632,8 +621,10 @@ public final class ControlPlaneServer implements AutoCloseable {
                             resp.put("provider", entry.provider());
                             resp.put("netLiquidation", st.equity());
                             resp.put("totalCashBalance", st.balance());
-                            resp.put("availableFunds", st.equity() * 0.9);
-                            resp.put("marginUtilizationPct", 0.0);
+                            resp.put("availableFunds", st.availableFunds());
+                            resp.put("initialMargin", st.initialMargin());
+                            resp.put("maintenanceMargin", st.maintenanceMargin());
+                            resp.put("marginUtilizationPct", st.equity() > 0 ? (st.maintenanceMargin() / st.equity()) * 100.0 : 0.0);
                             resp.put("pdtRestricted", false);
                             ctx.json(resp);
                         } else {
@@ -648,23 +639,15 @@ public final class ControlPlaneServer implements AutoCloseable {
                 double totalInitialMargin = 0.0;
                 double totalMaintMargin = 0.0;
                 boolean anyPdtRestricted = false;
-                List<Map<String, Object>> brokerMargins = new ArrayList<>();
-
-                for (BrokerAccountRegistry.AccountEntry entry : runManager.brokerAccountRegistry().getRawAccounts()) {
-                    if (runManager.brokerAccountRegistry().credentialsConfigured(entry.id())) {
-                        try (com.martinfou.trading.broker.Broker broker = runManager.brokerAccountRegistry().broker(entry.id()).orElse(null)) {
-                            if (broker != null) {
-                                broker.connect();
-                                com.martinfou.trading.broker.AccountState st = broker.getAccountState();
-                                totalEquity += st.equity();
-                                Map<String, Object> item = new LinkedHashMap<>();
-                                item.put("id", entry.id());
-                                item.put("provider", entry.provider());
-                                item.put("equity", st.equity());
-                                item.put("balance", st.balance());
-                                brokerMargins.add(item);
-                            }
-                        } catch (Exception ignored) {}
+                List<Map<String, Object>> brokerMargins = collectBrokerBalances(runManager, false);
+                for (Map<String, Object> item : brokerMargins) {
+                    if (Boolean.TRUE.equals(item.get("connected"))) {
+                        totalEquity += ((Number) item.getOrDefault("equity", 0.0)).doubleValue();
+                        totalInitialMargin += ((Number) item.getOrDefault("initialMargin", 0.0)).doubleValue();
+                        totalMaintMargin += ((Number) item.getOrDefault("maintenanceMargin", 0.0)).doubleValue();
+                        if (Boolean.TRUE.equals(item.get("pdtRestricted"))) {
+                            anyPdtRestricted = true;
+                        }
                     }
                 }
 
@@ -698,18 +681,22 @@ public final class ControlPlaneServer implements AutoCloseable {
                             if (accountId == null || accountId.isBlank() || accountId.startsWith("*")) {
                                 accountId = existing.accountId();
                             }
+                            String defaultRestUrl = incoming.defaultRestUrl();
+                            if (defaultRestUrl == null || defaultRestUrl.isBlank()) {
+                                defaultRestUrl = existing.defaultRestUrl();
+                            }
                             merged.add(new BrokerAccountRegistry.AccountEntry(
                                 incoming.id(),
                                 incoming.provider(),
-                                incoming.tokenEnv(),
-                                incoming.accountIdEnv(),
-                                incoming.restUrlEnv(),
-                                incoming.defaultRestUrl(),
-                                incoming.hostEnv(),
-                                incoming.portEnv(),
-                                incoming.clientIdEnv(),
-                                incoming.defaultPortPaper(),
-                                incoming.defaultPortLive(),
+                                existing.tokenEnv(),
+                                existing.accountIdEnv(),
+                                existing.restUrlEnv(),
+                                defaultRestUrl,
+                                existing.hostEnv(),
+                                existing.portEnv(),
+                                existing.clientIdEnv(),
+                                existing.defaultPortPaper(),
+                                existing.defaultPortLive(),
                                 token,
                                 accountId,
                                 incoming.host() != null ? incoming.host() : existing.host(),
@@ -735,6 +722,7 @@ public final class ControlPlaneServer implements AutoCloseable {
                         prettyMapper.writeValue(file.toFile(), mergedConfig);
                     }
                     runManager.brokerAccountRegistry().updateAccounts(mergedConfig.accounts());
+                    invalidateBrokerBalanceCache();
                     ctx.status(HttpStatus.OK);
                     ctx.json(Map.of("success", true));
                 } catch (Exception e) {
@@ -751,7 +739,10 @@ public final class ControlPlaneServer implements AutoCloseable {
                         return;
                     }
                     
-                    BrokerAccountRegistry.AccountEntry existing = runManager.brokerAccountRegistry().getRawAccount(entry.id());
+                    var registry = runManager.brokerAccountRegistry();
+                    BrokerAccountRegistry.AccountEntry existing = (entry.id() != null && !entry.id().isBlank())
+                        ? registry.getRawAccount(entry.id())
+                        : null;
                     String token = entry.token();
                     String accountId = entry.accountId();
                     String host = entry.host();
@@ -777,18 +768,45 @@ public final class ControlPlaneServer implements AutoCloseable {
                     }
 
                     if (entry.isIbkr()) {
-                        String finalHost = host != null && !host.isBlank() ? host : "127.0.0.1";
-                        int finalPort = port != null ? port : entry.defaultPortPaper();
-                        String finalAccount = accountId != null ? accountId : "";
-                        int clientId = 999; // temporary test clientId
+                        var resolvedIbkr = existing != null ? registry.ibkrConnection(existing.id()) : java.util.Optional.<com.martinfou.trading.data.ibkr.IbkrConnectionConfig>empty();
+                        String finalHost = host != null && !host.isBlank()
+                            ? host
+                            : resolvedIbkr.map(com.martinfou.trading.data.ibkr.IbkrConnectionConfig::host).orElse("127.0.0.1");
+                        int finalPort = port != null && port > 0
+                            ? port
+                            : resolvedIbkr.map(com.martinfou.trading.data.ibkr.IbkrConnectionConfig::port).orElse(entry.defaultPortPaper());
+                        String finalAccount = accountId != null && !accountId.isBlank() && !accountId.startsWith("*")
+                            ? accountId
+                            : resolvedIbkr.map(com.martinfou.trading.data.ibkr.IbkrConnectionConfig::accountId).orElse("");
+                        int clientId = 900 + Math.floorMod(java.util.concurrent.ThreadLocalRandom.current().nextInt(89), 89);
                         var ibkrConfig = new com.martinfou.trading.data.ibkr.IbkrConnectionConfig(finalHost, finalPort, clientId, finalAccount);
                         try (var ibkrBroker = BrokerProvider.ibkrBroker(ibkrConfig)) {
                             ibkrBroker.connect();
                             var state = ibkrBroker.getAccountState();
+                            var positions = ibkrBroker.getPositions();
+                            invalidateBrokerBalanceCache();
                             ctx.status(HttpStatus.OK);
-                            ctx.json(Map.of("success", true, "balance", state.balance(), "currency", state.currency()));
+                            Map<String, Object> resp = new LinkedHashMap<>();
+                            resp.put("success", true);
+                            resp.put("balance", state.balance());
+                            resp.put("equity", state.equity());
+                            resp.put("currency", state.currency());
+                            resp.put("unrealizedPnL", state.unrealizedPnL());
+                            resp.put("availableFunds", state.availableFunds());
+                            resp.put("initialMargin", state.initialMargin());
+                            resp.put("maintenanceMargin", state.maintenanceMargin());
+                            resp.put("dayTradesRemaining", state.dayTradesRemaining());
+                            resp.put("positionsCount", positions != null ? positions.size() : 0);
+                            ctx.json(resp);
                         }
                     } else {
+                        var resolvedCreds = existing != null ? registry.credentials(existing.id()) : java.util.Optional.<com.martinfou.trading.broker.BrokerCredentials>empty();
+                        if ((token == null || token.isBlank() || token.startsWith("*")) && resolvedCreds.isPresent()) {
+                            token = resolvedCreds.get().apiToken();
+                        }
+                        if ((accountId == null || accountId.isBlank() || accountId.startsWith("*")) && resolvedCreds.isPresent()) {
+                            accountId = resolvedCreds.get().accountId();
+                        }
                         String restUrl = entry.defaultRestUrl();
                         if (restUrl == null || restUrl.isBlank()) {
                             restUrl = existing != null ? existing.defaultRestUrl() : "https://api-fxpractice.oanda.com";
@@ -800,7 +818,7 @@ public final class ControlPlaneServer implements AutoCloseable {
                         }
                         if (System.getProperty("trading.bridge.test") != null || "mock-token".equals(token) || (restUrl != null && restUrl.contains("mock"))) {
                             ctx.status(HttpStatus.OK);
-                            ctx.json(Map.of("success", true, "balance", 100000.0, "currency", "USD"));
+                            ctx.json(Map.of("success", true, "balance", 100000.0, "equity", 100000.0, "currency", "USD"));
                             return;
                         }
                         if (!restUrl.endsWith("/v3/")) {
@@ -810,8 +828,20 @@ public final class ControlPlaneServer implements AutoCloseable {
                         try (var oandaBroker = BrokerProvider.oandaBroker(credentials)) {
                             oandaBroker.connect();
                             var state = oandaBroker.getAccountState();
+                            var positions = oandaBroker.getPositions();
+                            invalidateBrokerBalanceCache();
                             ctx.status(HttpStatus.OK);
-                            ctx.json(Map.of("success", true, "balance", state.balance(), "currency", state.currency()));
+                            Map<String, Object> resp = new LinkedHashMap<>();
+                            resp.put("success", true);
+                            resp.put("balance", state.balance());
+                            resp.put("equity", state.equity());
+                            resp.put("currency", state.currency());
+                            resp.put("unrealizedPnL", state.unrealizedPnL());
+                            resp.put("availableFunds", state.availableFunds());
+                            resp.put("initialMargin", state.initialMargin());
+                            resp.put("maintenanceMargin", state.maintenanceMargin());
+                            resp.put("positionsCount", positions != null ? positions.size() : 0);
+                            ctx.json(resp);
                         }
                     }
                 } catch (Exception e) {
@@ -822,9 +852,22 @@ public final class ControlPlaneServer implements AutoCloseable {
             .post("/api/broker-accounts/oanda-accounts", ctx -> {
                 try {
                     Map<String, String> body = ctx.bodyAsClass(Map.class);
+                    String id = body.get("id");
                     String token = body.get("token");
                     String restUrl = body.get("restUrl");
-                    if (token == null || token.isBlank()) {
+                    if ((token == null || token.isBlank() || token.startsWith("*")) && id != null && !id.isBlank()) {
+                        var registry = runManager.brokerAccountRegistry();
+                        BrokerAccountRegistry.AccountEntry existing = registry.getRawAccount(id);
+                        if (existing != null && existing.token() != null && !existing.token().isBlank() && !existing.token().startsWith("*")) {
+                            token = existing.token();
+                        } else {
+                            var creds = registry.credentials(id);
+                            if (creds.isPresent()) {
+                                token = creds.get().apiToken();
+                            }
+                        }
+                    }
+                    if (token == null || token.isBlank() || token.startsWith("*")) {
                         ctx.status(HttpStatus.BAD_REQUEST);
                         ctx.json(Map.of("error", "Token is required"));
                         return;
@@ -2061,6 +2104,356 @@ public final class ControlPlaneServer implements AutoCloseable {
         }
 
         return result;
+    }
+
+    private static final long BROKER_BALANCE_CACHE_TTL_MS = 6_000L;
+    private static final Object BROKER_BALANCE_CACHE_LOCK = new Object();
+    private static volatile int cachedBrokerRunManagerHash = 0;
+    private static volatile long cachedBrokerBalancesAtMs = 0L;
+    private static volatile List<Map<String, Object>> cachedBrokerBalances = List.of();
+
+    private static Map<String, Object> buildEnrichedControlSummary(ControlSummaryService summaryService) {
+        Map<String, Object> base = new LinkedHashMap<>(summaryService.buildSummary());
+        boolean isTest = com.martinfou.trading.core.guardrails.OrderTripwire.isTestRuntime(
+            System.getenv(),
+            com.martinfou.trading.core.guardrails.OrderTripwire.runtimeClassPath());
+        if (isTest) {
+            return base;
+        }
+        try {
+            Object rawRuns = base.get("runs");
+            List<Map<String, Object>> combinedRuns = new ArrayList<>();
+            java.util.Set<String> seenStrategies = new java.util.HashSet<>();
+            if (rawRuns instanceof List<?> list) {
+                for (Object item : list) {
+                    if (item instanceof Map<?, ?> m) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> typed = (Map<String, Object>) m;
+                        combinedRuns.add(typed);
+                        Object sid = typed.get("strategyId");
+                        if (sid != null) {
+                            seenStrategies.add(sid.toString());
+                        }
+                    }
+                }
+            }
+            List<Map<String, Object>> laneRuns = new LaneTelemetryCollector()
+                .collectLaneStrategyRuns(seenStrategies, Instant.now());
+            if (!laneRuns.isEmpty()) {
+                combinedRuns.addAll(laneRuns);
+                base.put("runs", List.copyOf(combinedRuns));
+                int runningCount = 0;
+                int pausedCount = 0;
+                int stoppedCount = 0;
+                for (Map<String, Object> r : combinedRuns) {
+                    String st = r.get("status") != null ? r.get("status").toString() : "";
+                    if ("RUNNING".equalsIgnoreCase(st)) runningCount++;
+                    else if ("PAUSED".equalsIgnoreCase(st)) pausedCount++;
+                    else if ("STOPPED".equalsIgnoreCase(st)) stoppedCount++;
+                }
+                base.put("totalRuns", combinedRuns.size());
+                base.put("runningRuns", runningCount);
+                base.put("pausedRuns", pausedCount);
+                base.put("stoppedRuns", stoppedCount);
+            }
+        } catch (Exception e) {
+            log.debug("Failed to enrich control summary with local lane telemetry: {}", e.getMessage());
+        }
+        return base;
+    }
+
+    private static void invalidateBrokerBalanceCache() {
+        synchronized (BROKER_BALANCE_CACHE_LOCK) {
+            cachedBrokerBalancesAtMs = 0L;
+            cachedBrokerBalances = List.of();
+        }
+    }
+
+    private static List<Map<String, Object>> collectBrokerBalances(RunManager runManager, boolean forceRefresh) {
+        if (runManager == null || runManager.brokerAccountRegistry() == null) {
+            return List.of();
+        }
+        int rmHash = System.identityHashCode(runManager);
+        boolean isTest = com.martinfou.trading.core.guardrails.OrderTripwire.isTestRuntime(
+            System.getenv(),
+            com.martinfou.trading.core.guardrails.OrderTripwire.runtimeClassPath());
+        if (!forceRefresh && !isTest) {
+            synchronized (BROKER_BALANCE_CACHE_LOCK) {
+                long age = System.currentTimeMillis() - cachedBrokerBalancesAtMs;
+                if (cachedBrokerRunManagerHash == rmHash && age >= 0 && age < BROKER_BALANCE_CACHE_TTL_MS && !cachedBrokerBalances.isEmpty()) {
+                    return cachedBrokerBalances;
+                }
+            }
+        }
+
+        var registry = runManager.brokerAccountRegistry();
+        Map<String, BrokerAccount> maskedById = new LinkedHashMap<>();
+        for (BrokerAccount m : registry.listMasked()) {
+            maskedById.put(m.id(), m);
+        }
+
+        List<Map<String, Object>> balances = new ArrayList<>();
+        java.util.Set<String> seenProviderAccounts = new java.util.HashSet<>();
+        for (BrokerAccountRegistry.AccountEntry entry : registry.getRawAccounts()) {
+            boolean configured = registry.credentialsConfigured(entry.id());
+            if (!configured) {
+                continue;
+            }
+            String resolvedAccountKey = entry.provider().toUpperCase() + ":"
+                + (entry.isIbkr()
+                    ? registry.ibkrConnection(entry.id()).map(com.martinfou.trading.data.ibkr.IbkrConnectionConfig::accountId).orElse(entry.id())
+                    : registry.credentials(entry.id()).map(com.martinfou.trading.broker.BrokerCredentials::accountId).orElse(entry.id()));
+            if (!seenProviderAccounts.add(resolvedAccountKey)) {
+                continue;
+            }
+            BrokerAccount masked = maskedById.get(entry.id());
+            String maskedAccountId = masked != null ? masked.accountIdMasked() : "****";
+            String host = entry.isIbkr()
+                ? (entry.host() != null && !entry.host().isBlank() ? entry.host() : "127.0.0.1")
+                : null;
+            Integer port = entry.isIbkr()
+                ? (entry.port() != null ? entry.port() : entry.defaultPortPaper())
+                : null;
+            String restUrl = !entry.isIbkr()
+                ? (masked != null && masked.defaultRestUrl() != null ? masked.defaultRestUrl() : entry.defaultRestUrl())
+                : null;
+            String environment;
+            String endpoint;
+            if (entry.isIbkr()) {
+                int p = port != null ? port : 4002;
+                environment = (p == 4001 || p == 7496) ? "LIVE" : "PAPER";
+                endpoint = (host != null ? host : "127.0.0.1") + ":" + p;
+            } else {
+                boolean liveOanda = restUrl != null && restUrl.toLowerCase().contains("fxtrade");
+                environment = liveOanda ? "LIVE" : "PAPER";
+                endpoint = liveOanda ? "api-fxtrade.oanda.com" : "api-fxpractice.oanda.com";
+            }
+
+            if (!configured) {
+                continue;
+            }
+
+            try (com.martinfou.trading.broker.Broker broker = registry.broker(entry.id()).orElse(null)) {
+                if (broker != null) {
+                    broker.connect();
+                    com.martinfou.trading.broker.AccountState state = broker.getAccountState();
+                    List<Map<String, Object>> posItems = new ArrayList<>();
+                    try {
+                        for (com.martinfou.trading.core.Position pos : broker.getPositions()) {
+                            Map<String, Object> pm = new LinkedHashMap<>();
+                            pm.put("symbol", pos.symbol());
+                            pm.put("side", pos.side() != null ? pos.side().name() : "FLAT");
+                            pm.put("quantity", pos.quantity());
+                            pm.put("entryPrice", pos.entryPrice());
+                            pm.put("stopLoss", pos.stopLoss());
+                            pm.put("takeProfit", pos.takeProfit());
+                            pm.put("entryTime", pos.entryTime() != null ? pos.entryTime().toString() : "");
+                            posItems.add(pm);
+                        }
+                    } catch (Exception ignored) {
+                        // best effort positions query
+                    }
+                    String venueCurrency = state.currency() != null ? state.currency() : "USD";
+                    List<Map<String, Object>> tradeItems = new ArrayList<>();
+                    if (!isTest) {
+                        try {
+                            if (entry.isIbkr() && broker instanceof com.martinfou.trading.broker.IbkrBroker ibkrBroker) {
+                                List<com.martinfou.trading.data.ibkr.IbkrTradeSnapshot> liveSnapshots = ibkrBroker.getRecentTrades();
+                                tradeItems.addAll(new LaneTelemetryCollector().collectIbkrTrades(
+                                    entry.id(),
+                                    maskedAccountId,
+                                    "USD",
+                                    liveSnapshots
+                                ));
+                            } else if (!entry.isIbkr()) {
+                                tradeItems.addAll(fetchOandaRecentTrades(entry.id(), registry, maskedAccountId, venueCurrency, 30));
+                            }
+                        } catch (Exception ignored) {
+                            // best effort trades query
+                        }
+                    }
+                    double utilPct = state.equity() > 0.0
+                        ? (state.maintenanceMargin() / state.equity()) * 100.0
+                        : 0.0;
+                    Map<String, Object> item = new LinkedHashMap<>();
+                    item.put("id", entry.id());
+                    item.put("provider", entry.provider());
+                    item.put("maskedAccountId", maskedAccountId);
+                    item.put("configured", true);
+                    item.put("connected", true);
+                    item.put("environment", environment);
+                    item.put("endpoint", endpoint);
+                    if (host != null) {
+                        item.put("host", host);
+                    }
+                    if (port != null) {
+                        item.put("port", port);
+                    }
+                    item.put("balance", state.balance());
+                    item.put("equity", state.equity());
+                    item.put("currency", venueCurrency);
+                    item.put("unrealizedPnL", state.unrealizedPnL());
+                    item.put("initialMargin", state.initialMargin());
+                    item.put("maintenanceMargin", state.maintenanceMargin());
+                    item.put("availableFunds", state.availableFunds());
+                    item.put("buyingPower", state.buyingPower());
+                    item.put("marginUtilizationPct", utilPct);
+                    item.put("dayTradesRemaining", state.dayTradesRemaining());
+                    item.put("pdtRestricted", state.pdtRestricted());
+                    item.put("positionsCount", posItems.size());
+                    item.put("positions", posItems);
+                    item.put("tradesCount", tradeItems.size());
+                    item.put("trades", tradeItems);
+                    item.put("updatedAt", java.time.Instant.now().toString());
+                    balances.add(item);
+                }
+            } catch (Exception e) {
+                if (!isTest) {
+                    Map<String, Object> errItem = new LinkedHashMap<>();
+                    errItem.put("id", entry.id());
+                    errItem.put("provider", entry.provider());
+                    errItem.put("maskedAccountId", maskedAccountId);
+                    errItem.put("configured", true);
+                    errItem.put("connected", false);
+                    errItem.put("environment", environment);
+                    errItem.put("endpoint", endpoint);
+                    if (host != null) {
+                        errItem.put("host", host);
+                    }
+                    if (port != null) {
+                        errItem.put("port", port);
+                    }
+                    errItem.put("balance", 0.0);
+                    errItem.put("equity", 0.0);
+                    errItem.put("currency", "USD");
+                    errItem.put("unrealizedPnL", 0.0);
+                    errItem.put("initialMargin", 0.0);
+                    errItem.put("maintenanceMargin", 0.0);
+                    errItem.put("availableFunds", 0.0);
+                    errItem.put("buyingPower", 0.0);
+                    errItem.put("marginUtilizationPct", 0.0);
+                    errItem.put("dayTradesRemaining", -1);
+                    errItem.put("pdtRestricted", false);
+                    List<Map<String, Object>> fallbackTrades = List.of();
+                    if (entry.isIbkr()) {
+                        try {
+                            fallbackTrades = new LaneTelemetryCollector().collectIbkrTrades(
+                                entry.id(),
+                                maskedAccountId,
+                                "USD",
+                                List.of()
+                            );
+                        } catch (Exception ignored) {
+                            // ignore fallback trade error
+                        }
+                    }
+                    errItem.put("positionsCount", 0);
+                    errItem.put("positions", List.of());
+                    errItem.put("tradesCount", fallbackTrades.size());
+                    errItem.put("trades", fallbackTrades);
+                    errItem.put("error", e.getMessage() != null ? e.getMessage() : "Connection failed");
+                    errItem.put("updatedAt", java.time.Instant.now().toString());
+                    balances.add(errItem);
+                }
+            }
+        }
+
+        if (!isTest) {
+            synchronized (BROKER_BALANCE_CACHE_LOCK) {
+                cachedBrokerRunManagerHash = rmHash;
+                cachedBrokerBalancesAtMs = System.currentTimeMillis();
+                cachedBrokerBalances = List.copyOf(balances);
+            }
+        }
+        return balances;
+    }
+
+    private static List<Map<String, Object>> fetchOandaRecentTrades(
+        String venueId,
+        BrokerAccountRegistry registry,
+        String maskedAccountId,
+        String currency,
+        int count
+    ) {
+        var credsOpt = registry.credentials(venueId);
+        if (credsOpt.isEmpty()) {
+            return List.of();
+        }
+        var creds = credsOpt.get();
+        String baseUrl = creds.restUrl() != null && !creds.restUrl().isBlank()
+            ? creds.restUrl()
+            : "https://api-fxpractice.oanda.com";
+        if (baseUrl.endsWith("/")) {
+            baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
+        }
+        if (baseUrl.endsWith("/v3")) {
+            baseUrl = baseUrl.substring(0, baseUrl.length() - 3);
+        }
+        String url = baseUrl + "/v3/accounts/" + creds.accountId() + "/trades?state=ALL&count=" + Math.max(1, count);
+        try {
+            java.net.http.HttpClient http = java.net.http.HttpClient.newBuilder()
+                .connectTimeout(java.time.Duration.ofSeconds(4))
+                .build();
+            java.net.http.HttpRequest req = java.net.http.HttpRequest.newBuilder()
+                .uri(java.net.URI.create(url))
+                .header("Authorization", "Bearer " + creds.apiToken())
+                .header("Accept", "application/json")
+                .timeout(java.time.Duration.ofSeconds(4))
+                .GET()
+                .build();
+            java.net.http.HttpResponse<String> resp = http.send(
+                req,
+                java.net.http.HttpResponse.BodyHandlers.ofString()
+            );
+            if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
+                return List.of();
+            }
+            com.fasterxml.jackson.databind.JsonNode root =
+                new com.fasterxml.jackson.databind.ObjectMapper().readTree(resp.body());
+            com.fasterxml.jackson.databind.JsonNode tradesNode = root.path("trades");
+            if (!tradesNode.isArray()) {
+                return List.of();
+            }
+            List<Map<String, Object>> out = new ArrayList<>();
+            for (com.fasterxml.jackson.databind.JsonNode t : tradesNode) {
+                double initUnits = t.path("initialUnits").asDouble(0.0);
+                double currUnits = t.path("currentUnits").asDouble(initUnits);
+                String stateStr = t.path("state").asText("CLOSED");
+                double unitsForQty = "OPEN".equalsIgnoreCase(stateStr) && currUnits != 0.0 ? currUnits : initUnits;
+                Map<String, Object> tm = new LinkedHashMap<>();
+                tm.put("id", t.path("id").asText(""));
+                tm.put("venueId", venueId);
+                tm.put("provider", "OANDA");
+                tm.put("maskedAccountId", maskedAccountId);
+                tm.put("currency", currency);
+                tm.put("symbol", t.path("instrument").asText(""));
+                tm.put("state", stateStr);
+                tm.put("side", initUnits >= 0.0 ? "BUY" : "SELL");
+                tm.put("quantity", Math.abs(unitsForQty));
+                tm.put("entryPrice", t.path("price").asDouble(0.0));
+                if (t.hasNonNull("averageClosePrice")) {
+                    tm.put("exitPrice", t.path("averageClosePrice").asDouble(0.0));
+                } else {
+                    tm.put("exitPrice", null);
+                }
+                tm.put("stopLoss", t.path("stopLossOrder").path("price").asDouble(0.0));
+                tm.put("takeProfit", t.path("takeProfitOrder").path("price").asDouble(0.0));
+                tm.put("realizedPnL", t.path("realizedPL").asDouble(0.0));
+                tm.put("unrealizedPnL", t.path("unrealizedPL").asDouble(0.0));
+                tm.put("financing", t.path("financing").asDouble(0.0));
+                tm.put("openTime", t.path("openTime").asText(""));
+                tm.put("closeTime", t.path("closeTime").asText(""));
+                String tag = t.path("clientExtensions").path("tag").asText("");
+                if (tag.isBlank()) {
+                    tag = t.path("clientExtensions").path("comment").asText("");
+                }
+                tm.put("strategyTag", tag);
+                out.add(tm);
+            }
+            return out;
+        } catch (Exception ignored) {
+            return List.of();
+        }
     }
 
     private static final class CachedStats {
