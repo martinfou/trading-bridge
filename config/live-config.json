@@ -51,22 +51,6 @@
       },
       "computedRiskPct": 0.5
     },
-    "monthweekphase": {
-      "instrument": "GBP_USD",
-      "granularity": "H1",
-      "lane": "paper",
-      "positionSizeUnits": 1000,
-      "backtestMetrics": {
-        "sharpe": 0.92,
-        "maxDrawdown": 4.86,
-        "winRate": 51.0,
-        "avgWinLoss": 1.5,
-        "totalReturn": 45.0,
-        "trades": 280,
-        "source": "2022-2026 OOS GBP_USD H1 RealCostModel + SwapCalculator (PF 1.24)"
-      },
-      "computedRiskPct": 0.5
-    },
     "ltdoublema": {
       "instrument": "USD_CHF",
       "granularity": "H1",
