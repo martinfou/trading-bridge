@@ -46,7 +46,7 @@ services:
       - FUTURES_SYMBOL=${FUTURES_SYMBOL:-MGC,MNQ,MES}
       - FUTURES_TIMEFRAME=${FUTURES_TIMEFRAME:-1 hour}
       - FUTURES_INTERVAL_MINUTES=${FUTURES_INTERVAL_MINUTES:-60}
-      - STRATEGY=${STRATEGY:-MgcH1Breakout38023,MgcH1Breakout51270,MnqH1Breakout31697,MnqH1Breakout69250,MesH1Breakout30808}
+      - STRATEGY=${STRATEGY:-MgcM30Breakout49205,MgcH1Breakout38023,MgcH1Breakout51270,MnqH1Breakout31697,MnqH1Breakout69250,MesH1Breakout30808}
       - TB_ALLOW_ORDERS=${TB_ALLOW_ORDERS:-1}
       - TB_LANE=paper
       - TB_STATE_DIR=/app/data/state/ibkr-paper
@@ -115,6 +115,7 @@ services:
       - TB_ALLOW_ORDERS=${TB_ALLOW_ORDERS:-1}
       - TB_LANE=prod
       - TB_STATE_DIR=/app/data/state/ibkr-live
+      - TRADING_BRIDGE_DATA_DIR=/app/data/runtime
       - DRY_RUN=${DRY_RUN:-false}
     extra_hosts:
       - "host.docker.internal:host-gateway"

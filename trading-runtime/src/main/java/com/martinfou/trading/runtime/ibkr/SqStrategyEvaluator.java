@@ -40,7 +40,9 @@ public final class SqStrategyEvaluator implements Function<List<Bar>, List<Order
 
     private final String strategyName;
     private final String symbol;
+    private final String timeframe;
     private final Strategy strategy;
+    private final Path stateDir;
     private final Path cursorFile;
     private final boolean dryRun;
 
@@ -54,10 +56,23 @@ public final class SqStrategyEvaluator implements Function<List<Bar>, List<Order
         Path stateDir,
         boolean dryRun
     ) {
+        this(strategyName, symbol, resolveTimeframeForStrategy(strategyName, "1 hour"), strategy, stateDir, dryRun);
+    }
+
+    public SqStrategyEvaluator(
+        String strategyName,
+        String symbol,
+        String timeframe,
+        Strategy strategy,
+        Path stateDir,
+        boolean dryRun
+    ) {
         this.strategyName = Objects.requireNonNull(strategyName, "strategyName is required").trim();
         this.symbol = Objects.requireNonNull(symbol, "symbol is required").trim().toUpperCase();
+        this.timeframe = (timeframe != null && !timeframe.isBlank()) ? timeframe.trim() : "1 hour";
         this.strategy = Objects.requireNonNull(strategy, "strategy is required");
         this.strategy.reconcileInstrument(this.symbol);
+        this.stateDir = stateDir;
         this.cursorFile = stateDir != null
             ? stateDir.resolve(this.strategyName + "-" + this.symbol + "-cursor.json")
             : null;
@@ -70,6 +85,70 @@ public final class SqStrategyEvaluator implements Function<List<Bar>, List<Order
         "sq-mgc-m30-breakout-1-29-102", "MgcM30Breakout89854",
         "sq-mgc-m30-breakout-0-32921", "MgcM30Breakout92728"
     );
+
+    private static final Map<String, String> REVERSE_LEGACY_ALIASES = Map.of(
+        "MgcM30Breakout49205", "sq-mgc-m30-breakout-0-24542",
+        "MgcM30Breakout89854", "sq-mgc-m30-breakout-1-29-102",
+        "MgcM30Breakout92728", "sq-mgc-m30-breakout-0-32921"
+    );
+
+    /**
+     * Resolves the natural IBKR bar timeframe (e.g. {@code "30 mins"}, {@code "1 hour"}, {@code "15 mins"})
+     * for a strategy name when running a multi-timeframe container, falling back to {@code defaultTimeframe}.
+     */
+    public static String resolveTimeframeForStrategy(String strategyName, String defaultTimeframe) {
+        String fallback = (defaultTimeframe != null && !defaultTimeframe.isBlank())
+            ? defaultTimeframe.trim()
+            : "1 hour";
+        if (strategyName == null || strategyName.isBlank()) {
+            return fallback;
+        }
+        String key = strategyName.trim();
+        String resolvedKey = LEGACY_ALIASES.getOrDefault(key, key);
+        String upper = resolvedKey.toUpperCase();
+        if (upper.contains("M15") || upper.contains("-M15-")) {
+            return "15 mins";
+        }
+        if (upper.contains("M30") || upper.contains("-M30-")) {
+            return "30 mins";
+        }
+        if (upper.contains("H1") || upper.contains("-H1-")) {
+            return "1 hour";
+        }
+        if (upper.contains("H4") || upper.contains("-H4-")) {
+            return "4 hours";
+        }
+        if (upper.contains("D1") || upper.contains("-D1-")) {
+            return "1 day";
+        }
+        if (upper.contains("M5") || upper.contains("-M5-")) {
+            return "5 mins";
+        }
+        if (upper.contains("M1") || upper.contains("-M1-")) {
+            return "1 min";
+        }
+        StrategyGeneratorService.ensureCatalogLoaded();
+        if (StrategyCatalog.contains(resolvedKey)) {
+            StrategyCatalog.Entry entry = StrategyCatalog.entries().stream()
+                .filter(e -> e.id().equals(resolvedKey))
+                .findFirst()
+                .orElse(null);
+            if (entry != null && entry.timeframeSuitability() != null && !entry.timeframeSuitability().isEmpty()) {
+                String primaryTf = entry.timeframeSuitability().get(0).trim().toUpperCase();
+                return switch (primaryTf) {
+                    case "M1" -> "1 min";
+                    case "M5" -> "5 mins";
+                    case "M15" -> "15 mins";
+                    case "M30" -> "30 mins";
+                    case "H1" -> "1 hour";
+                    case "H4" -> "4 hours";
+                    case "D1" -> "1 day";
+                    default -> fallback;
+                };
+            }
+        }
+        return fallback;
+    }
 
     /**
      * Resolves the natural CME futures symbol ({@code MGC}, {@code MNQ}, {@code MES}, {@code EMD}, {@code M2K})
@@ -181,6 +260,10 @@ public final class SqStrategyEvaluator implements Function<List<Bar>, List<Order
         return symbol;
     }
 
+    public String timeframe() {
+        return timeframe;
+    }
+
     public Strategy strategy() {
         return strategy;
     }
@@ -242,18 +325,31 @@ public final class SqStrategyEvaluator implements Function<List<Bar>, List<Order
     }
 
     public synchronized void loadCursor() {
-        if (cursorFile == null || !Files.exists(cursorFile)) {
+        if (cursorFile == null) {
+            return;
+        }
+        Path fileToRead = cursorFile;
+        if (!Files.exists(fileToRead) && stateDir != null) {
+            String legacyAlias = REVERSE_LEGACY_ALIASES.get(strategyName);
+            if (legacyAlias != null) {
+                Path legacyFile = stateDir.resolve(legacyAlias + "-" + symbol + "-cursor.json");
+                if (Files.exists(legacyFile)) {
+                    fileToRead = legacyFile;
+                }
+            }
+        }
+        if (!Files.exists(fileToRead)) {
             return;
         }
         try {
-            JsonNode node = MAPPER.readTree(Files.readString(cursorFile));
+            JsonNode node = MAPPER.readTree(Files.readString(fileToRead));
             if (node.hasNonNull("lastProcessedBarTimestamp")) {
                 this.lastProcessedBarTimestamp = Instant.parse(node.get("lastProcessedBarTimestamp").asText());
-                log.info("Loaded bar cursor for {}/{}: lastProcessedBarTimestamp={}",
-                    strategyName, symbol, lastProcessedBarTimestamp);
+                log.info("Loaded bar cursor for {}/{} from {}: lastProcessedBarTimestamp={}",
+                    strategyName, symbol, fileToRead.getFileName(), lastProcessedBarTimestamp);
             }
         } catch (Exception e) {
-            log.warn("Failed to read bar cursor from {}: {}", cursorFile, e.getMessage());
+            log.warn("Failed to read bar cursor from {}: {}", fileToRead, e.getMessage());
         }
     }
 

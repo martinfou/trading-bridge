@@ -37,6 +37,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
 /**
@@ -164,7 +165,7 @@ public final class IbkrLiveRunner implements AutoCloseable {
 
     private final RunnerConfig config;
     private final Broker broker;
-    private final Function<String, List<Bar>> barProvider;
+    private final BiFunction<String, String, List<Bar>> multiTfBarProvider;
     private final AutoCloseable barSourceCloseable;
     private final Clock clock;
     private final FillLogWriter fillLogWriter;
@@ -201,7 +202,45 @@ public final class IbkrLiveRunner implements AutoCloseable {
     public IbkrLiveRunner(
         RunnerConfig config,
         Broker broker,
+        BiFunction<String, String, List<Bar>> multiTfBarProvider,
+        AutoCloseable barSourceCloseable,
+        Clock clock
+    ) {
+        this(
+            config,
+            broker,
+            multiTfBarProvider,
+            barSourceCloseable,
+            clock,
+            resolveDefaultFillLogWriter(config),
+            DEFAULT_IBKR_MGC_COMMISSION
+        );
+    }
+
+    public IbkrLiveRunner(
+        RunnerConfig config,
+        Broker broker,
         Function<String, List<Bar>> barProvider,
+        AutoCloseable barSourceCloseable,
+        Clock clock,
+        FillLogWriter fillLogWriter,
+        double commissionPerContract
+    ) {
+        this(
+            config,
+            broker,
+            (sym, tf) -> Objects.requireNonNull(barProvider, "barProvider is required").apply(sym),
+            barSourceCloseable,
+            clock,
+            fillLogWriter,
+            commissionPerContract
+        );
+    }
+
+    public IbkrLiveRunner(
+        RunnerConfig config,
+        Broker broker,
+        BiFunction<String, String, List<Bar>> multiTfBarProvider,
         AutoCloseable barSourceCloseable,
         Clock clock,
         FillLogWriter fillLogWriter,
@@ -209,7 +248,7 @@ public final class IbkrLiveRunner implements AutoCloseable {
     ) {
         this.config = Objects.requireNonNull(config, "config is required");
         this.broker = Objects.requireNonNull(broker, "broker is required");
-        this.barProvider = Objects.requireNonNull(barProvider, "barProvider is required");
+        this.multiTfBarProvider = Objects.requireNonNull(multiTfBarProvider, "multiTfBarProvider is required");
         this.barSourceCloseable = barSourceCloseable;
         this.clock = Objects.requireNonNull(clock, "clock is required");
         this.fillLogWriter = fillLogWriter;
@@ -324,24 +363,28 @@ public final class IbkrLiveRunner implements AutoCloseable {
         // 5 & 6. Instantiate strategy(ies) from STRATEGY via LiveStrategyRunner.getStrategyMap() and load bar cursors.
         this.evaluators.clear();
         String defaultSym = targetSymbols.get(0);
-        Map<String, List<SqStrategyEvaluator>> evaluatorsBySymbol = new java.util.LinkedHashMap<>();
-        for (String sym : targetSymbols) {
-            evaluatorsBySymbol.put(sym, new java.util.ArrayList<>());
-        }
+        record SymbolTfKey(String symbol, String timeframe, int intervalMinutes) {}
+        Map<SymbolTfKey, List<SqStrategyEvaluator>> evaluatorsBySlice = new java.util.LinkedHashMap<>();
+        boolean singleStrategy = config.strategyNames().size() == 1;
         for (String stratName : config.strategyNames()) {
             String stratSym = targetSymbols.size() == 1
                 ? defaultSym
                 : SqStrategyEvaluator.resolveSymbolForStrategy(stratName, defaultSym);
-            if (!evaluatorsBySymbol.containsKey(stratSym)) {
+            if (!targetSymbols.contains(stratSym)) {
                 stratSym = defaultSym;
             }
+            String stratTf = singleStrategy
+                ? config.timeframe()
+                : SqStrategyEvaluator.resolveTimeframeForStrategy(stratName, config.timeframe());
+            int stratIntervalMin = (int) IbkrBarSource.parseTimeframeDuration(stratTf).toMinutes();
             Strategy strategy = SqStrategyEvaluator.instantiateStrategy(stratName, stratSym);
-            log.info("[5/7] Instantiated strategy: key='{}' class={} displayName='{}' symbol={}",
-                stratName, strategy.getClass().getSimpleName(), strategy.name(), stratSym);
+            log.info("[5/7] Instantiated strategy: key='{}' class={} displayName='{}' symbol={} timeframe='{}' ({}m)",
+                stratName, strategy.getClass().getSimpleName(), strategy.name(), stratSym, stratTf, stratIntervalMin);
 
             SqStrategyEvaluator ev = new SqStrategyEvaluator(
                 stratName,
                 stratSym,
+                stratTf,
                 strategy,
                 config.stateDir(),
                 config.dryRun()
@@ -349,7 +392,8 @@ public final class IbkrLiveRunner implements AutoCloseable {
             log.info("[6/7] Bar cursor initialized for {} from {}: lastProcessedBarTimestamp={}",
                 stratName, config.stateDir(), ev.lastProcessedBarTimestamp());
             this.evaluators.add(ev);
-            evaluatorsBySymbol.computeIfAbsent(stratSym, k -> new java.util.ArrayList<>()).add(ev);
+            SymbolTfKey sliceKey = new SymbolTfKey(stratSym, stratTf, stratIntervalMin);
+            evaluatorsBySlice.computeIfAbsent(sliceKey, k -> new java.util.ArrayList<>()).add(ev);
         }
         this.evaluator = this.evaluators.isEmpty() ? null : this.evaluators.get(0);
 
@@ -373,34 +417,38 @@ public final class IbkrLiveRunner implements AutoCloseable {
             Math.max(1, targetSymbols.size()),
             5000.0
         );
-        Map<String, Function<List<Bar>, List<com.martinfou.trading.core.Order>>> schedulerEvaluators = new java.util.LinkedHashMap<>();
-        for (String sym : targetSymbols) {
-            List<SqStrategyEvaluator> symEvaluators = evaluatorsBySymbol.getOrDefault(sym, List.of());
-            schedulerEvaluators.put(sym, bars -> {
-                java.util.ArrayList<com.martinfou.trading.core.Order> orders = new java.util.ArrayList<>();
-                for (SqStrategyEvaluator ev : symEvaluators) {
-                    List<com.martinfou.trading.core.Order> generated = ev.apply(bars);
-                    if (generated != null && !generated.isEmpty()) {
-                        orders.addAll(generated);
+        java.util.ArrayList<BarCloseScheduler.SliceSpec> slices = new java.util.ArrayList<>();
+        for (Map.Entry<SymbolTfKey, List<SqStrategyEvaluator>> entry : evaluatorsBySlice.entrySet()) {
+            SymbolTfKey key = entry.getKey();
+            List<SqStrategyEvaluator> sliceEvaluators = List.copyOf(entry.getValue());
+            slices.add(new BarCloseScheduler.SliceSpec(
+                key.symbol(),
+                key.timeframe(),
+                key.intervalMinutes(),
+                bars -> {
+                    java.util.ArrayList<com.martinfou.trading.core.Order> orders = new java.util.ArrayList<>();
+                    for (SqStrategyEvaluator ev : sliceEvaluators) {
+                        List<com.martinfou.trading.core.Order> generated = ev.apply(bars);
+                        if (generated != null && !generated.isEmpty()) {
+                            orders.addAll(generated);
+                        }
                     }
+                    return orders;
                 }
-                return orders;
-            });
+            ));
         }
         this.scheduler = new BarCloseScheduler(
-            targetSymbols,
-            config.intervalMinutes(),
+            slices,
             clock,
-            barProvider,
-            schedulerEvaluators,
+            multiTfBarProvider,
             () -> broker.getAccountState().equity(),
             broker::getPositions,
             marginGuard,
             dispatcher
         );
         this.scheduler.start();
-        log.info("[7/7] BarCloseScheduler started for symbols={} strategies={}: nextTriggerTime={}",
-            targetSymbols, config.strategyNames(), scheduler.nextTriggerTime());
+        log.info("[7/7] BarCloseScheduler started for symbols={} strategies={} baseInterval={}m: nextTriggerTime={}",
+            targetSymbols, config.strategyNames(), scheduler.intervalMinutes(), scheduler.nextTriggerTime());
     }
 
     public static void validateConfig(RunnerConfig config) {
@@ -613,7 +661,11 @@ public final class IbkrLiveRunner implements AutoCloseable {
             IbkrLiveRunner runner = new IbkrLiveRunner(
                 cfg,
                 broker,
-                sym -> barSource.latestBars(sym, cfg.timeframe(), DEFAULT_WARMUP_BAR_COUNT),
+                (sym, tf) -> barSource.latestBars(
+                    sym,
+                    (tf != null && !tf.isBlank()) ? tf : cfg.timeframe(),
+                    DEFAULT_WARMUP_BAR_COUNT
+                ),
                 barSource,
                 Clock.systemUTC()
             );

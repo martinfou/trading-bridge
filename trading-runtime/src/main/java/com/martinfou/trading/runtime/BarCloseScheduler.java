@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.*;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.DoubleSupplier;
 import java.util.function.Function;
@@ -24,12 +25,12 @@ import java.util.function.Supplier;
 /**
  * Deterministic Bar-Close Scheduler and Multi-Regime Ensemble Runner (Stories 46.6 &amp; 46.7).
  *
- * <p>Wakes up precisely at {@code :00:05} seconds after each bar interval boundary (e.g. M30 or H1)
- * during CME Globex open sessions, fetches closed bars, verifies bar freshness (skipping stale bars
- * older than {@code interval + 2 minutes}), evaluates the symbol-keyed strategy evaluator map
- * ({@code Map<String, Function<List<Bar>, List<Order>>>}) so each symbol preserves its own
- * {@code Strategy} instance and state, queries live account equity and open positions, applies the
- * {@link SmallAccountMarginGuard}, and dispatches approved orders.</p>
+ * <p>Wakes up precisely at {@code :00:05} seconds after each bar interval boundary (e.g. M15, M30, or H1)
+ * during CME Globex open sessions, fetches closed bars per {@code (symbol, timeframe)} slice, verifies
+ * bar freshness (skipping stale bars older than {@code sliceInterval + 2 minutes}), evaluates each slice's
+ * strategy evaluators sequentially on a single thread (preventing IBKR TCP pacing/concurrency collisions),
+ * queries live account equity and open positions, applies the {@link SmallAccountMarginGuard}, and
+ * dispatches approved orders.</p>
  */
 public final class BarCloseScheduler implements AutoCloseable {
 
@@ -39,9 +40,29 @@ public final class BarCloseScheduler implements AutoCloseable {
     public static final long TRIGGER_OFFSET_SECONDS = 5L;
     public static final Duration STALE_BAR_TOLERANCE = Duration.ofMinutes(2);
 
+    /**
+     * Represents a single {@code (symbol, timeframe)} evaluation slice with its own bar interval
+     * and strategy evaluator function.
+     */
+    public record SliceSpec(
+        String symbol,
+        String timeframe,
+        int intervalMinutes,
+        Function<List<Bar>, List<Order>> evaluator
+    ) {
+        public SliceSpec {
+            symbol = Objects.requireNonNull(symbol, "symbol is required").trim().toUpperCase();
+            timeframe = (timeframe != null && !timeframe.isBlank()) ? timeframe.trim() : "1 hour";
+            if (intervalMinutes <= 0) {
+                throw new IllegalArgumentException("intervalMinutes must be > 0, got: " + intervalMinutes);
+            }
+            evaluator = Objects.requireNonNull(evaluator, "evaluator is required");
+        }
+    }
+
     private final ScheduledExecutorService scheduler;
-    private final Function<String, List<Bar>> barSupplier;
-    private final Map<String, Function<List<Bar>, List<Order>>> strategyEvaluators;
+    private final BiFunction<String, String, List<Bar>> multiTfBarSupplier;
+    private final List<SliceSpec> slices;
     private final SmallAccountMarginGuard marginGuard;
     private final Consumer<Order> orderDispatcher;
     private final List<String> symbols;
@@ -137,18 +158,80 @@ public final class BarCloseScheduler implements AutoCloseable {
         if (intervalMinutes <= 0) {
             throw new IllegalArgumentException("intervalMinutes must be > 0, got: " + intervalMinutes);
         }
-        this.symbols = (symbols != null && !symbols.isEmpty())
+        Objects.requireNonNull(barSupplier, "barSupplier is required");
+        Objects.requireNonNull(strategyEvaluators, "strategyEvaluators is required");
+        List<String> syms = (symbols != null && !symbols.isEmpty())
             ? List.copyOf(symbols)
             : List.of("MES", "MNQ", "M2K", "MGC");
+        String defaultTf = intervalMinutes == 30 ? "30 mins" : (intervalMinutes == 15 ? "15 mins" : "1 hour");
+        java.util.ArrayList<SliceSpec> builtSlices = new java.util.ArrayList<>(syms.size());
+        for (String sym : syms) {
+            Function<List<Bar>, List<Order>> ev = strategyEvaluators.get(sym);
+            if (ev != null) {
+                builtSlices.add(new SliceSpec(sym, defaultTf, intervalMinutes, ev));
+            }
+        }
+        this.symbols = syms;
         this.intervalMinutes = intervalMinutes;
         this.clock = Objects.requireNonNull(clock, "clock is required");
-        this.barSupplier = Objects.requireNonNull(barSupplier, "barSupplier is required");
-        this.strategyEvaluators = Map.copyOf(Objects.requireNonNull(strategyEvaluators, "strategyEvaluators is required"));
+        this.multiTfBarSupplier = (sym, tf) -> barSupplier.apply(sym);
+        this.slices = List.copyOf(builtSlices);
         this.equitySupplier = Objects.requireNonNull(equitySupplier, "equitySupplier is required");
         this.positionSupplier = Objects.requireNonNull(positionSupplier, "positionSupplier is required");
         this.marginGuard = Objects.requireNonNull(marginGuard, "marginGuard is required");
         this.orderDispatcher = Objects.requireNonNull(orderDispatcher, "orderDispatcher is required");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler is required");
+    }
+
+    public BarCloseScheduler(
+        List<SliceSpec> slices,
+        Clock clock,
+        BiFunction<String, String, List<Bar>> multiTfBarSupplier,
+        DoubleSupplier equitySupplier,
+        Supplier<List<Position>> positionSupplier,
+        SmallAccountMarginGuard marginGuard,
+        Consumer<Order> orderDispatcher
+    ) {
+        this(
+            slices,
+            clock,
+            multiTfBarSupplier,
+            equitySupplier,
+            positionSupplier,
+            marginGuard,
+            orderDispatcher,
+            defaultExecutor()
+        );
+    }
+
+    public BarCloseScheduler(
+        List<SliceSpec> slices,
+        Clock clock,
+        BiFunction<String, String, List<Bar>> multiTfBarSupplier,
+        DoubleSupplier equitySupplier,
+        Supplier<List<Position>> positionSupplier,
+        SmallAccountMarginGuard marginGuard,
+        Consumer<Order> orderDispatcher,
+        ScheduledExecutorService scheduler
+    ) {
+        Objects.requireNonNull(slices, "slices is required");
+        if (slices.isEmpty()) {
+            throw new IllegalArgumentException("slices must not be empty");
+        }
+        this.slices = List.copyOf(slices);
+        this.symbols = slices.stream().map(SliceSpec::symbol).distinct().toList();
+        this.intervalMinutes = slices.stream().mapToInt(SliceSpec::intervalMinutes).min().orElse(DEFAULT_INTERVAL_MINUTES);
+        this.clock = Objects.requireNonNull(clock, "clock is required");
+        this.multiTfBarSupplier = Objects.requireNonNull(multiTfBarSupplier, "multiTfBarSupplier is required");
+        this.equitySupplier = Objects.requireNonNull(equitySupplier, "equitySupplier is required");
+        this.positionSupplier = Objects.requireNonNull(positionSupplier, "positionSupplier is required");
+        this.marginGuard = Objects.requireNonNull(marginGuard, "marginGuard is required");
+        this.orderDispatcher = Objects.requireNonNull(orderDispatcher, "orderDispatcher is required");
+        this.scheduler = Objects.requireNonNull(scheduler, "scheduler is required");
+    }
+
+    public List<SliceSpec> slices() {
+        return slices;
     }
 
     private static ScheduledExecutorService defaultExecutor() {
@@ -247,6 +330,22 @@ public final class BarCloseScheduler implements AutoCloseable {
         return runCycle(triggerTime, accountEquity, positionSupplier.get());
     }
 
+    /**
+     * Returns true when a slice with {@code sliceIntervalMinutes} should be evaluated at {@code triggerTime}.
+     * When all slices share the same interval (or when only a single interval exists), always returns true.
+     * In a multi-timeframe schedule, checks whether the bar boundary at {@code triggerTime - 5s} aligns
+     * with {@code sliceIntervalMinutes} (with a 60-second tolerance window).
+     */
+    static boolean isSliceDueAt(Instant triggerTime, int sliceIntervalMinutes, boolean multiTimeframe) {
+        if (!multiTimeframe || sliceIntervalMinutes <= 0) {
+            return true;
+        }
+        long boundarySec = Math.max(0L, triggerTime.getEpochSecond() - TRIGGER_OFFSET_SECONDS);
+        long intervalSec = sliceIntervalMinutes * 60L;
+        long rem = boundarySec % intervalSec;
+        return rem < 60L || (intervalSec - rem) < 60L;
+    }
+
     public int runCycle(Instant triggerTime, double accountEquity, List<Position> openPositions) {
         if (triggerTime == null) triggerTime = clock.instant();
 
@@ -258,19 +357,26 @@ public final class BarCloseScheduler implements AutoCloseable {
         log.info("Executing Bar-Close Evaluation Cycle at {}...", triggerTime);
         int totalDispatched = 0;
         List<Position> currentPositions = openPositions != null ? openPositions : List.of();
-        Duration maxBarAge = Duration.ofMinutes(intervalMinutes).plus(STALE_BAR_TOLERANCE);
+        boolean multiTimeframe = slices.stream().mapToInt(SliceSpec::intervalMinutes).distinct().count() > 1;
 
-        for (String sym : symbols) {
+        for (SliceSpec slice : slices) {
+            String sym = slice.symbol();
+            String tf = slice.timeframe();
+            int sliceInterval = slice.intervalMinutes();
+            if (!isSliceDueAt(triggerTime, sliceInterval, multiTimeframe)) {
+                continue;
+            }
+            Duration maxBarAge = Duration.ofMinutes(sliceInterval).plus(STALE_BAR_TOLERANCE);
             try {
-                Function<List<Bar>, List<Order>> evaluator = strategyEvaluators.get(sym);
+                Function<List<Bar>, List<Order>> evaluator = slice.evaluator();
                 if (evaluator == null) {
-                    log.warn("No strategy evaluator registered for symbol {}", sym);
+                    log.warn("No strategy evaluator registered for symbol {} ({})", sym, tf);
                     continue;
                 }
 
-                List<Bar> bars = barSupplier.apply(sym);
+                List<Bar> bars = multiTfBarSupplier.apply(sym, tf);
                 if (bars == null || bars.isEmpty()) {
-                    log.warn("No bar data available for symbol {}", sym);
+                    log.warn("No bar data available for symbol {} ({})", sym, tf);
                     continue;
                 }
 
@@ -278,8 +384,8 @@ public final class BarCloseScheduler implements AutoCloseable {
                 if (newestBar.timestamp() != null) {
                     Duration age = Duration.between(newestBar.timestamp(), triggerTime);
                     if (age.compareTo(maxBarAge) > 0) {
-                        log.warn("Stale bar data for symbol {}: newest bar timestamp {} is {} old (max allowed {} for interval={}m). Skipping evaluation.",
-                            sym, newestBar.timestamp(), age, maxBarAge, intervalMinutes);
+                        log.warn("Stale bar data for symbol {} ({}): newest bar timestamp {} is {} old (max allowed {} for interval={}m). Skipping evaluation.",
+                            sym, tf, newestBar.timestamp(), age, maxBarAge, sliceInterval);
                         continue;
                     }
                 }
@@ -298,14 +404,14 @@ public final class BarCloseScheduler implements AutoCloseable {
                         Order approved = o.rescaleQuantity(val.approvedQuantity());
                         orderDispatcher.accept(approved);
                         totalDispatched++;
-                        log.info("Dispatched approved order for {}: {} {} @ {}",
-                            sym, approved.side(), approved.quantity(), approved.price());
+                        log.info("Dispatched approved order for {} ({}): {} {} @ {}",
+                            sym, tf, approved.side(), approved.quantity(), approved.price());
                     } else {
                         log.warn("Order rejected by SmallAccountMarginGuard: {}", val.reason());
                     }
                 }
             } catch (Exception e) {
-                log.error("Error evaluating strategy on symbol {}: {}", sym, e.getMessage(), e);
+                log.error("Error evaluating strategy on symbol {} ({}): {}", sym, tf, e.getMessage(), e);
             }
         }
 

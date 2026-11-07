@@ -299,6 +299,70 @@ class IbkrLiveRunnerTest {
     }
 
     @Test
+    @DisplayName("Multi-timeframe + multi-symbol runner schedules at 30m base interval, evaluates M30 at :30 and both M30+H1 at :00")
+    void runner_multiTimeframeAndMultiSymbolScheduleAndCursorFallback(@TempDir Path tempDir) throws Exception {
+        // Pre-populate legacy cursor file for sq-mgc-m30-breakout-0-24542 to verify MgcM30Breakout49205 picks it up
+        Instant legacyCursorTs = Instant.parse("2026-08-19T13:30:00Z");
+        java.nio.file.Files.writeString(
+            tempDir.resolve("sq-mgc-m30-breakout-0-24542-MGC-cursor.json"),
+            "{\"strategy\":\"sq-mgc-m30-breakout-0-24542\",\"symbol\":\"MGC\",\"lastProcessedBarTimestamp\":\"" + legacyCursorTs + "\"}"
+        );
+
+        // Start at 14:10:00Z -> next base trigger is 14:30:05Z (since M30 has 30m interval)
+        Instant startClock = Instant.parse("2026-08-19T14:10:00Z");
+        Clock fixedClock = Clock.fixed(startClock, ZoneOffset.UTC);
+
+        StubIbkrGatewayClient stubClient = new StubIbkrGatewayClient();
+        IbkrBroker broker = new IbkrBroker(stubClient);
+
+        IbkrLiveRunner.RunnerConfig cfg = new IbkrLiveRunner.RunnerConfig(
+            "127.0.0.1", 4002, "DU12345", 11, "MGC,MNQ,MES", "1 hour", 60,
+            "MgcM30Breakout49205,MgcH1Breakout38023,MnqH1Breakout31697,MesH1Breakout30808",
+            "0", tempDir, true, "paper"
+        );
+
+        List<String> requestedSlices = new ArrayList<>();
+        try (IbkrLiveRunner runner = new IbkrLiveRunner(cfg, broker, (sym, tf) -> {
+            requestedSlices.add(sym + ":" + tf);
+            int stepMin = "30 mins".equals(tf) ? 30 : 60;
+            List<Bar> bars = new ArrayList<>();
+            Instant base = Instant.parse("2026-08-19T14:00:00Z").minus(Duration.ofMinutes(stepMin * 64L));
+            for (int i = 0; i < 65; i++) {
+                bars.add(new Bar(sym, base.plus(Duration.ofMinutes((long) stepMin * i)),
+                    2500.0 + i, 2505.0 + i, 2495.0 + i, 2502.0 + i, 100L));
+            }
+            return bars;
+        }, () -> {}, fixedClock)) {
+            runner.start();
+
+            assertEquals(4, runner.evaluators().size());
+            assertEquals("30 mins", runner.evaluators().get(0).timeframe());
+            assertEquals("1 hour", runner.evaluators().get(1).timeframe());
+            assertEquals(legacyCursorTs, runner.evaluators().get(0).lastProcessedBarTimestamp(),
+                "MgcM30Breakout49205 must inherit legacy sq-mgc-m30-breakout-0-24542 cursor on first boot");
+            assertEquals(30, runner.scheduler().intervalMinutes(), "Scheduler base cadence must be 30m (fastest slice)");
+            assertEquals(Instant.parse("2026-08-19T14:30:05Z"), runner.scheduler().nextTriggerTime());
+
+            // 1. Trigger at 14:30:05Z (half-hour): ONLY MGC (30 mins) slice should be fetched & evaluated
+            requestedSlices.clear();
+            runner.scheduler().runCycle(Instant.parse("2026-08-19T14:30:05Z"), 15_000.0, List.of());
+            assertEquals(List.of("MGC:30 mins"), requestedSlices, "At :30:05 only M30 slice must be fetched");
+            assertEquals(Instant.parse("2026-08-19T14:00:00Z"), runner.evaluators().get(0).lastProcessedBarTimestamp());
+            assertNull(runner.evaluators().get(1).lastProcessedBarTimestamp(), "H1 evaluator must not run at :30:05");
+
+            // 2. Trigger at 15:00:05Z (top of hour): BOTH M30 and H1 slices must be fetched & evaluated
+            requestedSlices.clear();
+            runner.scheduler().runCycle(Instant.parse("2026-08-19T15:00:05Z"), 15_000.0, List.of());
+            assertEquals(
+                List.of("MGC:30 mins", "MGC:1 hour", "MNQ:1 hour", "MES:1 hour"),
+                requestedSlices,
+                "At :00:05 both M30 and H1 slices must be fetched sequentially"
+            );
+            assertNotNull(runner.evaluators().get(1).lastProcessedBarTimestamp(), "H1 evaluator must run at :00:05");
+        }
+    }
+
+    @Test
     @DisplayName("IBKR_ENV=live allows port 4001 with live account and refuses port 4002 or DU* paper accounts")
     void validateConfig_ibkrLiveEnvRules(@TempDir Path tempDir) {
         // Valid live config (port 4001 + U* live account)
