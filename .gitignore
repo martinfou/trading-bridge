@@ -49,6 +49,9 @@ dashboard/oanda_creds.json
 **/*.pem
 **/*.key
 data/runtime/broker-accounts.local.json
+# Remote ControlPlane link (VPS URL + apiKey/serverApiKey). Written at runtime by
+# RemoteCoreClient; machine-local secret, never committed.
+data/runtime/remote-core.json
 
 # BMAD personal / generated backups
 _bmad/config.user.toml
