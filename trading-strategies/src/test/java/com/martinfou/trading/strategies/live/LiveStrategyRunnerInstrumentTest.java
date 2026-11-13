@@ -22,6 +22,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -166,9 +167,14 @@ class LiveStrategyRunnerInstrumentTest {
     // Story 1.9 — the live config declares all deployed strategies, risk sum <= 3%
     // ========================================================================
 
-    /** The five strategies that actually run in oanda-paper (docker-compose.yml). */
+    /**
+     * The strategies that actually run in {@code oanda-paper}, and on {@code oanda-live} as well
+     * (both services in docker-compose.yml declare the same audited set). {@code monthweekphase} left the
+     * deployment on 2026-11-07 together with its {@code live-config.json} entry; keeping it in the list would
+     * re-arm the "no silent fallback" startup guard against a config that no longer has the key.
+     */
     static final List<String> DEPLOYED = List.of(
-        "londonorb", "mondayrev", "monthweekphase", "ltdoublema", "ltcrossmom");
+        "londonorb", "mondayrev", "ltdoublema", "ltcrossmom");
 
     /**
      * The account ceiling is 3% of simultaneous NAV again: D24 raised to 4% by D42 for the week-of-12-
@@ -180,24 +186,34 @@ class LiveStrategyRunnerInstrumentTest {
     @Test
     @DisplayName("docker-compose.yml runs exactly the DEPLOYED strategies, so a new service cannot slip under the cap")
     void composeServicesMatchTheDeployedList() throws IOException {
-        java.util.List<String> fromCompose = composeStrategyKeys();
-        assertEquals(DEPLOYED.size(), fromCompose.size(),
-            "docker-compose.yml and the DEPLOYED list disagree: a service that is not in DEPLOYED is trading "
-                + "unaccounted risk (measured 2026-10-21: the news lane ran nine days outside every check)");
-        assertEquals(new java.util.TreeSet<>(DEPLOYED), new java.util.TreeSet<>(fromCompose),
-            "docker-compose.yml and the DEPLOYED list disagree");
+        java.util.Map<String, java.util.List<String>> byService = composeStrategyKeysByService();
+        for (var e : byService.entrySet()) {
+            String service = e.getKey();
+            java.util.List<String> keys = e.getValue();
+            // Each service is its own account, so each one must carry the audited set exactly once: a duplicate
+            // key inside one service would run the same risk twice under a single risk budget.
+            assertEquals(DEPLOYED.size(), keys.size(), "service " + service + " declares " + keys.size()
+                + " strategy key(s) for " + DEPLOYED.size() + " in DEPLOYED");
+            assertEquals(new java.util.TreeSet<>(DEPLOYED), new java.util.TreeSet<>(keys),
+                "service " + service + " and the DEPLOYED list disagree: a strategy that is not in DEPLOYED is "
+                    + "trading unaccounted risk (measured 2026-10-21: the news lane ran nine days outside every check)");
+        }
     }
 
     /**
-     * Every strategy key a compose service would start, in file order and with duplicates kept.
+     * Every strategy key each compose service would start, in file order and with duplicates kept.
+     *
+     * <p>Why per service: {@code docker-compose.yml} holds a paper and a live instance of the same audited set,
+     * on two separate accounts. Flattening them double-counted every key and read as ten deployed strategies;
+     * the risk cap is per account, so the comparison has to be per service.
      *
      * <p>Two defects this must not have, both caught in review: a {@code Set} hides a SECOND service running a
      * key already deployed (its risk would be summed once), and a parser that silently skips a service written
      * in another YAML shape reads as "no extra service". So the scan tracks the enclosing service, accepts list
      * and map forms, and fails when any service yields no key.
      */
-    private static java.util.List<String> composeStrategyKeys() throws IOException {
-        java.util.List<String> keys = new java.util.ArrayList<>();
+    private static java.util.Map<String, java.util.List<String>> composeStrategyKeysByService() throws IOException {
+        java.util.Map<String, java.util.List<String>> keysPerService = new java.util.LinkedHashMap<>();
         java.util.regex.Pattern strategyLine = java.util.regex.Pattern.compile(
             "^\\s*-?\\s*[A-Za-z0-9_]*STRATEGY\\s*[=:]\\s*(.+)$");
         java.util.regex.Pattern defaulted = java.util.regex.Pattern.compile("^\\$\\{[^:}]+:-(.*)}$");
@@ -212,6 +228,7 @@ class LiveStrategyRunnerInstrumentTest {
             var svc = serviceLine.matcher(line);
             if (svc.matches()) {
                 service = svc.group(1);
+                keysPerService.put(service, new java.util.ArrayList<>());
                 strategyLinesPerService.put(service, 0);
                 commandPassesStrategy.put(service, Boolean.FALSE);
                 continue;
@@ -230,7 +247,7 @@ class LiveStrategyRunnerInstrumentTest {
             if (value.isEmpty()) continue;
             strategyLinesPerService.merge(service, 1, Integer::sum);
             for (String key : value.split("\\s+")) {
-                if (!key.isEmpty()) keys.add(key);
+                if (!key.isEmpty()) keysPerService.get(service).add(key);
             }
         }
         assertFalse(strategyLinesPerService.isEmpty(), "no service parsed out of docker-compose.yml");
@@ -240,7 +257,7 @@ class LiveStrategyRunnerInstrumentTest {
         commandPassesStrategy.forEach((name, passes) ->
             assertTrue(passes, "service " + name + " does not pass STRATEGY on its command line: the strategy "
                 + "that starts is not the one the cap test just counted"));
-        return keys;
+        return keysPerService;
     }
 
     private static Path locateCompose() {
@@ -278,9 +295,13 @@ class LiveStrategyRunnerInstrumentTest {
     void deployedRiskSumStaysUnderCap() throws IOException {
         JsonNode strategies = MAPPER.readTree(Files.readString(locateLiveConfig())).get("strategies");
 
+        // Per account: every service (paper, live) runs the same audited set against its own NAV, so the cap is
+        // the sum over DEPLOYED once, not over each compose service.
         double sum = 0.0;
-        for (String key : composeStrategyKeys()) {
-            sum += strategies.get(key).get("computedRiskPct").asDouble();
+        for (String key : DEPLOYED) {
+            JsonNode entry = strategies.get(key);
+            assertNotNull(entry, "missing strategies." + key + " while summing deployed risk");
+            sum += entry.get("computedRiskPct").asDouble();
         }
 
         assertTrue(sum <= ACCOUNT_RISK_CAP_PCT,

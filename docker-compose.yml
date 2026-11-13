@@ -24,8 +24,10 @@ services:
       # Persistent per-strategy state directory (story 50.1): survives container recreation.
       - TB_STATE_DIR=/app/data/state/oanda-paper
       # Audited KEEP FX strategies (each resolves its pinned pair from config/live-config.json):
-      #   londonorb (EUR_USD), mondayrev (GBP_USD), monthweekphase (GBP_USD), ltdoublema (USD_CHF), ltcrossmom (USD_CHF)
-      - STRATEGY=${STRATEGY:-londonorb mondayrev monthweekphase ltdoublema ltcrossmom}
+      #   londonorb (EUR_USD), mondayrev (GBP_USD), ltdoublema (USD_CHF), ltcrossmom (USD_CHF)
+      # monthweekphase was retired on 2026-11-07 and has no live-config.json entry: leaving it here made the
+      # runner refuse to start ("no strategies.monthweekphase entry ... no silent fallback").
+      - STRATEGY=${STRATEGY:-londonorb mondayrev ltdoublema ltcrossmom}
       - STRATEGY_PAIR=${STRATEGY_PAIR:-EUR_USD}
       - GRANULARITY=${GRANULARITY:-H1}
       - INTERVAL_SEC=${INTERVAL_SEC:-60}
@@ -58,7 +60,7 @@ services:
       - TB_ALLOW_ORDERS=1
       - TB_LANE=prod
       - TB_STATE_DIR=/app/data/state/oanda-live
-      - STRATEGY=${LIVE_STRATEGY:-londonorb mondayrev monthweekphase ltdoublema ltcrossmom}
+      - STRATEGY=${LIVE_STRATEGY:-londonorb mondayrev ltdoublema ltcrossmom}
       - STRATEGY_PAIR=${LIVE_PAIR:-EUR_USD}
       - GRANULARITY=${LIVE_GRANULARITY:-H1}
       - INTERVAL_SEC=${LIVE_INTERVAL:-60}
