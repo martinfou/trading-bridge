@@ -34,11 +34,34 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * Acceptance & parity tests for the Futures Trading Engine (PRD §5 F1–F5 & §9 A1/A2).
  */
 class FuturesTradingEngineTest {
+
+    /**
+     * The retired {@code sq-gold-m30} alias (formerly {@code Strategy_Gold_Breakout_M30}) was purged when the
+     * SqImported/Generated Java catalogs were replaced by the SQLite strategy databank (commit 4e3913b8).
+     * F2/F4 still use it as their reference subject; re-baselining them on a live strategy is an explicit
+     * decision, so the assertions are parked (skipped) rather than deleted or silently re-pointed.
+     */
+    private static final String RETIRED_PARITY_STRATEGY = "sq-gold-m30";
+
+    /** Historical corpus is downloaded, gitignored, and therefore absent on CI runners. */
+    private static void assumeLocalCorpus(Path... required) {
+        for (Path p : required) {
+            assumeTrue(Files.exists(p),
+                "Requires the local MGC historical corpus (gitignored, not published to CI): missing " + p);
+        }
+    }
+
+    private static void assumeParitySubjectAvailable() {
+        assumeTrue(SqStrategyEvaluator.validStrategyIds().contains(RETIRED_PARITY_STRATEGY),
+            "Reference strategy '" + RETIRED_PARITY_STRATEGY + "' was purged with the SQLite databank migration "
+            + "(4e3913b8). F2/F4 re-baseline on a live strategy is pending a decision; assertions parked.");
+    }
 
     @TempDir
     Path tempDir;
@@ -79,7 +102,9 @@ class FuturesTradingEngineTest {
             IllegalArgumentException.class,
             () -> FuturesTradingEngine.validateConfig(badStrategy)
         );
-        assertTrue(stratEx.getMessage().contains("sq-gold-m30"), "Should list valid strategies: " + stratEx.getMessage());
+        // Any always-registered builtin proves the message enumerates valid values ('londonorb' lives in
+        // LiveStrategyRunner.getStrategyMap(), so it does not depend on the local SQLite catalog).
+        assertTrue(stratEx.getMessage().contains("londonorb"), "Should list valid strategies: " + stratEx.getMessage());
     }
 
     @Test
@@ -146,8 +171,10 @@ class FuturesTradingEngineTest {
 
     @Test
     void f2_backtestParityWithRunMgcGoldBreakoutBacktestAndThreeDistinctConfigs() throws Exception {
+        assumeParitySubjectAvailable();
         Path repoRoot = Paths.get(".").toAbsolutePath().normalize();
         Path csvPath = repoRoot.resolve("data/historical/csv/MGC_M30_2026.csv");
+        assumeLocalCorpus(csvPath);
         assertTrue(Files.exists(csvPath), "Expected MGC_M30_2026.csv on disk");
 
         // Direct baseline run identical to RunMgcGoldBreakoutBacktest.main()
@@ -200,9 +227,11 @@ class FuturesTradingEngineTest {
 
     @Test
     void f4_unifiedFillLogSchemaInBacktestAndPaperPlusComparisonReport() throws Exception {
+        assumeParitySubjectAvailable();
         Path fillsDir = tempDir.resolve("fills");
         Path reportsDir = tempDir.resolve("reports");
         Path repoRoot = Paths.get(".").toAbsolutePath().normalize();
+        assumeLocalCorpus(repoRoot.resolve("data/historical/csv/MGC_M30_2026.csv"));
 
         // 1. Run backtest to emit backtest JSONL fills
         EngineRunConfig btCfg = EngineRunConfig.load(repoRoot.resolve("config/runs/sq-gold-m30-MGC-backtest.json"));
@@ -279,6 +308,8 @@ class FuturesTradingEngineTest {
         Path repoRoot = Paths.get(".").toAbsolutePath().normalize();
         Path barsDir = repoRoot.resolve("data/historical/bars");
         Path csvPath = repoRoot.resolve("data/historical/csv/MGC_M30_2026.csv");
+        assumeParitySubjectAvailable();
+        assumeLocalCorpus(barsDir, csvPath);
 
         // A1: Verify all 24 annual MGC_M30_<year>.bars files (2003..2026) exist and measure completeness
         int totalBars2003To2026 = 0;
