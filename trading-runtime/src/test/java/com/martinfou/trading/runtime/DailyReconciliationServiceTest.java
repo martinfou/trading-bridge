@@ -5,6 +5,7 @@ import com.martinfou.trading.backtest.events.RunEvent;
 import com.martinfou.trading.backtest.events.RunEventType;
 import com.martinfou.trading.core.Order;
 import com.martinfou.trading.core.Trade;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -20,6 +21,22 @@ import static org.junit.jupiter.api.Assertions.*;
 class DailyReconciliationServiceTest {
 
     private static final ObjectMapper mapper = new ObjectMapper();
+
+    /** user.home is a JVM-wide property; leaking a deleted @TempDir into it poisons every later test in the fork. */
+    private String originalUserHome;
+
+    @AfterEach
+    void restoreUserHome() {
+        if (originalUserHome != null) {
+            System.setProperty("user.home", originalUserHome);
+            originalUserHome = null;
+        }
+    }
+
+    private void overrideUserHome(Path tempDir) {
+        originalUserHome = System.getProperty("user.home");
+        System.setProperty("user.home", tempDir.toString());
+    }
 
     @Test
     void testDailyReconciliationReportGeneration(@TempDir Path tempDir) throws Exception {
@@ -49,7 +66,7 @@ class DailyReconciliationServiceTest {
             manager.tradeStore().insert(runId, trade);
 
             // Force data directory environment setup
-            System.setProperty("user.home", tempDir.toString());
+            overrideUserHome(tempDir);
 
             // Instantiate service under test with fixed clock (say 11:30 PM)
             Instant fixedInstant = Instant.parse("2026-06-28T23:30:00Z");
@@ -111,7 +128,7 @@ class DailyReconciliationServiceTest {
             // Verify both still exist initially
             assertEquals(2, eventStore.count("run-1"));
 
-            System.setProperty("user.home", tempDir.toString());
+            overrideUserHome(tempDir);
 
             // Run reconciliation and verify one event was pruned
             try (DailyReconciliationService service = new DailyReconciliationService(manager)) {

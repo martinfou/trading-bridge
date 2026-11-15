@@ -35,6 +35,12 @@
         <langchain4j.version>0.33.0</langchain4j.version>
         <hikaricp.version>5.1.0</hikaricp.version>
         <mockito.version>5.11.0</mockito.version>
+        <!-- Byte Buddy agent is pre-loaded into the trading-runtime test JVM (see its surefire argLine) so
+             Mockito never relies on runtime self-attach, which failed intermittently on CI runners
+             ("Could not self-attach to current VM using external process", run 43613937165 attempt 1).
+             Keep this in sync with the byte-buddy CORE version actually resolved for the module: the
+             langchain4j 0.33.0 parent BOM pins byte-buddy to 1.14.10, overriding mockito's 1.14.12. -->
+        <byte-buddy.version>1.14.10</byte-buddy.version>
         <tws-api.version>1045.01</tws-api.version>
     </properties>
 

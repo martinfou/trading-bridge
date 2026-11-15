@@ -157,9 +157,40 @@
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <!-- Stage the Byte Buddy agent so surefire can pre-load it: Mockito's inline mock
+                             maker self-attaches at runtime, which intermittently fails on CI runners with
+                             "Could not self-attach to current VM using external process" and then poisons
+                             the whole fork (13 cascading failures on 2026-11-14, run 43613937165 attempt 1). -->
+                        <id>stage-byte-buddy-agent</id>
+                        <phase>process-test-classes</phase>
+                        <goals>
+                            <goal>copy</goal>
+                        </goals>
+                        <configuration>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>net.bytebuddy</groupId>
+                                    <artifactId>byte-buddy-agent</artifactId>
+                                    <version>${byte-buddy.version}</version>
+                                    <outputDirectory>${project.build.directory}/agents</outputDirectory>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <workingDirectory>${project.parent.basedir}</workingDirectory>
+                    <!-- One JVM per test class: a fork poisoned by a broken agent attach or a StackOverflow
+                         used to cascade into 13 unrelated failures (run 43613937165 attempt 1). -->
+                    <reuseForks>false</reuseForks>
+                    <argLine>-javaagent:${project.build.directory}/agents/byte-buddy-agent-${byte-buddy.version}.jar -XX:+EnableDynamicAgentLoading</argLine>
                     <systemPropertyVariables>
                         <trading.bridge.test>true</trading.bridge.test>
                         <net.bytebuddy.experimental>true</net.bytebuddy.experimental>
