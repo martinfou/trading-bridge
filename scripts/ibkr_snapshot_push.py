@@ -10,6 +10,13 @@ Aucune métrique absente n'est remplacée par 0 : la clé est omise et le panel 
 Usage:
     ibkr_snapshot_push.py [--dry-run] [--selftest] [--url URL] [--timeout S]
 
+Codes de sortie:
+    0  cycle complet (IBKR lu + snapshot publié)
+    1  échec réel (publication refusée, ou configuration manquante -> 2)
+    3  état dégradé PUBLIÉ : IBKR illisible, mais le hub a bien reçu `connected: false`.
+       Le service systemd déclare `SuccessExitStatus=3` : un Gateway muet ne doit pas
+       produire 1440 « Failed » par jour alors que l'information est déjà rendue visible.
+
 Variables d'environnement (ou fichier HERMES_IBKR_ENV, défaut ~/.config/hermes-ibkr/publisher.env):
     IBKR_GATEWAY_HOST (127.0.0.1)   IBKR_GATEWAY_PORT (4002)   IBKR_ACCOUNT_ID (requis)
     HERMES_IBKR_CLIENT_ID (90)      HERMES_WEB_URL (requis)    HERMES_WEB_TOKEN (requis)
@@ -31,6 +38,12 @@ from pathlib import Path
 
 SOURCE = "hermes-ibkr-publisher"
 SNAPSHOT_PATH = "/api/trading/broker/snapshot"
+
+# Un Gateway muet n'est pas une panne du publieur : distinguer les deux cas évite que
+# systemd marque le service en échec à chaque minute d'indisponibilité IBKR.
+EXIT_OK = 0
+EXIT_FAIL = 1
+EXIT_DEGRADED = 3  # IBKR illisible MAIS l'état dégradé a bien été publié
 
 TAGS = (
     "NetLiquidation,TotalCashValue,BuyingPower,AvailableFunds,"
@@ -460,7 +473,12 @@ def main() -> int:
     status, response = post(base_url + SNAPSHOT_PATH, token, payload, timeout=args.timeout)
     published = 200 <= status < 300
     print(f"{'OK ' if published else 'ERR'} {status} {SNAPSHOT_PATH} {response[:200]}")
-    return 0 if published and read_error is None else 1
+    if not published:
+        return EXIT_FAIL
+    if read_error is not None:
+        print(f"État dégradé publié (IBKR illisible) : exit {EXIT_DEGRADED}", file=sys.stderr)
+        return EXIT_DEGRADED
+    return EXIT_OK
 
 
 if __name__ == "__main__":

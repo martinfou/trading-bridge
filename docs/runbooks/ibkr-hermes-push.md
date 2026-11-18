@@ -49,6 +49,9 @@ deux connexions simultanées sur le même clientId (`code=326`).
 # payload réel, aucun POST
 ~/.local/share/hermes-ibkr/venv/bin/python scripts/ibkr_snapshot_push.py --dry-run
 
+# contrat des codes de sortie 0 / 1 / 3, vers un faux endpoint local (aucune écriture au hub)
+python3 scripts/tests/test_ibkr_snapshot_push_exit_codes.py
+
 # un cycle complet, poussé vers le hub
 ~/.local/share/hermes-ibkr/venv/bin/python scripts/ibkr_snapshot_push.py
 
@@ -67,10 +70,15 @@ snapshot suivant. Corollaire assumé : une métrique absente du payload (le Gate
 renvoyée, ou a renvoyé le sentinel `1.7976931348623157E308`) s'affiche `—` dans le hub, jamais `0`.
 
 **Gateway arrêté ou illisible** : le script publie quand même un snapshot **dégradé**
-(`connection.connected: false`, `account` sans métriques, `gateway_errors` rempli) puis sort en 1.
+(`connection.connected: false`, `account` sans métriques, `gateway_errors` rempli) puis sort en **3**.
 C'est volontaire : sans ce push, le hub garderait le dernier `connected: true` et afficherait un
-Gateway vivant alors qu'il est mort. Ne pas tester ce cas avec le port par défaut, sous peine de
-publier un faux « disconnected » en production : utiliser `--dry-run` pour l'inspection.
+Gateway vivant alors qu'il est mort. Le service déclare `SuccessExitStatus=3`, donc un Gateway muet
+ne remplit pas le journal de « Failed » (une indisponibilité de 21 h produisait ~1250 cycles en
+échec) ; la dégradation reste lisible dans le hub et dans la ligne `Lecture IBKR échouée` du journal.
+Sortie **1** = vrai échec (POST refusé, rien de publié) et reste comptée comme échec par systemd.
+Ne pas tester le cas « Gateway muet » avec le port par défaut, sous peine de publier un faux
+« disconnected » en production : utiliser `--dry-run`, ou pointer `HERMES_WEB_URL` vers un faux
+endpoint local.
 
 ## Pannes
 
